@@ -34,27 +34,29 @@ export const EventCard: React.FC<EventCardProps> = ({
 
   if (isTicketView) {
     return (
-      <Card className="overflow-hidden border-0 shadow-md hover:shadow-lg transition-shadow duration-300 flex items-center">
-        <div className="flex-shrink-0 w-24 h-24">
-            {event.image_url ? (
+      <Card className="group overflow-hidden border border-gray-200 rounded-lg shadow-sm hover:shadow-xl transition-all duration-300 transform hover:-translate-y-1">
+        <div className="aspect-square w-full overflow-hidden relative">
+          {event.image_url ? (
             <img 
-                src={event.image_url} 
-                alt={event.title} 
-                className="w-full h-full object-cover"
+              src={event.image_url} 
+              alt={event.title} 
+              className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
             />
-            ) : (
-            <div className="w-full h-full bg-gradient-to-br from-purple-500 to-pink-500"></div>
-            )}
+          ) : (
+            <div className="w-full h-full bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center">
+              <Ticket className="w-12 h-12 text-white/50"/>
+            </div>
+          )}
+           <div className="absolute top-2 left-2 flex items-center gap-2 bg-black/50 text-white font-semibold text-xs py-1 px-2 rounded-full backdrop-blur-sm">
+                <CheckCircle className="w-3.5 h-3.5 text-green-400" />
+                <span>Owned</span>
+            </div>
         </div>
-        <CardContent className="p-4 flex-grow">
-          <h3 className="font-bold text-lg">{event.title}</h3>
-          <div className="flex items-center gap-1 text-sm text-gray-500 mt-1">
+        <CardContent className="p-4 bg-white">
+          <h3 className="font-bold text-base text-gray-900 truncate">{event.title}</h3>
+          <div className="flex items-center gap-1.5 text-sm text-gray-500 mt-1">
             <Calendar className="w-3.5 h-3.5" />
             <span>{event.date ? format(event.date, "MMM d, yyyy") : 'Date TBD'}</span>
-          </div>
-          <div className="flex items-center gap-2 mt-2 text-green-600 font-semibold">
-            <CheckCircle className="w-4 h-4" />
-            <span>Ticket Secured</span>
           </div>
         </CardContent>
       </Card>

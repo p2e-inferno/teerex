@@ -7,7 +7,6 @@ import { EventCard } from '@/components/events/EventCard';
 import { getPublishedEvents, PublishedEvent } from '@/utils/eventUtils';
 import { useToast } from '@/hooks/use-toast';
 import { EventPurchaseDialog } from '@/components/events/EventPurchaseDialog';
-import { MyTicketsDialog } from '@/components/events/MyTicketsDialog';
 import { getTotalKeys } from '@/utils/lockUtils';
 
 const Explore = () => {
@@ -18,7 +17,6 @@ const Explore = () => {
   const { toast } = useToast();
   const [selectedEvent, setSelectedEvent] = useState<PublishedEvent | null>(null);
   const [isPurchaseDialogOpen, setIsPurchaseDialogOpen] = useState(false);
-  const [isMyTicketsDialogOpen, setIsMyTicketsDialogOpen] = useState(false);
   const [keysSoldMap, setKeysSoldMap] = useState<Record<string, number>>({});
 
   const loadEvents = useCallback(async () => {
@@ -118,14 +116,6 @@ const Explore = () => {
             />
           </div>
           <div className="flex gap-2">
-             <Button 
-              variant="outline" 
-              className="border-gray-300"
-              onClick={() => setIsMyTicketsDialogOpen(true)}
-            >
-              <Ticket className="w-4 h-4 mr-2" />
-              My Tickets
-            </Button>
             <Button variant="outline" className="border-gray-300">
               <Filter className="w-4 h-4 mr-2" />
               Filters
@@ -183,10 +173,6 @@ const Explore = () => {
         event={selectedEvent}
         isOpen={isPurchaseDialogOpen}
         onClose={handleClosePurchaseDialog}
-      />
-      <MyTicketsDialog
-        isOpen={isMyTicketsDialogOpen}
-        onClose={() => setIsMyTicketsDialogOpen(false)}
       />
     </div>
   );

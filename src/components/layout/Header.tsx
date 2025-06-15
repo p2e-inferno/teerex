@@ -77,6 +77,12 @@ export const Header: React.FC = () => {
                       </Link>
                     </DropdownMenuItem>
                     <DropdownMenuItem asChild>
+                      <Link to="/my-tickets" className="flex items-center cursor-pointer">
+                        <Ticket className="h-4 w-4 mr-2" />
+                        My Tickets
+                      </Link>
+                    </DropdownMenuItem>
+                    <DropdownMenuItem asChild>
                       <Link to="/drafts" className="flex items-center cursor-pointer">
                         <FileText className="h-4 w-4 mr-2" />
                         Drafts
