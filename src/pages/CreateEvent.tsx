@@ -8,8 +8,9 @@ import { TicketSettings } from '@/components/create-event/TicketSettings';
 import { EventPreview } from '@/components/create-event/EventPreview';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
-import { ChevronLeft, ChevronRight } from 'lucide-react';
+import { ChevronLeft, ChevronRight, ExternalLink } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
+import { deployLock, getBlockExplorerUrl } from '@/utils/lockUtils';
 
 export interface EventFormData {
   title: string;
@@ -95,16 +96,46 @@ const CreateEvent = () => {
     setIsCreating(true);
     
     try {
-      // Here we would deploy the Unlock Protocol lock
-      // For now, we'll simulate the creation process
-      await new Promise(resolve => setTimeout(resolve, 2000));
+      // Deploy the Unlock Protocol lock
+      const lockConfig = {
+        name: formData.title,
+        symbol: `${formData.title.slice(0, 3).toUpperCase()}TIX`,
+        keyPrice: formData.currency === 'FREE' ? '0' : formData.price.toString(),
+        maxNumberOfKeys: formData.capacity,
+        expirationDuration: 86400, // 24 hours in seconds
+        currency: formData.currency
+      };
+
+      const deploymentResult = await deployLock(lockConfig);
       
-      toast({
-        title: "Event Created Successfully!",
-        description: "Your event has been created and the lock has been deployed.",
-      });
+      if (deploymentResult.success && deploymentResult.transactionHash) {
+        const explorerUrl = getBlockExplorerUrl(deploymentResult.transactionHash, 'base');
+        
+        toast({
+          title: "Event Created Successfully!",
+          description: (
+            <div className="space-y-2">
+              <p>Your event has been created and the lock has been deployed.</p>
+              <a 
+                href={explorerUrl} 
+                target="_blank" 
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1 text-blue-600 hover:text-blue-800 underline"
+              >
+                View Transaction <ExternalLink className="w-3 h-3" />
+              </a>
+            </div>
+          ),
+        });
+      } else {
+        toast({
+          title: deploymentResult.error ? "Deployment Warning" : "Event Created!",
+          description: deploymentResult.error || "Your event has been created successfully.",
+          variant: deploymentResult.error ? "destructive" : "default"
+        });
+      }
       
-      // Navigate to the explore page or event page
+      // Navigate to the explore page
       navigate('/explore');
     } catch (error) {
       console.error('Error creating event:', error);

@@ -28,7 +28,16 @@ export const EventPreview: React.FC<EventPreviewProps> = ({
       {/* Event Preview Card */}
       <Card className="overflow-hidden border-0 shadow-lg">
         {/* Event Image */}
-        <div className="aspect-[2/1] bg-gradient-to-br from-purple-500 to-pink-500 relative">
+        <div className="aspect-[2/1] relative">
+          {formData.imageUrl ? (
+            <img 
+              src={formData.imageUrl} 
+              alt={formData.title || 'Event preview'} 
+              className="w-full h-full object-cover"
+            />
+          ) : (
+            <div className="w-full h-full bg-gradient-to-br from-purple-500 to-pink-500"></div>
+          )}
           <div className="absolute inset-0 bg-black/20"></div>
           <div className="absolute bottom-6 left-6 text-white">
             {formData.category && (
