@@ -3,7 +3,14 @@ import React from 'react';
 import { Link } from 'react-router-dom';
 import { usePrivy } from '@privy-io/react-auth';
 import { Button } from '@/components/ui/button';
-import { Ticket, Plus } from 'lucide-react';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import { Ticket, Plus, ChevronDown, FileText, Calendar, LogOut, User } from 'lucide-react';
 
 export const Header: React.FC = () => {
   const { authenticated, logout, login } = usePrivy();
@@ -25,9 +32,6 @@ export const Header: React.FC = () => {
             </Link>
             {authenticated && (
               <>
-                <Link to="/events" className="text-gray-700 hover:text-gray-900 transition-colors font-medium">
-                  My Events
-                </Link>
                 <Link to="/create" className="text-gray-700 hover:text-gray-900 transition-colors font-medium">
                   Create
                 </Link>
@@ -52,14 +56,39 @@ export const Header: React.FC = () => {
                     Create
                   </Link>
                 </Button>
-                <Button 
-                  variant="ghost" 
-                  size="sm" 
-                  className="text-gray-700 hover:text-gray-900 hover:bg-gray-50 font-medium"
-                  onClick={logout}
-                >
-                  Sign out
-                </Button>
+                
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button 
+                      variant="ghost" 
+                      size="sm" 
+                      className="text-gray-700 hover:text-gray-900 hover:bg-gray-50 font-medium"
+                    >
+                      <User className="h-4 w-4 mr-2" />
+                      Account
+                      <ChevronDown className="h-4 w-4 ml-2" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="w-48 bg-white border border-gray-200 shadow-lg">
+                    <DropdownMenuItem asChild>
+                      <Link to="/events" className="flex items-center cursor-pointer">
+                        <Calendar className="h-4 w-4 mr-2" />
+                        My Events
+                      </Link>
+                    </DropdownMenuItem>
+                    <DropdownMenuItem asChild>
+                      <Link to="/drafts" className="flex items-center cursor-pointer">
+                        <FileText className="h-4 w-4 mr-2" />
+                        Drafts
+                      </Link>
+                    </DropdownMenuItem>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem onClick={logout} className="flex items-center cursor-pointer text-red-600 focus:text-red-600">
+                      <LogOut className="h-4 w-4 mr-2" />
+                      Sign out
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
               </>
             ) : (
               <Button 
