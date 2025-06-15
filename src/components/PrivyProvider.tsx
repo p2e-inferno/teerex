@@ -132,5 +132,3 @@ const SupabaseAuthSync: React.FC<{ children: React.ReactNode }> = ({ children })
 
   return <>{children}</>;
 };
-</SupabaseAuthSync>
-
