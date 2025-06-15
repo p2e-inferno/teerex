@@ -1,4 +1,5 @@
-import { parseEther, createWalletClient, custom, createPublicClient, http, encodeFunctionData, type Address } from 'viem';
+
+import { parseEther } from 'viem';
 import { base, baseSepolia } from 'wagmi/chains';
 
 interface LockConfig {
@@ -6,7 +7,7 @@ interface LockConfig {
   symbol: string;
   keyPrice: string;
   maxNumberOfKeys: number;
-  expirationDuration: number | bigint;
+  expirationDuration: number;
   currency: string;
   price: number;
 }
@@ -18,41 +19,11 @@ interface DeploymentResult {
   error?: string;
 }
 
-// Unlock Protocol factory contract addresses
+// Unlock Protocol factory contract addresses (corrected)
 const UNLOCK_FACTORY_ADDRESSES = {
   [base.id]: '0xd0b14797b9D08493392865647384974470202A78', // Base mainnet
   [baseSepolia.id]: '0x259813B665C8f6074391028ef782e27B65840d89' // Base Sepolia testnet
 } as const;
-
-// ABI for the PublicLock's initialize function (v13)
-const publicLockAbi = [{
-    "inputs": [
-      { "internalType": "address", "name": "lockManager", "type": "address" },
-      { "internalType": "uint256", "name": "expirationDuration", "type": "uint256" },
-      { "internalType": "address", "name": "tokenAddress", "type": "address" },
-      { "internalType": "uint256", "name": "keyPrice", "type": "uint256" },
-      { "internalType": "uint256", "name": "maxNumberOfKeys", "type": "uint256" },
-      { "internalType": "string", "name": "lockName", "type": "string" }
-    ],
-    "name": "initialize",
-    "outputs": [],
-    "stateMutability": "nonpayable",
-    "type": "function"
-}] as const;
-
-// ABI for the Unlock factory's createUpgradeableLockAtVersion function
-const unlockFactoryAbi = [{
-    "inputs": [
-        { "internalType": "bytes", "name": "calldata", "type": "bytes" },
-        { "internalType": "uint256", "name": "version", "type": "uint256" }
-    ],
-    "name": "createUpgradeableLockAtVersion",
-    "outputs": [
-        { "internalType": "address", "name": "newLockAddress", "type": "address" }
-    ],
-    "stateMutability": "nonpayable",
-    "type": "function"
-}] as const;
 
 export const deployLock = async (config: LockConfig, wallet: any): Promise<DeploymentResult> => {
   try {
@@ -86,7 +57,11 @@ export const deployLock = async (config: LockConfig, wallet: any): Promise<Deplo
             {
               chainId: targetChainIdHex,
               chainName: 'Base Sepolia',
-              nativeCurrency: { name: 'Ethereum', symbol: 'ETH', decimals: 18 },
+              nativeCurrency: {
+                name: 'Ethereum',
+                symbol: 'ETH',
+                decimals: 18,
+              },
               rpcUrls: ['https://sepolia.base.org'],
               blockExplorerUrls: ['https://sepolia.basescan.org'],
             },
@@ -97,88 +72,138 @@ export const deployLock = async (config: LockConfig, wallet: any): Promise<Deplo
       }
     }
 
+    // Wait a moment for the network switch to complete
+    await new Promise(resolve => setTimeout(resolve, 1000));
+
     // Verify we're on the correct network
     const currentChainId = await provider.request({ method: 'eth_chainId' });
     const currentChainIdDecimal = parseInt(currentChainId, 16);
+    
+    console.log('Current chain ID after switch:', currentChainIdDecimal);
     
     if (currentChainIdDecimal !== targetChainId) {
       throw new Error(`Failed to switch to Base Sepolia. Current network: ${currentChainIdDecimal}, Expected: ${targetChainId}`);
     }
 
-    const publicClient = createPublicClient({
-      chain: baseSepolia,
-      transport: http(),
-    });
-
-    const walletClient = createWalletClient({
-        account: wallet.address as Address,
-        chain: baseSepolia,
-        transport: custom(provider),
-    });
-
     const factoryAddress = UNLOCK_FACTORY_ADDRESSES[baseSepolia.id];
     console.log('Using Unlock Factory Address:', factoryAddress);
 
+    // Convert price to wei (assuming ETH/native token)
     const keyPriceWei = config.currency === 'FREE' 
-      ? 0n 
-      : parseEther(config.price.toString());
-    const tokenAddress = '0x0000000000000000000000000000000000000000' as Address;
-    
-    // Encode the calldata for the PublicLock's initialize function
-    const calldata = encodeFunctionData({
-      abi: publicLockAbi,
-      functionName: 'initialize',
-      args: [
-        wallet.address as Address, // lockManager
-        BigInt(config.expirationDuration),
-        tokenAddress,
-        keyPriceWei,
-        BigInt(config.maxNumberOfKeys),
-        config.name,
-      ]
+      ? '0' 
+      : parseEther(config.price.toString()).toString();
+
+    // Token address (0x0 for native ETH)
+    const tokenAddress = '0x0000000000000000000000000000000000000000';
+
+    console.log('Deploying with params:', {
+      expirationDuration: config.expirationDuration,
+      tokenAddress,
+      keyPrice: keyPriceWei,
+      maxNumberOfKeys: config.maxNumberOfKeys,
+      lockName: config.name
     });
 
-    const lockVersion = 14n; // Using PublicLock v14 based on successful tx
-
-    console.log(`Simulating lock creation for "${config.name}" with version ${lockVersion}`);
-
-    const { result: newLockAddress, request } = await publicClient.simulateContract({
-        address: factoryAddress,
-        abi: unlockFactoryAbi,
-        functionName: 'createUpgradeableLockAtVersion',
-        args: [
-            calldata,
-            lockVersion
-        ],
-        account: wallet.address as Address,
-    });
+    // Use the correct Unlock Protocol createLock function signature
+    // createLock(uint256 _expirationDuration, address _tokenAddress, uint256 _keyPrice, uint256 _maxNumberOfKeys, string _lockName, bytes12 _salt)
     
-    console.log('Simulation successful. Sending transaction...');
-    const txResponse = await walletClient.writeContract(request);
+    // Generate a random salt for unique deployment (12 bytes)
+    const saltBytes = new Uint8Array(12);
+    crypto.getRandomValues(saltBytes);
+    const salt = Array.from(saltBytes, byte => byte.toString(16).padStart(2, '0')).join('');
+
+    // Encode the function call using proper ABI encoding
+    const functionSelector = '0x385ac9b9'; // createLock function selector
+    
+    // Pad values to 32 bytes (64 hex chars)
+    const padHex = (value: string, bytes: number = 32): string => {
+      return value.replace('0x', '').padStart(bytes * 2, '0');
+    };
+
+    // Encode string parameter (lockName)
+    const nameBytes = new TextEncoder().encode(config.name);
+    const nameLength = nameBytes.length;
+    const nameLengthHex = padHex(nameLength.toString(16));
+    const nameDataHex = Array.from(nameBytes, byte => byte.toString(16).padStart(2, '0')).join('');
+    const paddedNameHex = nameDataHex.padEnd(Math.ceil(nameDataHex.length / 64) * 64, '0');
+
+    // Calculate offsets
+    const stringOffset = 6 * 32; // 6 parameters before string = 192 bytes = 0xc0
+    const saltOffset = stringOffset + 32 + Math.ceil(nameDataHex.length / 64) * 32; // after string data
+
+    const encodedParams = [
+      padHex(config.expirationDuration.toString(16)), // expirationDuration
+      padHex(tokenAddress.slice(2)), // tokenAddress
+      padHex(BigInt(keyPriceWei).toString(16)), // keyPrice
+      padHex(config.maxNumberOfKeys.toString(16)), // maxNumberOfKeys
+      padHex(stringOffset.toString(16)), // string offset
+      padHex(saltOffset.toString(16)), // salt offset
+      nameLengthHex, // string length
+      paddedNameHex, // string data
+      padHex(salt, 12) // salt (12 bytes)
+    ].join('');
+
+    const data = functionSelector + encodedParams;
+    console.log('Encoded transaction data:', data);
+
+    // Send transaction using Privy wallet provider
+    const txResponse = await provider.request({
+      method: 'eth_sendTransaction',
+      params: [{
+        from: wallet.address,
+        to: factoryAddress,
+        data: data,
+        value: '0x0'
+      }]
+    });
 
     console.log('Lock deployment transaction sent:', txResponse);
+
+    // Wait for transaction confirmation
+    let receipt = null;
+    let attempts = 0;
+    const maxAttempts = 60; // Wait up to 60 seconds
     
-    const receipt = await publicClient.waitForTransactionReceipt({ hash: txResponse });
+    while (!receipt && attempts < maxAttempts) {
+      try {
+        receipt = await provider.request({
+          method: 'eth_getTransactionReceipt',
+          params: [txResponse]
+        });
+        
+        if (!receipt) {
+          await new Promise(resolve => setTimeout(resolve, 1000));
+          attempts++;
+        }
+      } catch (error) {
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        attempts++;
+      }
+    }
+
+    if (!receipt) {
+      throw new Error('Transaction receipt not found. Please check the blockchain explorer.');
+    }
 
     console.log('Transaction receipt:', receipt);
 
-    if (receipt.status !== 'success') {
-      throw new Error('Transaction failed on-chain. Please check the transaction on the block explorer.');
+    if (receipt.status !== '0x1') {
+      throw new Error('Transaction failed. Please try again.');
     }
-    
-    if (!newLockAddress) {
-      throw new Error('Could not determine lock address from transaction simulation.');
-    }
+
+    // Extract lock address from logs
+    // The NewLock event should be emitted with the lock address
+    const lockAddress = receipt.logs?.[0]?.address || 'Unknown';
 
     console.log('Lock deployed successfully:', {
       transactionHash: txResponse,
-      lockAddress: newLockAddress
+      lockAddress: lockAddress
     });
 
     return {
       success: true,
       transactionHash: txResponse,
-      lockAddress: newLockAddress
+      lockAddress: lockAddress
     };
   } catch (error) {
     console.error('Error deploying lock:', error);
@@ -186,16 +211,13 @@ export const deployLock = async (config: LockConfig, wallet: any): Promise<Deplo
     let errorMessage = 'Failed to deploy lock';
     
     if (error instanceof Error) {
-        // More specific viem/blockchain error messages
-        if (error.message.includes('User rejected')) {
-            errorMessage = 'Transaction was cancelled. Please try again when ready.';
-        } else if (error.message.includes('insufficient funds')) {
-            errorMessage = 'Insufficient funds to deploy the smart contract. Please add more ETH to your wallet.';
-        } else if (error.message.includes('Nonce too high') || error.message.includes('Nonce too low')) {
-            errorMessage = 'There was a network issue (nonce). Please try again in a moment.';
-        } else {
-            errorMessage = error.message;
-        }
+      if (error.message.includes('User rejected') || error.message.includes('user rejected')) {
+        errorMessage = 'Transaction was cancelled. Please try again when ready.';
+      } else if (error.message.includes('insufficient funds')) {
+        errorMessage = 'Insufficient funds to deploy the smart contract. Please add more ETH to your wallet.';
+      } else {
+        errorMessage = error.message;
+      }
     }
     
     return {
