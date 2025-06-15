@@ -5,7 +5,8 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Shield, Zap, Ticket } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Shield, Zap, Ticket, ChevronRight } from 'lucide-react';
 import { EventFormData } from '@/pages/CreateEvent';
 
 interface TicketSettingsProps {
@@ -19,6 +20,11 @@ export const TicketSettings: React.FC<TicketSettingsProps> = ({
   updateFormData,
   onNext
 }) => {
+  const handleContinue = () => {
+    console.log('Ticket settings completed, proceeding to next step');
+    onNext();
+  };
+
   return (
     <div className="space-y-6">
       <div>
@@ -101,13 +107,13 @@ export const TicketSettings: React.FC<TicketSettingsProps> = ({
         )}
       </div>
 
-      {/* Unlock Protocol Settings */}
+      {/* Ticket Configuration Settings */}
       <div className="space-y-4">
-        <h3 className="text-lg font-medium text-gray-900">Lock Configuration</h3>
+        <h3 className="text-lg font-medium text-gray-900">Ticket Configuration</h3>
         
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div className="space-y-2">
-            <Label>Lock Duration</Label>
+            <Label>Ticket Duration</Label>
             <Select defaultValue="event">
               <SelectTrigger>
                 <SelectValue />
@@ -123,18 +129,28 @@ export const TicketSettings: React.FC<TicketSettingsProps> = ({
 
           <div className="space-y-2">
             <Label>Network</Label>
-            <Select defaultValue="polygon">
+            <Select defaultValue="base">
               <SelectTrigger>
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="polygon">Polygon</SelectItem>
-                <SelectItem value="ethereum">Ethereum</SelectItem>
-                <SelectItem value="optimism">Optimism</SelectItem>
+                <SelectItem value="base">Base</SelectItem>
+                <SelectItem value="baseSepolia">Base Sepolia</SelectItem>
               </SelectContent>
             </Select>
           </div>
         </div>
+      </div>
+
+      {/* Continue Button */}
+      <div className="flex justify-end pt-4">
+        <Button
+          onClick={handleContinue}
+          className="bg-purple-600 hover:bg-purple-700 text-white"
+        >
+          Continue
+          <ChevronRight className="w-4 h-4 ml-2" />
+        </Button>
       </div>
     </div>
   );
