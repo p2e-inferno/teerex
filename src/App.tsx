@@ -7,6 +7,7 @@ import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { PrivyProvider } from "@/components/PrivyProvider";
 import { Layout } from "@/components/layout/Layout";
 import Index from "./pages/Index";
+import Explore from "./pages/Explore";
 import CreateEvent from "./pages/CreateEvent";
 import NotFound from "./pages/NotFound";
 import { useState } from "react";

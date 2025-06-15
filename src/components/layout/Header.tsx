@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Ticket, Plus } from 'lucide-react';
 
 export const Header: React.FC = () => {
-  const { authenticated, logout } = usePrivy();
+  const { authenticated, logout, login } = usePrivy();
 
   return (
     <header className="border-b border-gray-200 bg-white/80 backdrop-blur-xl supports-[backdrop-filter]:bg-white/60 sticky top-0 z-50">
@@ -20,8 +20,8 @@ export const Header: React.FC = () => {
           </Link>
 
           <nav className="hidden md:flex items-center gap-8">
-            <Link to="/" className="text-gray-700 hover:text-gray-900 transition-colors font-medium">
-              Home
+            <Link to="/explore" className="text-gray-700 hover:text-gray-900 transition-colors font-medium">
+              Explore
             </Link>
             {authenticated && (
               <>
@@ -66,6 +66,7 @@ export const Header: React.FC = () => {
                 variant="outline" 
                 size="sm"
                 className="border-gray-300 text-gray-700 hover:bg-gray-50 font-medium"
+                onClick={login}
               >
                 Connect Wallet
               </Button>
