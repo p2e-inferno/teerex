@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { usePrivy, useWallets } from '@privy-io/react-auth';
 import { useNavigate, Navigate } from 'react-router-dom';
@@ -74,11 +75,13 @@ const Drafts = () => {
     setIsPublishing(draft.id);
     
     try {
-      // Get the connected wallet
-      const wallet = wallets.find(w => w.walletClientType === 'privy');
+      // Get the first available wallet - Privy provides embedded wallets
+      const wallet = wallets[0]; // Get the first available wallet
       if (!wallet) {
         throw new Error('Please connect a wallet to publish your event.');
       }
+
+      console.log('Using wallet for publishing:', wallet);
 
       const lockConfig = {
         name: draft.title,
