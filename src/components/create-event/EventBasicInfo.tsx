@@ -1,12 +1,12 @@
 
-import React from 'react';
+import React, { useRef } from 'react';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Calendar } from '@/components/ui/calendar';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Button } from '@/components/ui/button';
-import { CalendarIcon, Upload } from 'lucide-react';
+import { CalendarIcon, Upload, X } from 'lucide-react';
 import { format } from 'date-fns';
 import { EventFormData } from '@/pages/CreateEvent';
 
@@ -21,7 +21,28 @@ export const EventBasicInfo: React.FC<EventBasicInfoProps> = ({
   updateFormData,
   onNext
 }) => {
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const isValid = formData.title && formData.description && formData.date;
+
+  const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (file) {
+      // Create a URL for the uploaded file to display as preview
+      const imageUrl = URL.createObjectURL(file);
+      updateFormData({ imageUrl });
+    }
+  };
+
+  const removeImage = () => {
+    updateFormData({ imageUrl: '' });
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+  };
+
+  const triggerFileInput = () => {
+    fileInputRef.current?.click();
+  };
 
   return (
     <div className="space-y-6">
@@ -32,13 +53,41 @@ export const EventBasicInfo: React.FC<EventBasicInfoProps> = ({
       {/* Event Image Upload */}
       <div className="space-y-2">
         <Label htmlFor="image">Event Image</Label>
-        <div className="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center hover:border-gray-400 transition-colors">
-          <Upload className="w-8 h-8 text-gray-400 mx-auto mb-4" />
-          <p className="text-gray-600 mb-2">Upload an image for your event</p>
-          <Button variant="outline" size="sm">
-            Choose File
-          </Button>
-        </div>
+        {formData.imageUrl ? (
+          <div className="relative">
+            <img 
+              src={formData.imageUrl} 
+              alt="Event preview" 
+              className="w-full h-48 object-cover rounded-lg border-2 border-gray-300"
+            />
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={removeImage}
+              className="absolute top-2 right-2 bg-white hover:bg-gray-100"
+            >
+              <X className="w-4 h-4" />
+            </Button>
+          </div>
+        ) : (
+          <div 
+            className="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center hover:border-gray-400 transition-colors cursor-pointer"
+            onClick={triggerFileInput}
+          >
+            <Upload className="w-8 h-8 text-gray-400 mx-auto mb-4" />
+            <p className="text-gray-600 mb-2">Upload an image for your event</p>
+            <Button variant="outline" size="sm" type="button">
+              Choose File
+            </Button>
+          </div>
+        )}
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/*"
+          onChange={handleFileUpload}
+          className="hidden"
+        />
       </div>
 
       {/* Event Title */}
