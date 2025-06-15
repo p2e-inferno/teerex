@@ -1,5 +1,7 @@
 
-import { usePrivy } from '@privy-io/react-auth';
+import { writeContract, waitForTransactionReceipt, getAccount } from '@wagmi/core';
+import { parseEther, encodeFunctionData } from 'viem';
+import { base, baseSepolia } from 'wagmi/chains';
 
 interface LockConfig {
   name: string;
@@ -19,11 +21,11 @@ interface DeploymentResult {
 
 // Unlock Protocol PublicLock factory contract addresses
 const UNLOCK_FACTORY_ADDRESSES = {
-  base: '0x449f2fd99174e1785CF2A1c79E665Fec3dD1DdC6', // Base mainnet
-  baseSepolia: '0x127fF2f2B82DdE45472964C0F39735fD35e6e0c4' // Base Sepolia testnet
-};
+  [base.id]: '0x449f2fd99174e1785CF2A1c79E665Fec3dD1DdC6', // Base mainnet
+  [baseSepolia.id]: '0x127fF2f2B82DdE45472964C0F39735fD35e6e0c4' // Base Sepolia testnet
+} as const;
 
-// PublicLock ABI - minimal interface for deployment
+// PublicLock factory ABI - only the createLock function we need
 const UNLOCK_FACTORY_ABI = [
   {
     "inputs": [
@@ -39,166 +41,115 @@ const UNLOCK_FACTORY_ABI = [
     "stateMutability": "nonpayable",
     "type": "function"
   }
-];
+] as const;
 
 export const deployLock = async (config: LockConfig): Promise<DeploymentResult> => {
   try {
     console.log('Deploying lock with config:', config);
     
-    // Check if we have access to ethereum provider
-    if (typeof window !== 'undefined' && window.ethereum) {
-      // Request account access
-      const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
-      
-      if (accounts.length === 0) {
-        throw new Error('No wallet account available');
-      }
+    // Get the current account from wagmi
+    const account = getAccount();
+    
+    if (!account.address) {
+      throw new Error('No wallet connected. Please connect your wallet first.');
+    }
 
-      // Check network - we'll deploy on Base (chainId: 8453)
-      const chainId = await window.ethereum.request({ method: 'eth_chainId' });
-      const currentChainId = parseInt(chainId, 16);
-      
-      // For now, we'll work with Base mainnet (8453) or Base Sepolia (84532)
-      let factoryAddress: string;
-      let networkName: string;
-      
-      if (currentChainId === 8453) {
-        factoryAddress = UNLOCK_FACTORY_ADDRESSES.base;
-        networkName = 'base';
-      } else if (currentChainId === 84532) {
-        factoryAddress = UNLOCK_FACTORY_ADDRESSES.baseSepolia;
-        networkName = 'baseSepolia';
-      } else {
-        // Switch to Base mainnet if not on a supported network
-        try {
-          await window.ethereum.request({
-            method: 'wallet_switchEthereumChain',
-            params: [{ chainId: '0x2105' }], // Base mainnet
-          });
-          factoryAddress = UNLOCK_FACTORY_ADDRESSES.base;
-          networkName = 'base';
-        } catch (switchError) {
-          throw new Error('Please switch to Base network to deploy your event');
-        }
-      }
+    // Determine the chain and factory address
+    const chainId = account.chainId;
+    let factoryAddress: `0x${string}`;
+    
+    if (chainId === base.id) {
+      factoryAddress = UNLOCK_FACTORY_ADDRESSES[base.id];
+    } else if (chainId === baseSepolia.id) {
+      factoryAddress = UNLOCK_FACTORY_ADDRESSES[baseSepolia.id];
+    } else {
+      throw new Error('Please switch to Base network to deploy your event.');
+    }
 
-      // Convert price to wei (assuming ETH/native token)
-      const keyPriceWei = config.currency === 'FREE' 
-        ? '0' 
-        : (parseFloat(config.keyPrice) * 1e18).toString();
+    // Convert price to wei (assuming ETH/native token)
+    const keyPriceWei = config.currency === 'FREE' 
+      ? 0n 
+      : parseEther(config.price.toString());
 
-      // Token address (0x0 for native ETH)
-      const tokenAddress = '0x0000000000000000000000000000000000000000';
+    // Token address (0x0 for native ETH)
+    const tokenAddress = '0x0000000000000000000000000000000000000000' as `0x${string}`;
 
-      // Generate a random salt for unique deployment
-      const salt = '0x' + Array.from({length: 24}, () => Math.floor(Math.random() * 16).toString(16)).join('');
+    // Generate a random salt for unique deployment (12 bytes)
+    const saltBytes = new Uint8Array(12);
+    crypto.getRandomValues(saltBytes);
+    const salt = `0x${Array.from(saltBytes, byte => byte.toString(16).padStart(2, '0')).join('')}` as `0x${string}`;
 
-      // Encode the function call data
-      const encoder = new TextEncoder();
-      const functionSelector = '0x8c2c9d6c'; // Function selector for createLock
+    console.log('Deploying with params:', {
+      expirationDuration: config.expirationDuration,
+      tokenAddress,
+      keyPrice: keyPriceWei.toString(),
+      maxNumberOfKeys: config.maxNumberOfKeys,
+      lockName: config.name,
+      salt
+    });
 
-      // Encode parameters manually since we don't have web3
-      const encodedParams = await encodeParameters([
-        config.expirationDuration,
+    // Deploy the lock using wagmi
+    const txHash = await writeContract({
+      address: factoryAddress,
+      abi: UNLOCK_FACTORY_ABI,
+      functionName: 'createLock',
+      args: [
+        BigInt(config.expirationDuration),
         tokenAddress,
         keyPriceWei,
-        config.maxNumberOfKeys,
+        BigInt(config.maxNumberOfKeys),
         config.name,
         salt
-      ]);
+      ],
+    });
 
-      const txData = functionSelector + encodedParams.slice(2);
+    console.log('Lock deployment transaction sent:', txHash);
 
-      // Send transaction using the provider directly
-      const txHash = await window.ethereum.request({
-        method: 'eth_sendTransaction',
-        params: [{
-          from: accounts[0],
-          to: factoryAddress,
-          data: txData,
-          gas: '0x493E0', // 300,000 gas limit
-        }],
-      });
+    // Wait for transaction confirmation
+    const receipt = await waitForTransactionReceipt({
+      hash: txHash,
+      timeout: 300000, // 5 minutes timeout
+    });
 
-      console.log('Lock deployment transaction sent:', txHash);
-
-      // Wait for transaction confirmation
-      let receipt = null;
-      let attempts = 0;
-      const maxAttempts = 30; // Wait up to 5 minutes
-
-      while (!receipt && attempts < maxAttempts) {
-        await new Promise(resolve => setTimeout(resolve, 10000)); // Wait 10 seconds
-        try {
-          receipt = await window.ethereum.request({
-            method: 'eth_getTransactionReceipt',
-            params: [txHash]
-          });
-        } catch (error) {
-          console.log('Waiting for transaction confirmation...');
-        }
-        attempts++;
-      }
-
-      if (!receipt) {
-        throw new Error('Transaction confirmation timeout. Please check the blockchain explorer for status.');
-      }
-
-      if (receipt.status === '0x0') {
-        throw new Error('Transaction failed. Please try again.');
-      }
-
-      // Extract lock address from logs (the contract address created)
-      const lockAddress = receipt.logs?.[0]?.address || 'Unknown';
-
-      console.log('Lock deployed successfully:', {
-        transactionHash: txHash,
-        lockAddress: lockAddress
-      });
-
-      return {
-        success: true,
-        transactionHash: txHash,
-        lockAddress: lockAddress
-      };
-    } else {
-      // No wallet available - show helpful message
-      return {
-        success: false,
-        error: 'No wallet detected. Please connect a Web3 wallet to deploy your event.'
-      };
+    if (receipt.status === 'reverted') {
+      throw new Error('Transaction failed. Please try again.');
     }
+
+    // Extract lock address from logs
+    // The lock address should be in the transaction receipt logs
+    const lockAddress = receipt.logs?.[0]?.address || 'Unknown';
+
+    console.log('Lock deployed successfully:', {
+      transactionHash: txHash,
+      lockAddress: lockAddress
+    });
+
+    return {
+      success: true,
+      transactionHash: txHash,
+      lockAddress: lockAddress
+    };
   } catch (error) {
     console.error('Error deploying lock:', error);
+    
+    let errorMessage = 'Failed to deploy lock';
+    
+    if (error instanceof Error) {
+      if (error.message.includes('User rejected')) {
+        errorMessage = 'Transaction was cancelled. Please try again when ready.';
+      } else if (error.message.includes('insufficient funds')) {
+        errorMessage = 'Insufficient funds to deploy the smart contract. Please add more ETH to your wallet.';
+      } else {
+        errorMessage = error.message;
+      }
+    }
+    
     return {
       success: false,
-      error: error instanceof Error ? error.message : 'Failed to deploy lock'
+      error: errorMessage
     };
   }
 };
-
-// Helper function to encode parameters (simplified version)
-async function encodeParameters(params: any[]): Promise<string> {
-  // This is a simplified encoding - in a real app you'd use a proper ABI encoder
-  // For now, we'll create a basic encoding
-  let encoded = '';
-  
-  for (const param of params) {
-    if (typeof param === 'number') {
-      encoded += param.toString(16).padStart(64, '0');
-    } else if (typeof param === 'string') {
-      if (param.startsWith('0x')) {
-        encoded += param.slice(2).padStart(64, '0');
-      } else {
-        // String encoding is more complex, for now we'll use a placeholder
-        const hex = Buffer.from(param, 'utf8').toString('hex');
-        encoded += hex.padStart(64, '0');
-      }
-    }
-  }
-  
-  return '0x' + encoded;
-}
 
 export const getBlockExplorerUrl = (txHash: string, network: string = 'base'): string => {
   const explorers = {

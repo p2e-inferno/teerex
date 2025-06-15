@@ -1,13 +1,19 @@
 
 import React, { useEffect } from 'react';
 import { PrivyProvider as Privy, usePrivy } from '@privy-io/react-auth';
+import { WagmiProvider } from 'wagmi';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { AlertTriangle } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
+import { wagmiConfig } from '@/utils/wagmiConfig';
 
 interface PrivyProviderProps {
   children: React.ReactNode;
 }
+
+// Create a query client for wagmi
+const queryClient = new QueryClient();
 
 export const PrivyProvider: React.FC<PrivyProviderProps> = ({ children }) => {
   // Replace this with your actual Privy App ID from https://dashboard.privy.io
@@ -98,9 +104,13 @@ export const PrivyProvider: React.FC<PrivyProviderProps> = ({ children }) => {
         ],
       }}
     >
-      <SupabaseAuthSync>
-        {children}
-      </SupabaseAuthSync>
+      <QueryClientProvider client={queryClient}>
+        <WagmiProvider config={wagmiConfig}>
+          <SupabaseAuthSync>
+            {children}
+          </SupabaseAuthSync>
+        </WagmiProvider>
+      </QueryClientProvider>
     </Privy>
   );
 };
