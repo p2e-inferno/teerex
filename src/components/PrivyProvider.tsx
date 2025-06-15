@@ -10,7 +10,7 @@ interface PrivyProviderProps {
 
 export const PrivyProvider: React.FC<PrivyProviderProps> = ({ children }) => {
   // Replace this with your actual Privy App ID from https://dashboard.privy.io
-  const appId = 'your-actual-privy-app-id-here';
+  const appId = 'cm5x5kyq500eo5zk1lykex6s5';
 
   // If no valid App ID is provided, show setup instructions
   if (!appId || appId === 'your-actual-privy-app-id-here') {
