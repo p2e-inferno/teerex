@@ -1,4 +1,3 @@
-
 import { parseEther } from 'viem';
 import { base, baseSepolia } from 'wagmi/chains';
 
@@ -19,10 +18,10 @@ interface DeploymentResult {
   error?: string;
 }
 
-// Unlock Protocol PublicLock factory contract addresses
+// Unlock Protocol PublicLock factory contract addresses (corrected)
 const UNLOCK_FACTORY_ADDRESSES = {
-  [base.id]: '0x449f2fd99174e1785CF2A1c79E665Fec3dD1DdC6', // Base mainnet
-  [baseSepolia.id]: '0x127fF2f2B82DdE45472964C0F39735fD35e6e0c4' // Base Sepolia testnet
+  [base.id]: '0xd0b14797b9D08493392865647384974470202A78', // Base mainnet
+  [baseSepolia.id]: '0x259813B665C8f6074391028ef782e27B65840d89' // Base Sepolia testnet
 } as const;
 
 // Function to encode the createLock function call
@@ -122,6 +121,8 @@ export const deployLock = async (config: LockConfig, wallet: any): Promise<Deplo
     }
 
     const factoryAddress = UNLOCK_FACTORY_ADDRESSES[baseSepolia.id];
+
+    console.log('Using Unlock Factory Address:', factoryAddress);
 
     // Convert price to wei (assuming ETH/native token)
     const keyPriceWei = config.currency === 'FREE' 
