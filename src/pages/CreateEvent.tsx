@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { usePrivy } from '@privy-io/react-auth';
 import { Navigate, useNavigate, useSearchParams } from 'react-router-dom';
@@ -380,27 +379,6 @@ const CreateEvent = () => {
       </div>
     </div>
   );
-
-  function renderStepComponent() {
-    const commonProps = {
-      formData,
-      updateFormData,
-      onNext: nextStep
-    };
-
-    switch (currentStep) {
-      case 1:
-        return <EventBasicInfo {...commonProps} />;
-      case 2:
-        return <EventDetails {...commonProps} />;
-      case 3:
-        return <TicketSettings {...commonProps} />;
-      case 4:
-        return <EventPreview {...commonProps} onSaveAsDraft={saveAsDraft} />;
-      default:
-        return <EventBasicInfo {...commonProps} />;
-    }
-  }
 };
 
 export default CreateEvent;
