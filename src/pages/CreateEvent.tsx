@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { usePrivy } from '@privy-io/react-auth';
 import { Navigate, useNavigate, useSearchParams } from 'react-router-dom';
@@ -82,7 +81,6 @@ const CreateEvent = () => {
   ];
 
   const currentStepData = steps[currentStep - 1];
-  const StepComponent = currentStepData.component;
 
   const nextStep = () => {
     console.log('Moving to next step, current step:', currentStep);
@@ -210,6 +208,27 @@ const CreateEvent = () => {
 
   const canContinue = isStepValid(currentStep);
 
+  const renderStepComponent = () => {
+    const commonProps = {
+      formData,
+      updateFormData,
+      onNext: nextStep
+    };
+
+    switch (currentStep) {
+      case 1:
+        return <EventBasicInfo {...commonProps} />;
+      case 2:
+        return <EventDetails {...commonProps} />;
+      case 3:
+        return <TicketSettings {...commonProps} />;
+      case 4:
+        return <EventPreview {...commonProps} onSaveAsDraft={saveAsDraft} />;
+      default:
+        return <EventBasicInfo {...commonProps} />;
+    }
+  };
+
   return (
     <div className="min-h-screen bg-gray-50 py-8">
       <div className="container mx-auto px-6 max-w-4xl">
@@ -252,20 +271,7 @@ const CreateEvent = () => {
         {/* Form Card */}
         <Card className="border-0 shadow-sm bg-white mb-8">
           <div className="p-8">
-            {currentStep === 4 ? (
-              <StepComponent 
-                formData={formData} 
-                updateFormData={updateFormData}
-                onNext={nextStep}
-                onSaveAsDraft={saveAsDraft}
-              />
-            ) : (
-              <StepComponent 
-                formData={formData} 
-                updateFormData={updateFormData}
-                onNext={nextStep}
-              />
-            )}
+            {renderStepComponent()}
           </div>
         </Card>
 
