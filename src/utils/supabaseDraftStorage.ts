@@ -130,6 +130,7 @@ export const getDrafts = async (): Promise<EventDraft[]> => {
       date: draft.date ? new Date(draft.date) : null,
       created_at: new Date(draft.created_at),
       updated_at: new Date(draft.updated_at),
+      currency: draft.currency as 'ETH' | 'USDC' | 'FREE',
       image_url: draft.image_url
     }));
   } catch (error) {
@@ -163,6 +164,7 @@ export const getDraft = async (id: string): Promise<EventDraft | null> => {
       date: data.date ? new Date(data.date) : null,
       created_at: new Date(data.created_at),
       updated_at: new Date(data.updated_at),
+      currency: data.currency as 'ETH' | 'USDC' | 'FREE',
       image_url: data.image_url
     };
   } catch (error) {

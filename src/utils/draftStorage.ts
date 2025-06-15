@@ -9,9 +9,10 @@ export const saveDraft = (formData: EventFormData): string => {
   const id = Date.now().toString();
   const draft: EventDraft = {
     id,
+    user_id: '', // This would need to be set properly
     ...formData,
-    createdAt: new Date(),
-    updatedAt: new Date()
+    created_at: new Date(),
+    updated_at: new Date()
   };
   
   drafts.push(draft);
@@ -27,7 +28,7 @@ export const updateDraft = (id: string, formData: EventFormData): void => {
     drafts[index] = {
       ...drafts[index],
       ...formData,
-      updatedAt: new Date()
+      updated_at: new Date()
     };
     localStorage.setItem(DRAFTS_KEY, JSON.stringify(drafts));
   }
