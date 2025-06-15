@@ -9,29 +9,29 @@ export const Header: React.FC = () => {
   const { authenticated, logout } = usePrivy();
 
   return (
-    <header className="border-b border-gray-800/50 bg-gray-900/80 backdrop-blur-xl supports-[backdrop-filter]:bg-gray-900/60">
-      <div className="container mx-auto px-4 py-4">
-        <div className="flex items-center justify-between">
-          <Link to="/" className="flex items-center gap-2 font-bold text-xl text-white">
-            <Ticket className="h-6 w-6 text-pink-400" />
-            <span className="bg-gradient-to-r from-pink-400 to-purple-400 bg-clip-text text-transparent">
-              TeeRex
-            </span>
+    <header className="border-b border-gray-200 bg-white/80 backdrop-blur-xl supports-[backdrop-filter]:bg-white/60 sticky top-0 z-50">
+      <div className="container mx-auto px-6">
+        <div className="flex items-center justify-between h-16">
+          <Link to="/" className="flex items-center gap-2 font-bold text-xl text-gray-900">
+            <div className="w-8 h-8 bg-purple-600 rounded-lg flex items-center justify-center">
+              <Ticket className="h-5 w-5 text-white" />
+            </div>
+            <span>TeeRex</span>
           </Link>
 
-          <nav className="hidden md:flex items-center gap-6">
-            <Link to="/" className="text-gray-300 hover:text-white transition-colors">
+          <nav className="hidden md:flex items-center gap-8">
+            <Link to="/" className="text-gray-700 hover:text-gray-900 transition-colors font-medium">
               Home
             </Link>
             {authenticated && (
               <>
-                <Link to="/events" className="text-gray-300 hover:text-white transition-colors">
+                <Link to="/events" className="text-gray-700 hover:text-gray-900 transition-colors font-medium">
                   My Events
                 </Link>
-                <Link to="/create" className="text-gray-300 hover:text-white transition-colors">
-                  Create Event
+                <Link to="/create" className="text-gray-700 hover:text-gray-900 transition-colors font-medium">
+                  Create
                 </Link>
-                <Link to="/attestations" className="text-gray-300 hover:text-white transition-colors">
+                <Link to="/attestations" className="text-gray-700 hover:text-gray-900 transition-colors font-medium">
                   Attestations
                 </Link>
               </>
@@ -44,28 +44,28 @@ export const Header: React.FC = () => {
                 <Button 
                   variant="outline" 
                   size="sm" 
-                  className="border-purple-500/50 text-purple-300 hover:bg-purple-500/20 backdrop-blur-sm"
+                  className="border-gray-300 text-gray-700 hover:bg-gray-50 font-medium"
                   asChild
                 >
                   <Link to="/create">
                     <Plus className="h-4 w-4 mr-2" />
-                    Create Event
+                    Create
                   </Link>
                 </Button>
                 <Button 
                   variant="ghost" 
                   size="sm" 
-                  className="text-gray-300 hover:text-white hover:bg-gray-800/50"
+                  className="text-gray-700 hover:text-gray-900 hover:bg-gray-50 font-medium"
                   onClick={logout}
                 >
-                  Disconnect
+                  Sign out
                 </Button>
               </>
             ) : (
               <Button 
                 variant="outline" 
                 size="sm"
-                className="border-purple-500/50 text-purple-300 hover:bg-purple-500/20 backdrop-blur-sm"
+                className="border-gray-300 text-gray-700 hover:bg-gray-50 font-medium"
               >
                 Connect Wallet
               </Button>
