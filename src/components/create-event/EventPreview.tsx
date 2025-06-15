@@ -3,7 +3,7 @@ import React from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Calendar, Clock, MapPin, Users, Ticket } from 'lucide-react';
+import { Calendar, Clock, MapPin, Users, Ticket, Save } from 'lucide-react';
 import { format } from 'date-fns';
 import { EventFormData } from '@/pages/CreateEvent';
 
@@ -11,18 +11,20 @@ interface EventPreviewProps {
   formData: EventFormData;
   updateFormData: (updates: Partial<EventFormData>) => void;
   onNext: () => void;
+  onSaveAsDraft?: () => void;
 }
 
 export const EventPreview: React.FC<EventPreviewProps> = ({
   formData,
   updateFormData,
-  onNext
+  onNext,
+  onSaveAsDraft
 }) => {
   return (
     <div className="space-y-6">
       <div>
         <h2 className="text-2xl font-semibold text-gray-900 mb-6">Event Preview</h2>
-        <p className="text-gray-600">Review your event details before publishing</p>
+        <p className="text-gray-600">Review your event details before publishing or saving as draft</p>
       </div>
 
       {/* Event Preview Card */}
@@ -109,20 +111,50 @@ export const EventPreview: React.FC<EventPreviewProps> = ({
         </CardContent>
       </Card>
 
-      {/* Summary */}
-      <Card className="border-green-200 bg-green-50/50">
-        <CardHeader>
-          <CardTitle className="text-green-900">Ready to Publish</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="space-y-2 text-sm text-green-700">
-            <p>✓ Event details completed</p>
-            <p>✓ Unlock Protocol lock will be created</p>
-            <p>✓ NFT tickets will be available for purchase</p>
-            <p>✓ Event page will be live immediately</p>
-          </div>
-        </CardContent>
-      </Card>
+      {/* Action Options */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {/* Save as Draft */}
+        {onSaveAsDraft && (
+          <Card className="border-orange-200 bg-orange-50/50">
+            <CardHeader className="pb-3">
+              <CardTitle className="text-orange-900 flex items-center gap-2">
+                <Save className="w-5 h-5" />
+                Save as Draft
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-2 text-sm text-orange-700 mb-4">
+                <p>✓ Save your progress</p>
+                <p>✓ Continue editing later</p>
+                <p>✓ Publish when ready</p>
+              </div>
+              <Button 
+                onClick={onSaveAsDraft}
+                variant="outline"
+                className="w-full border-orange-300 text-orange-700 hover:bg-orange-100"
+              >
+                <Save className="w-4 h-4 mr-2" />
+                Save as Draft
+              </Button>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Publish */}
+        <Card className="border-green-200 bg-green-50/50">
+          <CardHeader className="pb-3">
+            <CardTitle className="text-green-900">Ready to Publish</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-2 text-sm text-green-700 mb-4">
+              <p>✓ Event details completed</p>
+              <p>✓ Unlock Protocol lock will be created</p>
+              <p>✓ NFT tickets will be available for purchase</p>
+              <p>✓ Event page will be live immediately</p>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
     </div>
   );
 };
