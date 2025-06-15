@@ -1,3 +1,4 @@
+
 import { parseEther } from 'viem';
 import { base, baseSepolia } from 'wagmi/chains';
 import { ethers } from 'ethers';
@@ -192,16 +193,22 @@ export const deployLock = async (config: LockConfig, wallet: any): Promise<Deplo
       throw new Error('Transaction failed. Please try again.');
     }
 
-    // The lock address should be in the transaction receipt logs or returned value
-    // For now, we'll extract it from logs if available
+    // The lock address is found by parsing the `NewLock` event from the transaction logs.
     let lockAddress = 'Unknown';
     
     // Look for NewLock event in logs
     if (receipt.logs && receipt.logs.length > 0) {
-      // The first log should contain the new lock address
-      const newLockLog = receipt.logs.find((log: any) => log.topics && log.topics.length > 2);
-      if (newLockLog && newLockLog.topics && newLockLog.topics[2]) {
-        lockAddress = `0x${newLockLog.topics[2].slice(-40)}`;
+      // The Unlock factory contract emits a `NewLock` event.
+      // event NewLock(address indexed newLockAddress, address indexed lockOwner);
+      // The event signature for NewLock(address,address) is 0x4462941b3546736a49592b3def1a338b5550c6630f590136d5a153835a242f27
+      const newLockEventSignature = '0x4462941b3546736a49592b3def1a338b5550c6630f590136d5a153835a242f27';
+      const newLockLog = receipt.logs.find(
+        (log: any) => log.topics && log.topics[0] === newLockEventSignature
+      );
+      
+      if (newLockLog && newLockLog.topics && newLockLog.topics[1]) {
+        // topic[1] is the newLockAddress (the first indexed parameter)
+        lockAddress = `0x${newLockLog.topics[1].slice(-40)}`;
       }
     }
 
