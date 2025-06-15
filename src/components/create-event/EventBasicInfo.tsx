@@ -24,7 +24,7 @@ export const EventBasicInfo: React.FC<EventBasicInfoProps> = ({
   updateFormData,
   onNext
 }) => {
-  const { user } = usePrivy();
+  const { user, authenticated } = usePrivy();
   const { toast } = useToast();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isUploading, setIsUploading] = useState(false);
@@ -32,9 +32,20 @@ export const EventBasicInfo: React.FC<EventBasicInfoProps> = ({
 
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
-    if (file && user?.id) {
+    
+    if (!authenticated || !user?.id) {
+      toast({
+        title: "Authentication Required",
+        description: "Please make sure you're logged in to upload images.",
+        variant: "destructive"
+      });
+      return;
+    }
+    
+    if (file) {
       setIsUploading(true);
       try {
+        console.log('Starting image upload for user:', user.id);
         const imageUrl = await uploadEventImage(file, user.id);
         if (imageUrl) {
           updateFormData({ imageUrl });

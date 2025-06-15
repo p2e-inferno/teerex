@@ -1,16 +1,16 @@
-
 import { EventDraft } from '@/types/event';
 import { EventFormData } from '@/pages/CreateEvent';
 
 const DRAFTS_KEY = 'event_drafts';
 
-export const saveDraft = (formData: EventFormData): string => {
-  const drafts = getDrafts();
+export const saveDraftLocally = (formData: EventFormData): string => {
+  const drafts = getDraftsLocally();
   const id = Date.now().toString();
   const draft: EventDraft = {
     id,
-    user_id: '', // This would need to be set properly
+    user_id: '', // This would need to be set properly for local storage
     ...formData,
+    image_url: formData.imageUrl || null,
     created_at: new Date(),
     updated_at: new Date()
   };
@@ -20,21 +20,22 @@ export const saveDraft = (formData: EventFormData): string => {
   return id;
 };
 
-export const updateDraft = (id: string, formData: EventFormData): void => {
-  const drafts = getDrafts();
-  const index = drafts.findIndex(d => d.id === id);
+export const updateDraftLocally = (id: string, formData: EventFormData): void => {
+  const drafts = getDraftsLocally();
+  const index = drafts.findIndex(draft => draft.id === id);
   
   if (index !== -1) {
     drafts[index] = {
       ...drafts[index],
       ...formData,
+      image_url: formData.imageUrl || null,
       updated_at: new Date()
     };
     localStorage.setItem(DRAFTS_KEY, JSON.stringify(drafts));
   }
 };
 
-export const getDrafts = (): EventDraft[] => {
+export const getDraftsLocally = (): EventDraft[] => {
   const stored = localStorage.getItem(DRAFTS_KEY);
   if (!stored) return [];
   
@@ -51,13 +52,13 @@ export const getDrafts = (): EventDraft[] => {
   }
 };
 
-export const getDraft = (id: string): EventDraft | null => {
-  const drafts = getDrafts();
+export const getDraftLocally = (id: string): EventDraft | null => {
+  const drafts = getDraftsLocally();
   return drafts.find(d => d.id === id) || null;
 };
 
-export const deleteDraft = (id: string): void => {
-  const drafts = getDrafts();
+export const deleteDraftLocally = (id: string): void => {
+  const drafts = getDraftsLocally();
   const filtered = drafts.filter(d => d.id !== id);
   localStorage.setItem(DRAFTS_KEY, JSON.stringify(filtered));
 };

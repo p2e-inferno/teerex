@@ -5,6 +5,14 @@ import { EventFormData } from '@/pages/CreateEvent';
 
 export const uploadEventImage = async (file: File, userId: string): Promise<string | null> => {
   try {
+    // Verify user is authenticated
+    const { data: { user }, error: authError } = await supabase.auth.getUser();
+    
+    if (authError || !user || user.id !== userId) {
+      console.error('User not authenticated or mismatch:', authError);
+      return null;
+    }
+
     const fileExt = file.name.split('.').pop();
     const fileName = `${userId}/${Date.now()}.${fileExt}`;
     
