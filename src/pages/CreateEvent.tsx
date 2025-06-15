@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { usePrivy } from '@privy-io/react-auth';
 import { Navigate, useNavigate, useSearchParams } from 'react-router-dom';
@@ -251,12 +252,20 @@ const CreateEvent = () => {
         {/* Form Card */}
         <Card className="border-0 shadow-sm bg-white mb-8">
           <div className="p-8">
-            <StepComponent 
-              formData={formData} 
-              updateFormData={updateFormData}
-              onNext={nextStep}
-              onSaveAsDraft={currentStep === 4 ? saveAsDraft : undefined}
-            />
+            {currentStep === 4 ? (
+              <StepComponent 
+                formData={formData} 
+                updateFormData={updateFormData}
+                onNext={nextStep}
+                onSaveAsDraft={saveAsDraft}
+              />
+            ) : (
+              <StepComponent 
+                formData={formData} 
+                updateFormData={updateFormData}
+                onNext={nextStep}
+              />
+            )}
           </div>
         </Card>
 
