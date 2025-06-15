@@ -1,4 +1,4 @@
-import { parseEther, createWalletClient, custom, createPublicClient, http, keccak256, toHex, encodeFunctionData, type Address } from 'viem';
+import { parseEther, createWalletClient, custom, createPublicClient, http, encodeFunctionData, type Address } from 'viem';
 import { base, baseSepolia } from 'wagmi/chains';
 
 interface LockConfig {
@@ -142,7 +142,7 @@ export const deployLock = async (config: LockConfig, wallet: any): Promise<Deplo
 
     console.log(`Simulating lock creation for "${config.name}" with version ${lockVersion}`);
 
-    const { request } = await publicClient.simulateContract({
+    const { result: newLockAddress, request } = await publicClient.simulateContract({
         address: factoryAddress,
         abi: unlockFactoryAbi,
         functionName: 'createUpgradeableLockAtVersion',
@@ -166,34 +166,19 @@ export const deployLock = async (config: LockConfig, wallet: any): Promise<Deplo
       throw new Error('Transaction failed on-chain. Please check the transaction on the block explorer.');
     }
     
-    let lockAddress = 'Unknown';
-    // NewLock event signature: event NewLock(address indexed lockOwner, address indexed newLockAddress);
-    const newLockEventTopic = '0x01017ed19df0c7f8acc436147b234b09664a9fb4797b4fa3fb9e599c2eb67be7';
-    const newLockLog = receipt.logs.find(log => log.topics[0] === newLockEventTopic && log.address.toLowerCase() === factoryAddress.toLowerCase());
-    
-    if (newLockLog && newLockLog.topics[2]) {
-      lockAddress = `0x${newLockLog.topics[2].slice(26)}`;
-    } else {
-        // Fallback: search for a NewLock event from any address if not found from factory
-        const anyNewLockLog = receipt.logs.find(log => log.topics[0] === newLockEventTopic);
-        if (anyNewLockLog && anyNewLockLog.topics[2]) {
-          console.warn("Found NewLock event from an unexpected address:", anyNewLockLog.address);
-          lockAddress = `0x${anyNewLockLog.topics[2].slice(26)}`;
-        } else {
-          console.error("Could not determine lock address from transaction logs.", receipt.logs);
-          throw new Error('Could not determine lock address from transaction logs.');
-        }
+    if (!newLockAddress) {
+      throw new Error('Could not determine lock address from transaction simulation.');
     }
 
     console.log('Lock deployed successfully:', {
       transactionHash: txResponse,
-      lockAddress: lockAddress
+      lockAddress: newLockAddress
     });
 
     return {
       success: true,
       transactionHash: txResponse,
-      lockAddress: lockAddress
+      lockAddress: newLockAddress
     };
   } catch (error) {
     console.error('Error deploying lock:', error);
