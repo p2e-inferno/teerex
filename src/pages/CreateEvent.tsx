@@ -4,6 +4,7 @@ import { useNavigate, useSearchParams, Navigate } from 'react-router-dom';
 import { EventBasicInfo } from '@/components/create-event/EventBasicInfo';
 import { EventDetails } from '@/components/create-event/EventDetails';
 import { TicketSettings } from '@/components/create-event/TicketSettings';
+import { TicketSettingsDisplay } from '@/components/create-event/TicketSettingsDisplay';
 import { EventPreview } from '@/components/create-event/EventPreview';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -317,11 +318,7 @@ const CreateEvent = () => {
         return <EventDetails {...commonProps} />;
       case 3:
         if (editingEventId) {
-          return (
-            <fieldset disabled>
-              <TicketSettings {...commonProps} />
-            </fieldset>
-          );
+          return <TicketSettingsDisplay formData={formData} />;
         }
         return <TicketSettings {...commonProps} />;
       case 4:

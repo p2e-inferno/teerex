@@ -222,6 +222,12 @@ export const updatePublishedEvent = async (id: string, formData: EventFormData, 
       throw new Error('User ID is required to update event');
     }
 
+    // Defensive check to prevent saving temporary blob URLs
+    if (formData.imageUrl && formData.imageUrl.startsWith('blob:')) {
+      console.error('Attempted to save a blob URL to the database:', formData.imageUrl);
+      throw new Error('Image is still uploading. Please wait a moment and try again.');
+    }
+
     const eventData = {
       title: formData.title,
       description: formData.description,
