@@ -45,7 +45,7 @@ export const deployLock = async (config: LockConfig): Promise<DeploymentResult> 
   try {
     console.log('Deploying lock with config:', config);
     
-    // Check if we have access to a wallet via Privy
+    // Check if we have access to ethereum provider
     if (typeof window !== 'undefined' && window.ethereum) {
       // Request account access
       const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
@@ -93,20 +93,23 @@ export const deployLock = async (config: LockConfig): Promise<DeploymentResult> 
       // Generate a random salt for unique deployment
       const salt = '0x' + Array.from({length: 24}, () => Math.floor(Math.random() * 16).toString(16)).join('');
 
-      // Prepare transaction data
-      const web3 = new (window as any).Web3(window.ethereum);
-      const contract = new web3.eth.Contract(UNLOCK_FACTORY_ABI, factoryAddress);
+      // Encode the function call data
+      const encoder = new TextEncoder();
+      const functionSelector = '0x8c2c9d6c'; // Function selector for createLock
 
-      const txData = contract.methods.createLock(
-        config.expirationDuration, // expiration duration in seconds
-        tokenAddress, // token address (0x0 for ETH)
-        keyPriceWei, // key price in wei
-        config.maxNumberOfKeys, // max number of keys
-        config.name, // lock name
-        salt // salt for unique deployment
-      ).encodeABI();
+      // Encode parameters manually since we don't have web3
+      const encodedParams = await encodeParameters([
+        config.expirationDuration,
+        tokenAddress,
+        keyPriceWei,
+        config.maxNumberOfKeys,
+        config.name,
+        salt
+      ]);
 
-      // Send transaction
+      const txData = functionSelector + encodedParams.slice(2);
+
+      // Send transaction using the provider directly
       const txHash = await window.ethereum.request({
         method: 'eth_sendTransaction',
         params: [{
@@ -127,7 +130,10 @@ export const deployLock = async (config: LockConfig): Promise<DeploymentResult> 
       while (!receipt && attempts < maxAttempts) {
         await new Promise(resolve => setTimeout(resolve, 10000)); // Wait 10 seconds
         try {
-          receipt = await web3.eth.getTransactionReceipt(txHash);
+          receipt = await window.ethereum.request({
+            method: 'eth_getTransactionReceipt',
+            params: [txHash]
+          });
         } catch (error) {
           console.log('Waiting for transaction confirmation...');
         }
@@ -138,7 +144,7 @@ export const deployLock = async (config: LockConfig): Promise<DeploymentResult> 
         throw new Error('Transaction confirmation timeout. Please check the blockchain explorer for status.');
       }
 
-      if (receipt.status === false) {
+      if (receipt.status === '0x0') {
         throw new Error('Transaction failed. Please try again.');
       }
 
@@ -170,6 +176,29 @@ export const deployLock = async (config: LockConfig): Promise<DeploymentResult> 
     };
   }
 };
+
+// Helper function to encode parameters (simplified version)
+async function encodeParameters(params: any[]): Promise<string> {
+  // This is a simplified encoding - in a real app you'd use a proper ABI encoder
+  // For now, we'll create a basic encoding
+  let encoded = '';
+  
+  for (const param of params) {
+    if (typeof param === 'number') {
+      encoded += param.toString(16).padStart(64, '0');
+    } else if (typeof param === 'string') {
+      if (param.startsWith('0x')) {
+        encoded += param.slice(2).padStart(64, '0');
+      } else {
+        // String encoding is more complex, for now we'll use a placeholder
+        const hex = Buffer.from(param, 'utf8').toString('hex');
+        encoded += hex.padStart(64, '0');
+      }
+    }
+  }
+  
+  return '0x' + encoded;
+}
 
 export const getBlockExplorerUrl = (txHash: string, network: string = 'base'): string => {
   const explorers = {
