@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { usePrivy, useWallets } from '@privy-io/react-auth';
 import { useNavigate, useSearchParams, Navigate } from 'react-router-dom';
@@ -12,7 +13,8 @@ import { ChevronLeft, ChevronRight, ExternalLink } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { deployLock, getBlockExplorerUrl } from '@/utils/lockUtils';
 import { savePublishedEvent } from '@/utils/eventUtils';
-import { saveDraft, updateDraft, getDraft, deleteDraft, getPublishedEvent, updatePublishedEvent } from '@/utils/supabaseDraftStorage';
+import { saveDraft, updateDraft, getDraft, deleteDraft, getPublishedEvent } from '@/utils/supabaseDraftStorage';
+import { supabase } from '@/integrations/supabase/client';
 
 export interface EventFormData {
   title: string;
@@ -284,7 +286,20 @@ const CreateEvent = () => {
     setIsCreating(true);
 
     try {
-      await updatePublishedEvent(editingEventId, formData, user.id);
+      const { data, error } = await supabase.functions.invoke('update-event', {
+        body: { eventId: editingEventId, formData },
+      });
+
+      if (error) {
+        // Network or function invocation error
+        throw new Error(error.message);
+      }
+      
+      // Check for application-level errors returned from the function
+      if (data.error) {
+        throw new Error(data.error);
+      }
+
       toast({
         title: "Event Updated",
         description: "Your event details have been updated successfully.",
@@ -294,7 +309,7 @@ const CreateEvent = () => {
       console.error('Error updating event:', error);
       toast({
         title: "Error Updating Event",
-        description: "There was an error updating your event. Please try again.",
+        description: error instanceof Error ? error.message : "There was an error. Please try again.",
         variant: "destructive"
       });
     } finally {

@@ -1,4 +1,3 @@
-
 import { supabase } from '@/integrations/supabase/client';
 import { EventDraft, PublishedEvent } from '@/types/event';
 import { EventFormData } from '@/pages/CreateEvent';
@@ -220,101 +219,6 @@ export const getPublishedEvent = async (id: string, userId: string): Promise<Pub
     return null;
   }
 };
-
-export const updatePublishedEvent = async (id: string, formData: EventFormData, userId: string): Promise<void> => {
-  try {
-    if (!userId) {
-      throw new Error('User ID is required to update event');
-    }
-
-    // Defensive check to prevent saving temporary blob URLs
-    if (formData.imageUrl && formData.imageUrl.startsWith('blob:')) {
-      console.error('Attempted to save a blob URL to the database:', formData.imageUrl);
-      throw new Error('Image is still uploading. Please wait a moment and try again.');
-    }
-
-    const eventData = {
-      title: formData.title,
-      description: formData.description,
-      date: formData.date?.toISOString(),
-      time: formData.time,
-      location: formData.location,
-      category: formData.category,
-      image_url: formData.imageUrl || null,
-      updated_at: new Date().toISOString(),
-    };
-
-    console.log('Attempting to update event in Supabase with this data:', eventData);
-    console.log('Update conditions - id:', id, 'creator_id:', userId);
-
-    // First, let's check if the event exists
-    const { data: existingEvent, error: fetchError } = await supabase
-      .from('events')
-      .select('id, creator_id, image_url')
-      .eq('id', id)
-      .eq('creator_id', userId)
-      .single();
-
-    if (fetchError) {
-      console.error('Error fetching existing event for update:', fetchError);
-      throw new Error('Event not found or access denied');
-    }
-
-    console.log('Existing event found:', existingEvent);
-
-    // Since RLS might be blocking updates with Privy auth, let's try a service role approach
-    // For now, we'll use the regular client but ensure we're checking ownership manually
-    if (existingEvent.creator_id !== userId) {
-      throw new Error('You can only update your own events');
-    }
-
-    // Now perform the update using a more direct approach
-    const { data, error } = await supabase
-      .from('events')
-      .update(eventData)
-      .eq('id', id)
-      .select('*');
-
-    if (error) {
-      console.error('Error updating published event:', error);
-      
-      // If it's an RLS error, provide more specific guidance
-      if (error.message.includes('row-level security') || error.message.includes('policy')) {
-        throw new Error('Permission denied: Unable to update event due to security policies. Please ensure you are the creator of this event.');
-      }
-      
-      throw error;
-    }
-
-    console.log('Successfully updated event. Result from Supabase:', data);
-
-    if (!data || data.length === 0) {
-      // This is likely an RLS issue with Privy authentication
-      console.error('No rows were updated. This is likely due to RLS policy issues with Privy authentication.');
-      
-      // Let's try a workaround - check if we can read the event after update attempt
-      const { data: verifyData, error: verifyError } = await supabase
-        .from('events')
-        .select('*')
-        .eq('id', id)
-        .single();
-        
-      if (verifyError) {
-        console.error('Verification failed:', verifyError);
-        throw new Error('Update failed and verification failed. Please contact support.');
-      }
-      
-      // If we can read it but couldn't update, it's definitely an RLS issue
-      console.log('Event exists but update was blocked by RLS:', verifyData);
-      throw new Error('Update blocked by security policies. The event data might have been updated partially. Please refresh and try again.');
-    }
-
-    console.log('Event updated successfully. New image_url:', data[0]?.image_url);
-  } catch (error) {
-    console.error('Error updating published event:', error);
-    throw error;
-  }
-}
 
 export const deleteDraft = async (id: string, userId: string): Promise<void> => {
   try {
