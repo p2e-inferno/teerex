@@ -1,14 +1,17 @@
 
-import React, { useRef } from 'react';
+import React, { useRef, useState } from 'react';
+import { usePrivy } from '@privy-io/react-auth';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Calendar } from '@/components/ui/calendar';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Button } from '@/components/ui/button';
-import { CalendarIcon, Upload, X } from 'lucide-react';
+import { CalendarIcon, Upload, X, Loader2 } from 'lucide-react';
 import { format } from 'date-fns';
 import { EventFormData } from '@/pages/CreateEvent';
+import { uploadEventImage } from '@/utils/supabaseDraftStorage';
+import { useToast } from '@/hooks/use-toast';
 
 interface EventBasicInfoProps {
   formData: EventFormData;
@@ -21,14 +24,41 @@ export const EventBasicInfo: React.FC<EventBasicInfoProps> = ({
   updateFormData,
   onNext
 }) => {
+  const { user } = usePrivy();
+  const { toast } = useToast();
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [isUploading, setIsUploading] = useState(false);
   const isValid = formData.title.trim() && formData.description.trim() && formData.date;
 
-  const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
-    if (file) {
-      const imageUrl = URL.createObjectURL(file);
-      updateFormData({ imageUrl });
+    if (file && user?.id) {
+      setIsUploading(true);
+      try {
+        const imageUrl = await uploadEventImage(file, user.id);
+        if (imageUrl) {
+          updateFormData({ imageUrl });
+          toast({
+            title: "Image Uploaded",
+            description: "Your event image has been uploaded successfully.",
+          });
+        } else {
+          toast({
+            title: "Upload Failed",
+            description: "There was an error uploading your image. Please try again.",
+            variant: "destructive"
+          });
+        }
+      } catch (error) {
+        console.error('Error uploading image:', error);
+        toast({
+          title: "Upload Error",
+          description: "There was an error uploading your image. Please try again.",
+          variant: "destructive"
+        });
+      } finally {
+        setIsUploading(false);
+      }
     }
   };
 
@@ -71,6 +101,7 @@ export const EventBasicInfo: React.FC<EventBasicInfoProps> = ({
               size="sm"
               onClick={removeImage}
               className="absolute top-2 right-2 bg-white hover:bg-gray-100"
+              disabled={isUploading}
             >
               <X className="w-4 h-4" />
             </Button>
@@ -80,11 +111,20 @@ export const EventBasicInfo: React.FC<EventBasicInfoProps> = ({
             className="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center hover:border-gray-400 transition-colors cursor-pointer"
             onClick={triggerFileInput}
           >
-            <Upload className="w-8 h-8 text-gray-400 mx-auto mb-4" />
-            <p className="text-gray-600 mb-2">Upload an image for your event</p>
-            <Button variant="outline" size="sm" type="button">
-              Choose File
-            </Button>
+            {isUploading ? (
+              <>
+                <Loader2 className="w-8 h-8 text-gray-400 mx-auto mb-4 animate-spin" />
+                <p className="text-gray-600 mb-2">Uploading image...</p>
+              </>
+            ) : (
+              <>
+                <Upload className="w-8 h-8 text-gray-400 mx-auto mb-4" />
+                <p className="text-gray-600 mb-2">Upload an image for your event</p>
+                <Button variant="outline" size="sm" type="button" disabled={isUploading}>
+                  Choose File
+                </Button>
+              </>
+            )}
           </div>
         )}
         <input
@@ -93,6 +133,7 @@ export const EventBasicInfo: React.FC<EventBasicInfoProps> = ({
           accept="image/*"
           onChange={handleFileUpload}
           className="hidden"
+          disabled={isUploading}
         />
       </div>
 
@@ -181,7 +222,7 @@ export const EventBasicInfo: React.FC<EventBasicInfoProps> = ({
       <div className="flex justify-end pt-4">
         <Button
           onClick={handleContinue}
-          disabled={!isValid}
+          disabled={!isValid || isUploading}
           className="bg-purple-600 hover:bg-purple-700 text-white"
         >
           Continue

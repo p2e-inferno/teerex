@@ -6,7 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Plus, FileText } from 'lucide-react';
 import { EventDraft } from '@/types/event';
-import { getDrafts, deleteDraft } from '@/utils/draftStorage';
+import { getDrafts, deleteDraft } from '@/utils/supabaseDraftStorage';
 import { DraftCard } from '@/components/create-event/DraftCard';
 import { useToast } from '@/hooks/use-toast';
 import { deployLock, getBlockExplorerUrl } from '@/utils/lockUtils';
@@ -17,26 +17,53 @@ const Drafts = () => {
   const { toast } = useToast();
   const [drafts, setDrafts] = useState<EventDraft[]>([]);
   const [isPublishing, setIsPublishing] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
 
   if (!authenticated) {
     return <Navigate to="/" replace />;
   }
 
   useEffect(() => {
-    setDrafts(getDrafts());
-  }, []);
+    const loadDrafts = async () => {
+      try {
+        const fetchedDrafts = await getDrafts();
+        setDrafts(fetchedDrafts);
+      } catch (error) {
+        console.error('Error loading drafts:', error);
+        toast({
+          title: "Error Loading Drafts",
+          description: "There was an error loading your drafts.",
+          variant: "destructive"
+        });
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    loadDrafts();
+  }, [toast]);
 
   const handleEdit = (draft: EventDraft) => {
     navigate(`/create?draft=${draft.id}`);
   };
 
-  const handleDelete = (id: string) => {
-    deleteDraft(id);
-    setDrafts(getDrafts());
-    toast({
-      title: "Draft Deleted",
-      description: "Your event draft has been deleted.",
-    });
+  const handleDelete = async (id: string) => {
+    try {
+      await deleteDraft(id);
+      const updatedDrafts = await getDrafts();
+      setDrafts(updatedDrafts);
+      toast({
+        title: "Draft Deleted",
+        description: "Your event draft has been deleted.",
+      });
+    } catch (error) {
+      console.error('Error deleting draft:', error);
+      toast({
+        title: "Error Deleting Draft",
+        description: "There was an error deleting your draft.",
+        variant: "destructive"
+      });
+    }
   };
 
   const handlePublish = async (draft: EventDraft) => {
@@ -75,8 +102,9 @@ const Drafts = () => {
         });
         
         // Remove from drafts after successful publish
-        deleteDraft(draft.id);
-        setDrafts(getDrafts());
+        await deleteDraft(draft.id);
+        const updatedDrafts = await getDrafts();
+        setDrafts(updatedDrafts);
         
         // Navigate to explore page
         navigate('/explore');
@@ -98,6 +126,19 @@ const Drafts = () => {
       setIsPublishing(null);
     }
   };
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-gray-50 py-8">
+        <div className="container mx-auto px-6 max-w-6xl">
+          <div className="mb-8">
+            <h1 className="text-3xl font-bold text-gray-900 mb-2">Event Drafts</h1>
+            <p className="text-gray-600">Loading your drafts...</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gray-50 py-8">
@@ -146,6 +187,7 @@ const Drafts = () => {
                 onEdit={handleEdit}
                 onDelete={handleDelete}
                 onPublish={handlePublish}
+                isPublishing={isPublishing === draft.id}
               />
             ))}
           </div>

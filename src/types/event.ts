@@ -1,6 +1,7 @@
 
 export interface EventDraft {
   id: string;
+  user_id: string;
   title: string;
   description: string;
   date: Date | null;
@@ -10,9 +11,9 @@ export interface EventDraft {
   price: number;
   currency: 'ETH' | 'USDC' | 'FREE';
   category: string;
-  imageUrl: string;
-  createdAt: Date;
-  updatedAt: Date;
+  image_url: string | null;
+  created_at: Date;
+  updated_at: Date;
 }
 
 export interface PublishedEvent extends EventDraft {

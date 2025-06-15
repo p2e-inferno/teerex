@@ -10,7 +10,7 @@ import { Card } from '@/components/ui/card';
 import { ChevronLeft, ChevronRight, ExternalLink } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { deployLock, getBlockExplorerUrl } from '@/utils/lockUtils';
-import { saveDraft, updateDraft, getDraft } from '@/utils/draftStorage';
+import { saveDraft, updateDraft, getDraft, deleteDraft } from '@/utils/supabaseDraftStorage';
 
 export interface EventFormData {
   title: string;
@@ -54,22 +54,25 @@ const CreateEvent = () => {
 
   useEffect(() => {
     if (draftId) {
-      const draft = getDraft(draftId);
-      if (draft) {
-        setFormData({
-          title: draft.title,
-          description: draft.description,
-          date: draft.date,
-          time: draft.time,
-          location: draft.location,
-          capacity: draft.capacity,
-          price: draft.price,
-          currency: draft.currency,
-          category: draft.category,
-          imageUrl: draft.imageUrl
-        });
-        setCurrentDraftId(draftId);
-      }
+      const loadDraft = async () => {
+        const draft = await getDraft(draftId);
+        if (draft) {
+          setFormData({
+            title: draft.title,
+            description: draft.description,
+            date: draft.date,
+            time: draft.time,
+            location: draft.location,
+            capacity: draft.capacity,
+            price: draft.price,
+            currency: draft.currency,
+            category: draft.category,
+            imageUrl: draft.image_url || ''
+          });
+          setCurrentDraftId(draftId);
+        }
+      };
+      loadDraft();
     }
   }, [draftId]);
 
@@ -115,21 +118,25 @@ const CreateEvent = () => {
     }
   };
 
-  const saveAsDraft = () => {
+  const saveAsDraft = async () => {
     try {
       if (currentDraftId) {
-        updateDraft(currentDraftId, formData);
+        await updateDraft(currentDraftId, formData);
         toast({
           title: "Draft Updated",
           description: "Your event draft has been updated successfully.",
         });
       } else {
-        const newDraftId = saveDraft(formData);
-        setCurrentDraftId(newDraftId);
-        toast({
-          title: "Draft Saved",
-          description: "Your event has been saved as a draft.",
-        });
+        const newDraftId = await saveDraft(formData);
+        if (newDraftId) {
+          setCurrentDraftId(newDraftId);
+          toast({
+            title: "Draft Saved",
+            description: "Your event has been saved as a draft.",
+          });
+        } else {
+          throw new Error('Failed to save draft');
+        }
       }
       navigate('/drafts');
     } catch (error) {
@@ -181,8 +188,7 @@ const CreateEvent = () => {
 
         // Remove from drafts if it was a draft
         if (currentDraftId) {
-          // Note: We'd need to import deleteDraft here, but keeping it simple for now
-          // The draft will remain but user can delete it manually from drafts page
+          await deleteDraft(currentDraftId);
         }
       } else {
         toast({

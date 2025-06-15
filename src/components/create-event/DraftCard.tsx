@@ -3,7 +3,7 @@ import React from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Calendar, Clock, MapPin, Edit, Trash2, Upload } from 'lucide-react';
+import { Calendar, Clock, MapPin, Edit, Trash2, Upload, Loader2 } from 'lucide-react';
 import { format } from 'date-fns';
 import { EventDraft } from '@/types/event';
 
@@ -12,20 +12,22 @@ interface DraftCardProps {
   onEdit: (draft: EventDraft) => void;
   onDelete: (id: string) => void;
   onPublish: (draft: EventDraft) => void;
+  isPublishing?: boolean;
 }
 
 export const DraftCard: React.FC<DraftCardProps> = ({
   draft,
   onEdit,
   onDelete,
-  onPublish
+  onPublish,
+  isPublishing = false
 }) => {
   return (
     <Card className="border-0 shadow-sm">
       <div className="aspect-[2/1] relative">
-        {draft.imageUrl ? (
+        {draft.image_url ? (
           <img 
-            src={draft.imageUrl} 
+            src={draft.image_url} 
             alt={draft.title} 
             className="w-full h-full object-cover rounded-t-lg"
           />
@@ -72,6 +74,7 @@ export const DraftCard: React.FC<DraftCardProps> = ({
             size="sm"
             onClick={() => onEdit(draft)}
             className="flex-1"
+            disabled={isPublishing}
           >
             <Edit className="w-4 h-4 mr-1" />
             Edit
@@ -81,6 +84,7 @@ export const DraftCard: React.FC<DraftCardProps> = ({
             size="sm"
             onClick={() => onDelete(draft.id)}
             className="text-red-600 hover:text-red-700 hover:bg-red-50"
+            disabled={isPublishing}
           >
             <Trash2 className="w-4 h-4" />
           </Button>
@@ -88,9 +92,14 @@ export const DraftCard: React.FC<DraftCardProps> = ({
             size="sm"
             onClick={() => onPublish(draft)}
             className="bg-purple-600 hover:bg-purple-700 text-white"
+            disabled={isPublishing}
           >
-            <Upload className="w-4 h-4 mr-1" />
-            Publish
+            {isPublishing ? (
+              <Loader2 className="w-4 h-4 mr-1 animate-spin" />
+            ) : (
+              <Upload className="w-4 h-4 mr-1" />
+            )}
+            {isPublishing ? 'Publishing...' : 'Publish'}
           </Button>
         </div>
       </CardContent>
