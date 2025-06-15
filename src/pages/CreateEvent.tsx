@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { usePrivy, useWallets } from '@privy-io/react-auth';
 import { useNavigate, useSearchParams, Navigate } from 'react-router-dom';
@@ -198,11 +199,13 @@ const CreateEvent = () => {
     setIsCreating(true);
     
     try {
-      // Get the connected wallet
-      const wallet = wallets.find(w => w.walletClientType === 'privy');
+      // Get any connected wallet - Privy provides embedded wallets
+      const wallet = wallets[0]; // Get the first available wallet
       if (!wallet) {
         throw new Error('Please connect a wallet to create your event.');
       }
+
+      console.log('Using wallet:', wallet);
 
       toast({
         title: "Deploying Smart Contract",

@@ -51,7 +51,7 @@ export const saveDraft = async (formData: EventFormData, userId: string): Promis
     }
 
     const draftData = {
-      user_id: userId,
+      user_id: userId, // This will now be a Privy DID string
       title: formData.title,
       description: formData.description,
       date: formData.date?.toISOString(),
