@@ -94,6 +94,13 @@ const PublicLockABI = [
     "outputs": [{ "internalType": "bool", "name": "isValid", "type": "bool" }],
     "stateMutability": "view",
     "type": "function"
+  },
+  {
+    "inputs": [{ "internalType": "address", "name": "_account", "type": "address" }],
+    "name": "isLockManager",
+    "outputs": [{ "internalType": "bool", "name": "", "type": "bool" }],
+    "stateMutability": "view",
+    "type": "function"
   }
 ];
 
