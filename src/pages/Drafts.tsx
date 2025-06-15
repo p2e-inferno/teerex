@@ -1,11 +1,13 @@
+
 import React, { useState, useEffect } from 'react';
 import { usePrivy, useWallets } from '@privy-io/react-auth';
 import { useNavigate, Navigate } from 'react-router-dom';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Plus, FileText } from 'lucide-react';
+import { Plus, FileText, ExternalLink } from 'lucide-react';
 import { EventDraft } from '@/types/event';
 import { getDrafts, deleteDraft } from '@/utils/supabaseDraftStorage';
+import { savePublishedEvent } from '@/utils/eventUtils';
 import { DraftCard } from '@/components/create-event/DraftCard';
 import { useToast } from '@/hooks/use-toast';
 import { deployLock, getBlockExplorerUrl } from '@/utils/lockUtils';
@@ -74,10 +76,13 @@ const Drafts = () => {
     setIsPublishing(draft.id);
     
     try {
-      // Get the first available wallet - Privy provides embedded wallets
-      const wallet = wallets[0]; // Get the first available wallet
+      const wallet = wallets[0];
       if (!wallet) {
         throw new Error('Please connect a wallet to publish your event.');
+      }
+
+      if (!user?.id) {
+        throw new Error('User not authenticated');
       }
 
       console.log('Using wallet for publishing:', wallet);
@@ -94,7 +99,24 @@ const Drafts = () => {
 
       const deploymentResult = await deployLock(lockConfig, wallet);
       
-      if (deploymentResult.success && deploymentResult.transactionHash) {
+      if (deploymentResult.success && deploymentResult.transactionHash && deploymentResult.lockAddress) {
+        // Convert draft to EventFormData format
+        const formData = {
+          title: draft.title,
+          description: draft.description,
+          date: draft.date,
+          time: draft.time,
+          location: draft.location,
+          capacity: draft.capacity,
+          price: draft.price,
+          currency: draft.currency,
+          category: draft.category,
+          imageUrl: draft.image_url || ''
+        };
+
+        // Save to published events
+        await savePublishedEvent(formData, deploymentResult.lockAddress, deploymentResult.transactionHash, user.id);
+
         const explorerUrl = getBlockExplorerUrl(deploymentResult.transactionHash, 'baseSepolia');
         
         toast({
@@ -102,39 +124,49 @@ const Drafts = () => {
           description: (
             <div className="space-y-2">
               <p>Your event has been published and the lock has been deployed.</p>
+              <div className="text-sm text-gray-600">
+                <p>Lock Address: {deploymentResult.lockAddress}</p>
+              </div>
               <a 
                 href={explorerUrl} 
                 target="_blank" 
                 rel="noopener noreferrer"
                 className="inline-flex items-center gap-1 text-blue-600 hover:text-blue-800 underline"
               >
-                View Transaction
+                View Transaction <ExternalLink className="w-3 h-3" />
               </a>
             </div>
           ),
         });
         
         // Remove from drafts after successful publish
-        if (user?.id) {
-          await deleteDraft(draft.id, user.id);
-          const updatedDrafts = await getDrafts(user.id);
-          setDrafts(updatedDrafts);
-        }
+        await deleteDraft(draft.id, user.id);
+        const updatedDrafts = await getDrafts(user.id);
+        setDrafts(updatedDrafts);
         
-        // Navigate to explore page
-        navigate('/explore');
+        // Navigate to my events page
+        navigate('/my-events');
       } else {
-        toast({
-          title: deploymentResult.error ? "Deployment Warning" : "Event Published!",
-          description: deploymentResult.error || "Your event has been published successfully.",
-          variant: deploymentResult.error ? "destructive" : "default"
-        });
+        throw new Error(deploymentResult.error || 'Failed to deploy smart contract');
       }
     } catch (error) {
       console.error('Error publishing event:', error);
+      
+      let errorMessage = 'There was an error publishing your event. Please try again.';
+      
+      if (error instanceof Error) {
+        if (error.message.includes('User rejected')) {
+          errorMessage = 'Transaction was cancelled. Please try again when ready.';
+        } else if (error.message.includes('insufficient funds')) {
+          errorMessage = 'Insufficient funds to deploy the smart contract. Please add more ETH to your wallet.';
+        } else {
+          errorMessage = error.message;
+        }
+      }
+
       toast({
         title: "Error Publishing Event",
-        description: "There was an error publishing your event. Please try again.",
+        description: errorMessage,
         variant: "destructive"
       });
     } finally {

@@ -60,6 +60,63 @@ export type Database = {
         }
         Relationships: []
       }
+      events: {
+        Row: {
+          capacity: number
+          category: string
+          created_at: string
+          creator_id: string
+          currency: string
+          date: string | null
+          description: string
+          id: string
+          image_url: string | null
+          location: string
+          lock_address: string
+          price: number
+          time: string
+          title: string
+          transaction_hash: string
+          updated_at: string
+        }
+        Insert: {
+          capacity: number
+          category: string
+          created_at?: string
+          creator_id: string
+          currency?: string
+          date?: string | null
+          description: string
+          id?: string
+          image_url?: string | null
+          location: string
+          lock_address: string
+          price?: number
+          time: string
+          title: string
+          transaction_hash: string
+          updated_at?: string
+        }
+        Update: {
+          capacity?: number
+          category?: string
+          created_at?: string
+          creator_id?: string
+          currency?: string
+          date?: string | null
+          description?: string
+          id?: string
+          image_url?: string | null
+          location?: string
+          lock_address?: string
+          price?: number
+          time?: string
+          title?: string
+          transaction_hash?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never

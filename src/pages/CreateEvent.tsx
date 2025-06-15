@@ -10,8 +10,8 @@ import { Card } from '@/components/ui/card';
 import { ChevronLeft, ChevronRight, ExternalLink } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { deployLock, getBlockExplorerUrl } from '@/utils/lockUtils';
+import { savePublishedEvent } from '@/utils/eventUtils';
 import { saveDraft, updateDraft, getDraft, deleteDraft } from '@/utils/supabaseDraftStorage';
-import { supabase } from '@/integrations/supabase/client';
 
 export interface EventFormData {
   title: string;
@@ -112,9 +112,9 @@ const CreateEvent = () => {
       case 2:
         return !!(formData.category && formData.capacity > 0);
       case 3:
-        return true; // Ticket settings are optional
+        return true;
       case 4:
-        return true; // Preview step is always valid
+        return true;
       default:
         return false;
     }
@@ -155,53 +155,18 @@ const CreateEvent = () => {
     }
   };
 
-  const saveEventToSupabase = async (lockAddress: string, transactionHash: string) => {
-    try {
-      if (!user) {
-        throw new Error('User not authenticated');
-      }
-
-      const eventData = {
-        title: formData.title,
-        description: formData.description,
-        date: formData.date?.toISOString(),
-        time: formData.time,
-        location: formData.location,
-        capacity: formData.capacity,
-        price: formData.price,
-        currency: formData.currency,
-        category: formData.category,
-        image_url: formData.imageUrl || null,
-        lock_address: lockAddress,
-        transaction_hash: transactionHash,
-        creator_id: user.id,
-        created_at: new Date().toISOString()
-      };
-
-      // Note: We would need to create an 'events' table in Supabase to store published events
-      // For now, we'll just log the data
-      console.log('Event data to save:', eventData);
-      
-      // TODO: Save to Supabase events table once it's created
-      // const { error } = await supabase.from('events').insert(eventData);
-      // if (error) throw error;
-
-      return true;
-    } catch (error) {
-      console.error('Error saving event to Supabase:', error);
-      throw error;
-    }
-  };
-
   const createEvent = async () => {
     console.log('Creating event with data:', formData);
     setIsCreating(true);
     
     try {
-      // Get any connected wallet - Privy provides embedded wallets
-      const wallet = wallets[0]; // Get the first available wallet
+      const wallet = wallets[0];
       if (!wallet) {
         throw new Error('Please connect a wallet to create your event.');
+      }
+
+      if (!user?.id) {
+        throw new Error('User not authenticated');
       }
 
       console.log('Using wallet:', wallet);
@@ -211,13 +176,12 @@ const CreateEvent = () => {
         description: "Please confirm the transaction in your wallet...",
       });
 
-      // Deploy the Unlock Protocol lock
       const lockConfig = {
         name: formData.title,
         symbol: `${formData.title.slice(0, 3).toUpperCase()}TIX`,
         keyPrice: formData.currency === 'FREE' ? '0' : formData.price.toString(),
         maxNumberOfKeys: formData.capacity,
-        expirationDuration: 86400, // 24 hours in seconds
+        expirationDuration: 86400,
         currency: formData.currency,
         price: formData.price
       };
@@ -226,7 +190,7 @@ const CreateEvent = () => {
       
       if (deploymentResult.success && deploymentResult.transactionHash && deploymentResult.lockAddress) {
         // Save event to Supabase
-        await saveEventToSupabase(deploymentResult.lockAddress, deploymentResult.transactionHash);
+        await savePublishedEvent(formData, deploymentResult.lockAddress, deploymentResult.transactionHash, user.id);
 
         const explorerUrl = getBlockExplorerUrl(deploymentResult.transactionHash, 'baseSepolia');
         
@@ -250,7 +214,6 @@ const CreateEvent = () => {
           ),
         });
 
-        // Remove from drafts if it was a draft
         if (currentDraftId && user?.id) {
           await deleteDraft(currentDraftId, user.id);
         }
@@ -258,8 +221,7 @@ const CreateEvent = () => {
         throw new Error(deploymentResult.error || 'Failed to deploy smart contract');
       }
       
-      // Navigate to the explore page
-      navigate('/explore');
+      navigate('/my-events');
     } catch (error) {
       console.error('Error creating event:', error);
       

@@ -8,6 +8,7 @@ import { Layout } from "@/components/layout/Layout";
 import Index from "./pages/Index";
 import Explore from "./pages/Explore";
 import CreateEvent from "./pages/CreateEvent";
+import MyEvents from "./pages/MyEvents";
 import Drafts from "./pages/Drafts";
 import NotFound from "./pages/NotFound";
 
@@ -23,6 +24,7 @@ const App = () => {
               <Route path="/" element={<Index />} />
               <Route path="/explore" element={<Explore />} />
               <Route path="/create" element={<CreateEvent />} />
+              <Route path="/my-events" element={<MyEvents />} />
               <Route path="/drafts" element={<Drafts />} />
               {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
               <Route path="*" element={<NotFound />} />
