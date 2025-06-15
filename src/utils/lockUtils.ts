@@ -69,8 +69,13 @@ export const deployLock = async (config: LockConfig, wallet: any): Promise<Deplo
       throw new Error('No wallet provided. Please connect your wallet first.');
     }
 
-    // Get the current chain ID
-    const chainId = await wallet.getChainId();
+    // Get the current chain ID from Privy wallet
+    // Privy wallet chainId format is "eip155:8453" so we need to extract the numeric part
+    const chainIdString = wallet.chainId;
+    const chainId = parseInt(chainIdString.split(':')[1]);
+    
+    console.log('Detected chain ID:', chainId);
+    
     let factoryAddress: string;
     
     if (chainId === base.id) {
@@ -115,19 +120,48 @@ export const deployLock = async (config: LockConfig, wallet: any): Promise<Deplo
 
     console.log('Encoded transaction data:', data);
 
-    // Send transaction using Privy wallet
-    const txResponse = await wallet.sendTransaction({
-      to: factoryAddress,
-      data: data,
-      value: '0'
+    // Get the Ethereum provider from Privy wallet
+    const provider = await wallet.getEthereumProvider();
+    
+    // Send transaction using Privy wallet provider
+    const txResponse = await provider.request({
+      method: 'eth_sendTransaction',
+      params: [{
+        to: factoryAddress,
+        data: data,
+        value: '0x0'
+      }]
     });
 
-    console.log('Lock deployment transaction sent:', txResponse.hash);
+    console.log('Lock deployment transaction sent:', txResponse);
 
-    // Wait for transaction confirmation using Privy's method
-    const receipt = await wallet.waitForTransactionReceipt(txResponse.hash);
+    // Wait for transaction confirmation
+    let receipt = null;
+    let attempts = 0;
+    const maxAttempts = 60; // Wait up to 60 seconds
+    
+    while (!receipt && attempts < maxAttempts) {
+      try {
+        receipt = await provider.request({
+          method: 'eth_getTransactionReceipt',
+          params: [txResponse]
+        });
+        
+        if (!receipt) {
+          await new Promise(resolve => setTimeout(resolve, 1000));
+          attempts++;
+        }
+      } catch (error) {
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        attempts++;
+      }
+    }
 
-    if (receipt.status !== 1) {
+    if (!receipt) {
+      throw new Error('Transaction receipt not found. Please check the blockchain explorer.');
+    }
+
+    if (receipt.status !== '0x1') {
       throw new Error('Transaction failed. Please try again.');
     }
 
@@ -135,13 +169,13 @@ export const deployLock = async (config: LockConfig, wallet: any): Promise<Deplo
     const lockAddress = receipt.logs?.[0]?.address || 'Unknown';
 
     console.log('Lock deployed successfully:', {
-      transactionHash: txResponse.hash,
+      transactionHash: txResponse,
       lockAddress: lockAddress
     });
 
     return {
       success: true,
-      transactionHash: txResponse.hash,
+      transactionHash: txResponse,
       lockAddress: lockAddress
     };
   } catch (error) {
@@ -150,7 +184,7 @@ export const deployLock = async (config: LockConfig, wallet: any): Promise<Deplo
     let errorMessage = 'Failed to deploy lock';
     
     if (error instanceof Error) {
-      if (error.message.includes('User rejected')) {
+      if (error.message.includes('User rejected') || error.message.includes('user rejected')) {
         errorMessage = 'Transaction was cancelled. Please try again when ready.';
       } else if (error.message.includes('insufficient funds')) {
         errorMessage = 'Insufficient funds to deploy the smart contract. Please add more ETH to your wallet.';
