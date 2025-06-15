@@ -1,4 +1,3 @@
-
 import { parseEther } from 'viem';
 import { base, baseSepolia } from 'wagmi/chains';
 
@@ -88,71 +87,85 @@ export const deployLock = async (config: LockConfig, wallet: any): Promise<Deplo
     const factoryAddress = UNLOCK_FACTORY_ADDRESSES[baseSepolia.id];
     console.log('Using Unlock Factory Address:', factoryAddress);
 
-    // Convert price to wei (assuming ETH/native token)
+    // --- New deployment logic based on Unlock Protocol v13 docs ---
+    // We will call `createUpgradeableLockAtVersion(bytes calldata, uint16 version)` on the factory.
+    // The `calldata` is the encoded `initialize` function of the PublicLock contract.
+
+    const publicLockVersion = 13;
+
+    // 1. Prepare data for PublicLock's `initialize` function
+    // `initialize(address lockManager, uint256 expirationDuration, address tokenAddress, uint256 keyPrice, uint256 maxNumberOfKeys, string memory lockName)`
+    const initializeFunctionSelector = '0x14a1a541';
+
     const keyPriceWei = config.currency === 'FREE' 
       ? '0' 
       : parseEther(config.price.toString()).toString();
-
-    // Token address (0x0 for native ETH)
     const tokenAddress = '0x0000000000000000000000000000000000000000';
 
-    console.log('Deploying with params:', {
-      expirationDuration: config.expirationDuration,
-      tokenAddress,
-      keyPrice: keyPriceWei,
-      maxNumberOfKeys: config.maxNumberOfKeys,
-      lockName: config.name
-    });
-
-    // Use the modern Unlock Protocol createLock function signature (v13+)
-    // createLock(uint256 _expirationDuration, address _tokenAddress, uint256 _keyPrice, uint256 _maxNumberOfKeys, string memory _lockName)
-    
-    // Function selector for createLock (5 parameters, no salt)
-    const functionSelector = '0x15bccb73';
-    
-    // Helper function to pad hex values to 32 bytes
     const padHex = (value: string): string => {
       return value.replace('0x', '').padStart(64, '0');
     };
 
-    // Encode parameters according to ABI encoding rules
-    const expirationDurationHex = padHex(config.expirationDuration.toString(16));
-    const tokenAddressHex = padHex(tokenAddress);
-    const keyPriceHex = padHex(BigInt(keyPriceWei).toString(16));
-    const maxNumberOfKeysHex = padHex(config.maxNumberOfKeys.toString(16));
-    
-    // For string parameter (lockName)
+    // Encode `initialize` parameters
+    const encodedLockManager = padHex(wallet.address);
+    const encodedExpirationDuration = padHex(config.expirationDuration.toString(16));
+    const encodedTokenAddress = padHex(tokenAddress);
+    const encodedKeyPrice = padHex(BigInt(keyPriceWei).toString(16));
+    const encodedMaxNumberOfKeys = padHex(config.maxNumberOfKeys.toString(16));
+
+    // String encoding for lockName
     const nameBytes = new TextEncoder().encode(config.name);
-    const nameLength = nameBytes.length;
-    const nameLengthHex = padHex(nameLength.toString(16));
-    
-    // Pad the name data to 32-byte boundary
+    const nameLengthHex = padHex(nameBytes.length.toString(16));
     const nameHex = Array.from(nameBytes, byte => byte.toString(16).padStart(2, '0')).join('');
     const paddedNameHex = nameHex.padEnd(Math.ceil(nameHex.length / 64) * 64, '0');
-    
-    // Calculate offset for string parameter (5th parameter)
-    // Offset = 4 * 32 bytes = 128 bytes = 0x80
-    const stringOffsetHex = padHex('80');
 
-    // Construct the full transaction data
-    const encodedData = functionSelector + 
-      expirationDurationHex +
-      tokenAddressHex + 
-      keyPriceHex + 
-      maxNumberOfKeysHex + 
+    // Offset for string parameter (6th parameter, so 5 * 32 = 160 bytes = 0xa0)
+    const stringOffsetHex = padHex('a0');
+
+    // Construct the `initialize` calldata
+    const initializeCalldata = initializeFunctionSelector +
+      encodedLockManager +
+      encodedExpirationDuration +
+      encodedTokenAddress +
+      encodedKeyPrice +
+      encodedMaxNumberOfKeys +
       stringOffsetHex +
-      nameLengthHex + 
+      nameLengthHex +
       paddedNameHex;
 
-    console.log('Encoded transaction data:', encodedData);
+    // 2. Prepare data for Factory's `createUpgradeableLockAtVersion` function
+    // `createUpgradeableLockAtVersion(bytes memory _calldata, uint16 _version)`
+    const factoryFunctionSelector = '0x3247a3ff';
 
+    // This function has a dynamic `bytes` type as the first argument, so we need offsets.
+    // The static part contains the offset to calldata (32 bytes) and the version (32 bytes).
+    const calldataOffsetHex = padHex('40'); // Offset is 2 * 32 = 64 bytes = 0x40
+    const encodedVersion = padHex(publicLockVersion.toString(16));
+
+    // The dynamic part contains the length of the calldata, then the calldata itself.
+    const initializeCalldataBytes = initializeCalldata.replace('0x', '');
+    const initializeCalldataLengthInBytes = initializeCalldataBytes.length / 2;
+    const encodedCalldataLength = padHex(initializeCalldataLengthInBytes.toString(16));
+
+    // The calldata itself must be padded to a multiple of 32 bytes.
+    const paddedInitializeCalldata = initializeCalldataBytes.padEnd(Math.ceil(initializeCalldataBytes.length / 64) * 64, '0');
+    
+    // 3. Construct the final transaction data
+    const finalEncodedData = factoryFunctionSelector +
+      calldataOffsetHex +
+      encodedVersion +
+      encodedCalldataLength +
+      paddedInitializeCalldata;
+
+    console.log('Final encoded transaction data:', finalEncodedData);
+    
     // Send transaction using Privy wallet provider
     const txResponse = await provider.request({
       method: 'eth_sendTransaction',
       params: [{
         from: wallet.address,
         to: factoryAddress,
-        data: encodedData,
+        data: finalEncodedData,
         value: '0x0'
       }]
     });
