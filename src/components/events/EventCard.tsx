@@ -3,7 +3,7 @@ import React from 'react';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Calendar, Clock, MapPin, Users, Ticket, ExternalLink } from 'lucide-react';
+import { Calendar, Clock, MapPin, Users, Ticket, ExternalLink, CheckCircle } from 'lucide-react';
 import { format } from 'date-fns';
 import { PublishedEvent } from '@/utils/eventUtils';
 import { getBlockExplorerUrl } from '@/utils/lockUtils';
@@ -12,17 +12,54 @@ interface EventCardProps {
   event: PublishedEvent;
   showActions?: boolean;
   onViewDetails?: (event: PublishedEvent) => void;
+  keysSold?: number;
+  isTicketView?: boolean;
 }
 
 export const EventCard: React.FC<EventCardProps> = ({
   event,
   showActions = true,
-  onViewDetails
+  onViewDetails,
+  keysSold,
+  isTicketView = false,
 }) => {
   const handleViewTransaction = () => {
     const explorerUrl = getBlockExplorerUrl(event.transaction_hash, 'baseSepolia');
     window.open(explorerUrl, '_blank');
   };
+
+  const remainingSpots = typeof keysSold === 'number' 
+    ? Math.max(0, event.capacity - keysSold)
+    : undefined;
+
+  if (isTicketView) {
+    return (
+      <Card className="overflow-hidden border-0 shadow-md hover:shadow-lg transition-shadow duration-300 flex items-center">
+        <div className="flex-shrink-0 w-24 h-24">
+            {event.image_url ? (
+            <img 
+                src={event.image_url} 
+                alt={event.title} 
+                className="w-full h-full object-cover"
+            />
+            ) : (
+            <div className="w-full h-full bg-gradient-to-br from-purple-500 to-pink-500"></div>
+            )}
+        </div>
+        <CardContent className="p-4 flex-grow">
+          <h3 className="font-bold text-lg">{event.title}</h3>
+          <div className="flex items-center gap-1 text-sm text-gray-500 mt-1">
+            <Calendar className="w-3.5 h-3.5" />
+            <span>{event.date ? format(event.date, "MMM d, yyyy") : 'Date TBD'}</span>
+          </div>
+          <div className="flex items-center gap-2 mt-2 text-green-600 font-semibold">
+            <CheckCircle className="w-4 h-4" />
+            <span>Ticket Secured</span>
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
 
   return (
     <Card className="overflow-hidden border-0 shadow-lg hover:shadow-xl transition-shadow duration-300">
@@ -75,7 +112,12 @@ export const EventCard: React.FC<EventCardProps> = ({
           <div className="grid grid-cols-2 gap-4 pt-4 border-t">
             <div className="flex items-center gap-2 text-gray-600">
               <Users className="w-4 h-4" />
-              <span>{event.capacity} spots</span>
+              <span>
+                {typeof remainingSpots === 'number'
+                  ? `${remainingSpots} spots left`
+                  : `${event.capacity} spots`
+                }
+              </span>
             </div>
             <div className="flex items-center gap-2 text-gray-600">
               <Ticket className="w-4 h-4" />
@@ -94,8 +136,9 @@ export const EventCard: React.FC<EventCardProps> = ({
               <Button 
                 className="flex-1 bg-purple-600 hover:bg-purple-700 text-white"
                 onClick={() => onViewDetails?.(event)}
+                disabled={remainingSpots === 0}
               >
-                {event.currency === 'FREE' ? 'Register for Free' : 'Get Tickets'}
+                {remainingSpots === 0 ? 'Sold Out' : (event.currency === 'FREE' ? 'Register for Free' : 'Get Tickets')}
               </Button>
               <Button 
                 variant="outline"

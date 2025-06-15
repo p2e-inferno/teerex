@@ -1,5 +1,6 @@
 import { supabase } from '@/integrations/supabase/client';
 import { EventFormData } from '@/pages/CreateEvent';
+import { checkKeyOwnership } from './lockUtils';
 
 export interface PublishedEvent {
   id: string;
@@ -106,6 +107,33 @@ export const getUserEvents = async (userId: string): Promise<PublishedEvent[]> =
     }));
   } catch (error) {
     console.error('Error fetching user events:', error);
+    return [];
+  }
+};
+
+/**
+ * Fetches all published events and filters them to return only those
+ * for which the user owns a valid ticket (key).
+ */
+export const getEventsWithUserTickets = async (userAddress: string): Promise<PublishedEvent[]> => {
+  try {
+    const allEvents = await getPublishedEvents();
+    if (!userAddress || allEvents.length === 0) {
+      return [];
+    }
+    
+    // This is not the most performant way for a large number of events,
+    // as it makes one RPC call per event. A better solution for production
+    // would be to use the Unlock Subgraph to query all keys for a user in one go.
+    const ownershipChecks = await Promise.all(
+      allEvents.map(event => checkKeyOwnership(event.lock_address, userAddress))
+    );
+
+    const userEvents = allEvents.filter((_, index) => ownershipChecks[index]);
+    return userEvents;
+
+  } catch (error) {
+    console.error('Error fetching user ticketed events:', error);
     return [];
   }
 };

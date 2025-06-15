@@ -1,13 +1,14 @@
-
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
-import { Search, Filter, Calendar } from 'lucide-react';
+import { Search, Filter, Calendar, Ticket } from 'lucide-react';
 import { EventCard } from '@/components/events/EventCard';
 import { getPublishedEvents, PublishedEvent } from '@/utils/eventUtils';
 import { useToast } from '@/hooks/use-toast';
 import { EventPurchaseDialog } from '@/components/events/EventPurchaseDialog';
+import { MyTicketsDialog } from '@/components/events/MyTicketsDialog';
+import { getTotalKeys } from '@/utils/lockUtils';
 
 const Explore = () => {
   const [events, setEvents] = useState<PublishedEvent[]>([]);
@@ -17,27 +18,45 @@ const Explore = () => {
   const { toast } = useToast();
   const [selectedEvent, setSelectedEvent] = useState<PublishedEvent | null>(null);
   const [isPurchaseDialogOpen, setIsPurchaseDialogOpen] = useState(false);
+  const [isMyTicketsDialogOpen, setIsMyTicketsDialogOpen] = useState(false);
+  const [keysSoldMap, setKeysSoldMap] = useState<Record<string, number>>({});
+
+  const loadEvents = useCallback(async () => {
+    setIsLoading(true);
+    try {
+      const publishedEvents = await getPublishedEvents();
+      setEvents(publishedEvents);
+      setFilteredEvents(publishedEvents);
+    } catch (error) {
+      console.error('Error loading events:', error);
+      toast({
+        title: "Error Loading Events",
+        description: "There was an error loading events. Please try again.",
+        variant: "destructive"
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  }, [toast]);
 
   useEffect(() => {
-    const loadEvents = async () => {
-      try {
-        const publishedEvents = await getPublishedEvents();
-        setEvents(publishedEvents);
-        setFilteredEvents(publishedEvents);
-      } catch (error) {
-        console.error('Error loading events:', error);
-        toast({
-          title: "Error Loading Events",
-          description: "There was an error loading events. Please try again.",
-          variant: "destructive"
-        });
-      } finally {
-        setIsLoading(false);
-      }
-    };
-
     loadEvents();
-  }, [toast]);
+  }, [loadEvents]);
+
+  useEffect(() => {
+    if (events.length > 0) {
+      const fetchKeysSold = async () => {
+        const promises = events.map(event => getTotalKeys(event.lock_address));
+        const results = await Promise.all(promises);
+        const newKeysSoldMap = events.reduce((acc, event, index) => {
+          acc[event.id] = results[index];
+          return acc;
+        }, {} as Record<string, number>);
+        setKeysSoldMap(newKeysSoldMap);
+      };
+      fetchKeysSold();
+    }
+  }, [events]);
 
   useEffect(() => {
     if (searchQuery.trim() === '') {
@@ -58,9 +77,11 @@ const Explore = () => {
     setIsPurchaseDialogOpen(true);
   };
 
-  const handleCloseDialog = () => {
+  const handleClosePurchaseDialog = () => {
     setIsPurchaseDialogOpen(false);
     setSelectedEvent(null);
+    // Refresh event data to show updated spot count
+    loadEvents();
   };
 
   if (isLoading) {
@@ -97,6 +118,14 @@ const Explore = () => {
             />
           </div>
           <div className="flex gap-2">
+             <Button 
+              variant="outline" 
+              className="border-gray-300"
+              onClick={() => setIsMyTicketsDialogOpen(true)}
+            >
+              <Ticket className="w-4 h-4 mr-2" />
+              My Tickets
+            </Button>
             <Button variant="outline" className="border-gray-300">
               <Filter className="w-4 h-4 mr-2" />
               Filters
@@ -135,6 +164,7 @@ const Explore = () => {
                 key={event.id}
                 event={event}
                 onViewDetails={handleEventDetails}
+                keysSold={keysSoldMap[event.id]}
               />
             ))}
           </div>
@@ -152,7 +182,11 @@ const Explore = () => {
       <EventPurchaseDialog
         event={selectedEvent}
         isOpen={isPurchaseDialogOpen}
-        onClose={handleCloseDialog}
+        onClose={handleClosePurchaseDialog}
+      />
+      <MyTicketsDialog
+        isOpen={isMyTicketsDialogOpen}
+        onClose={() => setIsMyTicketsDialogOpen(false)}
       />
     </div>
   );

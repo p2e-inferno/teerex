@@ -80,6 +80,20 @@ const PublicLockABI = [
     "outputs": [{ "internalType": "uint256", "name": "", "type": "uint256" }],
     "stateMutability": "view",
     "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "totalSupply",
+    "outputs": [{ "internalType": "uint256", "name": "", "type": "uint256" }],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [{ "internalType": "address", "name": "_keyOwner", "type": "address" }],
+    "name": "getHasValidKey",
+    "outputs": [{ "internalType": "bool", "name": "isValid", "type": "bool" }],
+    "stateMutability": "view",
+    "type": "function"
   }
 ];
 
@@ -328,4 +342,43 @@ export const getBlockExplorerUrl = (txHash: string, network: string = 'baseSepol
   };
   
   return `${explorers[network as keyof typeof explorers] || explorers.baseSepolia}${txHash}`;
+};
+
+// --- New Functions ---
+
+const getReadOnlyProvider = () => {
+  // Using a public RPC for read-only operations on Base Sepolia
+  return new ethers.JsonRpcProvider('https://sepolia.base.org');
+};
+
+/**
+ * Gets the total number of keys that have been sold for a lock.
+ */
+export const getTotalKeys = async (lockAddress: string): Promise<number> => {
+  try {
+    const provider = getReadOnlyProvider();
+    const lockContract = new ethers.Contract(lockAddress, PublicLockABI, provider);
+    const totalSupply = await lockContract.totalSupply();
+    return Number(totalSupply);
+  } catch (error) {
+    console.error(`Error fetching total keys for ${lockAddress}:`, error);
+    return 0; // Return 0 if there's an error so UI doesn't break
+  }
+};
+
+/**
+ * Checks if a user has a valid, non-expired key for a specific lock.
+ */
+export const checkKeyOwnership = async (lockAddress: string, userAddress: string): Promise<boolean> => {
+  try {
+    if (!ethers.isAddress(lockAddress) || !ethers.isAddress(userAddress)) {
+      return false;
+    }
+    const provider = getReadOnlyProvider();
+    const lockContract = new ethers.Contract(lockAddress, PublicLockABI, provider);
+    return await lockContract.getHasValidKey(userAddress);
+  } catch (error) {
+    console.error(`Error checking key ownership for ${lockAddress}:`, error);
+    return false;
+  }
 };
