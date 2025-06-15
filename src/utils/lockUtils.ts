@@ -1,3 +1,4 @@
+
 import { parseEther } from 'viem';
 import { base, baseSepolia } from 'wagmi/chains';
 
@@ -68,22 +69,59 @@ export const deployLock = async (config: LockConfig, wallet: any): Promise<Deplo
       throw new Error('No wallet provided. Please connect your wallet first.');
     }
 
-    // Get the current chain ID from Privy wallet
-    // Privy wallet chainId format is "eip155:8453" so we need to extract the numeric part
-    const chainIdString = wallet.chainId;
-    const chainId = parseInt(chainIdString.split(':')[1]);
-    
-    console.log('Detected chain ID:', chainId);
-    
-    let factoryAddress: string;
-    
-    if (chainId === baseSepolia.id) {
-      factoryAddress = UNLOCK_FACTORY_ADDRESSES[baseSepolia.id];
-    } else if (chainId === base.id) {
-      factoryAddress = UNLOCK_FACTORY_ADDRESSES[base.id];
-    } else {
-      throw new Error('Please switch to Base Sepolia network to deploy your event.');
+    // Get the Ethereum provider from Privy wallet
+    const provider = await wallet.getEthereumProvider();
+
+    // Always switch to Base Sepolia for testing
+    const targetChainId = baseSepolia.id;
+    const targetChainIdHex = `0x${targetChainId.toString(16)}`;
+
+    console.log(`Switching wallet to Base Sepolia (Chain ID: ${targetChainId})`);
+
+    try {
+      await provider.request({
+        method: 'wallet_switchEthereumChain',
+        params: [{ chainId: targetChainIdHex }],
+      });
+    } catch (switchError: any) {
+      // If the chain hasn't been added to MetaMask, add it
+      if (switchError.code === 4902) {
+        console.log('Adding Base Sepolia network to wallet');
+        await provider.request({
+          method: 'wallet_addEthereumChain',
+          params: [
+            {
+              chainId: targetChainIdHex,
+              chainName: 'Base Sepolia',
+              nativeCurrency: {
+                name: 'Ethereum',
+                symbol: 'ETH',
+                decimals: 18,
+              },
+              rpcUrls: ['https://sepolia.base.org'],
+              blockExplorerUrls: ['https://sepolia.basescan.org'],
+            },
+          ],
+        });
+      } else {
+        throw switchError;
+      }
     }
+
+    // Wait a moment for the network switch to complete
+    await new Promise(resolve => setTimeout(resolve, 1000));
+
+    // Verify we're on the correct network
+    const currentChainId = await provider.request({ method: 'eth_chainId' });
+    const currentChainIdDecimal = parseInt(currentChainId, 16);
+    
+    console.log('Current chain ID after switch:', currentChainIdDecimal);
+    
+    if (currentChainIdDecimal !== targetChainId) {
+      throw new Error(`Failed to switch to Base Sepolia. Current network: ${currentChainIdDecimal}, Expected: ${targetChainId}`);
+    }
+
+    const factoryAddress = UNLOCK_FACTORY_ADDRESSES[baseSepolia.id];
 
     // Convert price to wei (assuming ETH/native token)
     const keyPriceWei = config.currency === 'FREE' 
@@ -119,14 +157,11 @@ export const deployLock = async (config: LockConfig, wallet: any): Promise<Deplo
 
     console.log('Encoded transaction data:', data);
 
-    // Get the Ethereum provider from Privy wallet
-    const provider = await wallet.getEthereumProvider();
-    
     // Send transaction using Privy wallet provider
     const txResponse = await provider.request({
       method: 'eth_sendTransaction',
       params: [{
-        from: wallet.address, // Add the wallet address as 'from'
+        from: wallet.address,
         to: factoryAddress,
         data: data,
         value: '0x0'
