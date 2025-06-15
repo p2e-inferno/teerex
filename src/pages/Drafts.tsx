@@ -76,7 +76,8 @@ const Drafts = () => {
         keyPrice: draft.currency === 'FREE' ? '0' : draft.price.toString(),
         maxNumberOfKeys: draft.capacity,
         expirationDuration: 86400,
-        currency: draft.currency
+        currency: draft.currency,
+        price: draft.price
       };
 
       const deploymentResult = await deployLock(lockConfig);

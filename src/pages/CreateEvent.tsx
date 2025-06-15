@@ -210,7 +210,8 @@ const CreateEvent = () => {
         keyPrice: formData.currency === 'FREE' ? '0' : formData.price.toString(),
         maxNumberOfKeys: formData.capacity,
         expirationDuration: 86400, // 24 hours in seconds
-        currency: formData.currency
+        currency: formData.currency,
+        price: formData.price
       };
 
       const deploymentResult = await deployLock(lockConfig);
