@@ -42,17 +42,6 @@ const MyEvents = () => {
 
   useEffect(() => {
     loadUserEvents();
-  }, [user?.id, toast]);
-
-  // Refetch events when returning from edit
-  useEffect(() => {
-    const handleFocus = () => {
-      console.log('Window focused, reloading events...');
-      loadUserEvents();
-    };
-
-    window.addEventListener('focus', handleFocus);
-    return () => window.removeEventListener('focus', handleFocus);
   }, [user?.id]);
 
   const handleEventDetails = (event: PublishedEvent) => {
