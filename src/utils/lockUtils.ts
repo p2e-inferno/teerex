@@ -25,25 +25,43 @@ const UNLOCK_FACTORY_ADDRESSES = {
   [baseSepolia.id]: '0x127fF2f2B82DdE45472964C0F39735fD35e6e0c4' // Base Sepolia testnet
 } as const;
 
-// PublicLock factory ABI - only the createLock function we need
-const UNLOCK_FACTORY_ABI = [
-  {
-    "inputs": [
-      {"type": "uint256", "name": "_expirationDuration"},
-      {"type": "address", "name": "_tokenAddress"},
-      {"type": "uint256", "name": "_keyPrice"},
-      {"type": "uint256", "name": "_maxNumberOfKeys"},
-      {"type": "string", "name": "_lockName"},
-      {"type": "bytes12", "name": "_salt"}
-    ],
-    "name": "createLock",
-    "outputs": [{"type": "address", "name": ""}],
-    "stateMutability": "nonpayable",
-    "type": "function"
-  }
-] as const;
+// Function to encode the createLock function call
+const encodeFunctionData = (functionName: string, params: any[]): string => {
+  // Function selector for createLock(uint256,address,uint256,uint256,string,bytes12)
+  const functionSelector = '0x385ac9b9';
+  
+  // Helper function to pad hex values
+  const padHex = (value: string, length: number = 64): string => {
+    return value.replace('0x', '').padStart(length, '0');
+  };
+  
+  // Helper function to encode string parameter
+  const encodeString = (str: string): string => {
+    const utf8Bytes = new TextEncoder().encode(str);
+    const lengthHex = utf8Bytes.length.toString(16).padStart(64, '0');
+    const dataHex = Array.from(utf8Bytes, byte => byte.toString(16).padStart(2, '0')).join('');
+    const paddedDataHex = dataHex.padEnd(Math.ceil(dataHex.length / 64) * 64, '0');
+    return lengthHex + paddedDataHex;
+  };
+  
+  const [expirationDuration, tokenAddress, keyPrice, maxNumberOfKeys, lockName, salt] = params;
+  
+  // Encode parameters
+  const encodedParams = [
+    padHex(expirationDuration.toString(16)), // uint256
+    padHex(tokenAddress.slice(2)), // address
+    padHex(BigInt(keyPrice).toString(16)), // uint256
+    padHex(maxNumberOfKeys.toString(16)), // uint256
+    padHex('c0'), // offset for string (192 bytes = 0xc0)
+    padHex('100'), // offset for bytes12 (256 bytes = 0x100)
+    encodeString(lockName), // string
+    padHex(salt.slice(2), 24) // bytes12 (12 bytes = 24 hex chars)
+  ].join('');
+  
+  return functionSelector + encodedParams;
+};
 
-export const deployLock = async (config: LockConfig, wallet?: any): Promise<DeploymentResult> => {
+export const deployLock = async (config: LockConfig, wallet: any): Promise<DeploymentResult> => {
   try {
     console.log('Deploying lock with config:', config);
     
@@ -85,29 +103,17 @@ export const deployLock = async (config: LockConfig, wallet?: any): Promise<Depl
       salt
     });
 
-    // Encode the function call data
-    const data = wallet.interface?.encodeFunctionData ? 
-      wallet.interface.encodeFunctionData('createLock', [
-        config.expirationDuration,
-        tokenAddress,
-        keyPriceWei,
-        config.maxNumberOfKeys,
-        config.name,
-        salt
-      ]) :
-      // Fallback manual encoding if interface not available
-      `0x385ac9b9${
-        config.expirationDuration.toString(16).padStart(64, '0')
-      }${
-        tokenAddress.slice(2).padStart(64, '0')
-      }${
-        BigInt(keyPriceWei).toString(16).padStart(64, '0')
-      }${
-        config.maxNumberOfKeys.toString(16).padStart(64, '0')
-      }${
-        // Encode string parameters (name and salt) - simplified for demo
-        '0'.repeat(128)
-      }`;
+    // Encode the function call data using our custom encoder
+    const data = encodeFunctionData('createLock', [
+      config.expirationDuration,
+      tokenAddress,
+      keyPriceWei,
+      config.maxNumberOfKeys,
+      config.name,
+      salt
+    ]);
+
+    console.log('Encoded transaction data:', data);
 
     // Send transaction using Privy wallet
     const txResponse = await wallet.sendTransaction({
@@ -118,7 +124,7 @@ export const deployLock = async (config: LockConfig, wallet?: any): Promise<Depl
 
     console.log('Lock deployment transaction sent:', txResponse.hash);
 
-    // Wait for transaction confirmation
+    // Wait for transaction confirmation using Privy's method
     const receipt = await wallet.waitForTransactionReceipt(txResponse.hash);
 
     if (receipt.status !== 1) {
