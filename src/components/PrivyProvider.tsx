@@ -107,42 +107,25 @@ export const PrivyProvider: React.FC<PrivyProviderProps> = ({ children }) => {
 
 // Component to sync Privy auth with Supabase
 const SupabaseAuthSync: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const { user, authenticated, getAccessToken } = usePrivy();
+  const { user, authenticated } = usePrivy();
 
   useEffect(() => {
     const syncAuth = async () => {
       if (authenticated && user) {
         try {
-          console.log('Syncing Privy user with Supabase:', user.id);
-          
-          // Get Privy access token
-          const accessToken = await getAccessToken();
-          
-          if (accessToken) {
-            // Set the Supabase session using the Privy access token
-            // This creates a custom JWT that Supabase can understand
-            const { error } = await supabase.auth.setSession({
-              access_token: accessToken,
-              refresh_token: accessToken, // Using access token as refresh token for simplicity
-            });
-            
-            if (error) {
-              console.error('Error setting Supabase session:', error);
-            } else {
-              console.log('Successfully synced Privy auth with Supabase');
-            }
-          }
+          console.log('User authenticated with Privy:', user.id);
+          // We'll handle authentication at the individual API level
+          // since Privy tokens aren't directly compatible with Supabase
         } catch (error) {
           console.error('Error syncing auth:', error);
         }
       } else {
-        // Clear Supabase session when user is not authenticated
-        await supabase.auth.signOut();
+        console.log('User not authenticated');
       }
     };
 
     syncAuth();
-  }, [authenticated, user, getAccessToken]);
+  }, [authenticated, user]);
 
   return <>{children}</>;
 };

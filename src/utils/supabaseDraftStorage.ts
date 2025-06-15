@@ -1,4 +1,3 @@
-
 import { supabase } from '@/integrations/supabase/client';
 import { EventDraft } from '@/types/event';
 import { EventFormData } from '@/pages/CreateEvent';
@@ -12,26 +11,12 @@ export const uploadEventImage = async (file: File, userId: string): Promise<stri
       type: file.type
     });
 
-    // Check if we have a current session
-    const { data: { session }, error: sessionError } = await supabase.auth.getSession();
-    
-    if (sessionError) {
-      console.error('Session error:', sessionError);
-      return null;
-    }
-
-    if (!session) {
-      console.error('No active Supabase session found');
-      return null;
-    }
-
-    console.log('Active session found, proceeding with upload');
-
     const fileExt = file.name.split('.').pop();
     const fileName = `${userId}/${Date.now()}.${fileExt}`;
     
     console.log('Uploading file to path:', fileName);
 
+    // Use the public storage upload since we have public policies
     const { data: uploadData, error: uploadError } = await supabase.storage
       .from('event-images')
       .upload(fileName, file, {
