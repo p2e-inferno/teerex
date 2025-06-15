@@ -24,6 +24,7 @@ const App = () => {
               <Route path="/" element={<Index />} />
               <Route path="/explore" element={<Explore />} />
               <Route path="/create" element={<CreateEvent />} />
+              <Route path="/events" element={<MyEvents />} />
               <Route path="/my-events" element={<MyEvents />} />
               <Route path="/drafts" element={<Drafts />} />
               {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
