@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { usePrivy, useWallets } from '@privy-io/react-auth';
-import { Navigate, useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Plus, FileText } from 'lucide-react';
@@ -11,7 +11,7 @@ import { useToast } from '@/hooks/use-toast';
 import { deployLock, getBlockExplorerUrl } from '@/utils/lockUtils';
 
 const Drafts = () => {
-  const { authenticated } = usePrivy();
+  const { authenticated, user } = usePrivy();
   const { wallets } = useWallets();
   const navigate = useNavigate();
   const { toast } = useToast();
@@ -26,8 +26,10 @@ const Drafts = () => {
   useEffect(() => {
     const loadDrafts = async () => {
       try {
-        const fetchedDrafts = await getDrafts();
-        setDrafts(fetchedDrafts);
+        if (user?.id) {
+          const fetchedDrafts = await getDrafts(user.id);
+          setDrafts(fetchedDrafts);
+        }
       } catch (error) {
         console.error('Error loading drafts:', error);
         toast({
@@ -41,7 +43,7 @@ const Drafts = () => {
     };
 
     loadDrafts();
-  }, [toast]);
+  }, [toast, user?.id]);
 
   const handleEdit = (draft: EventDraft) => {
     navigate(`/create?draft=${draft.id}`);
@@ -49,13 +51,15 @@ const Drafts = () => {
 
   const handleDelete = async (id: string) => {
     try {
-      await deleteDraft(id);
-      const updatedDrafts = await getDrafts();
-      setDrafts(updatedDrafts);
-      toast({
-        title: "Draft Deleted",
-        description: "Your event draft has been deleted.",
-      });
+      if (user?.id) {
+        await deleteDraft(id, user.id);
+        const updatedDrafts = await getDrafts(user.id);
+        setDrafts(updatedDrafts);
+        toast({
+          title: "Draft Deleted",
+          description: "Your event draft has been deleted.",
+        });
+      }
     } catch (error) {
       console.error('Error deleting draft:', error);
       toast({
@@ -109,9 +113,11 @@ const Drafts = () => {
         });
         
         // Remove from drafts after successful publish
-        await deleteDraft(draft.id);
-        const updatedDrafts = await getDrafts();
-        setDrafts(updatedDrafts);
+        if (user?.id) {
+          await deleteDraft(draft.id, user.id);
+          const updatedDrafts = await getDrafts(user.id);
+          setDrafts(updatedDrafts);
+        }
         
         // Navigate to explore page
         navigate('/explore');

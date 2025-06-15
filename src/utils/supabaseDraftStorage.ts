@@ -1,3 +1,4 @@
+
 import { supabase } from '@/integrations/supabase/client';
 import { EventDraft } from '@/types/event';
 import { EventFormData } from '@/pages/CreateEvent';
@@ -43,16 +44,14 @@ export const uploadEventImage = async (file: File, userId: string): Promise<stri
   }
 };
 
-export const saveDraft = async (formData: EventFormData): Promise<string | null> => {
+export const saveDraft = async (formData: EventFormData, userId: string): Promise<string | null> => {
   try {
-    const { data: { user } } = await supabase.auth.getUser();
-    
-    if (!user) {
-      throw new Error('User not authenticated');
+    if (!userId) {
+      throw new Error('User ID is required to save draft');
     }
 
     const draftData = {
-      user_id: user.id,
+      user_id: userId,
       title: formData.title,
       description: formData.description,
       date: formData.date?.toISOString(),
@@ -83,12 +82,10 @@ export const saveDraft = async (formData: EventFormData): Promise<string | null>
   }
 };
 
-export const updateDraft = async (id: string, formData: EventFormData): Promise<void> => {
+export const updateDraft = async (id: string, formData: EventFormData, userId: string): Promise<void> => {
   try {
-    const { data: { user } } = await supabase.auth.getUser();
-    
-    if (!user) {
-      throw new Error('User not authenticated');
+    if (!userId) {
+      throw new Error('User ID is required to update draft');
     }
 
     const draftData = {
@@ -109,7 +106,7 @@ export const updateDraft = async (id: string, formData: EventFormData): Promise<
       .from('event_drafts')
       .update(draftData)
       .eq('id', id)
-      .eq('user_id', user.id);
+      .eq('user_id', userId);
 
     if (error) {
       console.error('Error updating draft:', error);
@@ -121,18 +118,16 @@ export const updateDraft = async (id: string, formData: EventFormData): Promise<
   }
 };
 
-export const getDrafts = async (): Promise<EventDraft[]> => {
+export const getDrafts = async (userId: string): Promise<EventDraft[]> => {
   try {
-    const { data: { user } } = await supabase.auth.getUser();
-    
-    if (!user) {
+    if (!userId) {
       return [];
     }
 
     const { data, error } = await supabase
       .from('event_drafts')
       .select('*')
-      .eq('user_id', user.id)
+      .eq('user_id', userId)
       .order('updated_at', { ascending: false });
 
     if (error) {
@@ -154,11 +149,9 @@ export const getDrafts = async (): Promise<EventDraft[]> => {
   }
 };
 
-export const getDraft = async (id: string): Promise<EventDraft | null> => {
+export const getDraft = async (id: string, userId: string): Promise<EventDraft | null> => {
   try {
-    const { data: { user } } = await supabase.auth.getUser();
-    
-    if (!user) {
+    if (!userId) {
       return null;
     }
 
@@ -166,7 +159,7 @@ export const getDraft = async (id: string): Promise<EventDraft | null> => {
       .from('event_drafts')
       .select('*')
       .eq('id', id)
-      .eq('user_id', user.id)
+      .eq('user_id', userId)
       .single();
 
     if (error) {
@@ -188,12 +181,10 @@ export const getDraft = async (id: string): Promise<EventDraft | null> => {
   }
 };
 
-export const deleteDraft = async (id: string): Promise<void> => {
+export const deleteDraft = async (id: string, userId: string): Promise<void> => {
   try {
-    const { data: { user } } = await supabase.auth.getUser();
-    
-    if (!user) {
-      throw new Error('User not authenticated');
+    if (!userId) {
+      throw new Error('User ID is required to delete draft');
     }
 
     // First get the draft to check if it has an image
@@ -201,7 +192,7 @@ export const deleteDraft = async (id: string): Promise<void> => {
       .from('event_drafts')
       .select('image_url')
       .eq('id', id)
-      .eq('user_id', user.id)
+      .eq('user_id', userId)
       .single();
 
     // Delete the image from storage if it exists
@@ -210,7 +201,7 @@ export const deleteDraft = async (id: string): Promise<void> => {
       if (imagePath) {
         await supabase.storage
           .from('event-images')
-          .remove([`${user.id}/${imagePath}`]);
+          .remove([`${userId}/${imagePath}`]);
       }
     }
 
@@ -219,7 +210,7 @@ export const deleteDraft = async (id: string): Promise<void> => {
       .from('event_drafts')
       .delete()
       .eq('id', id)
-      .eq('user_id', user.id);
+      .eq('user_id', userId);
 
     if (error) {
       console.error('Error deleting draft:', error);

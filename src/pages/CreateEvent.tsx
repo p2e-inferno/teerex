@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { usePrivy, useWallets } from '@privy-io/react-auth';
-import { Navigate, useNavigate, useSearchParams } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { EventBasicInfo } from '@/components/create-event/EventBasicInfo';
 import { EventDetails } from '@/components/create-event/EventDetails';
 import { TicketSettings } from '@/components/create-event/TicketSettings';
@@ -55,9 +55,9 @@ const CreateEvent = () => {
   }
 
   useEffect(() => {
-    if (draftId) {
+    if (draftId && user?.id) {
       const loadDraft = async () => {
-        const draft = await getDraft(draftId);
+        const draft = await getDraft(draftId, user.id);
         if (draft) {
           setFormData({
             title: draft.title,
@@ -76,7 +76,7 @@ const CreateEvent = () => {
       };
       loadDraft();
     }
-  }, [draftId]);
+  }, [draftId, user?.id]);
 
   const steps = [
     { number: 1, title: 'Basic Info', component: EventBasicInfo },
@@ -122,14 +122,18 @@ const CreateEvent = () => {
 
   const saveAsDraft = async () => {
     try {
+      if (!user?.id) {
+        throw new Error('User not authenticated');
+      }
+
       if (currentDraftId) {
-        await updateDraft(currentDraftId, formData);
+        await updateDraft(currentDraftId, formData, user.id);
         toast({
           title: "Draft Updated",
           description: "Your event draft has been updated successfully.",
         });
       } else {
-        const newDraftId = await saveDraft(formData);
+        const newDraftId = await saveDraft(formData, user.id);
         if (newDraftId) {
           setCurrentDraftId(newDraftId);
           toast({
@@ -245,8 +249,8 @@ const CreateEvent = () => {
         });
 
         // Remove from drafts if it was a draft
-        if (currentDraftId) {
-          await deleteDraft(currentDraftId);
+        if (currentDraftId && user?.id) {
+          await deleteDraft(currentDraftId, user.id);
         }
       } else {
         throw new Error(deploymentResult.error || 'Failed to deploy smart contract');
