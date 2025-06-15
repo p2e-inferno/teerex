@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { usePrivy } from '@privy-io/react-auth';
-import { Navigate, useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Plus, Calendar, TrendingUp, Users, DollarSign } from 'lucide-react';
@@ -46,6 +46,10 @@ const MyEvents = () => {
       title: "Coming Soon",
       description: "Event management features will be available soon!",
     });
+  };
+
+  const handleEditEvent = (event: PublishedEvent) => {
+    navigate(`/create?eventId=${event.id}`);
   };
 
   // Calculate stats
@@ -179,7 +183,7 @@ const MyEvents = () => {
                 <EventCard
                   key={event.id}
                   event={event}
-                  onViewDetails={handleEventDetails}
+                  onViewDetails={handleEditEvent}
                 />
               ))}
             </div>

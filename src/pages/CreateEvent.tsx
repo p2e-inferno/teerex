@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { usePrivy, useWallets } from '@privy-io/react-auth';
-import { useNavigate, useSearchParams, Navigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { EventBasicInfo } from '@/components/create-event/EventBasicInfo';
 import { EventDetails } from '@/components/create-event/EventDetails';
 import { TicketSettings } from '@/components/create-event/TicketSettings';
@@ -11,7 +11,7 @@ import { ChevronLeft, ChevronRight, ExternalLink } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { deployLock, getBlockExplorerUrl } from '@/utils/lockUtils';
 import { savePublishedEvent } from '@/utils/eventUtils';
-import { saveDraft, updateDraft, getDraft, deleteDraft } from '@/utils/supabaseDraftStorage';
+import { saveDraft, updateDraft, getDraft, deleteDraft, getPublishedEvent, updatePublishedEvent } from '@/utils/supabaseDraftStorage';
 
 export interface EventFormData {
   title: string;
@@ -33,10 +33,12 @@ const CreateEvent = () => {
   const { toast } = useToast();
   const [searchParams] = useSearchParams();
   const draftId = searchParams.get('draft');
+  const eventId = searchParams.get('eventId');
   
   const [currentStep, setCurrentStep] = useState(1);
   const [isCreating, setIsCreating] = useState(false);
   const [currentDraftId, setCurrentDraftId] = useState<string | null>(draftId);
+  const [editingEventId, setEditingEventId] = useState<string | null>(eventId);
   const [formData, setFormData] = useState<EventFormData>({
     title: '',
     description: '',
@@ -72,11 +74,40 @@ const CreateEvent = () => {
             imageUrl: draft.image_url || ''
           });
           setCurrentDraftId(draftId);
+          setEditingEventId(null);
         }
       };
       loadDraft();
+    } else if (eventId && user?.id) {
+      const loadEvent = async () => {
+        const event = await getPublishedEvent(eventId, user.id);
+        if (event) {
+          setFormData({
+            title: event.title,
+            description: event.description,
+            date: event.date,
+            time: event.time,
+            location: event.location,
+            capacity: event.capacity,
+            price: event.price,
+            currency: event.currency,
+            category: event.category,
+            imageUrl: event.image_url || ''
+          });
+          setEditingEventId(eventId);
+          setCurrentDraftId(null);
+        } else {
+          toast({
+            title: "Event not found",
+            description: "Could not load the event to edit.",
+            variant: "destructive"
+          });
+          navigate('/my-events');
+        }
+      };
+      loadEvent();
     }
-  }, [draftId, user?.id]);
+  }, [draftId, eventId, user?.id, navigate, toast]);
 
   const steps = [
     { number: 1, title: 'Basic Info', component: EventBasicInfo },
@@ -247,6 +278,29 @@ const CreateEvent = () => {
     }
   };
 
+  const updateEvent = async () => {
+    if (!editingEventId || !user?.id) return;
+    setIsCreating(true);
+
+    try {
+      await updatePublishedEvent(editingEventId, formData, user.id);
+      toast({
+        title: "Event Updated",
+        description: "Your event details have been updated successfully.",
+      });
+      navigate('/my-events');
+    } catch (error) {
+      console.error('Error updating event:', error);
+      toast({
+        title: "Error Updating Event",
+        description: "There was an error updating your event. Please try again.",
+        variant: "destructive"
+      });
+    } finally {
+      setIsCreating(false);
+    }
+  };
+
   const canContinue = isStepValid(currentStep);
 
   const renderStepComponent = () => {
@@ -262,9 +316,16 @@ const CreateEvent = () => {
       case 2:
         return <EventDetails {...commonProps} />;
       case 3:
+        if (editingEventId) {
+          return (
+            <fieldset disabled>
+              <TicketSettings {...commonProps} />
+            </fieldset>
+          );
+        }
         return <TicketSettings {...commonProps} />;
       case 4:
-        return <EventPreview {...commonProps} onSaveAsDraft={saveAsDraft} />;
+        return <EventPreview {...commonProps} onSaveAsDraft={editingEventId ? undefined : saveAsDraft} />;
       default:
         return <EventBasicInfo {...commonProps} />;
     }
@@ -276,7 +337,7 @@ const CreateEvent = () => {
         {/* Header */}
         <div className="mb-8">
           <h1 className="text-3xl font-bold text-gray-900 mb-2">
-            {currentDraftId ? 'Edit Event Draft' : 'Create Event'}
+            {editingEventId ? 'Edit Event' : (currentDraftId ? 'Edit Event Draft' : 'Create Event')}
           </h1>
           <p className="text-gray-600">Set up your Web3 event with blockchain-verified tickets</p>
         </div>
@@ -339,11 +400,11 @@ const CreateEvent = () => {
             </Button>
           ) : (
             <Button
-              onClick={createEvent}
+              onClick={editingEventId ? updateEvent : createEvent}
               disabled={!canContinue || isCreating}
               className="bg-purple-600 hover:bg-purple-700 text-white disabled:bg-gray-300 disabled:cursor-not-allowed"
             >
-              {isCreating ? 'Deploying Smart Contract...' : 'Publish Event'}
+              {isCreating ? (editingEventId ? 'Updating Event...' : 'Deploying Smart Contract...') : (editingEventId ? 'Update Event' : 'Publish Event')}
             </Button>
           )}
         </div>

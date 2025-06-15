@@ -1,5 +1,5 @@
 import { supabase } from '@/integrations/supabase/client';
-import { EventDraft } from '@/types/event';
+import { EventDraft, PublishedEvent } from '@/types/event';
 import { EventFormData } from '@/pages/CreateEvent';
 
 export const uploadEventImage = async (file: File, userId: string): Promise<string | null> => {
@@ -179,6 +179,75 @@ export const getDraft = async (id: string, userId: string): Promise<EventDraft |
     return null;
   }
 };
+
+export const getPublishedEvent = async (id: string, userId: string): Promise<PublishedEvent | null> => {
+  try {
+    if (!userId) {
+      return null;
+    }
+
+    const { data, error } = await supabase
+      .from('events')
+      .select('*')
+      .eq('id', id)
+      .eq('creator_id', userId)
+      .single();
+
+    if (error) {
+      console.error('Error fetching published event:', error);
+      return null;
+    }
+
+    return {
+      ...data,
+      user_id: data.creator_id,
+      date: data.date ? new Date(data.date) : null,
+      created_at: new Date(data.created_at),
+      updated_at: new Date(data.updated_at),
+      currency: data.currency as 'ETH' | 'USDC' | 'FREE',
+      image_url: data.image_url,
+      isPublished: true,
+      lockAddress: data.lock_address,
+      transactionHash: data.transaction_hash,
+    };
+  } catch (error) {
+    console.error('Error fetching published event:', error);
+    return null;
+  }
+};
+
+export const updatePublishedEvent = async (id: string, formData: EventFormData, userId:string): Promise<void> => {
+  try {
+    if (!userId) {
+      throw new Error('User ID is required to update event');
+    }
+
+    const eventData = {
+      title: formData.title,
+      description: formData.description,
+      date: formData.date?.toISOString(),
+      time: formData.time,
+      location: formData.location,
+      category: formData.category,
+      image_url: formData.imageUrl || null,
+      updated_at: new Date().toISOString(),
+    };
+
+    const { error } = await supabase
+      .from('events')
+      .update(eventData)
+      .eq('id', id)
+      .eq('creator_id', userId);
+
+    if (error) {
+      console.error('Error updating published event:', error);
+      throw error;
+    }
+  } catch (error) {
+    console.error('Error updating published event:', error);
+    throw error;
+  }
+}
 
 export const deleteDraft = async (id: string, userId: string): Promise<void> => {
   try {
