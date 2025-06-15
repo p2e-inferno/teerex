@@ -6,7 +6,7 @@ interface LockConfig {
   symbol: string;
   keyPrice: string;
   maxNumberOfKeys: number;
-  expirationDuration: number;
+  expirationDuration: number | bigint;
   currency: string;
   price: number;
 }
@@ -138,7 +138,7 @@ export const deployLock = async (config: LockConfig, wallet: any): Promise<Deplo
       ]
     });
 
-    const lockVersion = 13n; // Using PublicLock v13
+    const lockVersion = 14n; // Using PublicLock v14 based on successful tx
 
     console.log(`Simulating lock creation for "${config.name}" with version ${lockVersion}`);
 

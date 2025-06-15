@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { usePrivy, useWallets } from '@privy-io/react-auth';
 import { useNavigate, Navigate } from 'react-router-dom';
@@ -86,13 +85,15 @@ const Drafts = () => {
       }
 
       console.log('Using wallet for publishing:', wallet);
+      
+      const UNLIMITED_DURATION = 2n**256n - 1n;
 
       const lockConfig = {
         name: draft.title,
         symbol: `${draft.title.slice(0, 3).toUpperCase()}TIX`,
         keyPrice: draft.currency === 'FREE' ? '0' : draft.price.toString(),
         maxNumberOfKeys: draft.capacity,
-        expirationDuration: 86400,
+        expirationDuration: UNLIMITED_DURATION,
         currency: draft.currency,
         price: draft.price
       };
