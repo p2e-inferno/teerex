@@ -43,9 +43,35 @@ export const EventBasicInfo: React.FC<EventBasicInfoProps> = ({
     }
     
     if (file) {
+      // Check file size (5MB limit)
+      if (file.size > 5 * 1024 * 1024) {
+        toast({
+          title: "File Too Large",
+          description: "Please select an image smaller than 5MB.",
+          variant: "destructive"
+        });
+        return;
+      }
+
+      // Check file type
+      if (!file.type.startsWith('image/')) {
+        toast({
+          title: "Invalid File Type",
+          description: "Please select an image file.",
+          variant: "destructive"
+        });
+        return;
+      }
+
       setIsUploading(true);
       try {
         console.log('Starting image upload for user:', user.id);
+        console.log('File details:', {
+          name: file.name,
+          size: file.size,
+          type: file.type
+        });
+        
         const imageUrl = await uploadEventImage(file, user.id);
         if (imageUrl) {
           updateFormData({ imageUrl });
@@ -56,7 +82,7 @@ export const EventBasicInfo: React.FC<EventBasicInfoProps> = ({
         } else {
           toast({
             title: "Upload Failed",
-            description: "There was an error uploading your image. Please try again.",
+            description: "There was an error uploading your image. Please check your connection and try again.",
             variant: "destructive"
           });
         }

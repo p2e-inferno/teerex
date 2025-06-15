@@ -16,19 +16,29 @@ export const uploadEventImage = async (file: File, userId: string): Promise<stri
     const fileExt = file.name.split('.').pop();
     const fileName = `${userId}/${Date.now()}.${fileExt}`;
     
-    const { error: uploadError } = await supabase.storage
+    console.log('Uploading file to path:', fileName);
+    console.log('File size:', file.size, 'bytes');
+    console.log('File type:', file.type);
+
+    const { data: uploadData, error: uploadError } = await supabase.storage
       .from('event-images')
-      .upload(fileName, file);
+      .upload(fileName, file, {
+        upsert: false,
+        cacheControl: '3600'
+      });
 
     if (uploadError) {
       console.error('Error uploading image:', uploadError);
       return null;
     }
 
+    console.log('Upload successful:', uploadData);
+
     const { data } = supabase.storage
       .from('event-images')
       .getPublicUrl(fileName);
 
+    console.log('Public URL generated:', data.publicUrl);
     return data.publicUrl;
   } catch (error) {
     console.error('Error uploading image:', error);
