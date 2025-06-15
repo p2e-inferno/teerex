@@ -1,4 +1,3 @@
-
 import { parseEther } from 'viem';
 import { base, baseSepolia } from 'wagmi/chains';
 import { ethers } from 'ethers';
@@ -276,11 +275,11 @@ export const purchaseKey = async (
     console.log(`Calling purchase for recipient: ${wallet.address} with value: ${keyPriceWei.toString()} wei`);
 
     const tx = await lockContract.purchase(
-      [], // _values: ETH value is passed in tx, so this is empty
+      [keyPriceWei], // _values: For a single key purchase, this is the price.
       [wallet.address], // _recipients
       ['0x0000000000000000000000000000000000000000'], // _referrers
       ['0x0000000000000000000000000000000000000000'], // _keyManagers
-      [[]], // _data
+      ['0x'], // _data: An array with a single empty bytes value.
       {
         value: keyPriceWei // Send ETH with the transaction
       }
