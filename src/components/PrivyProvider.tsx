@@ -50,7 +50,7 @@ export const PrivyProvider: React.FC<PrivyProviderProps> = ({ children }) => {
         embeddedWallets: {
           createOnLogin: 'users-without-wallets',
         },
-        loginMethods: ['email', 'wallet'],
+        loginMethods: ['email', 'wallet', 'sms'],
         defaultChain: {
           id: 8453, // Base mainnet
           name: 'Base',
