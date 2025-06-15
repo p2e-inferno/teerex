@@ -40,7 +40,7 @@ const UnlockABI = [
   }
 ];
 
-// PublicLock ABI for encoding initialize function
+// PublicLock ABI for encoding initialize function - matching successful transaction structure
 const PublicLockABI = [
   {
     "inputs": [
@@ -81,7 +81,6 @@ export const deployLock = async (config: LockConfig, wallet: any): Promise<Deplo
         params: [{ chainId: targetChainIdHex }],
       });
     } catch (switchError: any) {
-      // If the chain hasn't been added to MetaMask, add it
       if (switchError.code === 4902) {
         console.log('Adding Base Sepolia network to wallet');
         await provider.request({
@@ -125,30 +124,32 @@ export const deployLock = async (config: LockConfig, wallet: any): Promise<Deplo
     const ethersProvider = new ethers.BrowserProvider(provider);
     const signer = await ethersProvider.getSigner();
 
-    // Version must match the PublicLock version (using v14 as per successful transaction)
+    // Version 14 to match successful transaction
     const version = 14;
 
     // Create an instance of the Unlock factory contract
     const unlock = new ethers.Contract(factoryAddress, UnlockABI, signer);
 
-    // Convert price to wei (assuming ETH/native token)
-    const keyPriceWei = config.currency === 'FREE' 
-      ? 0n 
-      : parseEther(config.price.toString());
+    // Use unlimited values for duration and max keys like in successful transaction
+    const expirationDuration = "0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff";
+    const maxNumberOfKeys = "0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff";
+    
+    // Convert price to wei (0 for FREE)
+    const keyPriceWei = config.currency === 'FREE' ? 0n : parseEther(config.price.toString());
 
     // Token address (0x0 for native ETH)
     const tokenAddress = '0x0000000000000000000000000000000000000000';
 
-    // Create calldata using PublicLock's ABI to encode the initialize function
+    // Create calldata using PublicLock's ABI - matching the successful transaction format
     const lockInterface = new ethers.Interface(PublicLockABI);
     const calldata = lockInterface.encodeFunctionData(
-      'initialize(address,uint256,address,uint256,uint256,string)',
+      'initialize',
       [
         wallet.address, // address of the first lock manager
-        config.expirationDuration, // expirationDuration (in seconds)
+        expirationDuration, // unlimited expiration duration
         tokenAddress, // address of an ERC20 contract to use as currency (or 0x0 for native)
         keyPriceWei, // Amount to be paid
-        config.maxNumberOfKeys, // Maximum number of NFTs that can be purchased
+        maxNumberOfKeys, // unlimited number of keys
         config.name, // Name of membership contract
       ]
     );
@@ -167,16 +168,20 @@ export const deployLock = async (config: LockConfig, wallet: any): Promise<Deplo
       throw new Error('Transaction failed. Please try again.');
     }
 
-    // The lock address should be in the transaction receipt logs or returned value
-    // For now, we'll extract it from logs if available
+    // Extract lock address from the transaction receipt logs
     let lockAddress = 'Unknown';
     
-    // Look for NewLock event in logs
+    // Look for the NewLock event - the lock address should be in the logs
     if (receipt.logs && receipt.logs.length > 0) {
-      // The first log should contain the new lock address
-      const newLockLog = receipt.logs.find((log: any) => log.topics && log.topics.length > 2);
-      if (newLockLog && newLockLog.topics && newLockLog.topics[2]) {
-        lockAddress = `0x${newLockLog.topics[2].slice(-40)}`;
+      for (const log of receipt.logs) {
+        if (log.topics && log.topics.length > 2) {
+          // The lock address is typically in the second topic (index 1) or third topic (index 2)
+          const potentialAddress = `0x${log.topics[2].slice(-40)}`;
+          if (potentialAddress !== '0x0000000000000000000000000000000000000000') {
+            lockAddress = potentialAddress;
+            break;
+          }
+        }
       }
     }
 
