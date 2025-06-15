@@ -127,6 +127,7 @@ export const deployLock = async (config: LockConfig, wallet: any): Promise<Deplo
     const txResponse = await provider.request({
       method: 'eth_sendTransaction',
       params: [{
+        from: wallet.address, // Add the wallet address as 'from'
         to: factoryAddress,
         data: data,
         value: '0x0'
