@@ -1,4 +1,4 @@
-import { parseEther, createWalletClient, custom, createPublicClient, http, keccak256, toHex, `0x${string}` } from 'viem';
+import { parseEther, createWalletClient, custom, createPublicClient, http, keccak256, toHex, encodeFunctionData, type Address } from 'viem';
 import { base, baseSepolia } from 'wagmi/chains';
 
 interface LockConfig {
@@ -24,22 +24,35 @@ const UNLOCK_FACTORY_ADDRESSES = {
   [baseSepolia.id]: '0x259813B665C8f6074391028ef782e27B65840d89' // Base Sepolia testnet
 } as const;
 
-const unlockFactoryAbi = [
-  {
+// ABI for the PublicLock's initialize function (v13)
+const publicLockAbi = [{
     "inputs": [
-      { "internalType": "uint256", "name": "_expirationDuration", "type": "uint256" },
-      { "internalType": "address", "name": "_tokenAddress", "type": "address" },
-      { "internalType": "uint256", "name": "_keyPrice", "type": "uint256" },
-      { "internalType": "uint256", "name": "_maxNumberOfKeys", "type": "uint256" },
-      { "internalType": "string", "name": "_lockName", "type": "string" },
-      { "internalType": "bytes32", "name": "_salt", "type": "bytes32" }
+      { "internalType": "address", "name": "lockManager", "type": "address" },
+      { "internalType": "uint256", "name": "expirationDuration", "type": "uint256" },
+      { "internalType": "address", "name": "tokenAddress", "type": "address" },
+      { "internalType": "uint256", "name": "keyPrice", "type": "uint256" },
+      { "internalType": "uint256", "name": "maxNumberOfKeys", "type": "uint256" },
+      { "internalType": "string", "name": "lockName", "type": "string" }
     ],
-    "name": "createUpgradeableLock",
-    "outputs": [ { "internalType": "address", "name": "newLockAddress", "type": "address" } ],
+    "name": "initialize",
+    "outputs": [],
     "stateMutability": "nonpayable",
     "type": "function"
-  }
-] as const;
+}] as const;
+
+// ABI for the Unlock factory's createUpgradeableLockAtVersion function
+const unlockFactoryAbi = [{
+    "inputs": [
+        { "internalType": "bytes", "name": "calldata", "type": "bytes" },
+        { "internalType": "uint256", "name": "version", "type": "uint256" }
+    ],
+    "name": "createUpgradeableLockAtVersion",
+    "outputs": [
+        { "internalType": "address", "name": "newLockAddress", "type": "address" }
+    ],
+    "stateMutability": "nonpayable",
+    "type": "function"
+}] as const;
 
 export const deployLock = async (config: LockConfig, wallet: any): Promise<DeploymentResult> => {
   try {
@@ -98,7 +111,7 @@ export const deployLock = async (config: LockConfig, wallet: any): Promise<Deplo
     });
 
     const walletClient = createWalletClient({
-        account: wallet.address as `0x${string}`,
+        account: wallet.address as Address,
         chain: baseSepolia,
         transport: custom(provider),
     });
@@ -109,26 +122,35 @@ export const deployLock = async (config: LockConfig, wallet: any): Promise<Deplo
     const keyPriceWei = config.currency === 'FREE' 
       ? 0n 
       : parseEther(config.price.toString());
-    const tokenAddress = '0x0000000000000000000000000000000000000000';
+    const tokenAddress = '0x0000000000000000000000000000000000000000' as Address;
     
-    // Create a unique salt for the lock
-    const salt = keccak256(toHex(`${config.name}-${Date.now()}`));
+    // Encode the calldata for the PublicLock's initialize function
+    const calldata = encodeFunctionData({
+      abi: publicLockAbi,
+      functionName: 'initialize',
+      args: [
+        wallet.address as Address, // lockManager
+        BigInt(config.expirationDuration),
+        tokenAddress,
+        keyPriceWei,
+        BigInt(config.maxNumberOfKeys),
+        config.name,
+      ]
+    });
 
-    console.log(`Simulating lock creation for "${config.name}"`);
+    const lockVersion = 13n; // Using PublicLock v13
+
+    console.log(`Simulating lock creation for "${config.name}" with version ${lockVersion}`);
 
     const { request } = await publicClient.simulateContract({
         address: factoryAddress,
         abi: unlockFactoryAbi,
-        functionName: 'createUpgradeableLock',
+        functionName: 'createUpgradeableLockAtVersion',
         args: [
-            BigInt(config.expirationDuration),
-            tokenAddress,
-            keyPriceWei,
-            BigInt(config.maxNumberOfKeys),
-            config.name,
-            salt
+            calldata,
+            lockVersion
         ],
-        account: wallet.address as `0x${string}`,
+        account: wallet.address as Address,
     });
     
     console.log('Simulation successful. Sending transaction...');
@@ -147,12 +169,20 @@ export const deployLock = async (config: LockConfig, wallet: any): Promise<Deplo
     let lockAddress = 'Unknown';
     // NewLock event signature: event NewLock(address indexed lockOwner, address indexed newLockAddress);
     const newLockEventTopic = '0x01017ed19df0c7f8acc436147b234b09664a9fb4797b4fa3fb9e599c2eb67be7';
-    const newLockLog = receipt.logs.find(log => log.topics[0] === newLockEventTopic);
+    const newLockLog = receipt.logs.find(log => log.topics[0] === newLockEventTopic && log.address.toLowerCase() === factoryAddress.toLowerCase());
     
     if (newLockLog && newLockLog.topics[2]) {
-      lockAddress = `0x${newLockLog.topics[2].slice(-40)}`;
+      lockAddress = `0x${newLockLog.topics[2].slice(26)}`;
     } else {
-        throw new Error('Could not determine lock address from transaction logs.');
+        // Fallback: search for a NewLock event from any address if not found from factory
+        const anyNewLockLog = receipt.logs.find(log => log.topics[0] === newLockEventTopic);
+        if (anyNewLockLog && anyNewLockLog.topics[2]) {
+          console.warn("Found NewLock event from an unexpected address:", anyNewLockLog.address);
+          lockAddress = `0x${anyNewLockLog.topics[2].slice(26)}`;
+        } else {
+          console.error("Could not determine lock address from transaction logs.", receipt.logs);
+          throw new Error('Could not determine lock address from transaction logs.');
+        }
     }
 
     console.log('Lock deployed successfully:', {
