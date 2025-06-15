@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { usePrivy, useWallets } from '@privy-io/react-auth';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useNavigate, useSearchParams, Navigate } from 'react-router-dom';
 import { EventBasicInfo } from '@/components/create-event/EventBasicInfo';
 import { EventDetails } from '@/components/create-event/EventDetails';
 import { TicketSettings } from '@/components/create-event/TicketSettings';
