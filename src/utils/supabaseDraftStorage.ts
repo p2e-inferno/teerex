@@ -1,3 +1,4 @@
+
 import { supabase } from '@/integrations/supabase/client';
 import { EventDraft, PublishedEvent } from '@/types/event';
 import { EventFormData } from '@/pages/CreateEvent';
@@ -186,6 +187,8 @@ export const getPublishedEvent = async (id: string, userId: string): Promise<Pub
       return null;
     }
 
+    console.log('Fetching published event with id:', id, 'for user:', userId);
+
     const { data, error } = await supabase
       .from('events')
       .select('*')
@@ -197,6 +200,8 @@ export const getPublishedEvent = async (id: string, userId: string): Promise<Pub
       console.error('Error fetching published event:', error);
       return null;
     }
+
+    console.log('Retrieved event data from database:', data);
 
     return {
       ...data,
@@ -216,7 +221,7 @@ export const getPublishedEvent = async (id: string, userId: string): Promise<Pub
   }
 };
 
-export const updatePublishedEvent = async (id: string, formData: EventFormData, userId:string): Promise<void> => {
+export const updatePublishedEvent = async (id: string, formData: EventFormData, userId: string): Promise<void> => {
   try {
     if (!userId) {
       throw new Error('User ID is required to update event');
@@ -240,13 +245,30 @@ export const updatePublishedEvent = async (id: string, formData: EventFormData, 
     };
 
     console.log('Attempting to update event in Supabase with this data:', eventData);
+    console.log('Update conditions - id:', id, 'creator_id:', userId);
 
+    // First, let's check if the event exists
+    const { data: existingEvent, error: fetchError } = await supabase
+      .from('events')
+      .select('id, creator_id, image_url')
+      .eq('id', id)
+      .eq('creator_id', userId)
+      .single();
+
+    if (fetchError) {
+      console.error('Error fetching existing event for update:', fetchError);
+      throw new Error('Event not found or access denied');
+    }
+
+    console.log('Existing event found:', existingEvent);
+
+    // Now perform the update
     const { data, error } = await supabase
       .from('events')
       .update(eventData)
       .eq('id', id)
       .eq('creator_id', userId)
-      .select();
+      .select('*');
 
     if (error) {
       console.error('Error updating published event:', error);
@@ -254,6 +276,13 @@ export const updatePublishedEvent = async (id: string, formData: EventFormData, 
     }
 
     console.log('Successfully updated event. Result from Supabase:', data);
+
+    if (!data || data.length === 0) {
+      console.error('No rows were updated. This might indicate a permission or matching issue.');
+      throw new Error('Failed to update event - no rows affected');
+    }
+
+    console.log('Event updated successfully. New image_url:', data[0]?.image_url);
   } catch (error) {
     console.error('Error updating published event:', error);
     throw error;

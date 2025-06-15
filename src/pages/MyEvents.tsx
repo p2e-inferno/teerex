@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { usePrivy } from '@privy-io/react-auth';
 import { useNavigate, Navigate } from 'react-router-dom';
@@ -19,27 +20,40 @@ const MyEvents = () => {
     return <Navigate to="/" replace />;
   }
 
-  useEffect(() => {
-    const loadUserEvents = async () => {
-      try {
-        if (user?.id) {
-          const userEvents = await getUserEvents(user.id);
-          setEvents(userEvents);
-        }
-      } catch (error) {
-        console.error('Error loading user events:', error);
-        toast({
-          title: "Error Loading Events",
-          description: "There was an error loading your events. Please try again.",
-          variant: "destructive"
-        });
-      } finally {
-        setIsLoading(false);
+  const loadUserEvents = async () => {
+    try {
+      if (user?.id) {
+        console.log('Loading events for user:', user.id);
+        const userEvents = await getUserEvents(user.id);
+        console.log('Loaded events:', userEvents);
+        setEvents(userEvents);
       }
-    };
+    } catch (error) {
+      console.error('Error loading user events:', error);
+      toast({
+        title: "Error Loading Events",
+        description: "There was an error loading your events. Please try again.",
+        variant: "destructive"
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
+  useEffect(() => {
     loadUserEvents();
   }, [user?.id, toast]);
+
+  // Refetch events when returning from edit
+  useEffect(() => {
+    const handleFocus = () => {
+      console.log('Window focused, reloading events...');
+      loadUserEvents();
+    };
+
+    window.addEventListener('focus', handleFocus);
+    return () => window.removeEventListener('focus', handleFocus);
+  }, [user?.id]);
 
   const handleEventDetails = (event: PublishedEvent) => {
     toast({
@@ -49,6 +63,7 @@ const MyEvents = () => {
   };
 
   const handleEditEvent = (event: PublishedEvent) => {
+    console.log('Editing event:', event.id, 'Current image_url:', event.image_url);
     navigate(`/create?eventId=${event.id}`);
   };
 
@@ -97,7 +112,7 @@ const MyEvents = () => {
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="text-sm font-medium text-gray-600">Total Events</p>
-                    <p className="text-2xl font-bold text-gray-900">{totalEvents}</p>
+                    <p className="text-2xl font-bold text-gray-900">{events.length}</p>
                   </div>
                   <div className="w-12 h-12 bg-purple-100 rounded-full flex items-center justify-center">
                     <Calendar className="w-6 h-6 text-purple-600" />
@@ -111,7 +126,7 @@ const MyEvents = () => {
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="text-sm font-medium text-gray-600">Total Capacity</p>
-                    <p className="text-2xl font-bold text-gray-900">{totalCapacity}</p>
+                    <p className="text-2xl font-bold text-gray-900">{events.reduce((sum, event) => sum + event.capacity, 0)}</p>
                   </div>
                   <div className="w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center">
                     <Users className="w-6 h-6 text-blue-600" />
@@ -125,7 +140,7 @@ const MyEvents = () => {
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="text-sm font-medium text-gray-600">Free Events</p>
-                    <p className="text-2xl font-bold text-gray-900">{freeEvents}</p>
+                    <p className="text-2xl font-bold text-gray-900">{events.filter(event => event.currency === 'FREE').length}</p>
                   </div>
                   <div className="w-12 h-12 bg-green-100 rounded-full flex items-center justify-center">
                     <TrendingUp className="w-6 h-6 text-green-600" />
@@ -139,7 +154,7 @@ const MyEvents = () => {
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="text-sm font-medium text-gray-600">Paid Events</p>
-                    <p className="text-2xl font-bold text-gray-900">{paidEvents}</p>
+                    <p className="text-2xl font-bold text-gray-900">{events.filter(event => event.currency !== 'FREE').length}</p>
                   </div>
                   <div className="w-12 h-12 bg-orange-100 rounded-full flex items-center justify-center">
                     <DollarSign className="w-6 h-6 text-orange-600" />
@@ -179,14 +194,17 @@ const MyEvents = () => {
               <p className="text-gray-600">Events you've created and published</p>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {events.map((event) => (
-                <EventCard
-                  key={event.id}
-                  event={event}
-                  onViewDetails={handleEditEvent}
-                  actionType="edit"
-                />
-              ))}
+              {events.map((event) => {
+                console.log('Rendering event card for:', event.id, 'with image_url:', event.image_url);
+                return (
+                  <EventCard
+                    key={event.id}
+                    event={event}
+                    onViewDetails={handleEditEvent}
+                    actionType="edit"
+                  />
+                );
+              })}
             </div>
           </div>
         )}
