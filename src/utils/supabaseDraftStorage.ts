@@ -5,7 +5,14 @@ import { EventFormData } from '@/pages/CreateEvent';
 
 export const uploadEventImage = async (file: File, userId: string): Promise<string | null> => {
   try {
-    // Check if we have any session (anonymous or authenticated)
+    console.log('Starting image upload for user:', userId);
+    console.log('File details:', {
+      name: file.name,
+      size: file.size,
+      type: file.type
+    });
+
+    // Check if we have a current session
     const { data: { session }, error: sessionError } = await supabase.auth.getSession();
     
     if (sessionError) {
@@ -13,21 +20,17 @@ export const uploadEventImage = async (file: File, userId: string): Promise<stri
       return null;
     }
 
-    // If no session, try to create an anonymous one
     if (!session) {
-      const { error: anonError } = await supabase.auth.signInAnonymously();
-      if (anonError) {
-        console.error('Error creating anonymous session:', anonError);
-        return null;
-      }
+      console.error('No active Supabase session found');
+      return null;
     }
+
+    console.log('Active session found, proceeding with upload');
 
     const fileExt = file.name.split('.').pop();
     const fileName = `${userId}/${Date.now()}.${fileExt}`;
     
     console.log('Uploading file to path:', fileName);
-    console.log('File size:', file.size, 'bytes');
-    console.log('File type:', file.type);
 
     const { data: uploadData, error: uploadError } = await supabase.storage
       .from('event-images')

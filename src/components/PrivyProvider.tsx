@@ -1,6 +1,6 @@
 
 import React, { useEffect } from 'react';
-import { PrivyProvider as Privy } from '@privy-io/react-auth';
+import { PrivyProvider as Privy, usePrivy } from '@privy-io/react-auth';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { AlertTriangle } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
@@ -107,28 +107,42 @@ export const PrivyProvider: React.FC<PrivyProviderProps> = ({ children }) => {
 
 // Component to sync Privy auth with Supabase
 const SupabaseAuthSync: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const { user, authenticated, getAccessToken } = usePrivy();
+
   useEffect(() => {
     const syncAuth = async () => {
-      try {
-        // Check if there's an existing Supabase session
-        const { data: { session } } = await supabase.auth.getSession();
-        
-        if (!session) {
-          // Create an anonymous session for file uploads
-          const { error } = await supabase.auth.signInAnonymously();
-          if (error) {
-            console.error('Error creating anonymous session:', error);
-          } else {
-            console.log('Anonymous session created for file uploads');
+      if (authenticated && user) {
+        try {
+          console.log('Syncing Privy user with Supabase:', user.id);
+          
+          // Get Privy access token
+          const accessToken = await getAccessToken();
+          
+          if (accessToken) {
+            // Set the Supabase session using the Privy access token
+            // This creates a custom JWT that Supabase can understand
+            const { error } = await supabase.auth.setSession({
+              access_token: accessToken,
+              refresh_token: accessToken, // Using access token as refresh token for simplicity
+            });
+            
+            if (error) {
+              console.error('Error setting Supabase session:', error);
+            } else {
+              console.log('Successfully synced Privy auth with Supabase');
+            }
           }
+        } catch (error) {
+          console.error('Error syncing auth:', error);
         }
-      } catch (error) {
-        console.error('Error syncing auth:', error);
+      } else {
+        // Clear Supabase session when user is not authenticated
+        await supabase.auth.signOut();
       }
     };
 
     syncAuth();
-  }, []);
+  }, [authenticated, user, getAccessToken]);
 
   return <>{children}</>;
 };
