@@ -5,7 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Plus, Calendar, TrendingUp, Users, DollarSign } from 'lucide-react';
 import { EventCard } from '@/components/events/EventCard';
-import { getUserEvents, PublishedEvent, updateEventLockAddress } from '@/utils/eventUtils';
+import { getUserEvents, PublishedEvent } from '@/utils/eventUtils';
 import { useToast } from '@/hooks/use-toast';
 
 const MyEvents = () => {
@@ -14,7 +14,6 @@ const MyEvents = () => {
   const { toast } = useToast();
   const [events, setEvents] = useState<PublishedEvent[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [isFixing, setIsFixing] = useState(false);
 
   if (!authenticated) {
     return <Navigate to="/" replace />;
@@ -47,35 +46,6 @@ const MyEvents = () => {
       title: "Coming Soon",
       description: "Event management features will be available soon!",
     });
-  };
-
-  const handleFixLockAddress = async (eventId: string) => {
-    if (!user?.id) return;
-
-    const correctLockAddress = '0xf2de0438b700b5a8b4f30e48c65ac6fcc79c5bfa';
-
-    setIsFixing(true);
-    try {
-      await updateEventLockAddress(eventId, correctLockAddress, user.id);
-
-      toast({
-        title: 'Success',
-        description: 'Event lock address has been updated successfully.',
-      });
-
-      // Refresh events list to reflect the change
-      const userEvents = await getUserEvents(user.id);
-      setEvents(userEvents);
-    } catch (error) {
-      console.error('Error fixing lock address:', error);
-      toast({
-        title: 'Update Failed',
-        description: 'Could not update the lock address. Please check console for details.',
-        variant: 'destructive',
-      });
-    } finally {
-      setIsFixing(false);
-    }
   };
 
   // Calculate stats
@@ -205,32 +175,13 @@ const MyEvents = () => {
               <p className="text-gray-600">Events you've created and published</p>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {events.map((event) => {
-                const isInvalidLock = event.lock_address === 'Unknown' || /^0x0{40}$/.test(event.lock_address);
-                return (
-                  <div key={event.id} className="relative">
-                    <EventCard
-                      event={event}
-                      onViewDetails={handleEventDetails}
-                    />
-                    {isInvalidLock && (
-                       <div className="mt-2">
-                        <p className="text-sm text-red-600 mb-2">
-                          This event has an invalid contract address.
-                        </p>
-                        <Button
-                          variant="destructive"
-                          className="w-full"
-                          onClick={() => handleFixLockAddress(event.id)}
-                          disabled={isFixing}
-                        >
-                          {isFixing ? 'Fixing...' : 'Fix Contract Address'}
-                        </Button>
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
+              {events.map((event) => (
+                <EventCard
+                  key={event.id}
+                  event={event}
+                  onViewDetails={handleEventDetails}
+                />
+              ))}
             </div>
           </div>
         )}

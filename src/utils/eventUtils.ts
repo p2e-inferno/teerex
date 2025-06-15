@@ -59,26 +59,6 @@ export const savePublishedEvent = async (
   }
 };
 
-export const updateEventLockAddress = async (eventId: string, lockAddress: string, userId: string): Promise<void> => {
-  try {
-    const { error } = await supabase
-      .from('events')
-      .update({ lock_address: lockAddress, updated_at: new Date().toISOString() })
-      .eq('id', eventId)
-      .eq('creator_id', userId);
-
-    if (error) {
-      console.error('Error updating event lock address:', error);
-      throw error;
-    }
-
-    console.log(`Event ${eventId} lock address updated to ${lockAddress}`);
-  } catch (error) {
-    console.error('Error updating event lock address:', error);
-    throw error;
-  }
-};
-
 export const getPublishedEvents = async (): Promise<PublishedEvent[]> => {
   try {
     const { data, error } = await supabase
