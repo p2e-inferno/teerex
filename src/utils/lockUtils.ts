@@ -1,6 +1,7 @@
 
 import { parseEther } from 'viem';
 import { base, baseSepolia } from 'wagmi/chains';
+import { ethers } from 'ethers';
 
 interface LockConfig {
   name: string;
@@ -19,11 +20,43 @@ interface DeploymentResult {
   error?: string;
 }
 
-// Unlock Protocol factory contract addresses (corrected)
+// Unlock Protocol factory contract addresses
 const UNLOCK_FACTORY_ADDRESSES = {
   [base.id]: '0xd0b14797b9D08493392865647384974470202A78', // Base mainnet
   [baseSepolia.id]: '0x259813B665C8f6074391028ef782e27B65840d89' // Base Sepolia testnet
 } as const;
+
+// Unlock factory ABI (simplified)
+const UnlockABI = [
+  {
+    "inputs": [
+      { "internalType": "bytes", "name": "calldata", "type": "bytes" },
+      { "internalType": "uint256", "name": "version", "type": "uint256" }
+    ],
+    "name": "createUpgradeableLockAtVersion",
+    "outputs": [{ "internalType": "address", "name": "", "type": "address" }],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  }
+];
+
+// PublicLock ABI for encoding initialize function
+const PublicLockABI = [
+  {
+    "inputs": [
+      { "internalType": "address", "name": "_lockCreator", "type": "address" },
+      { "internalType": "uint256", "name": "_expirationDuration", "type": "uint256" },
+      { "internalType": "address", "name": "_tokenAddress", "type": "address" },
+      { "internalType": "uint256", "name": "_keyPrice", "type": "uint256" },
+      { "internalType": "uint256", "name": "_maxNumberOfKeys", "type": "uint256" },
+      { "internalType": "string", "name": "_lockName", "type": "string" }
+    ],
+    "name": "initialize",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  }
+];
 
 export const deployLock = async (config: LockConfig, wallet: any): Promise<DeploymentResult> => {
   try {
@@ -88,121 +121,73 @@ export const deployLock = async (config: LockConfig, wallet: any): Promise<Deplo
     const factoryAddress = UNLOCK_FACTORY_ADDRESSES[baseSepolia.id];
     console.log('Using Unlock Factory Address:', factoryAddress);
 
+    // Create ethers provider and signer
+    const ethersProvider = new ethers.BrowserProvider(provider);
+    const signer = await ethersProvider.getSigner();
+
+    // Version must match the PublicLock version (using v14 as per successful transaction)
+    const version = 14;
+
+    // Create an instance of the Unlock factory contract
+    const unlock = new ethers.Contract(factoryAddress, UnlockABI, signer);
+
     // Convert price to wei (assuming ETH/native token)
     const keyPriceWei = config.currency === 'FREE' 
-      ? '0' 
-      : parseEther(config.price.toString()).toString();
+      ? 0n 
+      : parseEther(config.price.toString());
 
     // Token address (0x0 for native ETH)
     const tokenAddress = '0x0000000000000000000000000000000000000000';
 
-    console.log('Deploying with params:', {
-      expirationDuration: config.expirationDuration,
-      tokenAddress,
-      keyPrice: keyPriceWei,
-      maxNumberOfKeys: config.maxNumberOfKeys,
-      lockName: config.name
-    });
+    // Create calldata using PublicLock's ABI to encode the initialize function
+    const lockInterface = new ethers.Interface(PublicLockABI);
+    const calldata = lockInterface.encodeFunctionData(
+      'initialize(address,uint256,address,uint256,uint256,string)',
+      [
+        wallet.address, // address of the first lock manager
+        config.expirationDuration, // expirationDuration (in seconds)
+        tokenAddress, // address of an ERC20 contract to use as currency (or 0x0 for native)
+        keyPriceWei, // Amount to be paid
+        config.maxNumberOfKeys, // Maximum number of NFTs that can be purchased
+        config.name, // Name of membership contract
+      ]
+    );
 
-    // Use the correct Unlock Protocol createLock function signature
-    // createLock(uint256 _expirationDuration, address _tokenAddress, uint256 _keyPrice, uint256 _maxNumberOfKeys, string _lockName, bytes12 _salt)
-    
-    // Generate a random salt for unique deployment (12 bytes)
-    const saltBytes = new Uint8Array(12);
-    crypto.getRandomValues(saltBytes);
-    const salt = Array.from(saltBytes, byte => byte.toString(16).padStart(2, '0')).join('');
+    console.log('Creating lock with calldata and version:', version);
 
-    // Encode the function call using proper ABI encoding
-    const functionSelector = '0x385ac9b9'; // createLock function selector
-    
-    // Pad values to 32 bytes (64 hex chars)
-    const padHex = (value: string, bytes: number = 32): string => {
-      return value.replace('0x', '').padStart(bytes * 2, '0');
-    };
-
-    // Encode string parameter (lockName)
-    const nameBytes = new TextEncoder().encode(config.name);
-    const nameLength = nameBytes.length;
-    const nameLengthHex = padHex(nameLength.toString(16));
-    const nameDataHex = Array.from(nameBytes, byte => byte.toString(16).padStart(2, '0')).join('');
-    const paddedNameHex = nameDataHex.padEnd(Math.ceil(nameDataHex.length / 64) * 64, '0');
-
-    // Calculate offsets
-    const stringOffset = 6 * 32; // 6 parameters before string = 192 bytes = 0xc0
-    const saltOffset = stringOffset + 32 + Math.ceil(nameDataHex.length / 64) * 32; // after string data
-
-    const encodedParams = [
-      padHex(config.expirationDuration.toString(16)), // expirationDuration
-      padHex(tokenAddress.slice(2)), // tokenAddress
-      padHex(BigInt(keyPriceWei).toString(16)), // keyPrice
-      padHex(config.maxNumberOfKeys.toString(16)), // maxNumberOfKeys
-      padHex(stringOffset.toString(16)), // string offset
-      padHex(saltOffset.toString(16)), // salt offset
-      nameLengthHex, // string length
-      paddedNameHex, // string data
-      padHex(salt, 12) // salt (12 bytes)
-    ].join('');
-
-    const data = functionSelector + encodedParams;
-    console.log('Encoded transaction data:', data);
-
-    // Send transaction using Privy wallet provider
-    const txResponse = await provider.request({
-      method: 'eth_sendTransaction',
-      params: [{
-        from: wallet.address,
-        to: factoryAddress,
-        data: data,
-        value: '0x0'
-      }]
-    });
-
-    console.log('Lock deployment transaction sent:', txResponse);
+    // Create the lock
+    const tx = await unlock.createUpgradeableLockAtVersion(calldata, version);
+    console.log('Lock deployment transaction sent:', tx.hash);
 
     // Wait for transaction confirmation
-    let receipt = null;
-    let attempts = 0;
-    const maxAttempts = 60; // Wait up to 60 seconds
-    
-    while (!receipt && attempts < maxAttempts) {
-      try {
-        receipt = await provider.request({
-          method: 'eth_getTransactionReceipt',
-          params: [txResponse]
-        });
-        
-        if (!receipt) {
-          await new Promise(resolve => setTimeout(resolve, 1000));
-          attempts++;
-        }
-      } catch (error) {
-        await new Promise(resolve => setTimeout(resolve, 1000));
-        attempts++;
-      }
-    }
-
-    if (!receipt) {
-      throw new Error('Transaction receipt not found. Please check the blockchain explorer.');
-    }
-
+    const receipt = await tx.wait();
     console.log('Transaction receipt:', receipt);
 
-    if (receipt.status !== '0x1') {
+    if (receipt.status !== 1) {
       throw new Error('Transaction failed. Please try again.');
     }
 
-    // Extract lock address from logs
-    // The NewLock event should be emitted with the lock address
-    const lockAddress = receipt.logs?.[0]?.address || 'Unknown';
+    // The lock address should be in the transaction receipt logs or returned value
+    // For now, we'll extract it from logs if available
+    let lockAddress = 'Unknown';
+    
+    // Look for NewLock event in logs
+    if (receipt.logs && receipt.logs.length > 0) {
+      // The first log should contain the new lock address
+      const newLockLog = receipt.logs.find((log: any) => log.topics && log.topics.length > 2);
+      if (newLockLog && newLockLog.topics && newLockLog.topics[2]) {
+        lockAddress = `0x${newLockLog.topics[2].slice(-40)}`;
+      }
+    }
 
     console.log('Lock deployed successfully:', {
-      transactionHash: txResponse,
+      transactionHash: tx.hash,
       lockAddress: lockAddress
     });
 
     return {
       success: true,
-      transactionHash: txResponse,
+      transactionHash: tx.hash,
       lockAddress: lockAddress
     };
   } catch (error) {
