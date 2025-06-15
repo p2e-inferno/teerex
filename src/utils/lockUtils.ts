@@ -19,7 +19,7 @@ interface DeploymentResult {
   error?: string;
 }
 
-// Unlock Protocol factory contract addresses (corrected)
+// Unlock Protocol factory contract addresses
 const UNLOCK_FACTORY_ADDRESSES = {
   [base.id]: '0xd0b14797b9D08493392865647384974470202A78', // Base mainnet
   [baseSepolia.id]: '0x259813B665C8f6074391028ef782e27B65840d89' // Base Sepolia testnet
@@ -104,16 +104,11 @@ export const deployLock = async (config: LockConfig, wallet: any): Promise<Deplo
       lockName: config.name
     });
 
-    // Correct Unlock Protocol createLock function signature
-    // createLock(uint256 _expirationDuration, address _tokenAddress, uint256 _keyPrice, uint256 _maxNumberOfKeys, string _lockName, bytes12 _salt)
+    // Use the modern Unlock Protocol createLock function signature (v13+)
+    // createLock(uint256 _expirationDuration, address _tokenAddress, uint256 _keyPrice, uint256 _maxNumberOfKeys, string memory _lockName)
     
-    // Generate a random salt for unique deployment (12 bytes = 24 hex chars)
-    const saltBytes = new Uint8Array(12);
-    crypto.getRandomValues(saltBytes);
-    const salt = '0x' + Array.from(saltBytes, byte => byte.toString(16).padStart(2, '0')).join('');
-
-    // Function selector for createLock
-    const functionSelector = '0x385ac9b9';
+    // Function selector for createLock (5 parameters, no salt)
+    const functionSelector = '0x15bccb73';
     
     // Helper function to pad hex values to 32 bytes
     const padHex = (value: string): string => {
@@ -126,7 +121,7 @@ export const deployLock = async (config: LockConfig, wallet: any): Promise<Deplo
     const keyPriceHex = padHex(BigInt(keyPriceWei).toString(16));
     const maxNumberOfKeysHex = padHex(config.maxNumberOfKeys.toString(16));
     
-    // For dynamic types (string, bytes), we need to encode length and data
+    // For string parameter (lockName)
     const nameBytes = new TextEncoder().encode(config.name);
     const nameLength = nameBytes.length;
     const nameLengthHex = padHex(nameLength.toString(16));
@@ -135,16 +130,9 @@ export const deployLock = async (config: LockConfig, wallet: any): Promise<Deplo
     const nameHex = Array.from(nameBytes, byte => byte.toString(16).padStart(2, '0')).join('');
     const paddedNameHex = nameHex.padEnd(Math.ceil(nameHex.length / 64) * 64, '0');
     
-    // Calculate offset for string parameter (6th parameter in function)
-    // Offset = 5 * 32 bytes = 160 bytes = 0xa0
-    const stringOffsetHex = padHex('a0');
-    
-    // Calculate offset for salt parameter (comes after string data)
-    const saltOffsetBytes = 160 + 32 + Math.ceil(nameHex.length / 64) * 32;
-    const saltOffsetHex = padHex(saltOffsetBytes.toString(16));
-    
-    // Salt is 12 bytes, so we pad it to 32 bytes
-    const saltHex = salt.replace('0x', '').padEnd(64, '0');
+    // Calculate offset for string parameter (5th parameter)
+    // Offset = 4 * 32 bytes = 128 bytes = 0x80
+    const stringOffsetHex = padHex('80');
 
     // Construct the full transaction data
     const encodedData = functionSelector + 
@@ -153,10 +141,8 @@ export const deployLock = async (config: LockConfig, wallet: any): Promise<Deplo
       keyPriceHex + 
       maxNumberOfKeysHex + 
       stringOffsetHex +
-      saltOffsetHex +
       nameLengthHex + 
-      paddedNameHex +
-      saltHex;
+      paddedNameHex;
 
     console.log('Encoded transaction data:', encodedData);
 
@@ -207,7 +193,23 @@ export const deployLock = async (config: LockConfig, wallet: any): Promise<Deplo
 
     // Extract lock address from logs
     // The NewLock event should be emitted with the lock address
-    const lockAddress = receipt.logs?.[0]?.address || 'Unknown';
+    let lockAddress = 'Unknown';
+    
+    if (receipt.logs && receipt.logs.length > 0) {
+      // Look for NewLock event in logs
+      for (const log of receipt.logs) {
+        if (log.topics && log.topics.length > 0) {
+          // NewLock event signature: 0x01017ed19df0c7f8acc436147b234b09664a9fb4797b4fa3fb9e599c2eb67be7
+          if (log.topics[0] === '0x01017ed19df0c7f8acc436147b234b09664a9fb4797b4fa3fb9e599c2eb67be7') {
+            // The lock address is in the second topic
+            if (log.topics[1]) {
+              lockAddress = '0x' + log.topics[1].slice(-40);
+              break;
+            }
+          }
+        }
+      }
+    }
 
     console.log('Lock deployed successfully:', {
       transactionHash: txResponse,
