@@ -1,8 +1,9 @@
 
-import React from 'react';
+import React, { useEffect } from 'react';
 import { PrivyProvider as Privy } from '@privy-io/react-auth';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { AlertTriangle } from 'lucide-react';
+import { supabase } from '@/integrations/supabase/client';
 
 interface PrivyProviderProps {
   children: React.ReactNode;
@@ -97,7 +98,39 @@ export const PrivyProvider: React.FC<PrivyProviderProps> = ({ children }) => {
         ],
       }}
     >
-      {children}
+      <SupabaseAuthSync>
+        {children}
+      </SupabaseAuthSync>
     </Privy>
   );
 };
+
+// Component to sync Privy auth with Supabase
+const SupabaseAuthSync: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  useEffect(() => {
+    const syncAuth = async () => {
+      try {
+        // Check if there's an existing Supabase session
+        const { data: { session } } = await supabase.auth.getSession();
+        
+        if (!session) {
+          // Create an anonymous session for file uploads
+          const { error } = await supabase.auth.signInAnonymously();
+          if (error) {
+            console.error('Error creating anonymous session:', error);
+          } else {
+            console.log('Anonymous session created for file uploads');
+          }
+        }
+      } catch (error) {
+        console.error('Error syncing auth:', error);
+      }
+    };
+
+    syncAuth();
+  }, []);
+
+  return <>{children}</>;
+};
+</SupabaseAuthSync>
+

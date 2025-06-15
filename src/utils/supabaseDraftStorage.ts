@@ -5,12 +5,21 @@ import { EventFormData } from '@/pages/CreateEvent';
 
 export const uploadEventImage = async (file: File, userId: string): Promise<string | null> => {
   try {
-    // Verify user is authenticated
-    const { data: { user }, error: authError } = await supabase.auth.getUser();
+    // Check if we have any session (anonymous or authenticated)
+    const { data: { session }, error: sessionError } = await supabase.auth.getSession();
     
-    if (authError || !user || user.id !== userId) {
-      console.error('User not authenticated or mismatch:', authError);
+    if (sessionError) {
+      console.error('Session error:', sessionError);
       return null;
+    }
+
+    // If no session, try to create an anonymous one
+    if (!session) {
+      const { error: anonError } = await supabase.auth.signInAnonymously();
+      if (anonError) {
+        console.error('Error creating anonymous session:', anonError);
+        return null;
+      }
     }
 
     const fileExt = file.name.split('.').pop();
