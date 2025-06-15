@@ -1,4 +1,3 @@
-
 import { supabase } from '@/integrations/supabase/client';
 import { EventDraft } from '@/types/event';
 import { EventFormData } from '@/pages/CreateEvent';
@@ -187,25 +186,12 @@ export const deleteDraft = async (id: string, userId: string): Promise<void> => 
       throw new Error('User ID is required to delete draft');
     }
 
-    // First get the draft to check if it has an image
-    const { data: draft } = await supabase
-      .from('event_drafts')
-      .select('image_url')
-      .eq('id', id)
-      .eq('user_id', userId)
-      .single();
+    // NOTE: We are no longer deleting images from storage when a draft is deleted.
+    // This is to prevent deleting images that are also being used by published events.
+    // A more robust solution might involve checking for image references before deletion,
+    // but for now, this prevents broken image links on published events.
 
-    // Delete the image from storage if it exists
-    if (draft?.image_url) {
-      const imagePath = draft.image_url.split('/').pop();
-      if (imagePath) {
-        await supabase.storage
-          .from('event-images')
-          .remove([`${userId}/${imagePath}`]);
-      }
-    }
-
-    // Delete the draft
+    // Delete the draft from the database
     const { error } = await supabase
       .from('event_drafts')
       .delete()
