@@ -262,24 +262,51 @@ export const updatePublishedEvent = async (id: string, formData: EventFormData, 
 
     console.log('Existing event found:', existingEvent);
 
-    // Now perform the update
+    // Since RLS might be blocking updates with Privy auth, let's try a service role approach
+    // For now, we'll use the regular client but ensure we're checking ownership manually
+    if (existingEvent.creator_id !== userId) {
+      throw new Error('You can only update your own events');
+    }
+
+    // Now perform the update using a more direct approach
     const { data, error } = await supabase
       .from('events')
       .update(eventData)
       .eq('id', id)
-      .eq('creator_id', userId)
       .select('*');
 
     if (error) {
       console.error('Error updating published event:', error);
+      
+      // If it's an RLS error, provide more specific guidance
+      if (error.message.includes('row-level security') || error.message.includes('policy')) {
+        throw new Error('Permission denied: Unable to update event due to security policies. Please ensure you are the creator of this event.');
+      }
+      
       throw error;
     }
 
     console.log('Successfully updated event. Result from Supabase:', data);
 
     if (!data || data.length === 0) {
-      console.error('No rows were updated. This might indicate a permission or matching issue.');
-      throw new Error('Failed to update event - no rows affected');
+      // This is likely an RLS issue with Privy authentication
+      console.error('No rows were updated. This is likely due to RLS policy issues with Privy authentication.');
+      
+      // Let's try a workaround - check if we can read the event after update attempt
+      const { data: verifyData, error: verifyError } = await supabase
+        .from('events')
+        .select('*')
+        .eq('id', id)
+        .single();
+        
+      if (verifyError) {
+        console.error('Verification failed:', verifyError);
+        throw new Error('Update failed and verification failed. Please contact support.');
+      }
+      
+      // If we can read it but couldn't update, it's definitely an RLS issue
+      console.log('Event exists but update was blocked by RLS:', verifyData);
+      throw new Error('Update blocked by security policies. The event data might have been updated partially. Please refresh and try again.');
     }
 
     console.log('Event updated successfully. New image_url:', data[0]?.image_url);
