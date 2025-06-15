@@ -104,47 +104,61 @@ export const deployLock = async (config: LockConfig, wallet: any): Promise<Deplo
       lockName: config.name
     });
 
-    // Use the correct Unlock Protocol createLock function signature
+    // Correct Unlock Protocol createLock function signature
     // createLock(uint256 _expirationDuration, address _tokenAddress, uint256 _keyPrice, uint256 _maxNumberOfKeys, string _lockName, bytes12 _salt)
     
-    // Generate a random salt for unique deployment (12 bytes)
+    // Generate a random salt for unique deployment (12 bytes = 24 hex chars)
     const saltBytes = new Uint8Array(12);
     crypto.getRandomValues(saltBytes);
-    const salt = Array.from(saltBytes, byte => byte.toString(16).padStart(2, '0')).join('');
+    const salt = '0x' + Array.from(saltBytes, byte => byte.toString(16).padStart(2, '0')).join('');
 
-    // Encode the function call using proper ABI encoding
-    const functionSelector = '0x385ac9b9'; // createLock function selector
+    // Function selector for createLock
+    const functionSelector = '0x385ac9b9';
     
-    // Pad values to 32 bytes (64 hex chars)
-    const padHex = (value: string, bytes: number = 32): string => {
-      return value.replace('0x', '').padStart(bytes * 2, '0');
+    // Helper function to pad hex values to 32 bytes
+    const padHex = (value: string): string => {
+      return value.replace('0x', '').padStart(64, '0');
     };
 
-    // Encode string parameter (lockName)
+    // Encode parameters according to ABI encoding rules
+    const expirationDurationHex = padHex(config.expirationDuration.toString(16));
+    const tokenAddressHex = padHex(tokenAddress);
+    const keyPriceHex = padHex(BigInt(keyPriceWei).toString(16));
+    const maxNumberOfKeysHex = padHex(config.maxNumberOfKeys.toString(16));
+    
+    // For dynamic types (string, bytes), we need to encode length and data
     const nameBytes = new TextEncoder().encode(config.name);
     const nameLength = nameBytes.length;
     const nameLengthHex = padHex(nameLength.toString(16));
-    const nameDataHex = Array.from(nameBytes, byte => byte.toString(16).padStart(2, '0')).join('');
-    const paddedNameHex = nameDataHex.padEnd(Math.ceil(nameDataHex.length / 64) * 64, '0');
+    
+    // Pad the name data to 32-byte boundary
+    const nameHex = Array.from(nameBytes, byte => byte.toString(16).padStart(2, '0')).join('');
+    const paddedNameHex = nameHex.padEnd(Math.ceil(nameHex.length / 64) * 64, '0');
+    
+    // Calculate offset for string parameter (6th parameter in function)
+    // Offset = 5 * 32 bytes = 160 bytes = 0xa0
+    const stringOffsetHex = padHex('a0');
+    
+    // Calculate offset for salt parameter (comes after string data)
+    const saltOffsetBytes = 160 + 32 + Math.ceil(nameHex.length / 64) * 32;
+    const saltOffsetHex = padHex(saltOffsetBytes.toString(16));
+    
+    // Salt is 12 bytes, so we pad it to 32 bytes
+    const saltHex = salt.replace('0x', '').padEnd(64, '0');
 
-    // Calculate offsets
-    const stringOffset = 6 * 32; // 6 parameters before string = 192 bytes = 0xc0
-    const saltOffset = stringOffset + 32 + Math.ceil(nameDataHex.length / 64) * 32; // after string data
+    // Construct the full transaction data
+    const encodedData = functionSelector + 
+      expirationDurationHex +
+      tokenAddressHex + 
+      keyPriceHex + 
+      maxNumberOfKeysHex + 
+      stringOffsetHex +
+      saltOffsetHex +
+      nameLengthHex + 
+      paddedNameHex +
+      saltHex;
 
-    const encodedParams = [
-      padHex(config.expirationDuration.toString(16)), // expirationDuration
-      padHex(tokenAddress.slice(2)), // tokenAddress
-      padHex(BigInt(keyPriceWei).toString(16)), // keyPrice
-      padHex(config.maxNumberOfKeys.toString(16)), // maxNumberOfKeys
-      padHex(stringOffset.toString(16)), // string offset
-      padHex(saltOffset.toString(16)), // salt offset
-      nameLengthHex, // string length
-      paddedNameHex, // string data
-      padHex(salt, 12) // salt (12 bytes)
-    ].join('');
-
-    const data = functionSelector + encodedParams;
-    console.log('Encoded transaction data:', data);
+    console.log('Encoded transaction data:', encodedData);
 
     // Send transaction using Privy wallet provider
     const txResponse = await provider.request({
@@ -152,7 +166,7 @@ export const deployLock = async (config: LockConfig, wallet: any): Promise<Deplo
       params: [{
         from: wallet.address,
         to: factoryAddress,
-        data: data,
+        data: encodedData,
         value: '0x0'
       }]
     });
