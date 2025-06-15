@@ -2,6 +2,7 @@
 import { writeContract, waitForTransactionReceipt, getAccount } from '@wagmi/core';
 import { parseEther, encodeFunctionData } from 'viem';
 import { base, baseSepolia } from 'wagmi/chains';
+import { wagmiConfig } from './wagmiConfig';
 
 interface LockConfig {
   name: string;
@@ -10,6 +11,7 @@ interface LockConfig {
   maxNumberOfKeys: number;
   expirationDuration: number;
   currency: string;
+  price: number;
 }
 
 interface DeploymentResult {
@@ -48,7 +50,7 @@ export const deployLock = async (config: LockConfig): Promise<DeploymentResult> 
     console.log('Deploying lock with config:', config);
     
     // Get the current account from wagmi
-    const account = getAccount();
+    const account = getAccount(wagmiConfig);
     
     if (!account.address) {
       throw new Error('No wallet connected. Please connect your wallet first.');
@@ -89,7 +91,7 @@ export const deployLock = async (config: LockConfig): Promise<DeploymentResult> 
     });
 
     // Deploy the lock using wagmi
-    const txHash = await writeContract({
+    const txHash = await writeContract(wagmiConfig, {
       address: factoryAddress,
       abi: UNLOCK_FACTORY_ABI,
       functionName: 'createLock',
@@ -106,7 +108,7 @@ export const deployLock = async (config: LockConfig): Promise<DeploymentResult> 
     console.log('Lock deployment transaction sent:', txHash);
 
     // Wait for transaction confirmation
-    const receipt = await waitForTransactionReceipt({
+    const receipt = await waitForTransactionReceipt(wagmiConfig, {
       hash: txHash,
       timeout: 300000, // 5 minutes timeout
     });
