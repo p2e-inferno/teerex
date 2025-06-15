@@ -239,16 +239,21 @@ export const updatePublishedEvent = async (id: string, formData: EventFormData, 
       updated_at: new Date().toISOString(),
     };
 
-    const { error } = await supabase
+    console.log('Attempting to update event in Supabase with this data:', eventData);
+
+    const { data, error } = await supabase
       .from('events')
       .update(eventData)
       .eq('id', id)
-      .eq('creator_id', userId);
+      .eq('creator_id', userId)
+      .select();
 
     if (error) {
       console.error('Error updating published event:', error);
       throw error;
     }
+
+    console.log('Successfully updated event. Result from Supabase:', data);
   } catch (error) {
     console.error('Error updating published event:', error);
     throw error;
