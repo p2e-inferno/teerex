@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { usePrivy } from '@privy-io/react-auth';
 import { useNavigate, Navigate } from 'react-router-dom';
@@ -185,6 +184,7 @@ const MyEvents = () => {
                   key={event.id}
                   event={event}
                   onViewDetails={handleEditEvent}
+                  actionType="edit"
                 />
               ))}
             </div>

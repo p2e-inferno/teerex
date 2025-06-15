@@ -14,6 +14,7 @@ interface EventCardProps {
   onViewDetails?: (event: PublishedEvent) => void;
   keysSold?: number;
   isTicketView?: boolean;
+  actionType?: 'purchase' | 'edit';
 }
 
 export const EventCard: React.FC<EventCardProps> = ({
@@ -22,6 +23,7 @@ export const EventCard: React.FC<EventCardProps> = ({
   onViewDetails,
   keysSold,
   isTicketView = false,
+  actionType = 'purchase',
 }) => {
   const handleViewTransaction = () => {
     const explorerUrl = getBlockExplorerUrl(event.transaction_hash, 'baseSepolia');
@@ -138,9 +140,15 @@ export const EventCard: React.FC<EventCardProps> = ({
               <Button 
                 className="flex-1 bg-purple-600 hover:bg-purple-700 text-white"
                 onClick={() => onViewDetails?.(event)}
-                disabled={remainingSpots === 0}
+                disabled={actionType === 'purchase' && remainingSpots === 0}
               >
-                {remainingSpots === 0 ? 'Sold Out' : (event.currency === 'FREE' ? 'Register for Free' : 'Get Tickets')}
+                {actionType === 'edit'
+                  ? 'Edit Event'
+                  : remainingSpots === 0
+                  ? 'Sold Out'
+                  : event.currency === 'FREE'
+                  ? 'Register for Free'
+                  : 'Get Tickets'}
               </Button>
               <Button 
                 variant="outline"

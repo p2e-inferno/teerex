@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { usePrivy, useWallets } from '@privy-io/react-auth';
 import { useNavigate, useSearchParams, Navigate } from 'react-router-dom';
@@ -380,15 +379,24 @@ const CreateEvent = () => {
 
         {/* Navigation */}
         <div className="flex justify-between">
-          <Button
-            variant="outline"
-            onClick={prevStep}
-            disabled={currentStep === 1}
-            className="border-gray-300 text-gray-700 hover:bg-gray-50"
-          >
-            <ChevronLeft className="w-4 h-4 mr-2" />
-            Back
-          </Button>
+          {currentStep === 1 ? (
+            <Button
+              variant="outline"
+              onClick={() => navigate('/my-events')}
+              className="border-gray-300 text-gray-700 hover:bg-gray-50"
+            >
+              Cancel
+            </Button>
+          ) : (
+            <Button
+              variant="outline"
+              onClick={prevStep}
+              className="border-gray-300 text-gray-700 hover:bg-gray-50"
+            >
+              <ChevronLeft className="w-4 h-4 mr-2" />
+              Back
+            </Button>
+          )}
           
           {currentStep < steps.length ? (
             <Button
