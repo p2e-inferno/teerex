@@ -1,4 +1,3 @@
-
 import { parseEther } from 'viem';
 import { base, baseSepolia } from 'wagmi/chains';
 import { ethers } from 'ethers';
@@ -31,7 +30,7 @@ const UnlockABI = [
   {
     "inputs": [
       { "internalType": "bytes", "name": "calldata", "type": "bytes" },
-      { "internalType": "uint256", "name": "version", "type": "uint256" }
+      { "internalType": "uint16", "name": "version", "type": "uint16" }
     ],
     "name": "createUpgradeableLockAtVersion",
     "outputs": [{ "internalType": "address", "name": "", "type": "address" }],
