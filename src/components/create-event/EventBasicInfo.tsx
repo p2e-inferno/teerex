@@ -22,12 +22,11 @@ export const EventBasicInfo: React.FC<EventBasicInfoProps> = ({
   onNext
 }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const isValid = formData.title && formData.description && formData.date;
+  const isValid = formData.title.trim() && formData.description.trim() && formData.date;
 
   const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (file) {
-      // Create a URL for the uploaded file to display as preview
       const imageUrl = URL.createObjectURL(file);
       updateFormData({ imageUrl });
     }
@@ -42,6 +41,13 @@ export const EventBasicInfo: React.FC<EventBasicInfoProps> = ({
 
   const triggerFileInput = () => {
     fileInputRef.current?.click();
+  };
+
+  const handleContinue = () => {
+    if (isValid) {
+      console.log('Basic info is valid, proceeding to next step');
+      onNext();
+    }
   };
 
   return (
@@ -100,6 +106,9 @@ export const EventBasicInfo: React.FC<EventBasicInfoProps> = ({
           onChange={(e) => updateFormData({ title: e.target.value })}
           className="text-lg"
         />
+        {!formData.title.trim() && (
+          <p className="text-sm text-red-600">Event name is required</p>
+        )}
       </div>
 
       {/* Event Description */}
@@ -112,6 +121,9 @@ export const EventBasicInfo: React.FC<EventBasicInfoProps> = ({
           onChange={(e) => updateFormData({ description: e.target.value })}
           rows={4}
         />
+        {!formData.description.trim() && (
+          <p className="text-sm text-red-600">Event description is required</p>
+        )}
       </div>
 
       {/* Date and Time */}
@@ -133,10 +145,14 @@ export const EventBasicInfo: React.FC<EventBasicInfoProps> = ({
                 mode="single"
                 selected={formData.date || undefined}
                 onSelect={(date) => updateFormData({ date: date || null })}
+                disabled={(date) => date < new Date()}
                 initialFocus
               />
             </PopoverContent>
           </Popover>
+          {!formData.date && (
+            <p className="text-sm text-red-600">Event date is required</p>
+          )}
         </div>
 
         <div className="space-y-2">
@@ -159,6 +175,17 @@ export const EventBasicInfo: React.FC<EventBasicInfoProps> = ({
           value={formData.location}
           onChange={(e) => updateFormData({ location: e.target.value })}
         />
+      </div>
+
+      {/* Continue Button */}
+      <div className="flex justify-end pt-4">
+        <Button
+          onClick={handleContinue}
+          disabled={!isValid}
+          className="bg-purple-600 hover:bg-purple-700 text-white"
+        >
+          Continue
+        </Button>
       </div>
     </div>
   );

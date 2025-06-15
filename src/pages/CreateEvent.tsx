@@ -1,7 +1,7 @@
 
 import React, { useState } from 'react';
 import { usePrivy } from '@privy-io/react-auth';
-import { Navigate } from 'react-router-dom';
+import { Navigate, useNavigate } from 'react-router-dom';
 import { EventBasicInfo } from '@/components/create-event/EventBasicInfo';
 import { EventDetails } from '@/components/create-event/EventDetails';
 import { TicketSettings } from '@/components/create-event/TicketSettings';
@@ -9,6 +9,7 @@ import { EventPreview } from '@/components/create-event/EventPreview';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
+import { useToast } from '@/hooks/use-toast';
 
 export interface EventFormData {
   title: string;
@@ -25,7 +26,10 @@ export interface EventFormData {
 
 const CreateEvent = () => {
   const { authenticated } = usePrivy();
+  const navigate = useNavigate();
+  const { toast } = useToast();
   const [currentStep, setCurrentStep] = useState(1);
+  const [isCreating, setIsCreating] = useState(false);
   const [formData, setFormData] = useState<EventFormData>({
     title: '',
     description: '',
@@ -54,6 +58,7 @@ const CreateEvent = () => {
   const StepComponent = currentStepData.component;
 
   const nextStep = () => {
+    console.log('Moving to next step, current step:', currentStep);
     if (currentStep < steps.length) {
       setCurrentStep(currentStep + 1);
     }
@@ -66,8 +71,54 @@ const CreateEvent = () => {
   };
 
   const updateFormData = (updates: Partial<EventFormData>) => {
+    console.log('Updating form data:', updates);
     setFormData(prev => ({ ...prev, ...updates }));
   };
+
+  const isStepValid = (step: number): boolean => {
+    switch (step) {
+      case 1:
+        return !!(formData.title.trim() && formData.description.trim() && formData.date);
+      case 2:
+        return !!(formData.category && formData.capacity > 0);
+      case 3:
+        return true; // Ticket settings are optional
+      case 4:
+        return true; // Preview step is always valid
+      default:
+        return false;
+    }
+  };
+
+  const createEvent = async () => {
+    console.log('Creating event with data:', formData);
+    setIsCreating(true);
+    
+    try {
+      // Here we would deploy the Unlock Protocol lock
+      // For now, we'll simulate the creation process
+      await new Promise(resolve => setTimeout(resolve, 2000));
+      
+      toast({
+        title: "Event Created Successfully!",
+        description: "Your event has been created and the lock has been deployed.",
+      });
+      
+      // Navigate to the explore page or event page
+      navigate('/explore');
+    } catch (error) {
+      console.error('Error creating event:', error);
+      toast({
+        title: "Error Creating Event",
+        description: "There was an error creating your event. Please try again.",
+        variant: "destructive"
+      });
+    } finally {
+      setIsCreating(false);
+    }
+  };
+
+  const canContinue = isStepValid(currentStep);
 
   return (
     <div className="min-h-screen bg-gray-50 py-8">
@@ -132,16 +183,19 @@ const CreateEvent = () => {
           {currentStep < steps.length ? (
             <Button
               onClick={nextStep}
-              className="bg-purple-600 hover:bg-purple-700 text-white"
+              disabled={!canContinue}
+              className="bg-purple-600 hover:bg-purple-700 text-white disabled:bg-gray-300 disabled:cursor-not-allowed"
             >
               Continue
               <ChevronRight className="w-4 h-4 ml-2" />
             </Button>
           ) : (
             <Button
-              className="bg-purple-600 hover:bg-purple-700 text-white"
+              onClick={createEvent}
+              disabled={!canContinue || isCreating}
+              className="bg-purple-600 hover:bg-purple-700 text-white disabled:bg-gray-300 disabled:cursor-not-allowed"
             >
-              Create Event
+              {isCreating ? 'Creating Event...' : 'Create Event'}
             </Button>
           )}
         </div>

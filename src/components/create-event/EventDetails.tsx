@@ -35,7 +35,7 @@ export const EventDetails: React.FC<EventDetailsProps> = ({
 
       {/* Category */}
       <div className="space-y-2">
-        <Label>Category</Label>
+        <Label>Category *</Label>
         <Select value={formData.category} onValueChange={(value) => updateFormData({ category: value })}>
           <SelectTrigger>
             <SelectValue placeholder="Select a category" />
@@ -48,11 +48,14 @@ export const EventDetails: React.FC<EventDetailsProps> = ({
             ))}
           </SelectContent>
         </Select>
+        {!formData.category && (
+          <p className="text-sm text-red-600">Category is required</p>
+        )}
       </div>
 
       {/* Capacity */}
       <div className="space-y-2">
-        <Label htmlFor="capacity">Event Capacity</Label>
+        <Label htmlFor="capacity">Event Capacity *</Label>
         <Input
           id="capacity"
           type="number"
@@ -62,6 +65,9 @@ export const EventDetails: React.FC<EventDetailsProps> = ({
           min="1"
         />
         <p className="text-sm text-gray-600">Set the maximum number of attendees</p>
+        {formData.capacity <= 0 && (
+          <p className="text-sm text-red-600">Capacity must be greater than 0</p>
+        )}
       </div>
 
       {/* Additional Settings */}
