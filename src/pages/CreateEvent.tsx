@@ -30,7 +30,7 @@ export interface EventFormData {
 }
 
 const CreateEvent = () => {
-  const { authenticated, user } = usePrivy();
+  const { authenticated, user, getAccessToken } = usePrivy();
   const { wallets } = useWallets();
   const navigate = useNavigate();
   const { toast } = useToast();
@@ -286,8 +286,16 @@ const CreateEvent = () => {
     setIsCreating(true);
 
     try {
+      const accessToken = await getAccessToken();
+      if (!accessToken) {
+        throw new Error("Authentication token not available. Please log in again.");
+      }
+
       const { data, error } = await supabase.functions.invoke('update-event', {
         body: { eventId: editingEventId, formData },
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+        },
       });
 
       if (error) {
