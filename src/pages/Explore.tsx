@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
-import { Calendar, MapPin, Users, Search, Filter, Clock, Star, Ticket } from 'lucide-react';
+import { Calendar, MapPin, Users, Search, Filter, Clock, Star, Ticket, Plus } from 'lucide-react';
 import { Link } from 'react-router-dom';
 
 const Explore = () => {
