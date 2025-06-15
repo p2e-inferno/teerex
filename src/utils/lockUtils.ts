@@ -19,6 +19,12 @@ interface DeploymentResult {
   error?: string;
 }
 
+interface PurchaseResult {
+  success: boolean;
+  transactionHash?: string;
+  error?: string;
+}
+
 // Unlock Protocol factory contract addresses
 const UNLOCK_FACTORY_ADDRESSES = {
   [base.id]: '0xd0b14797b9D08493392865647384974470202A78', // Base mainnet
@@ -39,7 +45,7 @@ const UnlockABI = [
   }
 ];
 
-// PublicLock ABI for encoding initialize function
+// PublicLock ABI for encoding initialize function and purchasing keys
 const PublicLockABI = [
   {
     "inputs": [
@@ -53,6 +59,26 @@ const PublicLockABI = [
     "name": "initialize",
     "outputs": [],
     "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      { "internalType": "uint256[]", "name": "_values", "type": "uint256[]" },
+      { "internalType": "address[]", "name": "_recipients", "type": "address[]" },
+      { "internalType": "address[]", "name": "_referrers", "type": "address[]" },
+      { "internalType": "address[]", "name": "_keyManagers", "type": "address[]" },
+      { "internalType": "bytes[]", "name": "_data", "type": "bytes[]" }
+    ],
+    "name": "purchase",
+    "outputs": [{ "internalType": "uint256[]", "name": "tokenIds", "type": "uint256[]" }],
+    "stateMutability": "payable",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "keyPrice",
+    "outputs": [{ "internalType": "uint256", "name": "", "type": "uint256" }],
+    "stateMutability": "view",
     "type": "function"
   }
 ];
@@ -210,6 +236,84 @@ export const deployLock = async (config: LockConfig, wallet: any): Promise<Deplo
     };
   }
 };
+
+export const purchaseKey = async (
+  lockAddress: string,
+  price: number, // The price in ETH (not wei)
+  currency: string,
+  wallet: any
+): Promise<PurchaseResult> => {
+  try {
+    console.log(`Purchasing key for lock: ${lockAddress}`);
+    if (!wallet || !wallet.address) {
+      throw new Error('No wallet provided or not connected.');
+    }
+
+    const provider = await wallet.getEthereumProvider();
+    const ethersProvider = new ethers.BrowserProvider(provider);
+    const signer = await ethersProvider.getSigner();
+
+    const lockContract = new ethers.Contract(lockAddress, PublicLockABI, signer);
+
+    const keyPriceWei = currency === 'FREE'
+      ? 0n
+      : parseEther(price.toString());
+
+    // Verify on-chain price matches expected price
+    const onChainKeyPrice = await lockContract.keyPrice();
+    if (onChainKeyPrice !== keyPriceWei) {
+        console.error(`Price mismatch: Expected ${keyPriceWei}, but on-chain price is ${onChainKeyPrice}`);
+        throw new Error('The ticket price has changed. Please refresh and try again.');
+    }
+    
+    console.log(`Calling purchase for recipient: ${wallet.address} with value: ${keyPriceWei.toString()} wei`);
+
+    const tx = await lockContract.purchase(
+      [], // _values: ETH value is passed in tx, so this is empty
+      [wallet.address], // _recipients
+      ['0x0000000000000000000000000000000000000000'], // _referrers
+      ['0x0000000000000000000000000000000000000000'], // _keyManagers
+      [[]], // _data
+      {
+        value: keyPriceWei // Send ETH with the transaction
+      }
+    );
+
+    console.log('Purchase transaction sent:', tx.hash);
+
+    const receipt = await tx.wait();
+    console.log('Transaction receipt:', receipt);
+
+    if (receipt.status !== 1) {
+      throw new Error('Transaction failed. Please try again.');
+    }
+
+    return {
+      success: true,
+      transactionHash: tx.hash,
+    };
+
+  } catch (error) {
+    console.error('Error purchasing key:', error);
+    
+    let errorMessage = 'Failed to purchase ticket.';
+    if (error instanceof Error) {
+        if (error.message.includes('User rejected') || error.message.includes('user rejected')) {
+            errorMessage = 'Transaction was cancelled. Please try again when ready.';
+        } else if (error.message.includes('insufficient funds')) {
+            errorMessage = 'Insufficient funds to purchase the ticket. Please add more ETH to your wallet.';
+        } else {
+            errorMessage = error.message;
+        }
+    }
+    
+    return {
+      success: false,
+      error: errorMessage,
+    };
+  }
+};
+
 
 export const getBlockExplorerUrl = (txHash: string, network: string = 'baseSepolia'): string => {
   const explorers = {

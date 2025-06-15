@@ -7,6 +7,7 @@ import { Search, Filter, Calendar } from 'lucide-react';
 import { EventCard } from '@/components/events/EventCard';
 import { getPublishedEvents, PublishedEvent } from '@/utils/eventUtils';
 import { useToast } from '@/hooks/use-toast';
+import { EventPurchaseDialog } from '@/components/events/EventPurchaseDialog';
 
 const Explore = () => {
   const [events, setEvents] = useState<PublishedEvent[]>([]);
@@ -14,6 +15,8 @@ const Explore = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [isLoading, setIsLoading] = useState(true);
   const { toast } = useToast();
+  const [selectedEvent, setSelectedEvent] = useState<PublishedEvent | null>(null);
+  const [isPurchaseDialogOpen, setIsPurchaseDialogOpen] = useState(false);
 
   useEffect(() => {
     const loadEvents = async () => {
@@ -51,10 +54,13 @@ const Explore = () => {
   }, [searchQuery, events]);
 
   const handleEventDetails = (event: PublishedEvent) => {
-    toast({
-      title: "Coming Soon",
-      description: "Event details page will be available soon!",
-    });
+    setSelectedEvent(event);
+    setIsPurchaseDialogOpen(true);
+  };
+
+  const handleCloseDialog = () => {
+    setIsPurchaseDialogOpen(false);
+    setSelectedEvent(null);
   };
 
   if (isLoading) {
@@ -143,6 +149,11 @@ const Explore = () => {
           </div>
         )}
       </div>
+      <EventPurchaseDialog
+        event={selectedEvent}
+        isOpen={isPurchaseDialogOpen}
+        onClose={handleCloseDialog}
+      />
     </div>
   );
 };
