@@ -13,7 +13,7 @@ export const PrivyProvider: React.FC<PrivyProviderProps> = ({ children }) => {
   const appId = 'cm5x5kyq500eo5zk1lykex6s5';
 
   // If no valid App ID is provided, show setup instructions
-  if (!appId || appId === 'your-actual-privy-app-id-here') {
+  if (!appId) {
     return (
       <div className="min-h-screen flex items-center justify-center p-4">
         <Card className="w-full max-w-md">
