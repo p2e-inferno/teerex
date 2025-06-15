@@ -1,6 +1,5 @@
-
 import React, { useState, useEffect } from 'react';
-import { usePrivy } from '@privy-io/react-auth';
+import { usePrivy, useWallets } from '@privy-io/react-auth';
 import { Navigate, useNavigate } from 'react-router-dom';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -13,6 +12,7 @@ import { deployLock, getBlockExplorerUrl } from '@/utils/lockUtils';
 
 const Drafts = () => {
   const { authenticated } = usePrivy();
+  const { wallets } = useWallets();
   const navigate = useNavigate();
   const { toast } = useToast();
   const [drafts, setDrafts] = useState<EventDraft[]>([]);
@@ -70,6 +70,12 @@ const Drafts = () => {
     setIsPublishing(draft.id);
     
     try {
+      // Get the connected wallet
+      const wallet = wallets.find(w => w.walletClientType === 'privy');
+      if (!wallet) {
+        throw new Error('Please connect a wallet to publish your event.');
+      }
+
       const lockConfig = {
         name: draft.title,
         symbol: `${draft.title.slice(0, 3).toUpperCase()}TIX`,
@@ -80,7 +86,7 @@ const Drafts = () => {
         price: draft.price
       };
 
-      const deploymentResult = await deployLock(lockConfig);
+      const deploymentResult = await deployLock(lockConfig, wallet);
       
       if (deploymentResult.success && deploymentResult.transactionHash) {
         const explorerUrl = getBlockExplorerUrl(deploymentResult.transactionHash, 'base');

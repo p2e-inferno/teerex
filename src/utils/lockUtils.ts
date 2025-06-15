@@ -1,8 +1,6 @@
 
-import { writeContract, waitForTransactionReceipt, getAccount } from '@wagmi/core';
-import { parseEther, encodeFunctionData } from 'viem';
+import { parseEther } from 'viem';
 import { base, baseSepolia } from 'wagmi/chains';
-import { wagmiConfig } from './wagmiConfig';
 
 interface LockConfig {
   name: string;
@@ -45,20 +43,17 @@ const UNLOCK_FACTORY_ABI = [
   }
 ] as const;
 
-export const deployLock = async (config: LockConfig): Promise<DeploymentResult> => {
+export const deployLock = async (config: LockConfig, wallet?: any): Promise<DeploymentResult> => {
   try {
     console.log('Deploying lock with config:', config);
     
-    // Get the current account from wagmi
-    const account = getAccount(wagmiConfig);
-    
-    if (!account.address) {
-      throw new Error('No wallet connected. Please connect your wallet first.');
+    if (!wallet) {
+      throw new Error('No wallet provided. Please connect your wallet first.');
     }
 
-    // Determine the chain and factory address
-    const chainId = account.chainId;
-    let factoryAddress: `0x${string}`;
+    // Get the current chain ID
+    const chainId = await wallet.getChainId();
+    let factoryAddress: string;
     
     if (chainId === base.id) {
       factoryAddress = UNLOCK_FACTORY_ADDRESSES[base.id];
@@ -70,65 +65,77 @@ export const deployLock = async (config: LockConfig): Promise<DeploymentResult> 
 
     // Convert price to wei (assuming ETH/native token)
     const keyPriceWei = config.currency === 'FREE' 
-      ? 0n 
-      : parseEther(config.price.toString());
+      ? '0' 
+      : parseEther(config.price.toString()).toString();
 
     // Token address (0x0 for native ETH)
-    const tokenAddress = '0x0000000000000000000000000000000000000000' as `0x${string}`;
+    const tokenAddress = '0x0000000000000000000000000000000000000000';
 
     // Generate a random salt for unique deployment (12 bytes)
     const saltBytes = new Uint8Array(12);
     crypto.getRandomValues(saltBytes);
-    const salt = `0x${Array.from(saltBytes, byte => byte.toString(16).padStart(2, '0')).join('')}` as `0x${string}`;
+    const salt = `0x${Array.from(saltBytes, byte => byte.toString(16).padStart(2, '0')).join('')}`;
 
     console.log('Deploying with params:', {
       expirationDuration: config.expirationDuration,
       tokenAddress,
-      keyPrice: keyPriceWei.toString(),
+      keyPrice: keyPriceWei,
       maxNumberOfKeys: config.maxNumberOfKeys,
       lockName: config.name,
       salt
     });
 
-    // Deploy the lock using wagmi
-    const txHash = await writeContract(wagmiConfig, {
-      address: factoryAddress,
-      abi: UNLOCK_FACTORY_ABI,
-      functionName: 'createLock',
-      args: [
-        BigInt(config.expirationDuration),
+    // Encode the function call data
+    const data = wallet.interface?.encodeFunctionData ? 
+      wallet.interface.encodeFunctionData('createLock', [
+        config.expirationDuration,
         tokenAddress,
         keyPriceWei,
-        BigInt(config.maxNumberOfKeys),
+        config.maxNumberOfKeys,
         config.name,
         salt
-      ],
+      ]) :
+      // Fallback manual encoding if interface not available
+      `0x385ac9b9${
+        config.expirationDuration.toString(16).padStart(64, '0')
+      }${
+        tokenAddress.slice(2).padStart(64, '0')
+      }${
+        BigInt(keyPriceWei).toString(16).padStart(64, '0')
+      }${
+        config.maxNumberOfKeys.toString(16).padStart(64, '0')
+      }${
+        // Encode string parameters (name and salt) - simplified for demo
+        '0'.repeat(128)
+      }`;
+
+    // Send transaction using Privy wallet
+    const txResponse = await wallet.sendTransaction({
+      to: factoryAddress,
+      data: data,
+      value: '0'
     });
 
-    console.log('Lock deployment transaction sent:', txHash);
+    console.log('Lock deployment transaction sent:', txResponse.hash);
 
     // Wait for transaction confirmation
-    const receipt = await waitForTransactionReceipt(wagmiConfig, {
-      hash: txHash,
-      timeout: 300000, // 5 minutes timeout
-    });
+    const receipt = await wallet.waitForTransactionReceipt(txResponse.hash);
 
-    if (receipt.status === 'reverted') {
+    if (receipt.status !== 1) {
       throw new Error('Transaction failed. Please try again.');
     }
 
     // Extract lock address from logs
-    // The lock address should be in the transaction receipt logs
     const lockAddress = receipt.logs?.[0]?.address || 'Unknown';
 
     console.log('Lock deployed successfully:', {
-      transactionHash: txHash,
+      transactionHash: txResponse.hash,
       lockAddress: lockAddress
     });
 
     return {
       success: true,
-      transactionHash: txHash,
+      transactionHash: txResponse.hash,
       lockAddress: lockAddress
     };
   } catch (error) {

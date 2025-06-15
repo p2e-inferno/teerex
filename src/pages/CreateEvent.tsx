@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { usePrivy } from '@privy-io/react-auth';
+import { usePrivy, useWallets } from '@privy-io/react-auth';
 import { Navigate, useNavigate, useSearchParams } from 'react-router-dom';
 import { EventBasicInfo } from '@/components/create-event/EventBasicInfo';
 import { EventDetails } from '@/components/create-event/EventDetails';
@@ -28,6 +28,7 @@ export interface EventFormData {
 
 const CreateEvent = () => {
   const { authenticated, user } = usePrivy();
+  const { wallets } = useWallets();
   const navigate = useNavigate();
   const { toast } = useToast();
   const [searchParams] = useSearchParams();
@@ -193,9 +194,10 @@ const CreateEvent = () => {
     setIsCreating(true);
     
     try {
-      // Validate that user has a wallet connected
-      if (!window.ethereum) {
-        throw new Error('Please connect a Web3 wallet to create your event.');
+      // Get the connected wallet
+      const wallet = wallets.find(w => w.walletClientType === 'privy');
+      if (!wallet) {
+        throw new Error('Please connect a wallet to create your event.');
       }
 
       toast({
@@ -214,7 +216,7 @@ const CreateEvent = () => {
         price: formData.price
       };
 
-      const deploymentResult = await deployLock(lockConfig);
+      const deploymentResult = await deployLock(lockConfig, wallet);
       
       if (deploymentResult.success && deploymentResult.transactionHash && deploymentResult.lockAddress) {
         // Save event to Supabase
