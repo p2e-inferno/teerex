@@ -59,9 +59,9 @@ export const PrivyProvider: React.FC<PrivyProviderProps> = ({ children }) => {
         },
         loginMethods: ['email', 'wallet', 'sms'],
         defaultChain: {
-          id: 8453, // Base mainnet
-          name: 'Base',
-          network: 'base',
+          id: 84532, // Base Sepolia testnet
+          name: 'Base Sepolia',
+          network: 'base-sepolia',
           nativeCurrency: {
             decimals: 18,
             name: 'Ethereum',
@@ -69,17 +69,38 @@ export const PrivyProvider: React.FC<PrivyProviderProps> = ({ children }) => {
           },
           rpcUrls: {
             default: {
-              http: ['https://mainnet.base.org'],
+              http: ['https://sepolia.base.org'],
             },
             public: {
-              http: ['https://mainnet.base.org'],
+              http: ['https://sepolia.base.org'],
             },
           },
           blockExplorers: {
-            default: { name: 'BaseScan', url: 'https://basescan.org' },
+            default: { name: 'Base Sepolia Explorer', url: 'https://sepolia.basescan.org' },
           },
         },
         supportedChains: [
+          {
+            id: 84532, // Base Sepolia testnet
+            name: 'Base Sepolia',
+            network: 'base-sepolia',
+            nativeCurrency: {
+              decimals: 18,
+              name: 'Ethereum',
+              symbol: 'ETH',
+            },
+            rpcUrls: {
+              default: {
+                http: ['https://sepolia.base.org'],
+              },
+              public: {
+                http: ['https://sepolia.base.org'],
+              },
+            },
+            blockExplorers: {
+              default: { name: 'Base Sepolia Explorer', url: 'https://sepolia.basescan.org' },
+            },
+          },
           {
             id: 8453, // Base mainnet
             name: 'Base',
