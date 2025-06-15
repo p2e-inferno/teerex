@@ -1,3 +1,4 @@
+
 import { parseEther } from 'viem';
 import { base, baseSepolia } from 'wagmi/chains';
 
@@ -18,47 +19,11 @@ interface DeploymentResult {
   error?: string;
 }
 
-// Unlock Protocol PublicLock factory contract addresses (corrected)
+// Unlock Protocol factory contract addresses (corrected)
 const UNLOCK_FACTORY_ADDRESSES = {
   [base.id]: '0xd0b14797b9D08493392865647384974470202A78', // Base mainnet
   [baseSepolia.id]: '0x259813B665C8f6074391028ef782e27B65840d89' // Base Sepolia testnet
 } as const;
-
-// Function to encode the createLock function call
-const encodeFunctionData = (functionName: string, params: any[]): string => {
-  // Function selector for createLock(uint256,address,uint256,uint256,string,bytes12)
-  const functionSelector = '0x385ac9b9';
-  
-  // Helper function to pad hex values
-  const padHex = (value: string, length: number = 64): string => {
-    return value.replace('0x', '').padStart(length, '0');
-  };
-  
-  // Helper function to encode string parameter
-  const encodeString = (str: string): string => {
-    const utf8Bytes = new TextEncoder().encode(str);
-    const lengthHex = utf8Bytes.length.toString(16).padStart(64, '0');
-    const dataHex = Array.from(utf8Bytes, byte => byte.toString(16).padStart(2, '0')).join('');
-    const paddedDataHex = dataHex.padEnd(Math.ceil(dataHex.length / 64) * 64, '0');
-    return lengthHex + paddedDataHex;
-  };
-  
-  const [expirationDuration, tokenAddress, keyPrice, maxNumberOfKeys, lockName, salt] = params;
-  
-  // Encode parameters
-  const encodedParams = [
-    padHex(expirationDuration.toString(16)), // uint256
-    padHex(tokenAddress.slice(2)), // address
-    padHex(BigInt(keyPrice).toString(16)), // uint256
-    padHex(maxNumberOfKeys.toString(16)), // uint256
-    padHex('c0'), // offset for string (192 bytes = 0xc0)
-    padHex('100'), // offset for bytes12 (256 bytes = 0x100)
-    encodeString(lockName), // string
-    padHex(salt.slice(2), 24) // bytes12 (12 bytes = 24 hex chars)
-  ].join('');
-  
-  return functionSelector + encodedParams;
-};
 
 export const deployLock = async (config: LockConfig, wallet: any): Promise<DeploymentResult> => {
   try {
@@ -121,7 +86,6 @@ export const deployLock = async (config: LockConfig, wallet: any): Promise<Deplo
     }
 
     const factoryAddress = UNLOCK_FACTORY_ADDRESSES[baseSepolia.id];
-
     console.log('Using Unlock Factory Address:', factoryAddress);
 
     // Convert price to wei (assuming ETH/native token)
@@ -132,30 +96,54 @@ export const deployLock = async (config: LockConfig, wallet: any): Promise<Deplo
     // Token address (0x0 for native ETH)
     const tokenAddress = '0x0000000000000000000000000000000000000000';
 
-    // Generate a random salt for unique deployment (12 bytes)
-    const saltBytes = new Uint8Array(12);
-    crypto.getRandomValues(saltBytes);
-    const salt = `0x${Array.from(saltBytes, byte => byte.toString(16).padStart(2, '0')).join('')}`;
-
     console.log('Deploying with params:', {
       expirationDuration: config.expirationDuration,
       tokenAddress,
       keyPrice: keyPriceWei,
       maxNumberOfKeys: config.maxNumberOfKeys,
-      lockName: config.name,
-      salt
+      lockName: config.name
     });
 
-    // Encode the function call data using our custom encoder
-    const data = encodeFunctionData('createLock', [
-      config.expirationDuration,
-      tokenAddress,
-      keyPriceWei,
-      config.maxNumberOfKeys,
-      config.name,
-      salt
-    ]);
+    // Use the correct Unlock Protocol createLock function signature
+    // createLock(uint256 _expirationDuration, address _tokenAddress, uint256 _keyPrice, uint256 _maxNumberOfKeys, string _lockName, bytes12 _salt)
+    
+    // Generate a random salt for unique deployment (12 bytes)
+    const saltBytes = new Uint8Array(12);
+    crypto.getRandomValues(saltBytes);
+    const salt = Array.from(saltBytes, byte => byte.toString(16).padStart(2, '0')).join('');
 
+    // Encode the function call using proper ABI encoding
+    const functionSelector = '0x385ac9b9'; // createLock function selector
+    
+    // Pad values to 32 bytes (64 hex chars)
+    const padHex = (value: string, bytes: number = 32): string => {
+      return value.replace('0x', '').padStart(bytes * 2, '0');
+    };
+
+    // Encode string parameter (lockName)
+    const nameBytes = new TextEncoder().encode(config.name);
+    const nameLength = nameBytes.length;
+    const nameLengthHex = padHex(nameLength.toString(16));
+    const nameDataHex = Array.from(nameBytes, byte => byte.toString(16).padStart(2, '0')).join('');
+    const paddedNameHex = nameDataHex.padEnd(Math.ceil(nameDataHex.length / 64) * 64, '0');
+
+    // Calculate offsets
+    const stringOffset = 6 * 32; // 6 parameters before string = 192 bytes = 0xc0
+    const saltOffset = stringOffset + 32 + Math.ceil(nameDataHex.length / 64) * 32; // after string data
+
+    const encodedParams = [
+      padHex(config.expirationDuration.toString(16)), // expirationDuration
+      padHex(tokenAddress.slice(2)), // tokenAddress
+      padHex(BigInt(keyPriceWei).toString(16)), // keyPrice
+      padHex(config.maxNumberOfKeys.toString(16)), // maxNumberOfKeys
+      padHex(stringOffset.toString(16)), // string offset
+      padHex(saltOffset.toString(16)), // salt offset
+      nameLengthHex, // string length
+      paddedNameHex, // string data
+      padHex(salt, 12) // salt (12 bytes)
+    ].join('');
+
+    const data = functionSelector + encodedParams;
     console.log('Encoded transaction data:', data);
 
     // Send transaction using Privy wallet provider
@@ -197,11 +185,14 @@ export const deployLock = async (config: LockConfig, wallet: any): Promise<Deplo
       throw new Error('Transaction receipt not found. Please check the blockchain explorer.');
     }
 
+    console.log('Transaction receipt:', receipt);
+
     if (receipt.status !== '0x1') {
       throw new Error('Transaction failed. Please try again.');
     }
 
     // Extract lock address from logs
+    // The NewLock event should be emitted with the lock address
     const lockAddress = receipt.logs?.[0]?.address || 'Unknown';
 
     console.log('Lock deployed successfully:', {
