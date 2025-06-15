@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { usePrivy, useWallets } from '@privy-io/react-auth';
 import { useNavigate, Navigate } from 'react-router-dom';
@@ -96,7 +95,7 @@ const Drafts = () => {
       const deploymentResult = await deployLock(lockConfig, wallet);
       
       if (deploymentResult.success && deploymentResult.transactionHash) {
-        const explorerUrl = getBlockExplorerUrl(deploymentResult.transactionHash, 'base');
+        const explorerUrl = getBlockExplorerUrl(deploymentResult.transactionHash, 'baseSepolia');
         
         toast({
           title: "Event Published Successfully!",

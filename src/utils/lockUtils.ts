@@ -1,4 +1,3 @@
-
 import { parseEther } from 'viem';
 import { base, baseSepolia } from 'wagmi/chains';
 
@@ -78,12 +77,12 @@ export const deployLock = async (config: LockConfig, wallet: any): Promise<Deplo
     
     let factoryAddress: string;
     
-    if (chainId === base.id) {
-      factoryAddress = UNLOCK_FACTORY_ADDRESSES[base.id];
-    } else if (chainId === baseSepolia.id) {
+    if (chainId === baseSepolia.id) {
       factoryAddress = UNLOCK_FACTORY_ADDRESSES[baseSepolia.id];
+    } else if (chainId === base.id) {
+      factoryAddress = UNLOCK_FACTORY_ADDRESSES[base.id];
     } else {
-      throw new Error('Please switch to Base network to deploy your event.');
+      throw new Error('Please switch to Base Sepolia network to deploy your event.');
     }
 
     // Convert price to wei (assuming ETH/native token)
@@ -201,11 +200,11 @@ export const deployLock = async (config: LockConfig, wallet: any): Promise<Deplo
   }
 };
 
-export const getBlockExplorerUrl = (txHash: string, network: string = 'base'): string => {
+export const getBlockExplorerUrl = (txHash: string, network: string = 'baseSepolia'): string => {
   const explorers = {
     base: 'https://basescan.org/tx/',
     baseSepolia: 'https://sepolia.basescan.org/tx/'
   };
   
-  return `${explorers[network as keyof typeof explorers] || explorers.base}${txHash}`;
+  return `${explorers[network as keyof typeof explorers] || explorers.baseSepolia}${txHash}`;
 };

@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { usePrivy, useWallets } from '@privy-io/react-auth';
 import { useNavigate, useSearchParams, Navigate } from 'react-router-dom';
@@ -229,7 +228,7 @@ const CreateEvent = () => {
         // Save event to Supabase
         await saveEventToSupabase(deploymentResult.lockAddress, deploymentResult.transactionHash);
 
-        const explorerUrl = getBlockExplorerUrl(deploymentResult.transactionHash, 'base');
+        const explorerUrl = getBlockExplorerUrl(deploymentResult.transactionHash, 'baseSepolia');
         
         toast({
           title: "Event Created Successfully!",
