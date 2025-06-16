@@ -20,6 +20,28 @@ const PublicLockABI = [
   },
 ]
 
+// RPC endpoints for different networks
+const getRpcUrl = (chainId: number): string => {
+  switch (chainId) {
+    case 8453: // Base mainnet
+      return 'https://mainnet.base.org'
+    case 84532: // Base Sepolia testnet
+      return 'https://sepolia.base.org'
+    case 1: // Ethereum mainnet
+      return 'https://eth.llamarpc.com'
+    case 11155111: // Ethereum Sepolia
+      return 'https://ethereum-sepolia-rpc.publicnode.com'
+    case 137: // Polygon mainnet
+      return 'https://polygon.llamarpc.com'
+    case 80002: // Polygon Amoy testnet
+      return 'https://rpc-amoy.polygon.technology'
+    default:
+      // Default to Base Sepolia if unknown chain
+      console.warn(`Unknown chain ID: ${chainId}, defaulting to Base Sepolia`)
+      return 'https://sepolia.base.org'
+  }
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders })
@@ -76,11 +98,11 @@ serve(async (req) => {
       })
     }
 
-    // 4. Create Supabase service client and fetch event to get lock address
+    // 4. Create Supabase service client and fetch event to get lock address and chain_id
     const serviceRoleClient = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
     const { data: event, error: fetchError } = await serviceRoleClient
       .from('events')
-      .select('lock_address')
+      .select('lock_address, chain_id')
       .eq('id', eventId)
       .single()
 
@@ -92,16 +114,30 @@ serve(async (req) => {
       })
     }
     const lockAddress = event.lock_address;
+    const chainId = event.chain_id;
 
-    // 5. On-chain authorization: Check if the user is a lock manager
-    const provider = new ethers.JsonRpcProvider('https://sepolia.base.org')
+    console.log(`Verifying lock manager for address ${userWalletAddress} on chain ${chainId} for lock ${lockAddress}`)
+
+    // 5. On-chain authorization: Check if the user is a lock manager on the correct network
+    const rpcUrl = getRpcUrl(chainId)
+    const provider = new ethers.JsonRpcProvider(rpcUrl)
     const lockContract = new ethers.Contract(lockAddress, PublicLockABI, provider)
-    const isManager = await lockContract.isLockManager(userWalletAddress)
+    
+    try {
+      const isManager = await lockContract.isLockManager(userWalletAddress)
+      console.log(`Lock manager check result: ${isManager}`)
 
-    if (!isManager) {
-      return new Response(JSON.stringify({ error: 'Unauthorized: You are not a manager for this event.' }), {
+      if (!isManager) {
+        return new Response(JSON.stringify({ error: 'Unauthorized: You are not a manager for this event.' }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          status: 403,
+        })
+      }
+    } catch (contractError) {
+      console.error('Error checking lock manager status:', contractError)
+      return new Response(JSON.stringify({ error: 'Failed to verify lock manager status on blockchain' }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        status: 403,
+        status: 500,
       })
     }
 

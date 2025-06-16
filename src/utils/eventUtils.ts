@@ -1,6 +1,8 @@
+
 import { supabase } from '@/integrations/supabase/client';
 import { EventFormData } from '@/pages/CreateEvent';
 import { checkKeyOwnership } from './lockUtils';
+import { baseSepolia } from 'wagmi/chains';
 
 export interface PublishedEvent {
   id: string;
@@ -17,6 +19,7 @@ export interface PublishedEvent {
   image_url: string | null;
   lock_address: string;
   transaction_hash: string;
+  chain_id: number;
   created_at: Date;
   updated_at: Date;
 }
@@ -41,7 +44,8 @@ export const savePublishedEvent = async (
       category: formData.category,
       image_url: formData.imageUrl || null,
       lock_address: lockAddress,
-      transaction_hash: transactionHash
+      transaction_hash: transactionHash,
+      chain_id: baseSepolia.id // Currently we're deploying to Base Sepolia
     };
 
     const { error } = await supabase

@@ -64,6 +64,7 @@ export type Database = {
         Row: {
           capacity: number
           category: string
+          chain_id: number
           created_at: string
           creator_id: string
           currency: string
@@ -82,6 +83,7 @@ export type Database = {
         Insert: {
           capacity: number
           category: string
+          chain_id?: number
           created_at?: string
           creator_id: string
           currency?: string
@@ -100,6 +102,7 @@ export type Database = {
         Update: {
           capacity?: number
           category?: string
+          chain_id?: number
           created_at?: string
           creator_id?: string
           currency?: string
