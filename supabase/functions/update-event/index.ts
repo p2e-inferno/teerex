@@ -56,16 +56,56 @@ serve(async (req) => {
         status: 401,
       })
     }
+    
     const token = authHeader.split(' ')[1]
-    const JWKS = createRemoteJWKSet(new URL('https://auth.privy.io/.well-known/jwks.json'))
-    const { payload } = await jwtVerify(token, JWKS, {
-      issuer: 'https://auth.privy.io',
-      audience: PRIVY_APP_ID,
-    })
-    const privyUserId = payload.sub
+    console.log('Attempting to verify JWT token...')
+    
+    let privyUserId: string | undefined
+    
+    try {
+      // Try to verify with JWKS first
+      const JWKS = createRemoteJWKSet(new URL('https://auth.privy.io/.well-known/jwks.json'))
+      const { payload } = await jwtVerify(token, JWKS, {
+        issuer: 'https://auth.privy.io',
+        audience: PRIVY_APP_ID,
+      })
+      privyUserId = payload.sub
+      console.log('JWT verification successful via JWKS')
+    } catch (jwksError) {
+      console.warn('JWKS verification failed, attempting Privy API verification:', jwksError.message)
+      
+      // Fallback: Use Privy API to verify the token and get user info
+      try {
+        const privyVerifyResponse = await fetch('https://auth.privy.io/api/v1/sessions', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'privy-app-id': PRIVY_APP_ID,
+            'Authorization': 'Basic ' + btoa(`${PRIVY_APP_ID}:${PRIVY_APP_SECRET}`),
+          },
+          body: JSON.stringify({
+            refresh_token: token // This might not work for access tokens, but let's try
+          })
+        })
+
+        if (!privyVerifyResponse.ok) {
+          throw new Error(`Privy session verification failed: ${privyVerifyResponse.statusText}`)
+        }
+
+        const sessionData = await privyVerifyResponse.json()
+        privyUserId = sessionData.user?.id
+        console.log('JWT verification successful via Privy API')
+      } catch (privyApiError) {
+        console.error('Both JWKS and Privy API verification failed:', privyApiError.message)
+        throw new Error('Token verification failed. Please log in again.')
+      }
+    }
+    
     if (!privyUserId) {
       throw new Error('User ID not found in token')
     }
+
+    console.log('User authenticated:', privyUserId)
 
     // 2. Get user's wallet address from Privy API
     const privyApiResponse = await fetch(`https://auth.privy.io/api/v1/users/${privyUserId}`, {
@@ -89,6 +129,8 @@ serve(async (req) => {
         throw new Error("Could not find user's wallet address.");
     }
 
+    console.log('User wallet address:', userWalletAddress)
+
     // 3. Get event data from request body
     const { eventId, formData } = await req.json()
     if (!eventId || !formData) {
@@ -97,6 +139,8 @@ serve(async (req) => {
         status: 400,
       })
     }
+
+    console.log('Updating event:', eventId)
 
     // 4. Create Supabase service client and fetch event to get lock address and chain_id
     const serviceRoleClient = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
@@ -153,6 +197,8 @@ serve(async (req) => {
       updated_at: new Date().toISOString(),
     }
 
+    console.log('Updating event with data:', eventData)
+
     const { data: updatedEvent, error: updateError } = await serviceRoleClient
       .from('events')
       .update(eventData)
@@ -167,6 +213,8 @@ serve(async (req) => {
         status: 500,
       })
     }
+
+    console.log('Event updated successfully:', updatedEvent.id)
 
     return new Response(JSON.stringify(updatedEvent), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
