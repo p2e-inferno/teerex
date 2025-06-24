@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
@@ -14,13 +13,24 @@ import {
   Heart,
   ArrowLeft,
   Ticket,
-  ExternalLink
+  ExternalLink,
+  CalendarPlus,
+  Copy,
+  Facebook,
+  Twitter,
+  Linkedin
 } from 'lucide-react';
 import { getPublishedEvents, PublishedEvent } from '@/utils/eventUtils';
 import { getTotalKeys } from '@/utils/lockUtils';
 import { EventPurchaseDialog } from '@/components/events/EventPurchaseDialog';
 import { useToast } from '@/hooks/use-toast';
 import { format } from 'date-fns';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 
 const EventDetails = () => {
   const { id } = useParams<{ id: string }>();
@@ -72,20 +82,66 @@ const EventDetails = () => {
     loadEvent();
   }, [id, navigate, toast]);
 
-  const handleShare = () => {
-    if (navigator.share) {
-      navigator.share({
-        title: event?.title,
-        text: event?.description,
-        url: window.location.href,
-      });
-    } else {
-      navigator.clipboard.writeText(window.location.href);
-      toast({
-        title: "Link copied",
-        description: "Event link copied to clipboard",
-      });
+  const handleShare = (platform?: string) => {
+    const url = window.location.href;
+    const title = event?.title || '';
+    const description = event?.description || '';
+    
+    switch (platform) {
+      case 'facebook':
+        window.open(`https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(url)}`, '_blank');
+        break;
+      case 'twitter':
+        window.open(`https://twitter.com/intent/tweet?url=${encodeURIComponent(url)}&text=${encodeURIComponent(title)}`, '_blank');
+        break;
+      case 'linkedin':
+        window.open(`https://www.linkedin.com/sharing/share-offsite/?url=${encodeURIComponent(url)}`, '_blank');
+        break;
+      case 'copy':
+        navigator.clipboard.writeText(url);
+        toast({
+          title: "Link copied",
+          description: "Event link copied to clipboard",
+        });
+        break;
+      default:
+        if (navigator.share) {
+          navigator.share({
+            title,
+            text: description,
+            url,
+          });
+        } else {
+          navigator.clipboard.writeText(url);
+          toast({
+            title: "Link copied",
+            description: "Event link copied to clipboard",
+          });
+        }
     }
+  };
+
+  const handleAddToCalendar = () => {
+    if (!event || !event.date) return;
+
+    const startDate = new Date(event.date);
+    const endDate = new Date(startDate.getTime() + 2 * 60 * 60 * 1000); // 2 hours duration
+    
+    const formatDate = (date: Date) => {
+      return date.toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z';
+    };
+
+    const calendarData = {
+      title: event.title,
+      start: formatDate(startDate),
+      end: formatDate(endDate),
+      description: event.description,
+      location: event.location
+    };
+
+    const googleCalendarUrl = `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${encodeURIComponent(calendarData.title)}&dates=${calendarData.start}/${calendarData.end}&details=${encodeURIComponent(calendarData.description)}&location=${encodeURIComponent(calendarData.location)}`;
+    
+    window.open(googleCalendarUrl, '_blank');
   };
 
   const handleGetTicket = () => {
@@ -177,9 +233,38 @@ const EventDetails = () => {
                   >
                     <Heart className={`w-4 h-4 ${isLiked ? 'fill-red-500 text-red-500' : ''}`} />
                   </Button>
-                  <Button variant="outline" size="sm" onClick={handleShare}>
-                    <Share2 className="w-4 h-4" />
+                  <Button 
+                    variant="outline" 
+                    size="sm" 
+                    onClick={handleAddToCalendar}
+                  >
+                    <CalendarPlus className="w-4 h-4" />
                   </Button>
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button variant="outline" size="sm">
+                        <Share2 className="w-4 h-4" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end">
+                      <DropdownMenuItem onClick={() => handleShare('facebook')}>
+                        <Facebook className="w-4 h-4 mr-2" />
+                        Facebook
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => handleShare('twitter')}>
+                        <Twitter className="w-4 h-4 mr-2" />
+                        Twitter
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => handleShare('linkedin')}>
+                        <Linkedin className="w-4 h-4 mr-2" />
+                        LinkedIn
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => handleShare('copy')}>
+                        <Copy className="w-4 h-4 mr-2" />
+                        Copy Link
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
                 </div>
               </div>
 

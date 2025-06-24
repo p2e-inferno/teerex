@@ -12,12 +12,18 @@ interface EventCardProps {
   event: PublishedEvent;
   onViewDetails: (event: PublishedEvent) => void;
   keysSold?: number;
+  actionType?: string;
+  showActions?: boolean;
+  isTicketView?: boolean;
 }
 
 export const EventCard: React.FC<EventCardProps> = ({ 
   event, 
   onViewDetails, 
-  keysSold = 0 
+  keysSold = 0,
+  actionType,
+  showActions = true,
+  isTicketView = false
 }) => {
   const navigate = useNavigate();
   const spotsLeft = event.capacity - keysSold;
@@ -104,13 +110,15 @@ export const EventCard: React.FC<EventCardProps> = ({
           <div className="font-semibold text-lg text-gray-900">
             {event.currency === 'FREE' ? 'Free' : `${event.price} ${event.currency}`}
           </div>
-          <Button 
-            size="sm" 
-            onClick={handleViewDetailsClick}
-            className="bg-blue-600 hover:bg-blue-700"
-          >
-            Get Ticket
-          </Button>
+          {showActions && (
+            <Button 
+              size="sm" 
+              onClick={handleViewDetailsClick}
+              className="bg-blue-600 hover:bg-blue-700"
+            >
+              {isTicketView ? 'View Ticket' : actionType === 'manage' ? 'Manage' : 'Get Ticket'}
+            </Button>
+          )}
         </div>
       </CardContent>
     </Card>
