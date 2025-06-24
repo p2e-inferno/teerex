@@ -1,3 +1,4 @@
+
 import { parseEther } from 'viem';
 import { base, baseSepolia } from 'wagmi/chains';
 import { ethers } from 'ethers';
@@ -213,22 +214,52 @@ export const deployLock = async (config: LockConfig, wallet: any): Promise<Deplo
       throw new Error('Transaction failed. Please try again.');
     }
 
-    // The lock address is found by parsing the `NewLock` event from the transaction logs.
+    // Extract lock address from the return value or logs
     let lockAddress = 'Unknown';
     
-    // Look for NewLock event in logs
+    // First try to get it from the return value if available
     if (receipt.logs && receipt.logs.length > 0) {
-      // The Unlock factory contract emits a `NewLock` event.
-      // event NewLock(address indexed newLockAddress, address indexed lockOwner);
-      // The event signature for NewLock(address,address) is 0x4462941b3546736a49592b3def1a338b5550c6630f590136d5a153835a242f27
-      const newLockEventSignature = '0x4462941b3546736a49592b3def1a338b5550c6630f590136d5a153835a242f27';
-      const newLockLog = receipt.logs.find(
-        (log: any) => log.topics && log.topics[0] === newLockEventSignature
-      );
+      // Create an interface for the Unlock factory to parse logs
+      const unlockInterface = new ethers.Interface([
+        "event NewLock(address indexed lockOwner, address indexed newLockAddress)"
+      ]);
       
-      if (newLockLog && newLockLog.topics && newLockLog.topics[1]) {
-        // topic[1] is the newLockAddress (the first indexed parameter)
-        lockAddress = `0x${newLockLog.topics[1].slice(-40)}`;
+      // Parse all logs to find the NewLock event
+      for (const log of receipt.logs) {
+        try {
+          const parsedLog = unlockInterface.parseLog({
+            topics: log.topics,
+            data: log.data
+          });
+          
+          if (parsedLog && parsedLog.name === 'NewLock') {
+            lockAddress = parsedLog.args.newLockAddress;
+            console.log('Found lock address from NewLock event:', lockAddress);
+            break;
+          }
+        } catch (e) {
+          // This log isn't a NewLock event, continue
+          continue;
+        }
+      }
+    }
+
+    // If we still don't have a valid address, try alternative extraction
+    if (lockAddress === 'Unknown' && receipt.logs && receipt.logs.length > 0) {
+      // Look for any log that might contain an address
+      const addressRegex = /^0x[a-fA-F0-9]{40}$/;
+      for (const log of receipt.logs) {
+        if (log.topics && log.topics.length > 1) {
+          for (let i = 1; i < log.topics.length; i++) {
+            const potentialAddress = `0x${log.topics[i].slice(-40)}`;
+            if (addressRegex.test(potentialAddress) && potentialAddress !== wallet.address) {
+              lockAddress = potentialAddress;
+              console.log('Found potential lock address from log topics:', lockAddress);
+              break;
+            }
+          }
+          if (lockAddress !== 'Unknown') break;
+        }
       }
     }
 
@@ -272,6 +303,12 @@ export const purchaseKey = async (
 ): Promise<PurchaseResult> => {
   try {
     console.log(`Purchasing key for lock: ${lockAddress}`);
+    
+    // Validate lock address before proceeding
+    if (!lockAddress || lockAddress === 'Unknown' || !ethers.isAddress(lockAddress)) {
+      throw new Error('Invalid lock address. The event may not have been properly deployed.');
+    }
+    
     if (!wallet || !wallet.address) {
       throw new Error('No wallet provided or not connected.');
     }
@@ -363,6 +400,12 @@ const getReadOnlyProvider = () => {
  */
 export const getTotalKeys = async (lockAddress: string): Promise<number> => {
   try {
+    // Validate lock address before proceeding
+    if (!lockAddress || lockAddress === 'Unknown' || !ethers.isAddress(lockAddress)) {
+      console.warn(`Invalid lock address: ${lockAddress}`);
+      return 0;
+    }
+    
     const provider = getReadOnlyProvider();
     const lockContract = new ethers.Contract(lockAddress, PublicLockABI, provider);
     const totalSupply = await lockContract.totalSupply();
@@ -381,6 +424,12 @@ export const checkKeyOwnership = async (lockAddress: string, userAddress: string
     if (!ethers.isAddress(lockAddress) || !ethers.isAddress(userAddress)) {
       return false;
     }
+    
+    // Validate lock address before proceeding
+    if (lockAddress === 'Unknown') {
+      return false;
+    }
+    
     const provider = getReadOnlyProvider();
     const lockContract = new ethers.Contract(lockAddress, PublicLockABI, provider);
     return await lockContract.getHasValidKey(userAddress);
