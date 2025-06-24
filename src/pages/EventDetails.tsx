@@ -1,0 +1,329 @@
+
+import React, { useState, useEffect } from 'react';
+import { useParams, useNavigate } from 'react-router-dom';
+import { Card, CardContent, CardHeader } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
+import { Separator } from '@/components/ui/separator';
+import { 
+  Calendar, 
+  Clock, 
+  MapPin, 
+  Users, 
+  Share2, 
+  Heart,
+  ArrowLeft,
+  Ticket,
+  ExternalLink
+} from 'lucide-react';
+import { getPublishedEvents, PublishedEvent } from '@/utils/eventUtils';
+import { getTotalKeys } from '@/utils/lockUtils';
+import { EventPurchaseDialog } from '@/components/events/EventPurchaseDialog';
+import { useToast } from '@/hooks/use-toast';
+import { format } from 'date-fns';
+
+const EventDetails = () => {
+  const { id } = useParams<{ id: string }>();
+  const navigate = useNavigate();
+  const { toast } = useToast();
+  
+  const [event, setEvent] = useState<PublishedEvent | null>(null);
+  const [keysSold, setKeysSold] = useState<number>(0);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isPurchaseDialogOpen, setIsPurchaseDialogOpen] = useState(false);
+  const [isLiked, setIsLiked] = useState(false);
+
+  useEffect(() => {
+    const loadEvent = async () => {
+      if (!id) return;
+      
+      setIsLoading(true);
+      try {
+        const events = await getPublishedEvents();
+        const foundEvent = events.find(e => e.id === id);
+        
+        if (!foundEvent) {
+          toast({
+            title: "Event not found",
+            description: "The event you're looking for doesn't exist.",
+            variant: "destructive"
+          });
+          navigate('/explore');
+          return;
+        }
+        
+        setEvent(foundEvent);
+        
+        // Get tickets sold
+        const sold = await getTotalKeys(foundEvent.lock_address);
+        setKeysSold(sold);
+      } catch (error) {
+        console.error('Error loading event:', error);
+        toast({
+          title: "Error loading event",
+          description: "There was an error loading the event details.",
+          variant: "destructive"
+        });
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    loadEvent();
+  }, [id, navigate, toast]);
+
+  const handleShare = () => {
+    if (navigator.share) {
+      navigator.share({
+        title: event?.title,
+        text: event?.description,
+        url: window.location.href,
+      });
+    } else {
+      navigator.clipboard.writeText(window.location.href);
+      toast({
+        title: "Link copied",
+        description: "Event link copied to clipboard",
+      });
+    }
+  };
+
+  const handleGetTicket = () => {
+    setIsPurchaseDialogOpen(true);
+  };
+
+  const spotsLeft = event ? event.capacity - keysSold : 0;
+  const isSoldOut = spotsLeft <= 0;
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-gray-50 py-8">
+        <div className="container mx-auto px-6 max-w-4xl">
+          <div className="animate-pulse">
+            <div className="h-8 bg-gray-200 rounded w-1/4 mb-6"></div>
+            <div className="h-64 bg-gray-200 rounded-lg mb-6"></div>
+            <div className="h-8 bg-gray-200 rounded w-3/4 mb-4"></div>
+            <div className="h-4 bg-gray-200 rounded w-full mb-2"></div>
+            <div className="h-4 bg-gray-200 rounded w-2/3"></div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (!event) {
+    return null;
+  }
+
+  return (
+    <div className="min-h-screen bg-gray-50">
+      {/* Header */}
+      <div className="bg-white border-b">
+        <div className="container mx-auto px-6 max-w-4xl py-4">
+          <Button
+            variant="ghost"
+            onClick={() => navigate('/explore')}
+            className="mb-4"
+          >
+            <ArrowLeft className="w-4 h-4 mr-2" />
+            Back to events
+          </Button>
+        </div>
+      </div>
+
+      <div className="container mx-auto px-6 max-w-4xl py-8">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+          {/* Main Content */}
+          <div className="lg:col-span-2 space-y-6">
+            {/* Event Image */}
+            {event.image_url && (
+              <div className="aspect-video rounded-lg overflow-hidden bg-gray-100">
+                <img
+                  src={event.image_url}
+                  alt={event.title}
+                  className="w-full h-full object-cover"
+                />
+              </div>
+            )}
+
+            {/* Event Info */}
+            <div>
+              <div className="flex items-start justify-between mb-4">
+                <div className="flex-1">
+                  <Badge variant="secondary" className="mb-3">
+                    {event.category}
+                  </Badge>
+                  <h1 className="text-3xl font-bold text-gray-900 mb-2">
+                    {event.title}
+                  </h1>
+                  <div className="flex items-center space-x-4 text-gray-600">
+                    {event.date && (
+                      <div className="flex items-center space-x-1">
+                        <Calendar className="w-4 h-4" />
+                        <span>{format(event.date, 'EEEE, MMMM do, yyyy')}</span>
+                      </div>
+                    )}
+                    <div className="flex items-center space-x-1">
+                      <Clock className="w-4 h-4" />
+                      <span>{event.time}</span>
+                    </div>
+                  </div>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setIsLiked(!isLiked)}
+                  >
+                    <Heart className={`w-4 h-4 ${isLiked ? 'fill-red-500 text-red-500' : ''}`} />
+                  </Button>
+                  <Button variant="outline" size="sm" onClick={handleShare}>
+                    <Share2 className="w-4 h-4" />
+                  </Button>
+                </div>
+              </div>
+
+              <div className="flex items-center space-x-1 text-gray-600 mb-6">
+                <MapPin className="w-4 h-4" />
+                <span>{event.location}</span>
+              </div>
+
+              <Separator className="my-6" />
+
+              {/* Description */}
+              <div>
+                <h2 className="text-xl font-semibold text-gray-900 mb-4">
+                  About this event
+                </h2>
+                <div className="prose prose-gray max-w-none">
+                  <p className="text-gray-700 whitespace-pre-wrap">
+                    {event.description}
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Sidebar */}
+          <div className="space-y-6">
+            {/* Ticket Card */}
+            <Card className="border-0 shadow-sm">
+              <CardHeader className="pb-4">
+                <div className="flex items-center justify-between">
+                  <h3 className="font-semibold text-gray-900">Get tickets</h3>
+                  <Ticket className="w-5 h-5 text-gray-400" />
+                </div>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <span className="text-2xl font-bold text-gray-900">
+                    {event.currency === 'FREE' ? 'Free' : `${event.price} ${event.currency}`}
+                  </span>
+                  {!isSoldOut && (
+                    <Badge variant="outline" className="text-green-600 border-green-200">
+                      {spotsLeft} spots left
+                    </Badge>
+                  )}
+                </div>
+
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between text-sm text-gray-600">
+                    <span>Capacity</span>
+                    <span>{event.capacity} people</span>
+                  </div>
+                  <div className="flex items-center justify-between text-sm text-gray-600">
+                    <span>Registered</span>
+                    <span>{keysSold} people</span>
+                  </div>
+                </div>
+
+                <div className="w-full bg-gray-200 rounded-full h-2">
+                  <div 
+                    className="bg-blue-600 h-2 rounded-full transition-all duration-300"
+                    style={{ width: `${Math.min((keysSold / event.capacity) * 100, 100)}%` }}
+                  />
+                </div>
+
+                <Button 
+                  className="w-full" 
+                  onClick={handleGetTicket}
+                  disabled={isSoldOut}
+                >
+                  {isSoldOut ? 'Sold Out' : 'Get Ticket'}
+                </Button>
+
+                <div className="text-xs text-gray-500 text-center">
+                  Powered by blockchain technology
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Event Details Card */}
+            <Card className="border-0 shadow-sm">
+              <CardHeader className="pb-4">
+                <h3 className="font-semibold text-gray-900">Event details</h3>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="space-y-3">
+                  {event.date && (
+                    <div className="flex items-start space-x-3">
+                      <Calendar className="w-5 h-5 text-gray-400 mt-0.5" />
+                      <div>
+                        <div className="font-medium text-gray-900">
+                          {format(event.date, 'EEEE, MMMM do, yyyy')}
+                        </div>
+                        <div className="text-sm text-gray-600">{event.time}</div>
+                      </div>
+                    </div>
+                  )}
+                  
+                  <div className="flex items-start space-x-3">
+                    <MapPin className="w-5 h-5 text-gray-400 mt-0.5" />
+                    <div>
+                      <div className="font-medium text-gray-900">Location</div>
+                      <div className="text-sm text-gray-600">{event.location}</div>
+                    </div>
+                  </div>
+
+                  <div className="flex items-start space-x-3">
+                    <Users className="w-5 h-5 text-gray-400 mt-0.5" />
+                    <div>
+                      <div className="font-medium text-gray-900">Capacity</div>
+                      <div className="text-sm text-gray-600">{event.capacity} attendees</div>
+                    </div>
+                  </div>
+                </div>
+
+                <Separator />
+
+                <div className="space-y-2">
+                  <div className="text-xs text-gray-500 uppercase tracking-wider">
+                    Blockchain Info
+                  </div>
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="text-gray-600">Contract</span>
+                    <Button variant="ghost" size="sm" className="h-auto p-0 text-blue-600">
+                      <span className="font-mono text-xs">
+                        {event.lock_address.slice(0, 6)}...{event.lock_address.slice(-4)}
+                      </span>
+                      <ExternalLink className="w-3 h-3 ml-1" />
+                    </Button>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        </div>
+      </div>
+
+      {/* Purchase Dialog */}
+      <EventPurchaseDialog
+        event={event}
+        isOpen={isPurchaseDialogOpen}
+        onClose={() => setIsPurchaseDialogOpen(false)}
+      />
+    </div>
+  );
+};
+
+export default EventDetails;
