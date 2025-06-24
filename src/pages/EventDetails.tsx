@@ -122,10 +122,36 @@ const EventDetails = () => {
   };
 
   const handleAddToCalendar = () => {
-    if (!event || !event.date) return;
+    if (!event || !event.date || !event.time) return;
 
-    const startDate = new Date(event.date);
-    const endDate = new Date(startDate.getTime() + 2 * 60 * 60 * 1000); // 2 hours duration
+    // Parse the event time (assuming format like "7:00 PM" or "19:00")
+    const parseEventTime = (timeString: string, eventDate: Date) => {
+      const timeParts = timeString.trim().match(/^(\d{1,2}):(\d{2})\s*(AM|PM)?$/i);
+      if (!timeParts) {
+        // Fallback to current parsing if format doesn't match
+        console.warn('Could not parse time format:', timeString);
+        return eventDate;
+      }
+
+      const hours = parseInt(timeParts[1]);
+      const minutes = parseInt(timeParts[2]);
+      const period = timeParts[3]?.toUpperCase();
+
+      let hour24 = hours;
+      if (period === 'PM' && hours !== 12) {
+        hour24 += 12;
+      } else if (period === 'AM' && hours === 12) {
+        hour24 = 0;
+      }
+
+      const startDate = new Date(eventDate);
+      startDate.setHours(hour24, minutes, 0, 0);
+      return startDate;
+    };
+
+    const startDate = parseEventTime(event.time, new Date(event.date));
+    // Default to 2 hours duration if no specific duration is available
+    const endDate = new Date(startDate.getTime() + 2 * 60 * 60 * 1000);
     
     const formatDate = (date: Date) => {
       return date.toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z';
