@@ -10,7 +10,7 @@ import { format } from 'date-fns';
 
 interface EventCardProps {
   event: PublishedEvent;
-  onViewDetails: (event: PublishedEvent) => void;
+  onViewDetails?: (event: PublishedEvent) => void;
   keysSold?: number;
   actionType?: string;
   showActions?: boolean;
@@ -35,7 +35,9 @@ export const EventCard: React.FC<EventCardProps> = ({
 
   const handleViewDetailsClick = (e: React.MouseEvent) => {
     e.stopPropagation();
-    onViewDetails(event);
+    if (onViewDetails) {
+      onViewDetails(event);
+    }
   };
 
   return (
