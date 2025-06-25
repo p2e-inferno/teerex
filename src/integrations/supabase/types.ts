@@ -9,6 +9,111 @@ export type Json =
 export type Database = {
   public: {
     Tables: {
+      attestation_schemas: {
+        Row: {
+          category: string
+          created_at: string
+          description: string
+          id: string
+          name: string
+          revocable: boolean
+          schema_definition: string
+          schema_uid: string
+          updated_at: string
+        }
+        Insert: {
+          category: string
+          created_at?: string
+          description: string
+          id?: string
+          name: string
+          revocable?: boolean
+          schema_definition: string
+          schema_uid: string
+          updated_at?: string
+        }
+        Update: {
+          category?: string
+          created_at?: string
+          description?: string
+          id?: string
+          name?: string
+          revocable?: boolean
+          schema_definition?: string
+          schema_uid?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      attestations: {
+        Row: {
+          attestation_uid: string
+          attester: string
+          created_at: string
+          creator_address: string | null
+          data: Json
+          event_id: string | null
+          expiration_time: string | null
+          id: string
+          is_revoked: boolean
+          lock_address: string | null
+          recipient: string
+          revocation_time: string | null
+          schema_uid: string
+          ticket_token_id: string | null
+          updated_at: string
+        }
+        Insert: {
+          attestation_uid: string
+          attester: string
+          created_at?: string
+          creator_address?: string | null
+          data: Json
+          event_id?: string | null
+          expiration_time?: string | null
+          id?: string
+          is_revoked?: boolean
+          lock_address?: string | null
+          recipient: string
+          revocation_time?: string | null
+          schema_uid: string
+          ticket_token_id?: string | null
+          updated_at?: string
+        }
+        Update: {
+          attestation_uid?: string
+          attester?: string
+          created_at?: string
+          creator_address?: string | null
+          data?: Json
+          event_id?: string | null
+          expiration_time?: string | null
+          id?: string
+          is_revoked?: boolean
+          lock_address?: string | null
+          recipient?: string
+          revocation_time?: string | null
+          schema_uid?: string
+          ticket_token_id?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "attestations_event_id_fkey"
+            columns: ["event_id"]
+            isOneToOne: false
+            referencedRelation: "events"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "attestations_schema_uid_fkey"
+            columns: ["schema_uid"]
+            isOneToOne: false
+            referencedRelation: "attestation_schemas"
+            referencedColumns: ["schema_uid"]
+          },
+        ]
+      }
       event_drafts: {
         Row: {
           capacity: number
@@ -62,6 +167,8 @@ export type Database = {
       }
       events: {
         Row: {
+          attendance_schema_uid: string | null
+          attestation_enabled: boolean
           capacity: number
           category: string
           chain_id: number
@@ -75,12 +182,15 @@ export type Database = {
           location: string
           lock_address: string
           price: number
+          review_schema_uid: string | null
           time: string
           title: string
           transaction_hash: string
           updated_at: string
         }
         Insert: {
+          attendance_schema_uid?: string | null
+          attestation_enabled?: boolean
           capacity: number
           category: string
           chain_id?: number
@@ -94,12 +204,15 @@ export type Database = {
           location: string
           lock_address: string
           price?: number
+          review_schema_uid?: string | null
           time: string
           title: string
           transaction_hash: string
           updated_at?: string
         }
         Update: {
+          attendance_schema_uid?: string | null
+          attestation_enabled?: boolean
           capacity?: number
           category?: string
           chain_id?: number
@@ -113,6 +226,7 @@ export type Database = {
           location?: string
           lock_address?: string
           price?: number
+          review_schema_uid?: string | null
           time?: string
           title?: string
           transaction_hash?: string
