@@ -1,4 +1,3 @@
-
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
@@ -38,6 +37,14 @@ export const EventCard: React.FC<EventCardProps> = ({
     if (onViewDetails) {
       onViewDetails(event);
     }
+  };
+
+  // Determine button text based on context
+  const getButtonText = () => {
+    if (isTicketView) return 'View Ticket';
+    if (actionType === 'edit') return 'Edit';
+    if (actionType === 'manage') return 'Manage';
+    return 'Get Ticket';
   };
 
   return (
@@ -118,7 +125,7 @@ export const EventCard: React.FC<EventCardProps> = ({
               onClick={handleViewDetailsClick}
               className="bg-blue-600 hover:bg-blue-700"
             >
-              {isTicketView ? 'View Ticket' : actionType === 'manage' ? 'Manage' : 'Get Ticket'}
+              {getButtonText()}
             </Button>
           )}
         </div>
