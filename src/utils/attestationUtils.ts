@@ -75,6 +75,7 @@ export interface AttestationData {
   tokenId?: string;
   price?: number;
   expirationTime?: number;
+  [key: string]: any; // Add index signature for compatibility with Json type
 }
 
 export interface CreateAttestationParams {
@@ -234,7 +235,7 @@ export const createAttestation = async (params: CreateAttestationParams): Promis
       }
     }
 
-    // Save attestation to our database
+    // Save attestation to our database with proper type casting
     const { error: saveError } = await supabase
       .from('attestations')
       .insert({
@@ -243,7 +244,7 @@ export const createAttestation = async (params: CreateAttestationParams): Promis
         attester: wallet.address,
         recipient: recipient,
         event_id: data.eventId,
-        data: data,
+        data: data as any, // Cast to any for Json compatibility
         expiration_time: expirationTime ? new Date(expirationTime * 1000).toISOString() : null
       });
 
