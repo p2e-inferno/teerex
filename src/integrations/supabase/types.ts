@@ -181,11 +181,14 @@ export type Database = {
           image_url: string | null
           location: string
           lock_address: string
+          max_keys_per_address: number
           price: number
+          requires_approval: boolean
           review_schema_uid: string | null
           time: string
           title: string
           transaction_hash: string
+          transferable: boolean
           updated_at: string
         }
         Insert: {
@@ -203,11 +206,14 @@ export type Database = {
           image_url?: string | null
           location: string
           lock_address: string
+          max_keys_per_address?: number
           price?: number
+          requires_approval?: boolean
           review_schema_uid?: string | null
           time: string
           title: string
           transaction_hash: string
+          transferable?: boolean
           updated_at?: string
         }
         Update: {
@@ -225,11 +231,14 @@ export type Database = {
           image_url?: string | null
           location?: string
           lock_address?: string
+          max_keys_per_address?: number
           price?: number
+          requires_approval?: boolean
           review_schema_uid?: string | null
           time?: string
           title?: string
           transaction_hash?: string
+          transferable?: boolean
           updated_at?: string
         }
         Relationships: []

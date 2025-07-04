@@ -11,6 +11,9 @@ interface LockConfig {
   expirationDuration: number;
   currency: string;
   price: number;
+  maxKeysPerAddress?: number;
+  transferable?: boolean;
+  requiresApproval?: boolean;
 }
 
 interface DeploymentResult {
@@ -100,6 +103,46 @@ const PublicLockABI = [
     "inputs": [{ "internalType": "address", "name": "_account", "type": "address" }],
     "name": "isLockManager",
     "outputs": [{ "internalType": "bool", "name": "", "type": "bool" }],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  // ERC-721 standard functions
+  {
+    "inputs": [{ "internalType": "address", "name": "owner", "type": "address" }],
+    "name": "balanceOf",
+    "outputs": [{ "internalType": "uint256", "name": "", "type": "uint256" }],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [{ "internalType": "uint256", "name": "tokenId", "type": "uint256" }],
+    "name": "ownerOf",
+    "outputs": [{ "internalType": "address", "name": "", "type": "address" }],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  // Unlock Protocol specific functions
+  {
+    "inputs": [
+      { "internalType": "address", "name": "_user", "type": "address" },
+      { "internalType": "uint256", "name": "_amount", "type": "uint256" }
+    ],
+    "name": "setMaxKeysPerAddress",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [{ "internalType": "address", "name": "_user", "type": "address" }],
+    "name": "maxKeysPerAddress",
+    "outputs": [{ "internalType": "uint256", "name": "", "type": "uint256" }],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "maxKeysPerAddress",
+    "outputs": [{ "internalType": "uint256", "name": "", "type": "uint256" }],
     "stateMutability": "view",
     "type": "function"
   }
@@ -436,5 +479,113 @@ export const checkKeyOwnership = async (lockAddress: string, userAddress: string
   } catch (error) {
     console.error(`Error checking key ownership for ${lockAddress}:`, error);
     return false;
+  }
+};
+
+/**
+ * Gets the number of keys (tickets) owned by a specific user for a lock.
+ */
+export const getUserKeyBalance = async (lockAddress: string, userAddress: string): Promise<number> => {
+  try {
+    if (!ethers.isAddress(lockAddress) || !ethers.isAddress(userAddress)) {
+      return 0;
+    }
+    
+    // Validate lock address before proceeding
+    if (lockAddress === 'Unknown') {
+      return 0;
+    }
+    
+    const provider = getReadOnlyProvider();
+    const lockContract = new ethers.Contract(lockAddress, PublicLockABI, provider);
+    const balance = await lockContract.balanceOf(userAddress);
+    return Number(balance);
+  } catch (error) {
+    console.error(`Error fetching user key balance for ${lockAddress}:`, error);
+    return 0;
+  }
+};
+
+/**
+ * Configures max keys per address for a lock (requires lock manager permissions).
+ */
+export const configureMaxKeysPerAddress = async (
+  lockAddress: string,
+  maxKeys: number,
+  wallet: any
+): Promise<{ success: boolean; error?: string }> => {
+  try {
+    if (!lockAddress || lockAddress === 'Unknown' || !ethers.isAddress(lockAddress)) {
+      throw new Error('Invalid lock address.');
+    }
+    
+    if (!wallet || !wallet.address) {
+      throw new Error('No wallet provided or not connected.');
+    }
+
+    const provider = await wallet.getEthereumProvider();
+    const ethersProvider = new ethers.BrowserProvider(provider);
+    const signer = await ethersProvider.getSigner();
+
+    const lockContract = new ethers.Contract(lockAddress, PublicLockABI, signer);
+
+    // Check if user is a lock manager
+    const isManager = await lockContract.isLockManager(wallet.address);
+    if (!isManager) {
+      throw new Error('You must be a lock manager to configure this setting.');
+    }
+
+    // Set max keys per address globally for the lock
+    const tx = await lockContract.setMaxKeysPerAddress(
+      '0x0000000000000000000000000000000000000000', // Zero address means global setting
+      maxKeys
+    );
+
+    console.log('Max keys per address configuration sent:', tx.hash);
+    await tx.wait();
+
+    return { success: true };
+  } catch (error) {
+    console.error('Error configuring max keys per address:', error);
+    
+    let errorMessage = 'Failed to configure max keys per address.';
+    if (error instanceof Error) {
+      errorMessage = error.message;
+    }
+    
+    return { success: false, error: errorMessage };
+  }
+};
+
+/**
+ * Gets the maximum number of keys a user can own for this lock.
+ */
+export const getMaxKeysPerAddress = async (lockAddress: string, userAddress?: string): Promise<number> => {
+  try {
+    if (!lockAddress || lockAddress === 'Unknown' || !ethers.isAddress(lockAddress)) {
+      return 1; // Default fallback
+    }
+    
+    const provider = getReadOnlyProvider();
+    const lockContract = new ethers.Contract(lockAddress, PublicLockABI, provider);
+    
+    // Try user-specific limit first, then global limit
+    if (userAddress && ethers.isAddress(userAddress)) {
+      try {
+        const userLimit = await lockContract.maxKeysPerAddress(userAddress);
+        if (Number(userLimit) > 0) {
+          return Number(userLimit);
+        }
+      } catch {
+        // Fall through to global limit
+      }
+    }
+    
+    // Get global limit
+    const globalLimit = await lockContract.maxKeysPerAddress();
+    return Number(globalLimit) || 1; // Default to 1 if not set
+  } catch (error) {
+    console.error(`Error fetching max keys per address for ${lockAddress}:`, error);
+    return 1; // Default fallback
   }
 };

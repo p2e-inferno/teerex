@@ -21,8 +21,10 @@ import {
   Linkedin
 } from 'lucide-react';
 import { getPublishedEvents, PublishedEvent } from '@/utils/eventUtils';
-import { getTotalKeys } from '@/utils/lockUtils';
+import { getTotalKeys, getUserKeyBalance, getMaxKeysPerAddress, checkKeyOwnership } from '@/utils/lockUtils';
 import { EventPurchaseDialog } from '@/components/events/EventPurchaseDialog';
+import { AttestationButton } from '@/components/attestations/AttestationButton';
+import { usePrivy, useWallets } from '@privy-io/react-auth';
 import { useToast } from '@/hooks/use-toast';
 import { format } from 'date-fns';
 import {
@@ -36,9 +38,14 @@ const EventDetails = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const { toast } = useToast();
+  const { authenticated } = usePrivy();
+  const { wallets } = useWallets();
+  const wallet = wallets[0];
   
   const [event, setEvent] = useState<PublishedEvent | null>(null);
   const [keysSold, setKeysSold] = useState<number>(0);
+  const [userTicketCount, setUserTicketCount] = useState<number>(0);
+  const [maxTicketsPerUser, setMaxTicketsPerUser] = useState<number>(1);
   const [isLoading, setIsLoading] = useState(true);
   const [isPurchaseDialogOpen, setIsPurchaseDialogOpen] = useState(false);
   const [isLiked, setIsLiked] = useState(false);
@@ -67,6 +74,10 @@ const EventDetails = () => {
         // Get tickets sold
         const sold = await getTotalKeys(foundEvent.lock_address);
         setKeysSold(sold);
+        
+        // Get max tickets per user for this event
+        const maxKeys = await getMaxKeysPerAddress(foundEvent.lock_address);
+        setMaxTicketsPerUser(maxKeys);
       } catch (error) {
         console.error('Error loading event:', error);
         toast({
@@ -81,6 +92,22 @@ const EventDetails = () => {
 
     loadEvent();
   }, [id, navigate, toast]);
+
+  // Load user ticket data when authenticated
+  useEffect(() => {
+    const loadUserTicketData = async () => {
+      if (!authenticated || !wallet?.address || !event?.lock_address) return;
+      
+      try {
+        const userBalance = await getUserKeyBalance(event.lock_address, wallet.address);
+        setUserTicketCount(userBalance);
+      } catch (error) {
+        console.error('Error loading user ticket data:', error);
+      }
+    };
+
+    loadUserTicketData();
+  }, [authenticated, wallet?.address, event?.lock_address]);
 
   const handleShare = (platform?: string) => {
     const url = window.location.href;
@@ -321,11 +348,32 @@ const EventDetails = () => {
             <Card className="border-0 shadow-sm">
               <CardHeader className="pb-4">
                 <div className="flex items-center justify-between">
-                  <h3 className="font-semibold text-gray-900">Get tickets</h3>
+                  <h3 className="font-semibold text-gray-900">
+                    {authenticated && userTicketCount > 0 ? 'Your Tickets' : 'Get tickets'}
+                  </h3>
                   <Ticket className="w-5 h-5 text-gray-400" />
                 </div>
               </CardHeader>
               <CardContent className="space-y-4">
+                {/* User Ticket Status */}
+                {authenticated && userTicketCount > 0 && (
+                  <div className="bg-green-50 border border-green-200 rounded-lg p-3 mb-4">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center space-x-2">
+                        <div className="w-2 h-2 bg-green-500 rounded-full"></div>
+                        <span className="text-sm font-medium text-green-800">
+                          You own {userTicketCount} ticket{userTicketCount > 1 ? 's' : ''}
+                        </span>
+                      </div>
+                      {maxTicketsPerUser > 1 && (
+                        <Badge variant="outline" className="text-green-600 border-green-200">
+                          {userTicketCount}/{maxTicketsPerUser} max
+                        </Badge>
+                      )}
+                    </div>
+                  </div>
+                )}
+
                 <div className="flex items-center justify-between">
                   <span className="text-2xl font-bold text-gray-900">
                     {event.currency === 'FREE' ? 'Free' : `${event.price} ${event.currency}`}
@@ -346,6 +394,12 @@ const EventDetails = () => {
                     <span>Registered</span>
                     <span>{keysSold} people</span>
                   </div>
+                  {maxTicketsPerUser > 1 && (
+                    <div className="flex items-center justify-between text-sm text-gray-600">
+                      <span>Max per person</span>
+                      <span>{maxTicketsPerUser} tickets</span>
+                    </div>
+                  )}
                 </div>
 
                 <div className="w-full bg-gray-200 rounded-full h-2">
@@ -355,13 +409,41 @@ const EventDetails = () => {
                   />
                 </div>
 
-                <Button 
-                  className="w-full" 
-                  onClick={handleGetTicket}
-                  disabled={isSoldOut}
-                >
-                  {isSoldOut ? 'Sold Out' : 'Get Ticket'}
-                </Button>
+                {authenticated && userTicketCount > 0 ? (
+                  <div className="space-y-2">
+                    {/* Attestation Button for ticket holders */}
+                    <AttestationButton
+                      schemaUid="0x" // TODO: Get from event or config
+                      recipient={wallet?.address || ''}
+                      eventId={event.id}
+                      lockAddress={event.lock_address}
+                      eventTitle={event.title}
+                      attestationType="attendance"
+                    />
+                    
+                    {/* Additional ticket purchase if allowed */}
+                    {userTicketCount < maxTicketsPerUser && !isSoldOut && (
+                      <Button 
+                        variant="outline"
+                        className="w-full" 
+                        onClick={handleGetTicket}
+                      >
+                        Get Additional Ticket
+                      </Button>
+                    )}
+                  </div>
+                ) : (
+                  <Button 
+                    className="w-full" 
+                    onClick={handleGetTicket}
+                    disabled={isSoldOut || (!authenticated && userTicketCount >= maxTicketsPerUser)}
+                  >
+                    {isSoldOut ? 'Sold Out' : 
+                     !authenticated ? 'Connect Wallet to Get Ticket' :
+                     userTicketCount >= maxTicketsPerUser ? 'Ticket Limit Reached' :
+                     'Get Ticket'}
+                  </Button>
+                )}
 
                 <div className="text-xs text-gray-500 text-center">
                   Powered by blockchain technology
