@@ -537,11 +537,11 @@ const Admin: React.FC = () => {
                 </p>
               ) : (
                 schemas.map((schema) => {
-                  const isValidUID = schema.schema_uid.startsWith('0x') && schema.schema_uid.length === 66;
-                  const isPlaceholderUID = schema.schema_uid.match(/^0x[0-9a-f]{64}$/i) && 
-                    (schema.schema_uid.includes('1234567890abcdef') || 
-                     schema.schema_uid.includes('2234567890abcdef') || 
-                     schema.schema_uid.includes('3234567890abcdef'));
+                  // EAS schema UIDs should be exactly 66 characters (0x + 64 hex chars = 32 bytes)
+                  const isValidUID = schema.schema_uid.startsWith('0x') && 
+                    schema.schema_uid.length === 66 && 
+                    /^0x[0-9a-f]{64}$/i.test(schema.schema_uid);
+                  const isInvalidUID = !isValidUID;
                   
                   return (
                     <div key={schema.id} className="border rounded-lg p-4">
@@ -552,7 +552,7 @@ const Admin: React.FC = () => {
                         </div>
                         <div className="flex flex-col items-end gap-1">
                           <Badge variant="outline">{schema.category}</Badge>
-                          {isPlaceholderUID && (
+                          {isInvalidUID && (
                             <Badge variant="destructive" className="text-xs">
                               Invalid UID
                             </Badge>
@@ -571,7 +571,7 @@ const Admin: React.FC = () => {
                           {schema.schema_definition}
                         </code>
                       </div>
-                      {isPlaceholderUID && (
+                      {isInvalidUID && (
                         <div className="mt-3">
                           <Button
                             variant="secondary"
