@@ -413,7 +413,7 @@ const EventDetails = () => {
                   <div className="space-y-2">
                     {/* Attestation Button for ticket holders */}
                     <AttestationButton
-                      schemaUid="0x" // TODO: Get from event or config
+                      schemaUid="0x1234567890abcdef1234567890abcdef12345678"
                       recipient={wallet?.address || ''}
                       eventId={event.id}
                       lockAddress={event.lock_address}
