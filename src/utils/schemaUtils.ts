@@ -150,6 +150,8 @@ export const registerSchema = async (params: RegisterSchemaParams): Promise<Sche
     if (error instanceof Error) {
       if (error.message.includes('User rejected') || error.message.includes('user rejected')) {
         errorMessage = 'Transaction was cancelled by user';
+      } else if (error.message.includes('0x23369fa6') || error.message.includes('AlreadyExists')) {
+        errorMessage = 'Schema already exists - this exact schema definition has been registered before. Try modifying the schema or check existing schemas.';
       } else {
         errorMessage = error.message;
       }

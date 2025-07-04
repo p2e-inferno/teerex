@@ -32,22 +32,22 @@ const Admin: React.FC = () => {
 
   const predefinedSchemas = [
     {
-      name: 'Event Attendance',
-      description: 'Proof of attendance at an event',
+      name: 'TeeRex Event Attendance v1',
+      description: 'Proof of attendance at a TeeRex event',
       category: 'attendance',
-      schemaDefinition: 'string eventId, address lockAddress, string eventTitle, uint256 timestamp, string location'
+      schemaDefinition: 'string eventId, address lockAddress, string eventTitle, uint256 timestamp, string location, string platform'
     },
     {
-      name: 'Event Review',
-      description: 'Review and rating for an event',
+      name: 'TeeRex Event Review v1',
+      description: 'Review and rating for a TeeRex event',
       category: 'review',
-      schemaDefinition: 'string eventId, address lockAddress, string eventTitle, uint8 rating, string review, uint256 timestamp'
+      schemaDefinition: 'string eventId, address lockAddress, string eventTitle, uint8 rating, string review, uint256 timestamp, string platform'
     },
     {
-      name: 'Ticket Purchase',
-      description: 'Proof of ticket purchase',
+      name: 'TeeRex Ticket Purchase v1',
+      description: 'Proof of ticket purchase on TeeRex',
       category: 'purchase',
-      schemaDefinition: 'string eventId, address lockAddress, string eventTitle, uint256 tokenId, uint256 price, uint256 timestamp'
+      schemaDefinition: 'string eventId, address lockAddress, string eventTitle, uint256 tokenId, uint256 price, uint256 timestamp, string platform'
     }
   ];
 
