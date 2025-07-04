@@ -74,16 +74,44 @@ export const registerSchema = async (params: RegisterSchemaParams): Promise<Sche
     // Extract schema UID from transaction logs
     let schemaUid = '';
     if (receipt.logs && receipt.logs.length > 0) {
-      // Look for Registered event in logs
+      console.log('Transaction logs:', receipt.logs);
+      
+      // Calculate the correct event signature hash
+      // Event: Registered(bytes32,address,(bytes32,address,bool,string))
+      const eventSignature = 'Registered(bytes32,address,(bytes32,address,bool,string))';
+      const eventTopic = ethers.id(eventSignature);
+      console.log('Expected event topic:', eventTopic);
+      
       for (const log of receipt.logs) {
+        console.log('Log topics:', log.topics);
         try {
-          // Registered event signature: Registered(bytes32,address,bool,string)
-          if (log.topics && log.topics[0] === '0x7d84a6263ae0d98d3329bd7b46bb4e8d6f98d60a2c8d34f3e1b40ba5c38e8b73') {
-            schemaUid = log.topics[1]; // UID is the 2nd topic
+          if (log.topics && log.topics.length >= 2 && log.topics[0] === eventTopic) {
+            schemaUid = log.topics[1]; // UID is the first indexed parameter
+            console.log('Found schema UID:', schemaUid);
             break;
           }
         } catch (e) {
+          console.error('Error parsing log:', e);
           continue;
+        }
+      }
+      
+      // If we didn't find it with the struct signature, try the simplified one
+      if (!schemaUid) {
+        const simpleEventSignature = 'Registered(bytes32,address)';
+        const simpleEventTopic = ethers.id(simpleEventSignature);
+        console.log('Trying simple event topic:', simpleEventTopic);
+        
+        for (const log of receipt.logs) {
+          try {
+            if (log.topics && log.topics.length >= 2 && log.topics[0] === simpleEventTopic) {
+              schemaUid = log.topics[1];
+              console.log('Found schema UID with simple signature:', schemaUid);
+              break;
+            }
+          } catch (e) {
+            continue;
+          }
         }
       }
     }
