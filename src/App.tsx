@@ -10,6 +10,7 @@ import Explore from "./pages/Explore";
 import CreateEvent from "./pages/CreateEvent";
 import MyEvents from "./pages/MyEvents";
 import MyTickets from "./pages/MyTickets";
+import Attestations from "./pages/Attestations";
 import Drafts from "./pages/Drafts";
 import EventDetails from "./pages/EventDetails";
 import NotFound from "./pages/NotFound";
@@ -29,6 +30,7 @@ const App = () => {
               <Route path="/events" element={<MyEvents />} />
               <Route path="/my-events" element={<MyEvents />} />
               <Route path="/my-tickets" element={<MyTickets />} />
+              <Route path="/attestations" element={<Attestations />} />
               <Route path="/drafts" element={<Drafts />} />
               <Route path="/event/:id" element={<EventDetails />} />
               {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}

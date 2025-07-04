@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { ImageModal } from '@/components/ui/image-modal';
 import { Calendar, Clock, MapPin, Users } from 'lucide-react';
 import { PublishedEvent } from '@/utils/eventUtils';
 import { format } from 'date-fns';
@@ -29,6 +30,13 @@ export const EventCard: React.FC<EventCardProps> = ({
   const isSoldOut = spotsLeft <= 0;
 
   const handleCardClick = () => {
+    if (!isTicketView) {
+      navigate(`/event/${event.id}`);
+    }
+  };
+
+  const handleTitleClick = (e: React.MouseEvent) => {
+    e.stopPropagation();
     navigate(`/event/${event.id}`);
   };
 
@@ -49,18 +57,30 @@ export const EventCard: React.FC<EventCardProps> = ({
 
   return (
     <Card 
-      className="border-0 shadow-sm hover:shadow-md transition-all duration-200 cursor-pointer group"
+      className={`border-0 shadow-sm hover:shadow-md transition-all duration-200 group ${!isTicketView ? 'cursor-pointer' : ''}`}
       onClick={handleCardClick}
     >
       <CardHeader className="p-0">
         {event.image_url ? (
-          <div className="aspect-video rounded-t-lg overflow-hidden bg-gray-100">
-            <img
-              src={event.image_url}
-              alt={event.title}
-              className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-200"
-            />
-          </div>
+          isTicketView ? (
+            <ImageModal src={event.image_url} alt={event.title}>
+              <div className="aspect-video rounded-t-lg overflow-hidden bg-gray-100 cursor-pointer">
+                <img
+                  src={event.image_url}
+                  alt={event.title}
+                  className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-200"
+                />
+              </div>
+            </ImageModal>
+          ) : (
+            <div className="aspect-video rounded-t-lg overflow-hidden bg-gray-100">
+              <img
+                src={event.image_url}
+                alt={event.title}
+                className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-200"
+              />
+            </div>
+          )
         ) : (
           <div className="aspect-video rounded-t-lg bg-gradient-to-br from-blue-100 to-purple-100 flex items-center justify-center">
             <Calendar className="w-12 h-12 text-gray-400" />
@@ -75,7 +95,10 @@ export const EventCard: React.FC<EventCardProps> = ({
           </Badge>
         </div>
         
-        <h3 className="font-semibold text-lg text-gray-900 mb-2 line-clamp-2 group-hover:text-blue-600 transition-colors">
+        <h3 
+          className={`font-semibold text-lg text-gray-900 mb-2 line-clamp-2 group-hover:text-blue-600 transition-colors ${isTicketView ? 'cursor-pointer hover:underline' : ''}`}
+          onClick={isTicketView ? handleTitleClick : undefined}
+        >
           {event.title}
         </h3>
         
