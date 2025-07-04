@@ -276,6 +276,60 @@ const Admin: React.FC = () => {
     }
   };
 
+  const handleReregisterSchema = async (schema: AttestationSchema) => {
+    if (!wallet) {
+      toast({
+        title: "Error",
+        description: "Please connect your wallet to re-register schemas",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const result = await registerSchema({
+        name: schema.name,
+        description: schema.description,
+        category: schema.category,
+        schemaDefinition: schema.schema_definition,
+        revocable: schema.revocable,
+        wallet
+      });
+
+      if (result.success) {
+        toast({
+          title: "Success",
+          description: `Schema re-registered with new UID: ${result.schemaUid}`
+        });
+        
+        // Update the schema in the database with the new UID
+        const { error: updateError } = await supabase
+          .from('attestation_schemas')
+          .update({ schema_uid: result.schemaUid })
+          .eq('id', schema.id);
+
+        if (updateError) {
+          console.error('Error updating schema UID:', updateError);
+        }
+        
+        // Refresh schemas list
+        await fetchSchemas();
+      } else {
+        throw new Error(result.error);
+      }
+    } catch (error) {
+      console.error('Error re-registering schema:', error);
+      toast({
+        title: "Error",
+        description: error instanceof Error ? error.message : "Failed to re-register schema",
+        variant: "destructive"
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleUsePredefined = (schema: typeof predefinedSchemas[0]) => {
     setFormData({
       name: schema.name,
@@ -482,29 +536,57 @@ const Admin: React.FC = () => {
                   No schemas registered yet
                 </p>
               ) : (
-                schemas.map((schema) => (
-                  <div key={schema.id} className="border rounded-lg p-4">
-                    <div className="flex items-start justify-between mb-2">
-                      <div>
-                        <h3 className="font-medium">{schema.name}</h3>
-                        <p className="text-sm text-muted-foreground">{schema.description}</p>
+                schemas.map((schema) => {
+                  const isValidUID = schema.schema_uid.startsWith('0x') && schema.schema_uid.length === 66;
+                  const isPlaceholderUID = schema.schema_uid.match(/^0x[0-9a-f]{64}$/i) && 
+                    (schema.schema_uid.includes('1234567890abcdef') || 
+                     schema.schema_uid.includes('2234567890abcdef') || 
+                     schema.schema_uid.includes('3234567890abcdef'));
+                  
+                  return (
+                    <div key={schema.id} className="border rounded-lg p-4">
+                      <div className="flex items-start justify-between mb-2">
+                        <div className="flex-1">
+                          <h3 className="font-medium">{schema.name}</h3>
+                          <p className="text-sm text-muted-foreground">{schema.description}</p>
+                        </div>
+                        <div className="flex flex-col items-end gap-1">
+                          <Badge variant="outline">{schema.category}</Badge>
+                          {isPlaceholderUID && (
+                            <Badge variant="destructive" className="text-xs">
+                              Invalid UID
+                            </Badge>
+                          )}
+                        </div>
                       </div>
-                      <Badge variant="outline">{schema.category}</Badge>
+                      <div className="mt-3">
+                        <p className="text-xs text-muted-foreground mb-1">Schema UID:</p>
+                        <code className="text-xs bg-muted px-2 py-1 rounded font-mono">
+                          {schema.schema_uid}
+                        </code>
+                      </div>
+                      <div className="mt-2">
+                        <p className="text-xs text-muted-foreground mb-1">Definition:</p>
+                        <code className="text-xs bg-muted px-2 py-1 rounded font-mono block">
+                          {schema.schema_definition}
+                        </code>
+                      </div>
+                      {isPlaceholderUID && (
+                        <div className="mt-3">
+                          <Button
+                            variant="secondary"
+                            size="sm"
+                            onClick={() => handleReregisterSchema(schema)}
+                            disabled={loading}
+                            className="w-full"
+                          >
+                            {loading ? 'Re-registering...' : 'Re-register on EAS'}
+                          </Button>
+                        </div>
+                      )}
                     </div>
-                    <div className="mt-3">
-                      <p className="text-xs text-muted-foreground mb-1">Schema UID:</p>
-                      <code className="text-xs bg-muted px-2 py-1 rounded font-mono">
-                        {schema.schema_uid}
-                      </code>
-                    </div>
-                    <div className="mt-2">
-                      <p className="text-xs text-muted-foreground mb-1">Definition:</p>
-                      <code className="text-xs bg-muted px-2 py-1 rounded font-mono block">
-                        {schema.schema_definition}
-                      </code>
-                    </div>
-                  </div>
-                ))
+                  );
+                })
               )}
             </div>
           </CardContent>
