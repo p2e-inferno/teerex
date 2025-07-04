@@ -32,9 +32,9 @@ import {
 type AttestationSchema = Database['public']['Tables']['attestation_schemas']['Row'];
 
 const Admin: React.FC = () => {
-  const { user } = usePrivy();
+  const { user, authenticated } = usePrivy();
   const { wallets } = useWallets();
-  const wallet = wallets[0];
+  const wallet = wallets?.[0];
   const [schemas, setSchemas] = useState<AttestationSchema[]>([]);
   const [loading, setLoading] = useState(false);
   const [checkingSchemas, setCheckingSchemas] = useState(false);
@@ -292,11 +292,14 @@ const Admin: React.FC = () => {
   };
 
   const handleReregisterSchema = async (schema: AttestationSchema) => {
-    // Check if wallet is connected and ready
-    if (!wallet || !user) {
+    // Check if user is authenticated and wallet is available
+    if (!authenticated || !wallet) {
+      console.log('Wallet check failed:', { authenticated, wallet, wallets });
       toast({
         title: "Wallet Connection Required",
-        description: "Please ensure your wallet is connected and try again",
+        description: authenticated 
+          ? "Please ensure your wallet is connected and try again" 
+          : "Please connect your wallet first",
         variant: "destructive"
       });
       return;
@@ -311,7 +314,13 @@ const Admin: React.FC = () => {
       revocable: schema.revocable
     });
 
-    // Then ask user if they want to proceed
+    // Scroll to form and highlight it
+    const formElement = document.getElementById('schema-form');
+    if (formElement) {
+      formElement.scrollIntoView({ behavior: 'smooth' });
+    }
+
+    // Then notify user
     toast({
       title: "Form Populated",
       description: "Schema data has been loaded into the form. Please review and click 'Register Schema' to proceed.",
@@ -464,7 +473,7 @@ const Admin: React.FC = () => {
 
           {/* Schema Registration Form */}
           <div className="xl:col-span-1">
-            <Card className="border-0 shadow-lg bg-gradient-to-br from-card/80 to-card/60 backdrop-blur-sm">
+            <Card id="schema-form" className="border-0 shadow-lg bg-gradient-to-br from-card/80 to-card/60 backdrop-blur-sm">
               <CardHeader className="pb-4">
                 <div className="flex items-center gap-3">
                   <div className="p-2 rounded-lg bg-green-500/10 border border-green-500/20">
