@@ -214,3 +214,113 @@ export const getSchemaByUid = async (schemaUid: string) => {
     return null;
   }
 };
+
+/**
+ * Checks if a schema already exists on EAS registry by attempting to query it
+ */
+export const checkSchemaExists = async (schemaDefinition: string, wallet: any): Promise<{ exists: boolean; schemaUid?: string }> => {
+  try {
+    if (!wallet) {
+      throw new Error('Wallet not connected');
+    }
+
+    // Get Ethereum provider
+    const provider = await wallet.getEthereumProvider();
+    const ethersProvider = new ethers.BrowserProvider(provider);
+
+    // Create a contract instance to call the registry
+    const schemaRegistryContract = new ethers.Contract(SCHEMA_REGISTRY_ADDRESS, [
+      {
+        "inputs": [{ "internalType": "bytes32", "name": "uid", "type": "bytes32" }],
+        "name": "getSchema",
+        "outputs": [
+          {
+            "components": [
+              { "internalType": "bytes32", "name": "uid", "type": "bytes32" },
+              { "internalType": "address", "name": "resolver", "type": "address" },
+              { "internalType": "bool", "name": "revocable", "type": "bool" },
+              { "internalType": "string", "name": "schema", "type": "string" }
+            ],
+            "internalType": "struct SchemaRecord",
+            "name": "",
+            "type": "tuple"
+          }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+      }
+    ], ethersProvider);
+
+    // Generate the schema UID by hashing the schema definition
+    const schemaUid = ethers.keccak256(ethers.toUtf8Bytes(schemaDefinition));
+
+    try {
+      const schemaRecord = await schemaRegistryContract.getSchema(schemaUid);
+      
+      // If we get a result and the schema string matches, it exists
+      if (schemaRecord && schemaRecord.schema === schemaDefinition && schemaRecord.schema !== '') {
+        return { exists: true, schemaUid };
+      }
+      
+      return { exists: false };
+    } catch (error) {
+      // If the call fails, the schema doesn't exist
+      return { exists: false };
+    }
+
+  } catch (error) {
+    console.error('Error checking schema existence:', error);
+    return { exists: false };
+  }
+};
+
+/**
+ * Imports an existing schema into our database
+ */
+export const importExistingSchema = async (params: {
+  schemaUid: string;
+  name: string;
+  description: string;
+  category: string;
+  schemaDefinition: string;
+  revocable: boolean;
+}): Promise<SchemaRegistrationResult> => {
+  try {
+    const { schemaUid, name, description, category, schemaDefinition, revocable } = params;
+
+    // Save schema to our database
+    const { error: saveError } = await supabase
+      .from('attestation_schemas')
+      .insert({
+        schema_uid: schemaUid,
+        name,
+        description,
+        category,
+        schema_definition: schemaDefinition,
+        revocable
+      });
+
+    if (saveError) {
+      console.error('Error saving schema to database:', saveError);
+      throw new Error('Failed to import schema: ' + saveError.message);
+    }
+
+    return {
+      success: true,
+      schemaUid
+    };
+
+  } catch (error) {
+    console.error('Error importing schema:', error);
+    
+    let errorMessage = 'Failed to import schema';
+    if (error instanceof Error) {
+      errorMessage = error.message;
+    }
+
+    return {
+      success: false,
+      error: errorMessage
+    };
+  }
+};

@@ -10,7 +10,7 @@ import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { toast } from "@/hooks/use-toast";
 import { supabase } from '@/integrations/supabase/client';
-import { registerSchema, getAttestationSchemas } from '@/utils/schemaUtils';
+import { registerSchema, getAttestationSchemas, checkSchemaExists, importExistingSchema } from '@/utils/schemaUtils';
 import { usePrivy, useWallets } from '@privy-io/react-auth';
 import { Database } from '@/integrations/supabase/types';
 
@@ -22,6 +22,8 @@ const Admin: React.FC = () => {
   const wallet = wallets[0];
   const [schemas, setSchemas] = useState<AttestationSchema[]>([]);
   const [loading, setLoading] = useState(false);
+  const [checkingSchemas, setCheckingSchemas] = useState(false);
+  const [schemaStatus, setSchemaStatus] = useState<Record<number, { exists: boolean; schemaUid?: string; checked: boolean }>>({});
   const [formData, setFormData] = useState({
     name: '',
     description: '',
@@ -55,6 +57,12 @@ const Admin: React.FC = () => {
     fetchSchemas();
   }, []);
 
+  useEffect(() => {
+    if (wallet && user) {
+      checkPredefinedSchemas();
+    }
+  }, [wallet, user]);
+
   const fetchSchemas = async () => {
     try {
       const data = await getAttestationSchemas();
@@ -65,6 +73,96 @@ const Admin: React.FC = () => {
         title: "Error",
         description: "Failed to fetch schemas",
         variant: "destructive"
+      });
+    }
+  };
+
+  const checkPredefinedSchemas = async () => {
+    if (!wallet) return;
+    
+    setCheckingSchemas(true);
+    try {
+      const statusUpdates: Record<number, { exists: boolean; schemaUid?: string; checked: boolean }> = {};
+      
+      for (let i = 0; i < predefinedSchemas.length; i++) {
+        const schema = predefinedSchemas[i];
+        const result = await checkSchemaExists(schema.schemaDefinition, wallet);
+        statusUpdates[i] = {
+          exists: result.exists,
+          schemaUid: result.schemaUid,
+          checked: true
+        };
+      }
+      
+      setSchemaStatus(statusUpdates);
+    } catch (error) {
+      console.error('Error checking schemas:', error);
+    } finally {
+      setCheckingSchemas(false);
+    }
+  };
+
+  const handleImportSchema = async (index: number) => {
+    const schema = predefinedSchemas[index];
+    const status = schemaStatus[index];
+    
+    if (!status?.exists || !status.schemaUid) {
+      toast({
+        title: "Error",
+        description: "Schema does not exist on registry",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const result = await importExistingSchema({
+        schemaUid: status.schemaUid,
+        name: schema.name,
+        description: schema.description,
+        category: schema.category,
+        schemaDefinition: schema.schemaDefinition,
+        revocable: true
+      });
+
+      if (result.success) {
+        toast({
+          title: "Success",
+          description: `Schema imported successfully: ${schema.name}`
+        });
+        
+        // Refresh schemas list
+        await fetchSchemas();
+      } else {
+        throw new Error(result.error);
+      }
+    } catch (error) {
+      console.error('Error importing schema:', error);
+      toast({
+        title: "Error",
+        description: error instanceof Error ? error.message : "Failed to import schema",
+        variant: "destructive"
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleRegisterOrImportPredefined = async (index: number) => {
+    const schema = predefinedSchemas[index];
+    const status = schemaStatus[index];
+    
+    if (status?.exists) {
+      await handleImportSchema(index);
+    } else {
+      // Set form data and let user register manually
+      setFormData({
+        name: schema.name,
+        description: schema.description,
+        category: schema.category,
+        schemaDefinition: schema.schemaDefinition,
+        revocable: true
       });
     }
   };
@@ -174,22 +272,75 @@ const Admin: React.FC = () => {
           <CardContent className="space-y-6">
             {/* Predefined Schemas */}
             <div>
-              <Label className="text-sm font-medium">Quick Start Templates</Label>
-              <div className="grid grid-cols-1 gap-2 mt-2">
-                {predefinedSchemas.map((schema, index) => (
+              <div className="flex items-center justify-between mb-2">
+                <Label className="text-sm font-medium">Quick Start Templates</Label>
+                {wallet && (
                   <Button
-                    key={index}
-                    variant="outline"
+                    variant="ghost"
                     size="sm"
-                    onClick={() => handleUsePredefined(schema)}
-                    className="justify-start text-left h-auto p-3"
+                    onClick={checkPredefinedSchemas}
+                    disabled={checkingSchemas}
                   >
-                    <div>
-                      <div className="font-medium">{schema.name}</div>
-                      <div className="text-xs text-muted-foreground">{schema.description}</div>
-                    </div>
+                    {checkingSchemas ? 'Checking...' : 'Check Status'}
                   </Button>
-                ))}
+                )}
+              </div>
+              <div className="grid grid-cols-1 gap-2 mt-2">
+                {predefinedSchemas.map((schema, index) => {
+                  const status = schemaStatus[index];
+                  const isInOurDb = schemas.some(s => s.schema_definition === schema.schemaDefinition);
+                  
+                  return (
+                    <div key={index} className="border rounded-lg p-3">
+                      <div className="flex items-start justify-between mb-2">
+                        <div className="flex-1">
+                          <div className="font-medium">{schema.name}</div>
+                          <div className="text-xs text-muted-foreground">{schema.description}</div>
+                        </div>
+                        <div className="flex flex-col items-end gap-1">
+                          {status?.checked && (
+                            <Badge variant={status.exists ? "default" : "secondary"} className="text-xs">
+                              {status.exists ? "Exists on EAS" : "Not on EAS"}
+                            </Badge>
+                          )}
+                          {isInOurDb && (
+                            <Badge variant="outline" className="text-xs">
+                              Already imported
+                            </Badge>
+                          )}
+                        </div>
+                      </div>
+                      <div className="flex gap-2">
+                        {status?.exists && !isInOurDb ? (
+                          <Button
+                            variant="default"
+                            size="sm"
+                            onClick={() => handleImportSchema(index)}
+                            disabled={loading || checkingSchemas}
+                            className="flex-1"
+                          >
+                            {loading ? 'Importing...' : 'Import Schema'}
+                          </Button>
+                        ) : (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => handleUsePredefined(schema)}
+                            disabled={loading || checkingSchemas}
+                            className="flex-1"
+                          >
+                            Use Template
+                          </Button>
+                        )}
+                        {!status?.checked && wallet && (
+                          <Badge variant="secondary" className="text-xs">
+                            Click "Check Status" above
+                          </Badge>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             </div>
 
