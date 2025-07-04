@@ -216,12 +216,32 @@ export const getSchemaByUid = async (schemaUid: string) => {
 };
 
 /**
- * Checks if a schema already exists on EAS registry by attempting to query it
+ * Checks if a schema already exists on EAS registry by querying our database first,
+ * then checking the registry if not found locally
  */
 export const checkSchemaExists = async (schemaDefinition: string, wallet: any): Promise<{ exists: boolean; schemaUid?: string }> => {
   try {
+    // First check our database for existing schemas with this definition
+    const { data: existingSchemas, error } = await supabase
+      .from('attestation_schemas')
+      .select('schema_uid')
+      .eq('schema_definition', schemaDefinition);
+
+    if (error) {
+      console.error('Error checking database for existing schema:', error);
+    }
+
+    // If we found it in our database, it exists
+    if (existingSchemas && existingSchemas.length > 0) {
+      return { 
+        exists: true, 
+        schemaUid: existingSchemas[0].schema_uid 
+      };
+    }
+
+    // If not in our database, check the registry directly
     if (!wallet) {
-      throw new Error('Wallet not connected');
+      return { exists: false };
     }
 
     // Get Ethereum provider
@@ -251,22 +271,27 @@ export const checkSchemaExists = async (schemaDefinition: string, wallet: any): 
       }
     ], ethersProvider);
 
-    // Generate the schema UID by hashing the schema definition
-    const schemaUid = ethers.keccak256(ethers.toUtf8Bytes(schemaDefinition));
+    // Try multiple potential schema UIDs since EAS might use different hashing methods
+    const potentialUids = [
+      ethers.keccak256(ethers.toUtf8Bytes(schemaDefinition)),
+      ethers.solidityPackedKeccak256(['string'], [schemaDefinition])
+    ];
 
-    try {
-      const schemaRecord = await schemaRegistryContract.getSchema(schemaUid);
-      
-      // If we get a result and the schema string matches, it exists
-      if (schemaRecord && schemaRecord.schema === schemaDefinition && schemaRecord.schema !== '') {
-        return { exists: true, schemaUid };
+    for (const schemaUid of potentialUids) {
+      try {
+        const schemaRecord = await schemaRegistryContract.getSchema(schemaUid);
+        
+        // If we get a result and the schema string matches, it exists
+        if (schemaRecord && schemaRecord.schema === schemaDefinition && schemaRecord.schema !== '') {
+          return { exists: true, schemaUid };
+        }
+      } catch (error) {
+        // Continue to next potential UID
+        continue;
       }
-      
-      return { exists: false };
-    } catch (error) {
-      // If the call fails, the schema doesn't exist
-      return { exists: false };
     }
+    
+    return { exists: false };
 
   } catch (error) {
     console.error('Error checking schema existence:', error);

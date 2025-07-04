@@ -167,6 +167,53 @@ const Admin: React.FC = () => {
     }
   };
 
+  const handleRegisterPredefinedSchema = async (index: number) => {
+    const schema = predefinedSchemas[index];
+    
+    if (!wallet) {
+      toast({
+        title: "Error",
+        description: "Please connect your wallet to register schemas",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const result = await registerSchema({
+        name: schema.name,
+        description: schema.description,
+        category: schema.category,
+        schemaDefinition: schema.schemaDefinition,
+        revocable: true,
+        wallet
+      });
+
+      if (result.success) {
+        toast({
+          title: "Success",
+          description: `Schema registered with UID: ${result.schemaUid}`
+        });
+        
+        // Refresh schemas list and check status again
+        await fetchSchemas();
+        await checkPredefinedSchemas();
+      } else {
+        throw new Error(result.error);
+      }
+    } catch (error) {
+      console.error('Error registering schema:', error);
+      toast({
+        title: "Error",
+        description: error instanceof Error ? error.message : "Failed to register schema",
+        variant: "destructive"
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleRegisterSchema = async () => {
     if (!wallet) {
       toast({
@@ -320,6 +367,16 @@ const Admin: React.FC = () => {
                             className="flex-1"
                           >
                             {loading ? 'Importing...' : 'Import Schema'}
+                          </Button>
+                        ) : !status?.exists && status?.checked && !isInOurDb ? (
+                          <Button
+                            variant="secondary"
+                            size="sm"
+                            onClick={() => handleRegisterPredefinedSchema(index)}
+                            disabled={loading || checkingSchemas}
+                            className="flex-1"
+                          >
+                            {loading ? 'Registering...' : 'Register & Import'}
                           </Button>
                         ) : (
                           <Button
