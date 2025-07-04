@@ -13,6 +13,7 @@ import MyTickets from "./pages/MyTickets";
 import Attestations from "./pages/Attestations";
 import Drafts from "./pages/Drafts";
 import EventDetails from "./pages/EventDetails";
+import Admin from "./pages/Admin";
 import NotFound from "./pages/NotFound";
 
 const App = () => {
@@ -32,6 +33,7 @@ const App = () => {
               <Route path="/my-tickets" element={<MyTickets />} />
               <Route path="/attestations" element={<Attestations />} />
               <Route path="/drafts" element={<Drafts />} />
+              <Route path="/admin" element={<Admin />} />
               <Route path="/event/:id" element={<EventDetails />} />
               {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
               <Route path="*" element={<NotFound />} />

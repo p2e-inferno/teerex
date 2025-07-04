@@ -10,7 +10,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { Ticket, Plus, ChevronDown, FileText, Calendar, LogOut, User } from 'lucide-react';
+import { Ticket, Plus, ChevronDown, FileText, Calendar, LogOut, User, Settings } from 'lucide-react';
 
 export const Header: React.FC = () => {
   const { authenticated, logout, login } = usePrivy();
@@ -86,6 +86,12 @@ export const Header: React.FC = () => {
                       <Link to="/drafts" className="flex items-center cursor-pointer">
                         <FileText className="h-4 w-4 mr-2" />
                         Drafts
+                      </Link>
+                    </DropdownMenuItem>
+                    <DropdownMenuItem asChild>
+                      <Link to="/admin" className="flex items-center cursor-pointer">
+                        <Settings className="h-4 w-4 mr-2" />
+                        Admin
                       </Link>
                     </DropdownMenuItem>
                     <DropdownMenuSeparator />
