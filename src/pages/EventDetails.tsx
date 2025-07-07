@@ -132,12 +132,20 @@ const EventDetails = () => {
         const schemas = await getAttestationSchemas('attendance');
         console.log('Found attendance schemas:', schemas);
         
-        if (schemas.length > 0) {
-          console.log('Using first schema UID:', schemas[0].schema_uid);
-          // Use the first attendance schema found
-          setAttendanceSchemaUid(schemas[0].schema_uid);
+        // Filter out invalid schema UIDs (must be 66 characters and valid hex)
+        const validSchemas = schemas.filter(schema => {
+          const isValid = schema.schema_uid.startsWith('0x') && 
+                         schema.schema_uid.length === 66 && 
+                         /^0x[0-9a-f]{64}$/i.test(schema.schema_uid);
+          console.log(`Schema ${schema.name} (${schema.schema_uid}) is ${isValid ? 'valid' : 'invalid'}`);
+          return isValid;
+        });
+        
+        if (validSchemas.length > 0) {
+          console.log('Using valid schema UID:', validSchemas[0].schema_uid);
+          setAttendanceSchemaUid(validSchemas[0].schema_uid);
         } else {
-          console.log('No attendance schemas found');
+          console.log('No valid attendance schemas found');
         }
       } catch (error) {
         console.error('Error loading attendance schema:', error);
