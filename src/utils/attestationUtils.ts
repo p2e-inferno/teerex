@@ -99,36 +99,47 @@ export interface AttestationResult {
  */
 export const encodeAttestationData = (schemaDefinition: string, data: AttestationData): string => {
   try {
-    // Parse schema definition to understand the data structure
+    // Parse schema definition and order fields correctly
+    // Based on your schema: string eventId, address lockAddress, string eventTitle, uint256 timestamp, string location, string platform
+    console.log('Schema definition:', schemaDefinition);
     const fields = schemaDefinition.split(',').map(field => field.trim());
+    console.log('Parsed fields:', fields);
     const types: string[] = [];
     const values: any[] = [];
 
-      fields.forEach(field => {
-        const [type, name] = field.split(' ');
-        types.push(type);
+    fields.forEach((field, index) => {
+      const [type, name] = field.split(' ');
+      types.push(type);
+      console.log(`Field ${index}: ${type} ${name}`);
 
-        // Map data to schema fields based on the exact schema definition
-        switch (name) {
-          case 'eventId':
-            values.push(data.eventId);
-            break;
-          case 'lockAddress':
-            // Ensure this is treated as an address type
-            values.push(data.lockAddress);
-            break;
-          case 'eventTitle':
-            values.push(data.eventTitle);
-            break;
-          case 'timestamp':
-            values.push(data.timestamp || Math.floor(Date.now() / 1000));
-            break;
-          case 'location':
-            values.push(data.location || 'Metaverse');
-            break;
-          case 'platform':
-            values.push('TeeRex');
-            break;
+      // Map data to schema fields in exact order
+      switch (name) {
+        case 'eventId':
+          values.push(data.eventId);
+          console.log('Added eventId:', data.eventId);
+          break;
+        case 'lockAddress':
+          values.push(data.lockAddress);
+          console.log('Added lockAddress:', data.lockAddress);
+          break;
+        case 'eventTitle':
+          values.push(data.eventTitle);
+          console.log('Added eventTitle:', data.eventTitle);
+          break;
+        case 'timestamp':
+          const timestamp = data.timestamp || Math.floor(Date.now() / 1000);
+          values.push(timestamp);
+          console.log('Added timestamp:', timestamp);
+          break;
+        case 'location':
+          const location = data.location || 'Metaverse';
+          values.push(location);
+          console.log('Added location:', location);
+          break;
+        case 'platform':
+          values.push('TeeRex');
+          console.log('Added platform: TeeRex');
+          break;
           case 'rating':
             values.push(data.rating || 0);
             break;
