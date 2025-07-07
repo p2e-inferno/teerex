@@ -104,56 +104,66 @@ export const encodeAttestationData = (schemaDefinition: string, data: Attestatio
     const types: string[] = [];
     const values: any[] = [];
 
-    fields.forEach(field => {
-      const [type, name] = field.split(' ');
-      types.push(type);
+      fields.forEach(field => {
+        const [type, name] = field.split(' ');
+        types.push(type);
 
-      // Map data to schema fields
-      switch (name) {
-        case 'eventId':
-          values.push(data.eventId);
-          break;
-        case 'lockAddress':
-          values.push(data.lockAddress);
-          break;
-        case 'eventTitle':
-          values.push(data.eventTitle);
-          break;
-        case 'timestamp':
-          values.push(data.timestamp || Math.floor(Date.now() / 1000));
-          break;
-        case 'location':
-          values.push(data.location || '');
-          break;
-        case 'rating':
-          values.push(data.rating || 0);
-          break;
-        case 'review':
-          values.push(data.review || '');
-          break;
-        case 'verificationType':
-          values.push(data.verificationType || '');
-          break;
-        case 'tokenId':
-          values.push(data.tokenId || '0');
-          break;
-        case 'price':
-          values.push(data.price || 0);
-          break;
-        case 'expirationTime':
-          values.push(data.expirationTime || 0);
-          break;
-        case 'ticketHolder':
-        case 'purchaser':
-        case 'keyHolder':
-        case 'creatorAddress':
-          // These will be filled automatically based on context
-          values.push(ethers.ZeroAddress);
-          break;
-        default:
-          values.push('');
-      }
-    });
+        // Map data to schema fields based on the exact schema definition
+        switch (name) {
+          case 'eventId':
+            values.push(data.eventId);
+            break;
+          case 'lockAddress':
+            // Ensure this is treated as an address type
+            values.push(data.lockAddress);
+            break;
+          case 'eventTitle':
+            values.push(data.eventTitle);
+            break;
+          case 'timestamp':
+            values.push(data.timestamp || Math.floor(Date.now() / 1000));
+            break;
+          case 'location':
+            values.push(data.location || 'Metaverse');
+            break;
+          case 'platform':
+            values.push('TeeRex');
+            break;
+          case 'rating':
+            values.push(data.rating || 0);
+            break;
+          case 'review':
+            values.push(data.review || '');
+            break;
+          case 'verificationType':
+            values.push(data.verificationType || '');
+            break;
+          case 'tokenId':
+            values.push(data.tokenId || '0');
+            break;
+          case 'price':
+            values.push(data.price || 0);
+            break;
+          case 'expirationTime':
+            values.push(data.expirationTime || 0);
+            break;
+          case 'ticketHolder':
+          case 'purchaser':
+          case 'keyHolder':
+          case 'creatorAddress':
+            values.push(ethers.ZeroAddress);
+            break;
+          default:
+            // For unknown fields, provide appropriate defaults based on type
+            if (type === 'address') {
+              values.push(ethers.ZeroAddress);
+            } else if (type.startsWith('uint')) {
+              values.push(0);
+            } else {
+              values.push('');
+            }
+        }
+      });
 
     return ethers.AbiCoder.defaultAbiCoder().encode(types, values);
   } catch (error) {
