@@ -24,6 +24,7 @@ import { getPublishedEvents, PublishedEvent } from '@/utils/eventUtils';
 import { getTotalKeys, getUserKeyBalance, getMaxKeysPerAddress, checkKeyOwnership } from '@/utils/lockUtils';
 import { EventPurchaseDialog } from '@/components/events/EventPurchaseDialog';
 import { PaystackPaymentDialog } from '@/components/events/PaystackPaymentDialog';
+import { PaymentMethodDialog } from '@/components/events/PaymentMethodDialog';
 import { AttestationButton } from '@/components/attestations/AttestationButton';
 import { EventAttestationCard } from '@/components/attestations/EventAttestationCard';
 import { AttendeesList } from '@/components/attestations/AttendeesList';
@@ -52,6 +53,8 @@ const EventDetails = () => {
   const [maxTicketsPerUser, setMaxTicketsPerUser] = useState<number>(1);
   const [isLoading, setIsLoading] = useState(true);
   const [isPurchaseDialogOpen, setIsPurchaseDialogOpen] = useState(false);
+  const [isPaystackDialogOpen, setIsPaystackDialogOpen] = useState(false);
+  const [isPaymentMethodDialogOpen, setIsPaymentMethodDialogOpen] = useState(false);
   const [isLiked, setIsLiked] = useState(false);
   const [attendanceSchemaUid, setAttendanceSchemaUid] = useState<string | null>(null);
 
@@ -247,7 +250,31 @@ const EventDetails = () => {
   };
 
   const handleGetTicket = () => {
+    if (!event) return;
+    
+    const hasCrypto = event.payment_methods?.includes('crypto') || event.currency !== 'FREE';
+    const hasPaystack = event.payment_methods?.includes('paystack') && event.paystack_public_key && event.ngn_price;
+    
+    // If both payment methods available, show selection dialog
+    if (hasCrypto && hasPaystack) {
+      setIsPaymentMethodDialogOpen(true);
+    } else if (hasPaystack) {
+      // Only Paystack available
+      setIsPaystackDialogOpen(true);
+    } else {
+      // Only crypto available (default)
+      setIsPurchaseDialogOpen(true);
+    }
+  };
+
+  const handleSelectCrypto = () => {
+    setIsPaymentMethodDialogOpen(false);
     setIsPurchaseDialogOpen(true);
+  };
+
+  const handleSelectPaystack = () => {
+    setIsPaymentMethodDialogOpen(false);
+    setIsPaystackDialogOpen(true);
   };
 
   const spotsLeft = event ? event.capacity - keysSold : 0;
@@ -577,11 +604,31 @@ const EventDetails = () => {
         </div>
       </div>
 
-      {/* Purchase Dialog */}
+      {/* Payment Method Selection Dialog */}
+      <PaymentMethodDialog
+        event={event}
+        isOpen={isPaymentMethodDialogOpen}
+        onClose={() => setIsPaymentMethodDialogOpen(false)}
+        onSelectCrypto={handleSelectCrypto}
+        onSelectPaystack={handleSelectPaystack}
+      />
+
+      {/* Crypto Purchase Dialog */}
       <EventPurchaseDialog
         event={event}
         isOpen={isPurchaseDialogOpen}
         onClose={() => setIsPurchaseDialogOpen(false)}
+      />
+
+      {/* Paystack Payment Dialog */}
+      <PaystackPaymentDialog
+        event={event}
+        isOpen={isPaystackDialogOpen}
+        onClose={() => setIsPaystackDialogOpen(false)}
+        onSuccess={() => {
+          // Refresh the page or update ticket count
+          window.location.reload();
+        }}
       />
     </div>
   );
