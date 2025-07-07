@@ -238,12 +238,12 @@ export const createAttestation = async (params: CreateAttestationParams): Promis
       platform
     });
 
-    // Encode data using EAS SDK
+    // Encode data using EAS SDK - ensure proper type casting
     const encodedData = schemaEncoder.encodeData([
       { name: 'eventId', value: data.eventId, type: 'string' },
       { name: 'lockAddress', value: data.lockAddress, type: 'address' },
       { name: 'eventTitle', value: data.eventTitle, type: 'string' },
-      { name: 'timestamp', value: timestamp, type: 'uint256' },
+      { name: 'timestamp', value: BigInt(timestamp), type: 'uint256' },
       { name: 'location', value: location, type: 'string' },
       { name: 'platform', value: platform, type: 'string' }
     ]);

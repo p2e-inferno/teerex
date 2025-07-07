@@ -67,8 +67,8 @@ export const EventAttestationCard: React.FC<EventAttestationCardProps> = ({
   });
   const [isLoadingStats, setIsLoadingStats] = useState(true);
 
-  // Calculate event timing
-  const eventDateTime = parseISO(`${eventDate}T${eventTime}`);
+  // Calculate event timing - handle both ISO and regular date formats
+  const eventDateTime = new Date(`${eventDate.split('T')[0]}T${eventTime}`);
   const now = new Date();
   const eventHasStarted = isAfter(now, eventDateTime);
   const eventHasEnded = isAfter(now, addHours(eventDateTime, 2)); // Assume 2-hour event duration

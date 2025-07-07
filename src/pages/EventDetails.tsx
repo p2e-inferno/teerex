@@ -492,9 +492,10 @@ const EventDetails = () => {
                   <Button 
                     className="w-full" 
                     onClick={handleGetTicket}
-                    disabled={isSoldOut || (!authenticated && userTicketCount >= maxTicketsPerUser)}
+                    disabled={isSoldOut || (!authenticated && userTicketCount >= maxTicketsPerUser) || (event.date && new Date(event.date) < new Date())}
                   >
                     {isSoldOut ? 'Sold Out' : 
+                     (event.date && new Date(event.date) < new Date()) ? 'Event has ended' :
                      !authenticated ? 'Connect Wallet to Get Ticket' :
                      userTicketCount >= maxTicketsPerUser ? 'Ticket Limit Reached' :
                      'Get Ticket'}
