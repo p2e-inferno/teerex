@@ -250,7 +250,7 @@ export const createAttestation = async (params: CreateAttestationParams): Promis
 
     console.log('EAS SDK encoded data:', encodedData);
 
-    // Create attestation using EAS SDK
+    // Create attestation using EAS SDK - this should trigger MetaMask
     const tx = await eas.attest({
       schema: schemaUid,
       data: {
@@ -264,8 +264,20 @@ export const createAttestation = async (params: CreateAttestationParams): Promis
 
     console.log('EAS SDK transaction sent:', tx);
     
-    // EAS SDK returns a transaction hash string, not a transaction object
-    const transactionHash = typeof tx === 'string' ? tx : '';
+    // Handle transaction response - EAS SDK returns transaction hash
+    let transactionHash = '';
+    if (typeof tx === 'string') {
+      transactionHash = tx;
+    } else if (tx && typeof tx === 'object' && 'wait' in tx) {
+      // Wait for transaction receipt
+      try {
+        const receipt = await (tx as any).wait();
+        transactionHash = receipt?.transactionHash || receipt?.hash || (tx as any).hash || '';
+      } catch (e) {
+        console.warn('Could not get transaction receipt:', e);
+        transactionHash = (tx as any).hash || '';
+      }
+    }
     console.log('Transaction hash:', transactionHash);
 
     // Save attestation to our database
