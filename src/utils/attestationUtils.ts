@@ -1,5 +1,6 @@
 
 import { ethers } from 'ethers';
+import { EAS, SchemaEncoder } from '@ethereum-attestation-service/eas-sdk';
 import { supabase } from '@/integrations/supabase/client';
 
 // EAS Contract addresses on Base Sepolia
@@ -190,7 +191,7 @@ export const encodeAttestationData = (schemaDefinition: string, data: Attestatio
 };
 
 /**
- * Creates an attestation on-chain using EAS
+ * Creates an attestation on-chain using EAS SDK
  */
 export const createAttestation = async (params: CreateAttestationParams): Promise<AttestationResult> => {
   try {
@@ -216,75 +217,78 @@ export const createAttestation = async (params: CreateAttestationParams): Promis
     const ethersProvider = new ethers.BrowserProvider(provider);
     const signer = await ethersProvider.getSigner();
 
-    // Create EAS contract instance
-    const easContract = new ethers.Contract(EAS_CONTRACT_ADDRESS, EAS_ABI, signer);
+    // Initialize EAS with the Base Sepolia contract address
+    const eas = new EAS(EAS_CONTRACT_ADDRESS);
+    eas.connect(signer);
 
-    // Encode the attestation data properly
-    const encodedData = encodeAttestationData(schema.schema_definition, data);
+    // Initialize SchemaEncoder with the exact schema definition
+    const schemaEncoder = new SchemaEncoder(schema.schema_definition);
+    
+    // Prepare data for encoding using the schema encoder
+    const timestamp = data.timestamp || Math.floor(Date.now() / 1000);
+    const location = data.location || 'Metaverse';
+    const platform = 'TeeRex';
+    
+    console.log('Encoding with EAS SDK:', {
+      eventId: data.eventId,
+      lockAddress: data.lockAddress,
+      eventTitle: data.eventTitle,
+      timestamp,
+      location,
+      platform
+    });
 
-    // Prepare attestation request struct
-    const attestationRequest = {
+    // Encode data using EAS SDK
+    const encodedData = schemaEncoder.encodeData([
+      { name: 'eventId', value: data.eventId, type: 'string' },
+      { name: 'lockAddress', value: data.lockAddress, type: 'address' },
+      { name: 'eventTitle', value: data.eventTitle, type: 'string' },
+      { name: 'timestamp', value: timestamp, type: 'uint256' },
+      { name: 'location', value: location, type: 'string' },
+      { name: 'platform', value: platform, type: 'string' }
+    ]);
+
+    console.log('EAS SDK encoded data:', encodedData);
+
+    // Create attestation using EAS SDK
+    const tx = await eas.attest({
       schema: schemaUid,
-      recipient: recipient,
-      expirationTime: expirationTime || 0,
-      revocable: revocable && schema.revocable,
-      refUID: ethers.ZeroHash,
-      data: encodedData
-    };
-
-    console.log('Creating attestation with request:', attestationRequest);
-    console.log('Encoded data length:', encodedData.length);
-
-    // Submit attestation to EAS using the proper struct format
-    const tx = await easContract.attest(attestationRequest);
-    console.log('Attestation transaction sent:', tx.hash);
-
-    const receipt = await tx.wait();
-    console.log('Attestation transaction confirmed:', receipt);
-
-    if (receipt.status !== 1) {
-      throw new Error('Transaction failed');
-    }
-
-    // Extract attestation UID from transaction logs
-    let attestationUid = '';
-    if (receipt.logs && receipt.logs.length > 0) {
-      // Look for Attested event in logs
-      for (const log of receipt.logs) {
-        try {
-          // Attested event signature: Attested(address,address,bytes32,bytes32)
-          if (log.topics && log.topics[0] === '0x8bf46bf4cfd674fa735a3d63ec1c9ad4153f7de2c888dbf0e4e1bb4c69e9bcb7') {
-            attestationUid = log.topics[3]; // UID is the 4th topic
-            break;
-          }
-        } catch (e) {
-          continue;
-        }
+      data: {
+        recipient: recipient,
+        expirationTime: BigInt(expirationTime || 0),
+        revocable: revocable && schema.revocable,
+        refUID: '0x0000000000000000000000000000000000000000000000000000000000000000',
+        data: encodedData,
       }
-    }
+    });
 
-    // Save attestation to our database with proper type casting
+    console.log('EAS SDK transaction sent:', tx);
+    
+    // EAS SDK returns a transaction hash string, not a transaction object
+    const transactionHash = typeof tx === 'string' ? tx : '';
+    console.log('Transaction hash:', transactionHash);
+
+    // Save attestation to our database
     const { error: saveError } = await supabase
       .from('attestations')
       .insert({
-        attestation_uid: attestationUid,
+        attestation_uid: transactionHash, // Will be updated with proper UID
         schema_uid: schemaUid,
         attester: wallet.address,
         recipient: recipient,
         event_id: data.eventId,
-        data: data as any, // Cast to any for Json compatibility
+        data: data as any,
         expiration_time: expirationTime ? new Date(expirationTime * 1000).toISOString() : null
       });
 
     if (saveError) {
       console.error('Error saving attestation to database:', saveError);
-      // Don't fail the entire operation if database save fails
     }
 
     return {
       success: true,
-      attestationUid,
-      transactionHash: tx.hash
+      attestationUid: transactionHash,
+      transactionHash: transactionHash
     };
 
   } catch (error) {
