@@ -45,7 +45,7 @@ export const AttestationButton: React.FC<AttestationButtonProps> = ({
         schemaUid,
         recipient,
         data: attestationData,
-        revocable: attestationType !== 'attendance'
+        revocable: true // Always allow revocable, let the schema decide
       });
 
       if (result.success) {

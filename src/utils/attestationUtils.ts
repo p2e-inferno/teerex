@@ -210,12 +210,15 @@ export const createAttestation = async (params: CreateAttestationParams): Promis
       schema: schemaUid,
       recipient: recipient,
       expirationTime: expirationTime || 0,
-      revocable: revocable && schema.revocable,
+      revocable: revocable && schema.revocable, // Use schema's revocable setting
       refUID: ethers.ZeroHash,
       data: encodedData
     };
 
     console.log('Creating attestation with request:', attestationRequest);
+    console.log('Schema revocable setting:', schema.revocable);
+    console.log('Requested revocable setting:', revocable);
+    console.log('Final revocable setting:', revocable && schema.revocable);
 
     // Submit attestation to EAS
     const tx = await easContract.attest(attestationRequest);
