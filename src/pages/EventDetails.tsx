@@ -252,17 +252,28 @@ const EventDetails = () => {
   const handleGetTicket = () => {
     if (!event) return;
     
+    console.log('Event data:', event);
+    console.log('Payment methods:', event.payment_methods);
+    console.log('Paystack key:', event.paystack_public_key);
+    console.log('NGN price:', event.ngn_price);
+    
     const hasCrypto = event.payment_methods?.includes('crypto') || event.currency !== 'FREE';
     const hasPaystack = event.payment_methods?.includes('paystack') && event.paystack_public_key && event.ngn_price;
     
+    console.log('Has crypto:', hasCrypto);
+    console.log('Has paystack:', hasPaystack);
+    
     // If both payment methods available, show selection dialog
     if (hasCrypto && hasPaystack) {
+      console.log('Opening payment method dialog');
       setIsPaymentMethodDialogOpen(true);
     } else if (hasPaystack) {
       // Only Paystack available
+      console.log('Opening paystack dialog');
       setIsPaystackDialogOpen(true);
     } else {
       // Only crypto available (default)
+      console.log('Opening crypto dialog');
       setIsPurchaseDialogOpen(true);
     }
   };
