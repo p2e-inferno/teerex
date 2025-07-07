@@ -110,6 +110,9 @@ const Drafts = () => {
           capacity: draft.capacity,
           price: draft.price,
           currency: draft.currency,
+          ngnPrice: draft.ngn_price || 0,
+          paymentMethods: draft.payment_methods || ['crypto'],
+          paystackPublicKey: draft.paystack_public_key || '',
           category: draft.category,
           imageUrl: draft.image_url || ''
         };

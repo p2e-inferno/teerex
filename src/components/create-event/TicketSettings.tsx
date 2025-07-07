@@ -6,7 +6,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Shield, Zap, Ticket, ChevronRight } from 'lucide-react';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Shield, Zap, Ticket, ChevronRight, CreditCard } from 'lucide-react';
 import { EventFormData } from '@/pages/CreateEvent';
 
 interface TicketSettingsProps {
@@ -53,59 +54,156 @@ export const TicketSettings: React.FC<TicketSettingsProps> = ({
         </CardContent>
       </Card>
 
-      {/* Pricing */}
+      {/* Payment Methods */}
       <div className="space-y-4">
-        <h3 className="text-lg font-medium text-gray-900">Ticket Pricing</h3>
+        <h3 className="text-lg font-medium text-gray-900">Payment Methods</h3>
         
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div className="space-y-2">
-            <Label htmlFor="price">Price</Label>
-            <Input
-              id="price"
-              type="number"
-              placeholder="0.00"
-              value={formData.price}
-              onChange={(e) => updateFormData({ price: parseFloat(e.target.value) || 0 })}
-              min="0"
-              step="0.01"
+        <div className="space-y-3">
+          <div className="flex items-center space-x-2">
+            <Checkbox 
+              id="crypto"
+              checked={formData.paymentMethods.includes('crypto')}
+              onCheckedChange={(checked) => {
+                if (checked) {
+                  updateFormData({ paymentMethods: [...formData.paymentMethods, 'crypto'] });
+                } else {
+                  updateFormData({ paymentMethods: formData.paymentMethods.filter(m => m !== 'crypto') });
+                }
+              }}
             />
+            <Label htmlFor="crypto" className="flex items-center gap-2">
+              <Shield className="w-4 h-4" />
+              Cryptocurrency Payments (ETH, USDC)
+            </Label>
           </div>
 
-          <div className="space-y-2">
-            <Label>Currency</Label>
-            <Select value={formData.currency} onValueChange={(value: 'ETH' | 'USDC' | 'FREE') => updateFormData({ currency: value })}>
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="FREE">Free</SelectItem>
-                <SelectItem value="ETH">ETH</SelectItem>
-                <SelectItem value="USDC">USDC</SelectItem>
-              </SelectContent>
-            </Select>
+          <div className="flex items-center space-x-2">
+            <Checkbox 
+              id="fiat"
+              checked={formData.paymentMethods.includes('fiat')}
+              onCheckedChange={(checked) => {
+                if (checked) {
+                  updateFormData({ paymentMethods: [...formData.paymentMethods, 'fiat'] });
+                } else {
+                  updateFormData({ paymentMethods: formData.paymentMethods.filter(m => m !== 'fiat') });
+                }
+              }}
+            />
+            <Label htmlFor="fiat" className="flex items-center gap-2">
+              <CreditCard className="w-4 h-4" />
+              Fiat Payments (NGN via Paystack)
+            </Label>
           </div>
         </div>
+      </div>
 
-        {formData.currency !== 'FREE' && (
+      {/* Crypto Pricing */}
+      {formData.paymentMethods.includes('crypto') && (
+        <div className="space-y-4">
+          <h3 className="text-lg font-medium text-gray-900">Cryptocurrency Pricing</h3>
+          
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label htmlFor="price">Price</Label>
+              <Input
+                id="price"
+                type="number"
+                placeholder="0.00"
+                value={formData.price}
+                onChange={(e) => updateFormData({ price: parseFloat(e.target.value) || 0 })}
+                min="0"
+                step="0.01"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label>Currency</Label>
+              <Select value={formData.currency} onValueChange={(value: 'ETH' | 'USDC' | 'FREE') => updateFormData({ currency: value })}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="FREE">Free</SelectItem>
+                  <SelectItem value="ETH">ETH</SelectItem>
+                  <SelectItem value="USDC">USDC</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* NGN Pricing */}
+      {formData.paymentMethods.includes('fiat') && (
+        <div className="space-y-4">
+          <h3 className="text-lg font-medium text-gray-900">Fiat Pricing (NGN)</h3>
+          
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label htmlFor="ngn-price">Price (NGN)</Label>
+              <Input
+                id="ngn-price"
+                type="number"
+                placeholder="0"
+                value={formData.ngnPrice}
+                onChange={(e) => updateFormData({ ngnPrice: parseFloat(e.target.value) || 0 })}
+                min="0"
+                step="100"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="paystack-key">Paystack Public Key</Label>
+              <Input
+                id="paystack-key"
+                type="text"
+                placeholder="pk_test_..."
+                value={formData.paystackPublicKey}
+                onChange={(e) => updateFormData({ paystackPublicKey: e.target.value })}
+              />
+            </div>
+          </div>
+
           <div className="bg-blue-50 p-4 rounded-lg">
             <div className="flex items-start gap-3">
-              <Ticket className="w-5 h-5 text-blue-600 mt-0.5" />
+              <CreditCard className="w-5 h-5 text-blue-600 mt-0.5" />
               <div>
-                <h4 className="font-medium text-blue-900">NFT Ticket Benefits</h4>
+                <h4 className="font-medium text-blue-900">Paystack Integration</h4>
                 <p className="text-sm text-blue-700 mt-1">
-                  Paid tickets will be minted as NFTs, providing:
+                  Nigerian users can pay with cards, bank transfers, and mobile money
                 </p>
                 <ul className="text-sm text-blue-700 mt-2 space-y-1">
-                  <li>• Transferable tickets</li>
-                  <li>• Proof of attendance (POAP)</li>
-                  <li>• Secondary market trading</li>
-                  <li>• Fraud prevention</li>
+                  <li>• Instant payment confirmation</li>
+                  <li>• Multiple payment methods</li>
+                  <li>• Automatic receipt generation</li>
+                  <li>• Secure transaction processing</li>
                 </ul>
               </div>
             </div>
           </div>
-        )}
-      </div>
+        </div>
+      )}
+
+      {/* NFT Benefits for Paid Events */}
+      {(formData.paymentMethods.includes('crypto') && formData.currency !== 'FREE') && (
+        <div className="bg-blue-50 p-4 rounded-lg">
+          <div className="flex items-start gap-3">
+            <Ticket className="w-5 h-5 text-blue-600 mt-0.5" />
+            <div>
+              <h4 className="font-medium text-blue-900">NFT Ticket Benefits</h4>
+              <p className="text-sm text-blue-700 mt-1">
+                Paid crypto tickets will be minted as NFTs, providing:
+              </p>
+              <ul className="text-sm text-blue-700 mt-2 space-y-1">
+                <li>• Transferable tickets</li>
+                <li>• Proof of attendance (POAP)</li>
+                <li>• Secondary market trading</li>
+                <li>• Fraud prevention</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Ticket Configuration Settings */}
       <div className="space-y-4">

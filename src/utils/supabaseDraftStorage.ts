@@ -59,6 +59,9 @@ export const saveDraft = async (formData: EventFormData, userId: string): Promis
       capacity: formData.capacity,
       price: formData.price,
       currency: formData.currency,
+      ngn_price: formData.ngnPrice,
+      payment_methods: formData.paymentMethods,
+      paystack_public_key: formData.paystackPublicKey || null,
       category: formData.category,
       image_url: formData.imageUrl || null
     };
@@ -96,6 +99,9 @@ export const updateDraft = async (id: string, formData: EventFormData, userId: s
       capacity: formData.capacity,
       price: formData.price,
       currency: formData.currency,
+      ngn_price: formData.ngnPrice,
+      payment_methods: formData.paymentMethods,
+      paystack_public_key: formData.paystackPublicKey || null,
       category: formData.category,
       image_url: formData.imageUrl || null,
       updated_at: new Date().toISOString()
@@ -140,6 +146,9 @@ export const getDrafts = async (userId: string): Promise<EventDraft[]> => {
       created_at: new Date(draft.created_at),
       updated_at: new Date(draft.updated_at),
       currency: draft.currency as 'ETH' | 'USDC' | 'FREE',
+      ngn_price: draft.ngn_price || 0,
+      payment_methods: draft.payment_methods || ['crypto'],
+      paystack_public_key: draft.paystack_public_key,
       image_url: draft.image_url
     }));
   } catch (error) {
@@ -172,6 +181,9 @@ export const getDraft = async (id: string, userId: string): Promise<EventDraft |
       created_at: new Date(data.created_at),
       updated_at: new Date(data.updated_at),
       currency: data.currency as 'ETH' | 'USDC' | 'FREE',
+      ngn_price: data.ngn_price || 0,
+      payment_methods: data.payment_methods || ['crypto'],
+      paystack_public_key: data.paystack_public_key,
       image_url: data.image_url
     };
   } catch (error) {
@@ -209,6 +221,9 @@ export const getPublishedEvent = async (id: string, userId: string): Promise<Pub
       created_at: new Date(data.created_at),
       updated_at: new Date(data.updated_at),
       currency: data.currency as 'ETH' | 'USDC' | 'FREE',
+      ngn_price: data.ngn_price || 0,
+      payment_methods: data.payment_methods || ['crypto'],
+      paystack_public_key: data.paystack_public_key,
       image_url: data.image_url,
       isPublished: true,
       lockAddress: data.lock_address,

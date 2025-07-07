@@ -23,6 +23,7 @@ import {
 import { getPublishedEvents, PublishedEvent } from '@/utils/eventUtils';
 import { getTotalKeys, getUserKeyBalance, getMaxKeysPerAddress, checkKeyOwnership } from '@/utils/lockUtils';
 import { EventPurchaseDialog } from '@/components/events/EventPurchaseDialog';
+import { PaystackPaymentDialog } from '@/components/events/PaystackPaymentDialog';
 import { AttestationButton } from '@/components/attestations/AttestationButton';
 import { EventAttestationCard } from '@/components/attestations/EventAttestationCard';
 import { AttendeesList } from '@/components/attestations/AttendeesList';

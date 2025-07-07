@@ -145,7 +145,14 @@ export const EventCard: React.FC<EventCardProps> = ({
         
         <div className="flex items-center justify-between">
           <div className="font-semibold text-lg text-gray-900">
-            {event.currency === 'FREE' ? 'Free' : `${event.price} ${event.currency}`}
+            {event.payment_methods?.includes('fiat') && event.ngn_price > 0 ? (
+              <div className="space-y-1">
+                <div>₦{event.ngn_price.toLocaleString()}</div>
+                {event.payment_methods?.includes('crypto') && event.currency !== 'FREE' && (
+                  <div className="text-sm text-gray-600">or {event.price} {event.currency}</div>
+                )}
+              </div>
+            ) : event.currency === 'FREE' ? 'Free' : `${event.price} ${event.currency}`}
           </div>
           {showActions && (
             <Button 

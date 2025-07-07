@@ -224,6 +224,9 @@ export type Database = {
           id: string
           image_url: string | null
           location: string
+          ngn_price: number | null
+          payment_methods: string[] | null
+          paystack_public_key: string | null
           price: number
           time: string
           title: string
@@ -240,6 +243,9 @@ export type Database = {
           id?: string
           image_url?: string | null
           location?: string
+          ngn_price?: number | null
+          payment_methods?: string[] | null
+          paystack_public_key?: string | null
           price?: number
           time?: string
           title?: string
@@ -256,6 +262,9 @@ export type Database = {
           id?: string
           image_url?: string | null
           location?: string
+          ngn_price?: number | null
+          payment_methods?: string[] | null
+          paystack_public_key?: string | null
           price?: number
           time?: string
           title?: string
@@ -281,6 +290,9 @@ export type Database = {
           location: string
           lock_address: string
           max_keys_per_address: number
+          ngn_price: number | null
+          payment_methods: string[] | null
+          paystack_public_key: string | null
           price: number
           requires_approval: boolean
           review_schema_uid: string | null
@@ -306,6 +318,9 @@ export type Database = {
           location: string
           lock_address: string
           max_keys_per_address?: number
+          ngn_price?: number | null
+          payment_methods?: string[] | null
+          paystack_public_key?: string | null
           price?: number
           requires_approval?: boolean
           review_schema_uid?: string | null
@@ -331,6 +346,9 @@ export type Database = {
           location?: string
           lock_address?: string
           max_keys_per_address?: number
+          ngn_price?: number | null
+          payment_methods?: string[] | null
+          paystack_public_key?: string | null
           price?: number
           requires_approval?: boolean
           review_schema_uid?: string | null
@@ -341,6 +359,56 @@ export type Database = {
           updated_at?: string
         }
         Relationships: []
+      }
+      paystack_transactions: {
+        Row: {
+          amount: number
+          created_at: string
+          currency: string
+          event_id: string
+          gateway_response: Json | null
+          id: string
+          reference: string
+          status: string
+          updated_at: string
+          user_email: string
+          verified_at: string | null
+        }
+        Insert: {
+          amount: number
+          created_at?: string
+          currency?: string
+          event_id: string
+          gateway_response?: Json | null
+          id?: string
+          reference: string
+          status?: string
+          updated_at?: string
+          user_email: string
+          verified_at?: string | null
+        }
+        Update: {
+          amount?: number
+          created_at?: string
+          currency?: string
+          event_id?: string
+          gateway_response?: Json | null
+          id?: string
+          reference?: string
+          status?: string
+          updated_at?: string
+          user_email?: string
+          verified_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "paystack_transactions_event_id_fkey"
+            columns: ["event_id"]
+            isOneToOne: false
+            referencedRelation: "events"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       user_reputation: {
         Row: {

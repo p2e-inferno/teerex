@@ -15,6 +15,9 @@ export interface PublishedEvent {
   capacity: number;
   price: number;
   currency: 'ETH' | 'USDC' | 'FREE';
+  ngn_price: number;
+  payment_methods: string[];
+  paystack_public_key: string | null;
   category: string;
   image_url: string | null;
   lock_address: string;
@@ -47,6 +50,9 @@ export const savePublishedEvent = async (
       capacity: formData.capacity,
       price: formData.price,
       currency: formData.currency,
+      ngn_price: formData.ngnPrice,
+      payment_methods: formData.paymentMethods,
+      paystack_public_key: formData.paystackPublicKey || null,
       category: formData.category,
       image_url: formData.imageUrl || null,
       lock_address: lockAddress,
@@ -87,7 +93,10 @@ export const getPublishedEvents = async (): Promise<PublishedEvent[]> => {
       date: event.date ? new Date(event.date) : null,
       created_at: new Date(event.created_at),
       updated_at: new Date(event.updated_at),
-      currency: event.currency as 'ETH' | 'USDC' | 'FREE'
+      currency: event.currency as 'ETH' | 'USDC' | 'FREE',
+      ngn_price: event.ngn_price || 0,
+      payment_methods: event.payment_methods || ['crypto'],
+      paystack_public_key: event.paystack_public_key
     }));
   } catch (error) {
     console.error('Error fetching published events:', error);
@@ -113,7 +122,10 @@ export const getUserEvents = async (userId: string): Promise<PublishedEvent[]> =
       date: event.date ? new Date(event.date) : null,
       created_at: new Date(event.created_at),
       updated_at: new Date(event.updated_at),
-      currency: event.currency as 'ETH' | 'USDC' | 'FREE'
+      currency: event.currency as 'ETH' | 'USDC' | 'FREE',
+      ngn_price: event.ngn_price || 0,
+      payment_methods: event.payment_methods || ['crypto'],
+      paystack_public_key: event.paystack_public_key
     }));
   } catch (error) {
     console.error('Error fetching user events:', error);

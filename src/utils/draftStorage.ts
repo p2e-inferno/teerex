@@ -9,7 +9,18 @@ export const saveDraftLocally = (formData: EventFormData): string => {
   const draft: EventDraft = {
     id,
     user_id: '', // This would need to be set properly for local storage
-    ...formData,
+    title: formData.title,
+    description: formData.description,
+    date: formData.date,
+    time: formData.time,
+    location: formData.location,
+    capacity: formData.capacity,
+    price: formData.price,
+    currency: formData.currency,
+    ngn_price: formData.ngnPrice,
+    payment_methods: formData.paymentMethods,
+    paystack_public_key: formData.paystackPublicKey,
+    category: formData.category,
     image_url: formData.imageUrl || null,
     created_at: new Date(),
     updated_at: new Date()
@@ -27,7 +38,18 @@ export const updateDraftLocally = (id: string, formData: EventFormData): void =>
   if (index !== -1) {
     drafts[index] = {
       ...drafts[index],
-      ...formData,
+      title: formData.title,
+      description: formData.description,
+      date: formData.date,
+      time: formData.time,
+      location: formData.location,
+      capacity: formData.capacity,
+      price: formData.price,
+      currency: formData.currency,
+      ngn_price: formData.ngnPrice,
+      payment_methods: formData.paymentMethods,
+      paystack_public_key: formData.paystackPublicKey,
+      category: formData.category,
       image_url: formData.imageUrl || null,
       updated_at: new Date()
     };

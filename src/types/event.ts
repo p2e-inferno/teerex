@@ -10,6 +10,9 @@ export interface EventDraft {
   capacity: number;
   price: number;
   currency: 'ETH' | 'USDC' | 'FREE';
+  ngn_price: number;
+  payment_methods: string[];
+  paystack_public_key: string | null;
   category: string;
   image_url: string | null;
   created_at: Date;

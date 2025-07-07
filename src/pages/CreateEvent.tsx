@@ -25,6 +25,9 @@ export interface EventFormData {
   capacity: number;
   price: number;
   currency: 'ETH' | 'USDC' | 'FREE';
+  ngnPrice: number;
+  paymentMethods: string[];
+  paystackPublicKey: string;
   category: string;
   imageUrl: string;
 }
@@ -51,6 +54,9 @@ const CreateEvent = () => {
     capacity: 100,
     price: 0,
     currency: 'FREE',
+    ngnPrice: 0,
+    paymentMethods: ['crypto'],
+    paystackPublicKey: '',
     category: '',
     imageUrl: ''
   });
@@ -73,6 +79,9 @@ const CreateEvent = () => {
             capacity: draft.capacity,
             price: draft.price,
             currency: draft.currency,
+            ngnPrice: draft.ngn_price || 0,
+            paymentMethods: draft.payment_methods || ['crypto'],
+            paystackPublicKey: draft.paystack_public_key || '',
             category: draft.category,
             imageUrl: draft.image_url || ''
           });
@@ -94,6 +103,9 @@ const CreateEvent = () => {
             capacity: event.capacity,
             price: event.price,
             currency: event.currency,
+            ngnPrice: event.ngn_price || 0,
+            paymentMethods: event.payment_methods || ['crypto'],
+            paystackPublicKey: event.paystack_public_key || '',
             category: event.category,
             imageUrl: event.image_url || ''
           });
