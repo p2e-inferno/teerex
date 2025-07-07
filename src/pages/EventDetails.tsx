@@ -250,6 +250,7 @@ const EventDetails = () => {
   };
 
   const handleGetTicket = () => {
+    console.log('=== HANDLE GET TICKET CALLED ===');
     if (!event) return;
     
     console.log('Event data:', event);
