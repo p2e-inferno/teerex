@@ -14,6 +14,65 @@ export type Database = {
   }
   public: {
     Tables: {
+      attestation_challenges: {
+        Row: {
+          attestation_id: string
+          challenge_reason: string
+          challenged_address: string
+          challenger_address: string
+          created_at: string
+          evidence_description: string | null
+          evidence_url: string | null
+          id: string
+          resolution_reason: string | null
+          resolved_at: string | null
+          resolved_by: string | null
+          stake_amount: number | null
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          attestation_id: string
+          challenge_reason: string
+          challenged_address: string
+          challenger_address: string
+          created_at?: string
+          evidence_description?: string | null
+          evidence_url?: string | null
+          id?: string
+          resolution_reason?: string | null
+          resolved_at?: string | null
+          resolved_by?: string | null
+          stake_amount?: number | null
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          attestation_id?: string
+          challenge_reason?: string
+          challenged_address?: string
+          challenger_address?: string
+          created_at?: string
+          evidence_description?: string | null
+          evidence_url?: string | null
+          id?: string
+          resolution_reason?: string | null
+          resolved_at?: string | null
+          resolved_by?: string | null
+          stake_amount?: number | null
+          status?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "attestation_challenges_attestation_id_fkey"
+            columns: ["attestation_id"]
+            isOneToOne: false
+            referencedRelation: "attestations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       attestation_schemas: {
         Row: {
           category: string
@@ -49,6 +108,41 @@ export type Database = {
           updated_at?: string
         }
         Relationships: []
+      }
+      attestation_votes: {
+        Row: {
+          attestation_id: string
+          created_at: string
+          id: string
+          vote_type: string
+          voter_address: string
+          weight: number
+        }
+        Insert: {
+          attestation_id: string
+          created_at?: string
+          id?: string
+          vote_type: string
+          voter_address: string
+          weight?: number
+        }
+        Update: {
+          attestation_id?: string
+          created_at?: string
+          id?: string
+          vote_type?: string
+          voter_address?: string
+          weight?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "attestation_votes_attestation_id_fkey"
+            columns: ["attestation_id"]
+            isOneToOne: false
+            referencedRelation: "attestations"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       attestations: {
         Row: {
@@ -248,12 +342,58 @@ export type Database = {
         }
         Relationships: []
       }
+      user_reputation: {
+        Row: {
+          created_at: string
+          dishonest_attestations: number
+          failed_challenges: number
+          honest_attestations: number
+          id: string
+          reputation_score: number
+          successful_challenges: number
+          total_attestations: number
+          updated_at: string
+          user_address: string
+        }
+        Insert: {
+          created_at?: string
+          dishonest_attestations?: number
+          failed_challenges?: number
+          honest_attestations?: number
+          id?: string
+          reputation_score?: number
+          successful_challenges?: number
+          total_attestations?: number
+          updated_at?: string
+          user_address: string
+        }
+        Update: {
+          created_at?: string
+          dishonest_attestations?: number
+          failed_challenges?: number
+          honest_attestations?: number
+          id?: string
+          reputation_score?: number
+          successful_challenges?: number
+          total_attestations?: number
+          updated_at?: string
+          user_address?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      update_reputation_score: {
+        Args: {
+          user_addr: string
+          score_change: number
+          attestation_type?: string
+        }
+        Returns: undefined
+      }
     }
     Enums: {
       [_ in never]: never

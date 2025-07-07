@@ -24,6 +24,8 @@ import { getPublishedEvents, PublishedEvent } from '@/utils/eventUtils';
 import { getTotalKeys, getUserKeyBalance, getMaxKeysPerAddress, checkKeyOwnership } from '@/utils/lockUtils';
 import { EventPurchaseDialog } from '@/components/events/EventPurchaseDialog';
 import { AttestationButton } from '@/components/attestations/AttestationButton';
+import { EventAttestationCard } from '@/components/attestations/EventAttestationCard';
+import { AttendeesList } from '@/components/attestations/AttendeesList';
 import { usePrivy, useWallets } from '@privy-io/react-auth';
 import { useToast } from '@/hooks/use-toast';
 import { getAttestationSchemas } from '@/utils/attestationUtils';
@@ -386,6 +388,12 @@ const EventDetails = () => {
                 </div>
               </div>
             </div>
+
+            {/* Attendees List */}
+            <AttendeesList
+              eventId={event.id}
+              eventTitle={event.title}
+            />
           </div>
 
           {/* Sidebar */}
@@ -553,6 +561,16 @@ const EventDetails = () => {
                 </div>
               </CardContent>
             </Card>
+
+            {/* Enhanced Attestation Card */}
+            <EventAttestationCard
+              eventId={event.id}
+              eventTitle={event.title}
+              eventDate={event.date.toISOString()}
+              eventTime={event.time}
+              lockAddress={event.lock_address}
+              userHasTicket={userTicketCount > 0}
+            />
           </div>
         </div>
       </div>
