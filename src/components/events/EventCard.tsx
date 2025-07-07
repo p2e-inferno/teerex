@@ -28,6 +28,9 @@ export const EventCard: React.FC<EventCardProps> = ({
   const navigate = useNavigate();
   const spotsLeft = event.capacity - keysSold;
   const isSoldOut = spotsLeft <= 0;
+  
+  // Check if event has expired
+  const isEventExpired = event.date && new Date(event.date) < new Date();
 
   const handleCardClick = () => {
     if (!isTicketView) {
@@ -52,6 +55,8 @@ export const EventCard: React.FC<EventCardProps> = ({
     if (isTicketView) return 'View Ticket';
     if (actionType === 'edit') return 'Edit';
     if (actionType === 'manage') return 'Manage';
+    if (isEventExpired) return 'Event Ended';
+    if (isSoldOut) return 'Sold Out';
     return 'Get Ticket';
   };
 
@@ -146,7 +151,8 @@ export const EventCard: React.FC<EventCardProps> = ({
             <Button 
               size="sm" 
               onClick={handleViewDetailsClick}
-              className="bg-blue-600 hover:bg-blue-700"
+              disabled={isEventExpired || isSoldOut}
+              className="bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {getButtonText()}
             </Button>
