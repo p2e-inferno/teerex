@@ -264,27 +264,57 @@ export const createAttestation = async (params: CreateAttestationParams): Promis
 
     console.log('EAS SDK transaction sent:', tx);
     
-    // Handle transaction response - EAS SDK returns transaction hash
+    // Handle transaction response - EAS SDK returns different formats
     let transactionHash = '';
     if (typeof tx === 'string') {
       transactionHash = tx;
     } else if (tx && typeof tx === 'object' && 'wait' in tx) {
-      // Wait for transaction receipt
-      try {
-        const receipt = await (tx as any).wait();
-        transactionHash = receipt?.transactionHash || receipt?.hash || (tx as any).hash || '';
-      } catch (e) {
-        console.warn('Could not get transaction receipt:', e);
-        transactionHash = (tx as any).hash || '';
+      // For EAS SDK transactions, the hash might be in different places
+      if ((tx as any).hash) {
+        transactionHash = (tx as any).hash;
+      } else if ((tx as any).data?.hash) {
+        transactionHash = (tx as any).data.hash;
+      } else {
+        // Wait for the transaction to be mined to get the hash
+        try {
+          const receipt = await (tx as any).wait();
+          transactionHash = receipt?.transactionHash || receipt?.hash || '';
+        } catch (e) {
+          console.warn('Could not get transaction receipt:', e);
+          // Generate a temporary unique ID if we can't get the hash
+          transactionHash = `temp_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+        }
       }
     }
+    
+    if (!transactionHash) {
+      transactionHash = `temp_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    }
+    
     console.log('Transaction hash:', transactionHash);
+
+    // Check if user already has an attestation for this event
+    const { data: existingAttestation } = await supabase
+      .from('attestations')
+      .select('id')
+      .eq('event_id', data.eventId)
+      .eq('recipient', recipient)
+      .eq('schema_uid', schemaUid)
+      .eq('is_revoked', false)
+      .single();
+
+    if (existingAttestation) {
+      return {
+        success: false,
+        error: 'You have already created an attestation for this event'
+      };
+    }
 
     // Save attestation to our database
     const { error: saveError } = await supabase
       .from('attestations')
       .insert({
-        attestation_uid: transactionHash || 'pending', // Use pending if no hash yet
+        attestation_uid: transactionHash,
         schema_uid: schemaUid,
         attester: wallet.address,
         recipient: recipient,
@@ -296,6 +326,7 @@ export const createAttestation = async (params: CreateAttestationParams): Promis
 
     if (saveError) {
       console.error('Error saving attestation to database:', saveError);
+      // Don't fail the transaction if database save fails, the blockchain transaction succeeded
     }
 
     return {

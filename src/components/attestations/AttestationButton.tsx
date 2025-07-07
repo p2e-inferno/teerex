@@ -1,8 +1,9 @@
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/use-toast';
 import { useAttestations } from '@/hooks/useAttestations';
+import { supabase } from '@/integrations/supabase/client';
 import { Loader2, Award } from 'lucide-react';
 
 interface AttestationButtonProps {
@@ -31,6 +32,34 @@ export const AttestationButton: React.FC<AttestationButtonProps> = ({
   const { createEventAttestation, isLoading } = useAttestations();
   const { toast } = useToast();
   const [hasAttested, setHasAttested] = useState(false);
+  const [isCheckingAttestation, setIsCheckingAttestation] = useState(true);
+
+  // Check if user already has an attestation
+  useEffect(() => {
+    const checkExistingAttestation = async () => {
+      if (!recipient || !eventId || !schemaUid) return;
+      
+      setIsCheckingAttestation(true);
+      try {
+        const { data: existingAttestation } = await supabase
+          .from('attestations')
+          .select('id')
+          .eq('event_id', eventId)
+          .eq('recipient', recipient)
+          .eq('schema_uid', schemaUid)
+          .eq('is_revoked', false)
+          .single();
+
+        setHasAttested(!!existingAttestation);
+      } catch (error) {
+        console.error('Error checking existing attestation:', error);
+      } finally {
+        setIsCheckingAttestation(false);
+      }
+    };
+
+    checkExistingAttestation();
+  }, [recipient, eventId, schemaUid]);
 
   const handleAttestation = async () => {
     try {
@@ -67,6 +96,7 @@ export const AttestationButton: React.FC<AttestationButtonProps> = ({
   };
 
   const getButtonText = () => {
+    if (isCheckingAttestation) return 'Checking...';
     if (hasAttested) return 'Attested ✓';
     if (isLoading) return 'Creating...';
     
@@ -85,11 +115,11 @@ export const AttestationButton: React.FC<AttestationButtonProps> = ({
   return (
     <Button
       onClick={handleAttestation}
-      disabled={disabled || isLoading || hasAttested}
+      disabled={disabled || isLoading || hasAttested || isCheckingAttestation}
       className={className}
       variant={hasAttested ? 'secondary' : 'default'}
     >
-      {isLoading ? (
+      {(isLoading || isCheckingAttestation) ? (
         <Loader2 className="w-4 h-4 mr-2 animate-spin" />
       ) : (
         <Award className="w-4 h-4 mr-2" />
