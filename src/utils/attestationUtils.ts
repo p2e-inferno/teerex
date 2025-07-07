@@ -6,23 +6,21 @@ import { supabase } from '@/integrations/supabase/client';
 const EAS_CONTRACT_ADDRESS = '0x4200000000000000000000000000000000000021'; // Base Sepolia EAS
 const SCHEMA_REGISTRY_ADDRESS = '0x4200000000000000000000000000000000000020'; // Base Sepolia Schema Registry
 
-// EAS Contract ABI (simplified for attestation creation)
+// EAS Contract ABI - Updated to match actual EAS contract
 const EAS_ABI = [
   {
     "inputs": [
-      {
-        "components": [
-          { "internalType": "bytes32", "name": "schema", "type": "bytes32" },
-          { "internalType": "address", "name": "recipient", "type": "address" },
-          { "internalType": "uint64", "name": "expirationTime", "type": "uint64" },
-          { "internalType": "bool", "name": "revocable", "type": "bool" },
-          { "internalType": "bytes32", "name": "refUID", "type": "bytes32" },
-          { "internalType": "bytes", "name": "data", "type": "bytes" }
-        ],
-        "internalType": "struct AttestationRequest",
-        "name": "request",
-        "type": "tuple"
-      }
+      { "internalType": "bytes32", "name": "schema", "type": "bytes32" },
+      { "internalType": "address", "name": "recipient", "type": "address" },
+      { "internalType": "uint64", "name": "expirationTime", "type": "uint64" },
+      { "internalType": "bool", "name": "revocable", "type": "bool" },
+      { "internalType": "bytes32", "name": "refUID", "type": "bytes32" },
+      { "internalType": "string", "name": "eventId", "type": "string" },
+      { "internalType": "address", "name": "lockAddress", "type": "address" },
+      { "internalType": "string", "name": "eventTitle", "type": "string" },
+      { "internalType": "uint256", "name": "timestamp", "type": "uint256" },
+      { "internalType": "string", "name": "location", "type": "string" },
+      { "internalType": "string", "name": "platform", "type": "string" }
     ],
     "name": "attest",
     "outputs": [{ "internalType": "bytes32", "name": "", "type": "bytes32" }],
@@ -213,26 +211,38 @@ export const createAttestation = async (params: CreateAttestationParams): Promis
     // Create EAS contract instance
     const easContract = new ethers.Contract(EAS_CONTRACT_ADDRESS, EAS_ABI, signer);
 
-    // Encode the attestation data
-    const encodedData = encodeAttestationData(schema.schema_definition, data);
+    // Prepare individual parameters like the explorer
+    const timestamp = data.timestamp || Math.floor(Date.now() / 1000);
+    const location = data.location || 'Metaverse';
+    const platform = 'TeeRex';
 
-    // Prepare attestation request
-    const attestationRequest = {
-      schema: schemaUid,
-      recipient: recipient,
-      expirationTime: expirationTime || 0,
-      revocable: revocable && schema.revocable, // Use schema's revocable setting
-      refUID: ethers.ZeroHash,
-      data: encodedData
-    };
+    console.log('Calling attest directly with parameters:');
+    console.log('Schema:', schemaUid);
+    console.log('Recipient:', recipient);
+    console.log('ExpirationTime:', expirationTime || 0);
+    console.log('Revocable:', revocable && schema.revocable);
+    console.log('RefUID:', ethers.ZeroHash);
+    console.log('EventId:', data.eventId);
+    console.log('LockAddress:', data.lockAddress);
+    console.log('EventTitle:', data.eventTitle);
+    console.log('Timestamp:', timestamp);
+    console.log('Location:', location);
+    console.log('Platform:', platform);
 
-    console.log('Creating attestation with request:', attestationRequest);
-    console.log('Schema revocable setting:', schema.revocable);
-    console.log('Requested revocable setting:', revocable);
-    console.log('Final revocable setting:', revocable && schema.revocable);
-
-    // Submit attestation to EAS
-    const tx = await easContract.attest(attestationRequest);
+    // Call attest directly with individual parameters like the explorer
+    const tx = await easContract.attest(
+      schemaUid,
+      recipient,
+      expirationTime || 0,
+      revocable && schema.revocable,
+      ethers.ZeroHash,
+      data.eventId,
+      data.lockAddress,
+      data.eventTitle,
+      timestamp,
+      location,
+      platform
+    );
     console.log('Attestation transaction sent:', tx.hash);
 
     const receipt = await tx.wait();
