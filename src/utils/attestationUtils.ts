@@ -100,7 +100,6 @@ export interface AttestationResult {
 export const encodeAttestationData = (schemaDefinition: string, data: AttestationData): string => {
   try {
     // Parse schema definition and order fields correctly
-    // Based on your schema: string eventId, address lockAddress, string eventTitle, uint256 timestamp, string location, string platform
     console.log('Schema definition:', schemaDefinition);
     const fields = schemaDefinition.split(',').map(field => field.trim());
     console.log('Parsed fields:', fields);
@@ -140,46 +139,53 @@ export const encodeAttestationData = (schemaDefinition: string, data: Attestatio
           values.push('TeeRex');
           console.log('Added platform: TeeRex');
           break;
-          case 'rating':
-            values.push(data.rating || 0);
-            break;
-          case 'review':
-            values.push(data.review || '');
-            break;
-          case 'verificationType':
-            values.push(data.verificationType || '');
-            break;
-          case 'tokenId':
-            values.push(data.tokenId || '0');
-            break;
-          case 'price':
-            values.push(data.price || 0);
-            break;
-          case 'expirationTime':
-            values.push(data.expirationTime || 0);
-            break;
-          case 'ticketHolder':
-          case 'purchaser':
-          case 'keyHolder':
-          case 'creatorAddress':
+        case 'rating':
+          values.push(data.rating || 0);
+          break;
+        case 'review':
+          values.push(data.review || '');
+          break;
+        case 'verificationType':
+          values.push(data.verificationType || '');
+          break;
+        case 'tokenId':
+          values.push(data.tokenId || '0');
+          break;
+        case 'price':
+          values.push(data.price || 0);
+          break;
+        case 'expirationTime':
+          values.push(data.expirationTime || 0);
+          break;
+        case 'ticketHolder':
+        case 'purchaser':
+        case 'keyHolder':
+        case 'creatorAddress':
+          values.push(ethers.ZeroAddress);
+          break;
+        default:
+          // For unknown fields, provide appropriate defaults based on type
+          if (type === 'address') {
             values.push(ethers.ZeroAddress);
-            break;
-          default:
-            // For unknown fields, provide appropriate defaults based on type
-            if (type === 'address') {
-              values.push(ethers.ZeroAddress);
-            } else if (type.startsWith('uint')) {
-              values.push(0);
-            } else {
-              values.push('');
-            }
-        }
-      });
+          } else if (type.startsWith('uint')) {
+            values.push(0);
+          } else {
+            values.push('');
+          }
+      }
+    });
 
-    return ethers.AbiCoder.defaultAbiCoder().encode(types, values);
+    console.log('Types for encoding:', types);
+    console.log('Values for encoding:', values);
+    
+    const encoded = ethers.AbiCoder.defaultAbiCoder().encode(types, values);
+    console.log('Encoded data:', encoded);
+    console.log('Encoded data hex length:', encoded.length);
+    
+    return encoded;
   } catch (error) {
     console.error('Error encoding attestation data:', error);
-    throw new Error('Failed to encode attestation data');
+    throw new Error('Failed to encode attestation data: ' + (error instanceof Error ? error.message : 'Unknown error'));
   }
 };
 
