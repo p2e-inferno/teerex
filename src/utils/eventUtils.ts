@@ -22,6 +22,12 @@ export interface PublishedEvent {
   chain_id: number;
   created_at: Date;
   updated_at: Date;
+  attestation_enabled: boolean;
+  attendance_schema_uid: string | null;
+  review_schema_uid: string | null;
+  max_keys_per_address: number;
+  transferable: boolean;
+  requires_approval: boolean;
 }
 
 export const savePublishedEvent = async (

@@ -26,6 +26,7 @@ import { EventPurchaseDialog } from '@/components/events/EventPurchaseDialog';
 import { AttestationButton } from '@/components/attestations/AttestationButton';
 import { usePrivy, useWallets } from '@privy-io/react-auth';
 import { useToast } from '@/hooks/use-toast';
+import { getAttestationSchemas } from '@/utils/attestationUtils';
 import { format } from 'date-fns';
 import {
   DropdownMenu,
@@ -49,6 +50,7 @@ const EventDetails = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [isPurchaseDialogOpen, setIsPurchaseDialogOpen] = useState(false);
   const [isLiked, setIsLiked] = useState(false);
+  const [attendanceSchemaUid, setAttendanceSchemaUid] = useState<string | null>(null);
 
   useEffect(() => {
     const loadEvent = async () => {
@@ -108,6 +110,32 @@ const EventDetails = () => {
 
     loadUserTicketData();
   }, [authenticated, wallet?.address, event?.lock_address]);
+
+  // Load attendance schema UID
+  useEffect(() => {
+    const loadAttendanceSchema = async () => {
+      if (!event) return;
+      
+      try {
+        // First check if event has an attendance schema UID set
+        if (event.attendance_schema_uid) {
+          setAttendanceSchemaUid(event.attendance_schema_uid);
+          return;
+        }
+        
+        // Otherwise, fetch attendance schemas from database
+        const schemas = await getAttestationSchemas('attendance');
+        if (schemas.length > 0) {
+          // Use the first attendance schema found
+          setAttendanceSchemaUid(schemas[0].schema_uid);
+        }
+      } catch (error) {
+        console.error('Error loading attendance schema:', error);
+      }
+    };
+
+    loadAttendanceSchema();
+  }, [event]);
 
   const handleShare = (platform?: string) => {
     const url = window.location.href;
@@ -412,14 +440,16 @@ const EventDetails = () => {
                 {authenticated && userTicketCount > 0 ? (
                   <div className="space-y-2">
                     {/* Attestation Button for ticket holders */}
-                    <AttestationButton
-                      schemaUid="0x1234567890abcdef1234567890abcdef12345678"
-                      recipient={wallet?.address || ''}
-                      eventId={event.id}
-                      lockAddress={event.lock_address}
-                      eventTitle={event.title}
-                      attestationType="attendance"
-                    />
+                    {attendanceSchemaUid && (
+                      <AttestationButton
+                        schemaUid={attendanceSchemaUid}
+                        recipient={wallet?.address || ''}
+                        eventId={event.id}
+                        lockAddress={event.lock_address}
+                        eventTitle={event.title}
+                        attestationType="attendance"
+                      />
+                    )}
                     
                     {/* Additional ticket purchase if allowed */}
                     {userTicketCount < maxTicketsPerUser && !isSoldOut && (
