@@ -116,18 +116,28 @@ const EventDetails = () => {
     const loadAttendanceSchema = async () => {
       if (!event) return;
       
+      console.log('Loading attendance schema for event:', event.id);
+      console.log('Event attendance_schema_uid:', event.attendance_schema_uid);
+      
       try {
         // First check if event has an attendance schema UID set
         if (event.attendance_schema_uid) {
+          console.log('Using event attendance schema UID:', event.attendance_schema_uid);
           setAttendanceSchemaUid(event.attendance_schema_uid);
           return;
         }
         
         // Otherwise, fetch attendance schemas from database
+        console.log('Fetching attendance schemas from database...');
         const schemas = await getAttestationSchemas('attendance');
+        console.log('Found attendance schemas:', schemas);
+        
         if (schemas.length > 0) {
+          console.log('Using first schema UID:', schemas[0].schema_uid);
           // Use the first attendance schema found
           setAttendanceSchemaUid(schemas[0].schema_uid);
+        } else {
+          console.log('No attendance schemas found');
         }
       } catch (error) {
         console.error('Error loading attendance schema:', error);
