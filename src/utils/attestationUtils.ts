@@ -272,13 +272,14 @@ export const createAttestation = async (params: CreateAttestationParams): Promis
     const { error: saveError } = await supabase
       .from('attestations')
       .insert({
-        attestation_uid: transactionHash, // Will be updated with proper UID
+        attestation_uid: transactionHash || 'pending', // Use pending if no hash yet
         schema_uid: schemaUid,
         attester: wallet.address,
         recipient: recipient,
         event_id: data.eventId,
         data: data as any,
-        expiration_time: expirationTime ? new Date(expirationTime * 1000).toISOString() : null
+        expiration_time: expirationTime ? new Date(expirationTime * 1000).toISOString() : null,
+        // The trigger will populate lock_address and creator_address from the event
       });
 
     if (saveError) {
