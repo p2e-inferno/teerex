@@ -360,10 +360,13 @@ Deno.serve(async (req) => {
         throw new Error(`RPC URL not configured for chain ${networkConfig.chain_name}`)
       }
 
-      // Extract user address from transaction metadata
-      const userAddress = transaction.gateway_response?.metadata?.user_address;
+      // Extract user address from transaction metadata custom fields
+      const customFields = transaction.gateway_response?.metadata?.custom_fields || [];
+      const userAddressField = customFields.find((field: any) => field.variable_name === 'user_wallet_address');
+      const userAddress = userAddressField?.value;
+      
       if (!userAddress) {
-        throw new Error('User address not found in transaction metadata')
+        throw new Error('User wallet address not found in transaction metadata')
       }
 
       console.log('Granting key for successful payment:', {
@@ -374,11 +377,14 @@ Deno.serve(async (req) => {
         chainName: networkConfig.chain_name
       })
 
-      // Grant the key using the event's expiration duration
+      // Grant the key using a reasonable expiration duration
+      // Default to 30 days (30 * 24 * 60 * 60 = 2592000 seconds) if no specific duration
+      const expirationDuration = 2592000; // 30 days in seconds
+      
       const grantResult = await grantKeyToUser(
         event.lock_address,
         userAddress,
-        event.max_keys_per_address || 86400, // Default to 24 hours if not set
+        expirationDuration,
         event.chain_id,
         networkConfig.rpc_url
       )
