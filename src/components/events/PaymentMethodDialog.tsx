@@ -35,7 +35,7 @@ export const PaymentMethodDialog: React.FC<PaymentMethodDialogProps> = ({
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="sm:max-w-[425px] z-40 bg-white">
+      <DialogContent className="sm:max-w-[425px]">
         <DialogHeader>
           <DialogTitle>Choose Payment Method</DialogTitle>
           <DialogDescription>

@@ -52,9 +52,8 @@ const EventDetails = () => {
   const [userTicketCount, setUserTicketCount] = useState<number>(0);
   const [maxTicketsPerUser, setMaxTicketsPerUser] = useState<number>(1);
   const [isLoading, setIsLoading] = useState(true);
-  const [isPurchaseDialogOpen, setIsPurchaseDialogOpen] = useState(false);
-  const [isPaystackDialogOpen, setIsPaystackDialogOpen] = useState(false);
-  const [isPaymentMethodDialogOpen, setIsPaymentMethodDialogOpen] = useState(false);
+  // Modal state management - only one modal can be open at a time
+  const [activeModal, setActiveModal] = useState<'none' | 'payment-method' | 'crypto-purchase' | 'paystack-payment'>('none');
   const [isLiked, setIsLiked] = useState(false);
   const [attendanceSchemaUid, setAttendanceSchemaUid] = useState<string | null>(null);
 
@@ -267,26 +266,28 @@ const EventDetails = () => {
     // If both payment methods available, show selection dialog
     if (hasCrypto && hasPaystack) {
       console.log('Opening payment method dialog');
-      setIsPaymentMethodDialogOpen(true);
+      setActiveModal('payment-method');
     } else if (hasPaystack) {
       // Only Paystack available
       console.log('Opening paystack dialog');
-      setIsPaystackDialogOpen(true);
+      setActiveModal('paystack-payment');
     } else {
       // Only crypto available (default)
       console.log('Opening crypto dialog');
-      setIsPurchaseDialogOpen(true);
+      setActiveModal('crypto-purchase');
     }
   };
 
   const handleSelectCrypto = () => {
-    setIsPaymentMethodDialogOpen(false);
-    setTimeout(() => setIsPurchaseDialogOpen(true), 100);
+    setActiveModal('crypto-purchase');
   };
 
   const handleSelectPaystack = () => {
-    setIsPaymentMethodDialogOpen(false);
-    setTimeout(() => setIsPaystackDialogOpen(true), 100);
+    setActiveModal('paystack-payment');
+  };
+
+  const closeAllModals = () => {
+    setActiveModal('none');
   };
 
   const spotsLeft = event ? event.capacity - keysSold : 0;
@@ -619,8 +620,8 @@ const EventDetails = () => {
       {/* Payment Method Selection Dialog */}
       <PaymentMethodDialog
         event={event}
-        isOpen={isPaymentMethodDialogOpen}
-        onClose={() => setIsPaymentMethodDialogOpen(false)}
+        isOpen={activeModal === 'payment-method'}
+        onClose={closeAllModals}
         onSelectCrypto={handleSelectCrypto}
         onSelectPaystack={handleSelectPaystack}
       />
@@ -628,16 +629,17 @@ const EventDetails = () => {
       {/* Crypto Purchase Dialog */}
       <EventPurchaseDialog
         event={event}
-        isOpen={isPurchaseDialogOpen}
-        onClose={() => setIsPurchaseDialogOpen(false)}
+        isOpen={activeModal === 'crypto-purchase'}
+        onClose={closeAllModals}
       />
 
       {/* Paystack Payment Dialog */}
       <PaystackPaymentDialog
         event={event}
-        isOpen={isPaystackDialogOpen}
-        onClose={() => setIsPaystackDialogOpen(false)}
+        isOpen={activeModal === 'paystack-payment'}
+        onClose={closeAllModals}
         onSuccess={() => {
+          closeAllModals();
           // Refresh the page or update ticket count
           window.location.reload();
         }}
