@@ -106,15 +106,15 @@ const AdminEvents: React.FC = () => {
   const fetchEventTransactions = async (eventId: string) => {
     console.log('Fetching transactions for event:', eventId);
     try {
-      const { data, error } = await supabase
-        .from('paystack_transactions')
-        .select('*')
-        .eq('event_id', eventId)
-        .order('created_at', { ascending: false });
+      // Use admin function to bypass RLS
+      const { data, error } = await supabase.functions.invoke('admin-get-transactions', {
+        body: { eventId }
+      });
 
       console.log('Transaction query result:', { data, error });
       if (error) throw error;
-      setTransactions(data || []);
+      
+      setTransactions(data?.transactions || []);
     } catch (error) {
       console.error('Error fetching transactions:', error);
       toast({
