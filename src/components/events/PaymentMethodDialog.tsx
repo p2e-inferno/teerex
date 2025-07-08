@@ -28,7 +28,7 @@ export const PaymentMethodDialog: React.FC<PaymentMethodDialogProps> = ({
   if (!event) return null;
 
   const hasCrypto = event.payment_methods?.includes('crypto') || event.currency !== 'FREE';
-  const hasPaystack = event.payment_methods?.includes('paystack') && event.paystack_public_key && event.ngn_price;
+  const hasPaystack = event.payment_methods?.includes('fiat') && event.paystack_public_key && event.ngn_price;
 
   // If only one payment method, don't show this dialog
   if (!hasCrypto || !hasPaystack) return null;

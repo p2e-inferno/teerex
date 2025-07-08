@@ -259,7 +259,7 @@ const EventDetails = () => {
     console.log('NGN price:', event.ngn_price);
     
     const hasCrypto = event.payment_methods?.includes('crypto') || event.currency !== 'FREE';
-    const hasPaystack = event.payment_methods?.includes('paystack') && event.paystack_public_key && event.ngn_price;
+    const hasPaystack = event.payment_methods?.includes('fiat') && event.paystack_public_key && event.ngn_price;
     
     console.log('Has crypto:', hasCrypto);
     console.log('Has paystack:', hasPaystack);
