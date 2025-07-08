@@ -7,6 +7,8 @@ import { EventCard } from '@/components/events/EventCard';
 import { getPublishedEvents, PublishedEvent } from '@/utils/eventUtils';
 import { useToast } from '@/hooks/use-toast';
 import { EventPurchaseDialog } from '@/components/events/EventPurchaseDialog';
+import { PaystackPaymentDialog } from '@/components/events/PaystackPaymentDialog';
+import { PaymentMethodDialog } from '@/components/events/PaymentMethodDialog';
 import { getTotalKeys } from '@/utils/lockUtils';
 
 const Explore = () => {
@@ -16,7 +18,7 @@ const Explore = () => {
   const [isLoading, setIsLoading] = useState(true);
   const { toast } = useToast();
   const [selectedEvent, setSelectedEvent] = useState<PublishedEvent | null>(null);
-  const [isPurchaseDialogOpen, setIsPurchaseDialogOpen] = useState(false);
+  const [activeModal, setActiveModal] = useState<'none' | 'payment-method' | 'crypto-purchase' | 'paystack-payment'>('none');
   const [keysSoldMap, setKeysSoldMap] = useState<Record<string, number>>({});
 
   const loadEvents = useCallback(async () => {
@@ -72,11 +74,44 @@ const Explore = () => {
 
   const handleEventDetails = (event: PublishedEvent) => {
     setSelectedEvent(event);
-    setIsPurchaseDialogOpen(true);
+    
+    console.log('=== HANDLE GET TICKET CALLED FROM EXPLORE ===');
+    console.log('Event data:', event);
+    console.log('Payment methods:', event.payment_methods);
+    console.log('Paystack key:', event.paystack_public_key);
+    console.log('NGN price:', event.ngn_price);
+    
+    const hasCrypto = event.payment_methods?.includes('crypto') || event.currency !== 'FREE';
+    const hasPaystack = event.payment_methods?.includes('fiat') && event.paystack_public_key && event.ngn_price;
+    
+    console.log('Has crypto:', hasCrypto);
+    console.log('Has paystack:', hasPaystack);
+    
+    // If both payment methods available, show selection dialog
+    if (hasCrypto && hasPaystack) {
+      console.log('Opening payment method dialog');
+      setActiveModal('payment-method');
+    } else if (hasPaystack) {
+      // Only Paystack available
+      console.log('Opening paystack dialog');
+      setActiveModal('paystack-payment');
+    } else {
+      // Only crypto available (default)
+      console.log('Opening crypto dialog');
+      setActiveModal('crypto-purchase');
+    }
   };
 
-  const handleClosePurchaseDialog = () => {
-    setIsPurchaseDialogOpen(false);
+  const handleSelectCrypto = () => {
+    setActiveModal('crypto-purchase');
+  };
+
+  const handleSelectPaystack = () => {
+    setActiveModal('paystack-payment');
+  };
+
+  const closeAllModals = () => {
+    setActiveModal('none');
     setSelectedEvent(null);
     // Refresh event data to show updated spot count
     loadEvents();
@@ -169,10 +204,28 @@ const Explore = () => {
           </div>
         )}
       </div>
+      {/* Payment Method Selection Dialog */}
+      <PaymentMethodDialog
+        event={selectedEvent}
+        isOpen={activeModal === 'payment-method'}
+        onClose={closeAllModals}
+        onSelectCrypto={handleSelectCrypto}
+        onSelectPaystack={handleSelectPaystack}
+      />
+
+      {/* Crypto Purchase Dialog */}
       <EventPurchaseDialog
         event={selectedEvent}
-        isOpen={isPurchaseDialogOpen}
-        onClose={handleClosePurchaseDialog}
+        isOpen={activeModal === 'crypto-purchase'}
+        onClose={closeAllModals}
+      />
+
+      {/* Paystack Payment Dialog */}
+      <PaystackPaymentDialog
+        event={selectedEvent}
+        isOpen={activeModal === 'paystack-payment'}
+        onClose={closeAllModals}
+        onSuccess={closeAllModals}
       />
     </div>
   );
