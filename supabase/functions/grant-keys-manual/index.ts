@@ -130,12 +130,18 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const { transactionReference } = await req.json();
+    console.log('Grant keys manual function called');
+    
+    const body = await req.json();
+    console.log('Request body:', body);
+    
+    const { transactionReference } = body;
     
     if (!transactionReference) {
-      return new Response('Transaction reference is required', { 
+      console.log('Missing transaction reference');
+      return new Response(JSON.stringify({ error: 'Transaction reference is required' }), { 
         status: 400, 
-        headers: corsHeaders 
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       })
     }
 
@@ -275,9 +281,15 @@ Deno.serve(async (req) => {
 
   } catch (error) {
     console.error('Manual key grant error:', error)
+    
+    let errorMessage = 'Internal server error';
+    if (error instanceof Error) {
+      errorMessage = error.message;
+    }
+    
     return new Response(JSON.stringify({
       success: false,
-      error: error instanceof Error ? error.message : 'Internal server error'
+      error: errorMessage
     }), { 
       status: 500, 
       headers: { ...corsHeaders, 'Content-Type': 'application/json' }
