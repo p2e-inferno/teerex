@@ -1,4 +1,5 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.50.0'
+import { ethers } from 'https://esm.sh/ethers@6.14.4'
 import { Database } from '../_shared/database.types.ts'
 
 const corsHeaders = {
@@ -94,6 +95,119 @@ async function verifyPaystackSignature(body: string, signature: string, secret: 
     .join('')
   
   return signature === computedSignature
+}
+
+// Simplified PublicLock ABI for grantKeys function
+const PublicLockABI = [
+  {
+    "inputs": [
+      { "internalType": "uint256[]", "name": "_expirationTimestamps", "type": "uint256[]" },
+      { "internalType": "address[]", "name": "_recipients", "type": "address[]" },
+      { "internalType": "address[]", "name": "_keyManagers", "type": "address[]" }
+    ],
+    "name": "grantKeys",
+    "outputs": [{ "internalType": "uint256[]", "name": "tokenIds", "type": "uint256[]" }],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "expirationDuration",
+    "outputs": [{ "internalType": "uint256", "name": "", "type": "uint256" }],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [{ "internalType": "address", "name": "account", "type": "address" }],
+    "name": "isLockManager",
+    "outputs": [{ "internalType": "bool", "name": "", "type": "bool" }],
+    "stateMutability": "view", 
+    "type": "function"
+  }
+];
+
+async function grantKeyToUser(
+  lockAddress: string,
+  recipientAddress: string,
+  expirationDuration: number,
+  chainId: number,
+  rpcUrl: string
+): Promise<{ success: boolean; error?: string; txHash?: string }> {
+  try {
+    console.log('Attempting to grant key:', {
+      lockAddress,
+      recipientAddress,
+      expirationDuration,
+      chainId,
+      rpcUrl
+    });
+
+    // Get the private key for the service account
+    const privateKey = Deno.env.get('UNLOCK_SERVICE_PRIVATE_KEY');
+    if (!privateKey) {
+      throw new Error('UNLOCK_SERVICE_PRIVATE_KEY not configured in environment');
+    }
+
+    // Create provider and wallet
+    const provider = new ethers.JsonRpcProvider(rpcUrl);
+    const wallet = new ethers.Wallet(privateKey, provider);
+    
+    console.log('Service wallet address:', wallet.address);
+
+    // Create contract instance
+    const lockContract = new ethers.Contract(lockAddress, PublicLockABI, wallet);
+
+    // Check if wallet is a lock manager
+    const isManager = await lockContract.isLockManager(wallet.address);
+    if (!isManager) {
+      throw new Error(`Service wallet ${wallet.address} is not a lock manager for contract ${lockAddress}`);
+    }
+
+    // Calculate expiration timestamp
+    const currentTime = Math.floor(Date.now() / 1000);
+    const expirationTimestamp = currentTime + expirationDuration;
+
+    console.log('Granting key with params:', {
+      expirationTimestamp,
+      recipient: recipientAddress,
+      keyManager: recipientAddress
+    });
+
+    // Grant the key
+    const tx = await lockContract.grantKeys(
+      [expirationTimestamp], // _expirationTimestamps
+      [recipientAddress],     // _recipients
+      [recipientAddress]      // _keyManagers (recipient manages their own key)
+    );
+
+    console.log('Grant key transaction sent:', tx.hash);
+
+    // Wait for confirmation
+    const receipt = await tx.wait();
+    console.log('Grant key transaction confirmed:', receipt.hash);
+
+    if (receipt.status !== 1) {
+      throw new Error('Grant key transaction failed');
+    }
+
+    return {
+      success: true,
+      txHash: tx.hash
+    };
+
+  } catch (error) {
+    console.error('Error granting key:', error);
+    
+    let errorMessage = 'Failed to grant key to user';
+    if (error instanceof Error) {
+      errorMessage = error.message;
+    }
+    
+    return {
+      success: false,
+      error: errorMessage
+    };
+  }
 }
 
 Deno.serve(async (req) => {
@@ -216,11 +330,84 @@ Deno.serve(async (req) => {
       paid_at
     })
 
-    // TODO: Here you could also:
-    // 1. Send confirmation email to customer
-    // 2. Create ticket/NFT on blockchain if needed
-    // 3. Update event capacity/sold count
-    // 4. Trigger other business logic
+    // Grant key to user via Unlock Protocol
+    try {
+      // Get event details
+      const { data: event, error: eventError } = await supabase
+        .from('events')
+        .select('*')
+        .eq('id', transaction.event_id)
+        .single()
+
+      if (eventError || !event) {
+        console.error('Error fetching event:', eventError)
+        throw new Error('Event not found')
+      }
+
+      // Get network configuration
+      const { data: networkConfig, error: networkError } = await supabase
+        .from('network_configs')
+        .select('*')
+        .eq('chain_id', event.chain_id)
+        .single()
+
+      if (networkError || !networkConfig) {
+        console.error('Error fetching network config:', networkError)
+        throw new Error(`Network configuration not found for chain ID ${event.chain_id}`)
+      }
+
+      if (!networkConfig.rpc_url) {
+        throw new Error(`RPC URL not configured for chain ${networkConfig.chain_name}`)
+      }
+
+      // Extract user address from transaction metadata
+      const userAddress = transaction.gateway_response?.metadata?.user_address;
+      if (!userAddress) {
+        throw new Error('User address not found in transaction metadata')
+      }
+
+      console.log('Granting key for successful payment:', {
+        eventId: event.id,
+        lockAddress: event.lock_address,
+        userAddress,
+        chainId: event.chain_id,
+        chainName: networkConfig.chain_name
+      })
+
+      // Grant the key using the event's expiration duration
+      const grantResult = await grantKeyToUser(
+        event.lock_address,
+        userAddress,
+        event.max_keys_per_address || 86400, // Default to 24 hours if not set
+        event.chain_id,
+        networkConfig.rpc_url
+      )
+
+      if (grantResult.success) {
+        console.log('Key granted successfully:', grantResult.txHash)
+        
+        // Update transaction with grant details
+        await supabase
+          .from('paystack_transactions')
+          .update({
+            gateway_response: {
+              ...webhookData.data,
+              key_grant_tx_hash: grantResult.txHash,
+              key_granted: true,
+              key_granted_at: new Date().toISOString()
+            }
+          })
+          .eq('reference', reference)
+      } else {
+        console.error('Failed to grant key:', grantResult.error)
+        // Still continue - payment was successful, key granting is secondary
+      }
+
+    } catch (grantError) {
+      console.error('Error in key granting process:', grantError)
+      // Don't fail the webhook - payment verification was successful
+      // Key granting can be retried later if needed
+    }
 
     return new Response('Webhook processed successfully', { 
       status: 200, 

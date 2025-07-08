@@ -106,6 +106,18 @@ const PublicLockABI = [
     "stateMutability": "view",
     "type": "function"
   },
+  // Grant keys function for lock managers
+  {
+    "inputs": [
+      { "internalType": "uint256[]", "name": "_expirationTimestamps", "type": "uint256[]" },
+      { "internalType": "address[]", "name": "_recipients", "type": "address[]" },
+      { "internalType": "address[]", "name": "_keyManagers", "type": "address[]" }
+    ],
+    "name": "grantKeys",
+    "outputs": [{ "internalType": "uint256[]", "name": "tokenIds", "type": "uint256[]" }],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
   // ERC-721 standard functions
   {
     "inputs": [{ "internalType": "address", "name": "owner", "type": "address" }],

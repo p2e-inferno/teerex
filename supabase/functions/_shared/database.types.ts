@@ -1,6 +1,47 @@
 export type Database = {
   public: {
     Tables: {
+      network_configs: {
+        Row: {
+          id: string
+          chain_id: number
+          chain_name: string
+          usdc_token_address: string | null
+          native_currency_symbol: string
+          rpc_url: string | null
+          block_explorer_url: string | null
+          is_mainnet: boolean
+          is_active: boolean
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          chain_id: number
+          chain_name: string
+          usdc_token_address?: string | null
+          native_currency_symbol?: string
+          rpc_url?: string | null
+          block_explorer_url?: string | null
+          is_mainnet?: boolean
+          is_active?: boolean
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          chain_id?: number
+          chain_name?: string
+          usdc_token_address?: string | null
+          native_currency_symbol?: string
+          rpc_url?: string | null
+          block_explorer_url?: string | null
+          is_mainnet?: boolean
+          is_active?: boolean
+          created_at?: string
+          updated_at?: string
+        }
+      }
       paystack_transactions: {
         Row: {
           id: string

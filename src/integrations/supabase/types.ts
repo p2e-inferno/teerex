@@ -360,6 +360,48 @@ export type Database = {
         }
         Relationships: []
       }
+      network_configs: {
+        Row: {
+          block_explorer_url: string | null
+          chain_id: number
+          chain_name: string
+          created_at: string
+          id: string
+          is_active: boolean
+          is_mainnet: boolean
+          native_currency_symbol: string
+          rpc_url: string | null
+          updated_at: string
+          usdc_token_address: string | null
+        }
+        Insert: {
+          block_explorer_url?: string | null
+          chain_id: number
+          chain_name: string
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          is_mainnet?: boolean
+          native_currency_symbol?: string
+          rpc_url?: string | null
+          updated_at?: string
+          usdc_token_address?: string | null
+        }
+        Update: {
+          block_explorer_url?: string | null
+          chain_id?: number
+          chain_name?: string
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          is_mainnet?: boolean
+          native_currency_symbol?: string
+          rpc_url?: string | null
+          updated_at?: string
+          usdc_token_address?: string | null
+        }
+        Relationships: []
+      }
       paystack_transactions: {
         Row: {
           amount: number
