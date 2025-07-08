@@ -281,12 +281,12 @@ const EventDetails = () => {
 
   const handleSelectCrypto = () => {
     setIsPaymentMethodDialogOpen(false);
-    setIsPurchaseDialogOpen(true);
+    setTimeout(() => setIsPurchaseDialogOpen(true), 100);
   };
 
   const handleSelectPaystack = () => {
     setIsPaymentMethodDialogOpen(false);
-    setIsPaystackDialogOpen(true);
+    setTimeout(() => setIsPaystackDialogOpen(true), 100);
   };
 
   const spotsLeft = event ? event.capacity - keysSold : 0;
