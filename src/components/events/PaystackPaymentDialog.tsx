@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { usePrivy } from '@privy-io/react-auth';
+import { usePrivy, useWallets } from '@privy-io/react-auth';
 import { usePaystackPayment } from 'react-paystack';
 import {
   Dialog,
@@ -32,10 +32,12 @@ export const PaystackPaymentDialog: React.FC<PaystackPaymentDialogProps> = ({
   onSuccess 
 }) => {
   const { user } = usePrivy();
+  const { wallets } = useWallets();
   const { toast } = useToast();
   const [isLoading, setIsLoading] = useState(false);
   const [userEmail, setUserEmail] = useState(user?.email?.address || '');
   const [userPhone, setUserPhone] = useState('');
+  const [userWalletAddress, setUserWalletAddress] = useState(wallets[0]?.address || '');
 
   const config = {
     reference: `TeeRex-${event?.id}-${Date.now()}`,
@@ -43,6 +45,30 @@ export const PaystackPaymentDialog: React.FC<PaystackPaymentDialogProps> = ({
     amount: Math.round((event?.ngn_price || 0) * 100), // Paystack expects amount in kobo
     publicKey: event?.paystack_public_key || '',
     currency: 'NGN',
+    metadata: {
+      custom_fields: [
+        {
+          display_name: "Wallet Address",
+          variable_name: "user_wallet_address",
+          value: userWalletAddress
+        },
+        {
+          display_name: "Event ID", 
+          variable_name: "event_id",
+          value: event?.id || ''
+        },
+        {
+          display_name: "User Email",
+          variable_name: "user_email", 
+          value: userEmail
+        },
+        {
+          display_name: "User Phone",
+          variable_name: "user_phone",
+          value: userPhone
+        }
+      ]
+    }
   };
 
   const initializePayment = usePaystackPayment(config);
@@ -110,6 +136,15 @@ export const PaystackPaymentDialog: React.FC<PaystackPaymentDialogProps> = ({
       toast({
         title: 'Email Required',
         description: 'Please enter your email address to proceed.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    if (!userWalletAddress.trim()) {
+      toast({
+        title: 'Wallet Address Required',
+        description: 'Please enter your wallet address to receive the ticket.',
         variant: 'destructive',
       });
       return;
@@ -202,6 +237,22 @@ export const PaystackPaymentDialog: React.FC<PaystackPaymentDialogProps> = ({
                 disabled={isLoading}
               />
             </div>
+            
+            <div className="space-y-2">
+              <Label htmlFor="wallet">Wallet Address *</Label>
+              <Input
+                id="wallet"
+                type="text"
+                placeholder="0x..."
+                value={userWalletAddress}
+                onChange={(e) => setUserWalletAddress(e.target.value)}
+                disabled={isLoading}
+                required
+              />
+              <p className="text-xs text-muted-foreground">
+                This address will receive your NFT ticket
+              </p>
+            </div>
           </div>
 
           <div className="bg-blue-50 p-3 rounded-lg">
@@ -218,7 +269,7 @@ export const PaystackPaymentDialog: React.FC<PaystackPaymentDialogProps> = ({
           </Button>
           <Button 
             onClick={handlePayment} 
-            disabled={isLoading || !userEmail.trim()}
+            disabled={isLoading || !userEmail.trim() || !userWalletAddress.trim()}
             className="w-32"
           >
             {isLoading ? (

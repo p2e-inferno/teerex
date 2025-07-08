@@ -15,6 +15,7 @@ import { deployLock, getBlockExplorerUrl } from '@/utils/lockUtils';
 import { savePublishedEvent } from '@/utils/eventUtils';
 import { saveDraft, updateDraft, getDraft, deleteDraft, getPublishedEvent } from '@/utils/supabaseDraftStorage';
 import { supabase } from '@/integrations/supabase/client';
+import { addLockManager } from '@/utils/lockUtils';
 
 export interface EventFormData {
   title: string;
@@ -235,6 +236,47 @@ const CreateEvent = () => {
       const deploymentResult = await deployLock(lockConfig, wallet);
       
       if (deploymentResult.success && deploymentResult.transactionHash && deploymentResult.lockAddress) {
+        // If fiat payment is enabled, add the service wallet as a lock manager
+        if (formData.paymentMethods.includes('fiat')) {
+          toast({
+            title: "Adding Service Manager",
+            description: "Adding unlock service as lock manager for fiat payments...",
+          });
+
+          try {
+            // Get the service public key from the private key
+            const { data: serviceData, error: serviceError } = await supabase.functions.invoke('get-service-address');
+            
+            if (serviceError || !serviceData?.address) {
+              console.error('Failed to get service address:', serviceError);
+              toast({
+                title: "Warning",
+                description: "Event created but fiat payments may not work. Service manager not added.",
+                variant: "default"
+              });
+            } else {
+              const managerResult = await addLockManager(deploymentResult.lockAddress, serviceData.address, wallet);
+              
+              if (!managerResult.success) {
+                console.error('Failed to add service manager:', managerResult.error);
+                toast({
+                  title: "Warning", 
+                  description: "Event created but fiat payments may not work. Service manager not added.",
+                  variant: "default"
+                });
+              } else {
+                console.log('Service manager added successfully:', managerResult.transactionHash);
+              }
+            }
+          } catch (error) {
+            console.error('Error adding service manager:', error);
+            toast({
+              title: "Warning",
+              description: "Event created but fiat payments may not work. Service manager not added.",
+              variant: "default"
+            });
+          }
+        }
         // Save event to Supabase
         await savePublishedEvent(formData, deploymentResult.lockAddress, deploymentResult.transactionHash, user.id);
 

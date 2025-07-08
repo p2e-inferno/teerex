@@ -106,6 +106,14 @@ const PublicLockABI = [
     "stateMutability": "view",
     "type": "function"
   },
+  // Add lock manager function
+  {
+    "inputs": [{ "internalType": "address", "name": "_account", "type": "address" }],
+    "name": "addLockManager",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
   // Grant keys function for lock managers
   {
     "inputs": [
@@ -159,6 +167,70 @@ const PublicLockABI = [
     "type": "function"
   }
 ];
+
+/**
+ * Adds a lock manager to an existing lock
+ */
+export const addLockManager = async (
+  lockAddress: string,
+  managerAddress: string,
+  wallet: any
+): Promise<{ success: boolean; error?: string; transactionHash?: string }> => {
+  try {
+    if (!lockAddress || lockAddress === 'Unknown' || !ethers.isAddress(lockAddress)) {
+      throw new Error('Invalid lock address.');
+    }
+    
+    if (!ethers.isAddress(managerAddress)) {
+      throw new Error('Invalid manager address.');
+    }
+    
+    if (!wallet || !wallet.address) {
+      throw new Error('No wallet provided or not connected.');
+    }
+
+    const provider = await wallet.getEthereumProvider();
+    const ethersProvider = new ethers.BrowserProvider(provider);
+    const signer = await ethersProvider.getSigner();
+
+    const lockContract = new ethers.Contract(lockAddress, PublicLockABI, signer);
+
+    // Check if user is a lock manager
+    const isManager = await lockContract.isLockManager(wallet.address);
+    if (!isManager) {
+      throw new Error('You must be a lock manager to add another lock manager.');
+    }
+
+    // Add the new lock manager
+    const tx = await lockContract.addLockManager(managerAddress);
+    console.log('Add lock manager transaction sent:', tx.hash);
+    
+    const receipt = await tx.wait();
+    if (receipt.status !== 1) {
+      throw new Error('Transaction failed. Please try again.');
+    }
+
+    return { 
+      success: true, 
+      transactionHash: tx.hash 
+    };
+  } catch (error) {
+    console.error('Error adding lock manager:', error);
+    
+    let errorMessage = 'Failed to add lock manager.';
+    if (error instanceof Error) {
+      if (error.message.includes('User rejected') || error.message.includes('user rejected')) {
+        errorMessage = 'Transaction was cancelled. Please try again when ready.';
+      } else if (error.message.includes('insufficient funds')) {
+        errorMessage = 'Insufficient funds to complete the transaction. Please add more ETH to your wallet.';
+      } else {
+        errorMessage = error.message;
+      }
+    }
+    
+    return { success: false, error: errorMessage };
+  }
+};
 
 export const deployLock = async (config: LockConfig, wallet: any): Promise<DeploymentResult> => {
   try {
