@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { ethers } from 'ethers';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -10,7 +11,7 @@ import { Separator } from "@/components/ui/separator";
 import { toast } from "@/hooks/use-toast";
 import { supabase } from '@/integrations/supabase/client';
 import { usePrivy, useWallets } from '@privy-io/react-auth';
-import { grantKeysManually } from '@/utils/grantKeysManual';
+
 import { 
   ArrowLeft,
   Ticket, 
@@ -145,8 +146,6 @@ const AdminEvents: React.FC = () => {
         throw new Error('Transaction not found. Please select the event first and ensure transactions are loaded.');
       }
       
-      console.log('Found transaction:', transaction);
-      
       // Extract user address from metadata
       const customFields = transaction.gateway_response?.metadata?.custom_fields || [];
       const userAddressField = customFields.find((field: any) => field.variable_name === 'user_wallet_address');
@@ -156,29 +155,112 @@ const AdminEvents: React.FC = () => {
         throw new Error('User wallet address not found in transaction metadata');
       }
       
-      console.log('User address to grant key to:', userAddress);
-      
-      // Get the event for this transaction
       if (!selectedEvent) {
         throw new Error('No event selected');
       }
-      
-      console.log('Event details:', {
+
+      console.log('Granting key:', {
+        userAddress,
         lockAddress: selectedEvent.lock_address,
-        chainId: selectedEvent.chain_id,
-        eventTitle: selectedEvent.title
+        chainId: selectedEvent.chain_id
       });
+
+      // Get network config
+      const { data: networkData, error: networkError } = await supabase
+        .from('network_configs')
+        .select('*')
+        .eq('chain_id', selectedEvent.chain_id)
+        .single();
+
+      if (networkError || !networkData?.rpc_url) {
+        throw new Error(`Network configuration not found for chain ID ${selectedEvent.chain_id}`);
+      }
+
+      // Get service account private key (this should be done securely)
+      const { data: serviceData, error: serviceError } = await supabase.functions.invoke('get-service-address');
+      if (serviceError) {
+        throw new Error('Could not get service account details');
+      }
+
+      // For demo purposes - in production, the private key should never be exposed to client
+      // This is just for testing the admin functionality
+      const DEMO_PRIVATE_KEY = "0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d"; // Demo key
       
-      // For now, just show success with the details - we'll add actual blockchain interaction next
+      // Create provider and wallet
+      const provider = new ethers.JsonRpcProvider(networkData.rpc_url);
+      const wallet = new ethers.Wallet(DEMO_PRIVATE_KEY, provider);
+
+      // Contract ABI for grantKeys function
+      const lockABI = [
+        {
+          "inputs": [
+            { "internalType": "uint256[]", "name": "_expirationTimestamps", "type": "uint256[]" },
+            { "internalType": "address[]", "name": "_recipients", "type": "address[]" },
+            { "internalType": "address[]", "name": "_keyManagers", "type": "address[]" }
+          ],
+          "name": "grantKeys",
+          "outputs": [{ "internalType": "uint256[]", "name": "tokenIds", "type": "uint256[]" }],
+          "stateMutability": "nonpayable",
+          "type": "function"
+        }
+      ];
+
+      const lockContract = new ethers.Contract(selectedEvent.lock_address, lockABI, wallet);
+
+      // Calculate expiration (30 days from now)
+      const currentTime = Math.floor(Date.now() / 1000);
+      const expirationTimestamp = currentTime + (30 * 24 * 60 * 60); // 30 days
+
+      console.log('Sending grant transaction...');
+      
+      // Grant the key
+      const tx = await lockContract.grantKeys(
+        [expirationTimestamp],
+        [userAddress],
+        [userAddress]
+      );
+
+      console.log('Transaction sent:', tx.hash);
+      
       toast({
-        title: "Success", 
-        description: `Ready to grant key to ${userAddress.slice(0,6)}...${userAddress.slice(-4)} for ${selectedEvent.title}`,
+        title: "Transaction Sent",
+        description: `Waiting for confirmation... TX: ${tx.hash.slice(0,10)}...`,
       });
+
+      // Wait for confirmation
+      const receipt = await tx.wait();
+      
+      if (receipt.status === 1) {
+        // Update the transaction record
+        await supabase
+          .from('paystack_transactions')
+          .update({
+            gateway_response: {
+              ...transaction.gateway_response,
+              key_grant_tx_hash: tx.hash,
+              key_granted: true,
+              key_granted_at: new Date().toISOString()
+            }
+          })
+          .eq('reference', transactionRef.trim());
+
+        toast({
+          title: "Key Granted Successfully!",
+          description: `Transaction confirmed: ${tx.hash}`,
+        });
+
+        // Refresh transactions
+        if (selectedEvent) {
+          await fetchEventTransactions(selectedEvent.id);
+        }
+      } else {
+        throw new Error('Transaction failed');
+      }
       
       setTransactionRef('');
       
     } catch (error) {
-      console.error('Error in key grant process:', error);
+      console.error('Error granting keys:', error);
       toast({
         title: "Error",
         description: error instanceof Error ? error.message : "Failed to grant keys",
