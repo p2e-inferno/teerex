@@ -186,7 +186,7 @@ const AdminEvents: React.FC = () => {
       const provider = new ethers.JsonRpcProvider(networkData.rpc_url);
       const wallet = new ethers.Wallet(serviceData.privateKey, provider);
 
-      // Contract ABI for grantKeys function
+      // Contract ABI - using the correct Unlock Protocol grantKeys function
       const lockABI = [
         {
           "inputs": [
@@ -198,10 +198,39 @@ const AdminEvents: React.FC = () => {
           "outputs": [{ "internalType": "uint256[]", "name": "tokenIds", "type": "uint256[]" }],
           "stateMutability": "nonpayable",
           "type": "function"
+        },
+        {
+          "inputs": [{ "internalType": "address", "name": "account", "type": "address" }],
+          "name": "isKeyGranter",
+          "outputs": [{ "internalType": "bool", "name": "", "type": "bool" }],
+          "stateMutability": "view",
+          "type": "function"
+        },
+        {
+          "inputs": [{ "internalType": "address", "name": "account", "type": "address" }],
+          "name": "isLockManager", 
+          "outputs": [{ "internalType": "bool", "name": "", "type": "bool" }],
+          "stateMutability": "view",
+          "type": "function"
         }
       ];
 
       const lockContract = new ethers.Contract(selectedEvent.lock_address, lockABI, wallet);
+
+      // Check if service account has the required permissions
+      console.log('Checking service account permissions...');
+      const isKeyGranter = await lockContract.isKeyGranter(wallet.address);
+      const isLockManager = await lockContract.isLockManager(wallet.address);
+      
+      console.log('Service account permissions:', {
+        address: wallet.address,
+        isKeyGranter,
+        isLockManager
+      });
+
+      if (!isKeyGranter && !isLockManager) {
+        throw new Error(`Service account ${wallet.address} is not a KeyGranter or LockManager for this lock contract`);
+      }
 
       // Calculate expiration (30 days from now)
       const currentTime = Math.floor(Date.now() / 1000);
