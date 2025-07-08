@@ -104,6 +104,7 @@ const AdminEvents: React.FC = () => {
   };
 
   const fetchEventTransactions = async (eventId: string) => {
+    console.log('Fetching transactions for event:', eventId);
     try {
       const { data, error } = await supabase
         .from('paystack_transactions')
@@ -111,6 +112,7 @@ const AdminEvents: React.FC = () => {
         .eq('event_id', eventId)
         .order('created_at', { ascending: false });
 
+      console.log('Transaction query result:', { data, error });
       if (error) throw error;
       setTransactions(data || []);
     } catch (error) {
