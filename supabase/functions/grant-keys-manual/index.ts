@@ -131,9 +131,20 @@ Deno.serve(async (req) => {
 
   try {
     console.log('Grant keys manual function called');
+    console.log('Request method:', req.method);
+    console.log('Request headers:', Object.fromEntries(req.headers.entries()));
     
-    const body = await req.json();
-    console.log('Request body:', body);
+    let body;
+    try {
+      body = await req.json();
+      console.log('Request body:', body);
+    } catch (jsonError) {
+      console.error('JSON parsing error:', jsonError);
+      return new Response(JSON.stringify({ error: 'Invalid JSON in request body' }), { 
+        status: 400, 
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      })
+    }
     
     const { transactionReference } = body;
     
@@ -148,8 +159,18 @@ Deno.serve(async (req) => {
     console.log('Processing manual key grant for transaction:', transactionReference);
 
     // Initialize Supabase client
+    console.log('Initializing Supabase client');
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
+    
+    if (!supabaseUrl || !supabaseServiceKey) {
+      console.error('Missing Supabase configuration');
+      return new Response(JSON.stringify({ error: 'Server configuration error' }), { 
+        status: 500, 
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      })
+    }
+    
     const supabase = createClient<Database>(supabaseUrl, supabaseServiceKey)
 
     // Find the transaction in our database by reference
