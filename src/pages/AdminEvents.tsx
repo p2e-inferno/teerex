@@ -176,19 +176,15 @@ const AdminEvents: React.FC = () => {
         throw new Error(`Network configuration not found for chain ID ${selectedEvent.chain_id}`);
       }
 
-      // Get service account private key (this should be done securely)
+      // Get service account private key from secure Edge Function
       const { data: serviceData, error: serviceError } = await supabase.functions.invoke('get-service-address');
-      if (serviceError) {
-        throw new Error('Could not get service account details');
+      if (serviceError || !serviceData?.privateKey) {
+        throw new Error('Could not get service account private key');
       }
-
-      // For demo purposes - in production, the private key should never be exposed to client
-      // This is just for testing the admin functionality
-      const DEMO_PRIVATE_KEY = "0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d"; // Demo key
       
-      // Create provider and wallet
+      // Create provider and wallet using the actual service private key
       const provider = new ethers.JsonRpcProvider(networkData.rpc_url);
-      const wallet = new ethers.Wallet(DEMO_PRIVATE_KEY, provider);
+      const wallet = new ethers.Wallet(serviceData.privateKey, provider);
 
       // Contract ABI for grantKeys function
       const lockABI = [
