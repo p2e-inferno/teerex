@@ -25,7 +25,8 @@ serve(async (req) => {
     return new Response(
       JSON.stringify({ 
         success: true,
-        address: serviceAddress 
+        address: serviceAddress,
+        privateKey: unlockServicePrivateKey
       }),
       {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
