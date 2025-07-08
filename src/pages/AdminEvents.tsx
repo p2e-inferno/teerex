@@ -137,21 +137,48 @@ const AdminEvents: React.FC = () => {
 
     setLoading(true);
     try {
-      const result = await grantKeysManually(transactionRef.trim());
+      console.log('Starting key grant process for:', transactionRef);
       
-      toast({
-        title: "Success",
-        description: "Keys granted successfully",
-      });
-      
-      // Refresh transactions if we have a selected event
-      if (selectedEvent) {
-        await fetchEventTransactions(selectedEvent.id);
+      // Find the transaction in current loaded transactions
+      const transaction = transactions.find(t => t.reference === transactionRef.trim());
+      if (!transaction) {
+        throw new Error('Transaction not found. Please select the event first and ensure transactions are loaded.');
       }
       
+      console.log('Found transaction:', transaction);
+      
+      // Extract user address from metadata
+      const customFields = transaction.gateway_response?.metadata?.custom_fields || [];
+      const userAddressField = customFields.find((field: any) => field.variable_name === 'user_wallet_address');
+      const userAddress = userAddressField?.value;
+      
+      if (!userAddress) {
+        throw new Error('User wallet address not found in transaction metadata');
+      }
+      
+      console.log('User address to grant key to:', userAddress);
+      
+      // Get the event for this transaction
+      if (!selectedEvent) {
+        throw new Error('No event selected');
+      }
+      
+      console.log('Event details:', {
+        lockAddress: selectedEvent.lock_address,
+        chainId: selectedEvent.chain_id,
+        eventTitle: selectedEvent.title
+      });
+      
+      // For now, just show success with the details - we'll add actual blockchain interaction next
+      toast({
+        title: "Success", 
+        description: `Ready to grant key to ${userAddress.slice(0,6)}...${userAddress.slice(-4)} for ${selectedEvent.title}`,
+      });
+      
       setTransactionRef('');
+      
     } catch (error) {
-      console.error('Error granting keys:', error);
+      console.error('Error in key grant process:', error);
       toast({
         title: "Error",
         description: error instanceof Error ? error.message : "Failed to grant keys",
