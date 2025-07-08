@@ -372,8 +372,23 @@ const AdminEvents: React.FC = () => {
                           <div className="font-medium text-sm">{transaction.user_email}</div>
                           {getStatusBadge(transaction.status, transaction.gateway_response?.key_granted)}
                         </div>
-                        <div className="text-xs text-muted-foreground mb-2">
-                          Ref: {transaction.reference}
+                        <div className="flex items-center gap-2 mb-2">
+                          <div className="text-xs text-muted-foreground">Ref:</div>
+                          <code className="text-xs bg-muted/50 px-1 py-0.5 rounded font-mono flex-1">
+                            {transaction.reference}
+                          </code>
+                          <Button 
+                            variant="ghost" 
+                            size="sm" 
+                            onClick={() => {
+                              copyToClipboard(transaction.reference);
+                              setTransactionRef(transaction.reference);
+                            }}
+                            className="h-6 w-6 p-0"
+                            title="Copy reference and set for manual grant"
+                          >
+                            <Copy className="h-3 w-3" />
+                          </Button>
                         </div>
                         <div className="text-sm">
                           ₦{transaction.amount} • {new Date(transaction.created_at).toLocaleDateString()}
