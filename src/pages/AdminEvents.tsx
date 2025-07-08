@@ -186,7 +186,7 @@ const AdminEvents: React.FC = () => {
       const provider = new ethers.JsonRpcProvider(networkData.rpc_url);
       const wallet = new ethers.Wallet(serviceData.privateKey, provider);
 
-      // Contract ABI - using the correct Unlock Protocol grantKeys function
+      // Contract ABI - comprehensive debug version
       const lockABI = [
         {
           "inputs": [
@@ -212,24 +212,79 @@ const AdminEvents: React.FC = () => {
           "outputs": [{ "internalType": "bool", "name": "", "type": "bool" }],
           "stateMutability": "view",
           "type": "function"
+        },
+        {
+          "inputs": [],
+          "name": "maxNumberOfKeys",
+          "outputs": [{ "internalType": "uint256", "name": "", "type": "uint256" }],
+          "stateMutability": "view",
+          "type": "function"
+        },
+        {
+          "inputs": [],
+          "name": "totalSupply",
+          "outputs": [{ "internalType": "uint256", "name": "", "type": "uint256" }],
+          "stateMutability": "view",
+          "type": "function"
+        },
+        {
+          "inputs": [],
+          "name": "isValidKey",
+          "outputs": [{ "internalType": "bool", "name": "", "type": "bool" }],
+          "stateMutability": "view",
+          "type": "function"
+        },
+        {
+          "inputs": [],
+          "name": "publicLockVersion", 
+          "outputs": [{ "internalType": "uint16", "name": "", "type": "uint16" }],
+          "stateMutability": "view",
+          "type": "function"
         }
       ];
 
       const lockContract = new ethers.Contract(selectedEvent.lock_address, lockABI, wallet);
 
-      // Check if service account has the required permissions
-      console.log('Checking service account permissions...');
-      const isKeyGranter = await lockContract.isKeyGranter(wallet.address);
-      const isLockManager = await lockContract.isLockManager(wallet.address);
+      // Comprehensive debugging
+      console.log('=== LOCK CONTRACT DEBUG ===');
       
-      console.log('Service account permissions:', {
-        address: wallet.address,
-        isKeyGranter,
-        isLockManager
-      });
+      try {
+        const [
+          isKeyGranter,
+          isLockManager,
+          maxKeys,
+          totalSupply,
+          lockVersion
+        ] = await Promise.all([
+          lockContract.isKeyGranter(wallet.address),
+          lockContract.isLockManager(wallet.address),
+          lockContract.maxNumberOfKeys(),
+          lockContract.totalSupply(),
+          lockContract.publicLockVersion()
+        ]);
 
-      if (!isKeyGranter && !isLockManager) {
-        throw new Error(`Service account ${wallet.address} is not a KeyGranter or LockManager for this lock contract`);
+        console.log('Lock Contract Info:', {
+          address: selectedEvent.lock_address,
+          version: lockVersion.toString(),
+          maxKeys: maxKeys.toString(),
+          totalSupply: totalSupply.toString(),
+          serviceAccount: wallet.address,
+          isKeyGranter,
+          isLockManager
+        });
+
+        if (!isKeyGranter && !isLockManager) {
+          throw new Error(`Service account ${wallet.address} is not a KeyGranter or LockManager for this lock contract`);
+        }
+
+        // Check if we can add more keys
+        if (totalSupply >= maxKeys) {
+          throw new Error(`Lock is at maximum capacity (${totalSupply}/${maxKeys})`);
+        }
+
+      } catch (debugError) {
+        console.error('Debug info error:', debugError);
+        // Continue anyway - some functions might not exist in older versions
       }
 
       // Calculate expiration (30 days from now)
