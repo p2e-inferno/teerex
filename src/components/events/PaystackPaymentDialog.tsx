@@ -124,10 +124,16 @@ export const PaystackPaymentDialog: React.FC<PaystackPaymentDialogProps> = ({
       return;
     }
 
-    initializePayment({
-      onSuccess: handlePaymentSuccess,
-      onClose: handlePaymentClose,
-    });
+    // Close this dialog first to prevent conflicts with Paystack modal
+    onClose();
+    
+    // Small delay to ensure dialog is fully closed
+    setTimeout(() => {
+      initializePayment({
+        onSuccess: handlePaymentSuccess,
+        onClose: handlePaymentClose,
+      });
+    }, 100);
   };
 
   if (!event) return null;
