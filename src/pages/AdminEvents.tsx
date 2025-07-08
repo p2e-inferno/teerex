@@ -291,13 +291,18 @@ const AdminEvents: React.FC = () => {
       const currentTime = Math.floor(Date.now() / 1000);
       const expirationTimestamp = currentTime + (30 * 24 * 60 * 60); // 30 days
 
-      console.log('Sending grant transaction...');
+      console.log('Sending grant transaction with correct parameters...');
+      console.log('Parameters:', {
+        expirationTimestamps: [expirationTimestamp],
+        recipients: [userAddress],
+        keyManagers: [userAddress]
+      });
       
-      // Grant the key
+      // Grant the key with correct parameters
       const tx = await lockContract.grantKeys(
-        [expirationTimestamp],
-        [userAddress],
-        [userAddress]
+        [expirationTimestamp],  // _expirationTimestamps array
+        [userAddress],          // _recipients array  
+        [userAddress]           // _keyManagers array
       );
 
       console.log('Transaction sent:', tx.hash);
