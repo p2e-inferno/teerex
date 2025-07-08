@@ -47,7 +47,6 @@ interface Transaction {
   user_email: string;
   created_at: string;
   gateway_response: any;
-  event: Event;
 }
 
 const AdminEvents: React.FC = () => {
@@ -108,10 +107,7 @@ const AdminEvents: React.FC = () => {
     try {
       const { data, error } = await supabase
         .from('paystack_transactions')
-        .select(`
-          *,
-          event:events(*)
-        `)
+        .select('*')
         .eq('event_id', eventId)
         .order('created_at', { ascending: false });
 
@@ -391,8 +387,16 @@ const AdminEvents: React.FC = () => {
                           </Button>
                         </div>
                         <div className="text-sm">
-                          ₦{transaction.amount} • {new Date(transaction.created_at).toLocaleDateString()}
+                          ₦{(transaction.amount / 100).toFixed(2)} • {new Date(transaction.created_at).toLocaleDateString()}
                         </div>
+                        {transaction.gateway_response?.metadata?.custom_fields && (
+                          <div className="mt-2 pt-2 border-t">
+                            <div className="text-xs text-muted-foreground">User Address:</div>
+                            <code className="text-xs bg-muted/50 px-1 py-0.5 rounded truncate block">
+                              {transaction.gateway_response.metadata.custom_fields.find((field: any) => field.variable_name === 'user_wallet_address')?.value || 'N/A'}
+                            </code>
+                          </div>
+                        )}
                         {transaction.gateway_response?.key_grant_tx_hash && (
                           <div className="mt-2 pt-2 border-t">
                             <div className="text-xs text-muted-foreground">Grant TX:</div>
