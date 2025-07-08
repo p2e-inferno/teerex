@@ -22,6 +22,32 @@ export const TicketSettings: React.FC<TicketSettingsProps> = ({
   onNext
 }) => {
   const handleContinue = () => {
+    // Validation: Ensure at least one payment method is selected
+    if (formData.paymentMethods.length === 0) {
+      alert('Please select at least one payment method');
+      return;
+    }
+    
+    // Validation: If fiat is selected, ensure NGN price and Paystack key are provided
+    if (formData.paymentMethods.includes('fiat')) {
+      if (!formData.ngnPrice || formData.ngnPrice <= 0) {
+        alert('Please enter a valid NGN price for fiat payments');
+        return;
+      }
+      if (!formData.paystackPublicKey?.trim()) {
+        alert('Please enter your Paystack public key for fiat payments');
+        return;
+      }
+    }
+    
+    // Validation: If crypto is selected and not free, ensure crypto price is set
+    if (formData.paymentMethods.includes('crypto') && formData.currency !== 'FREE') {
+      if (!formData.price || formData.price <= 0) {
+        alert('Please enter a valid price for crypto payments');
+        return;
+      }
+    }
+    
     console.log('Ticket settings completed, proceeding to next step');
     onNext();
   };

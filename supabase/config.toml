@@ -4,3 +4,6 @@ project_id = "nclavsvzjzegqvkjezyz"
 
 [functions.update-event]
   verify_jwt = false
+
+[functions.paystack-webhook]
+  verify_jwt = false
