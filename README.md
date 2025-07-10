@@ -4,6 +4,38 @@
 
 **URL**: https://lovable.dev/projects/8fbc8974-ce33-4345-b60d-323e420a15bc
 
+## Quick Start
+
+For detailed setup instructions, see [DEVELOPMENT_SETUP.md](./DEVELOPMENT_SETUP.md).
+
+### Basic Setup
+
+1. **Clone and install**
+   ```sh
+   git clone <YOUR_GIT_URL>
+   cd <YOUR_PROJECT_NAME>
+   npm install
+   ```
+
+2. **Set up environment variables**
+   ```sh
+   cp .env.example .env
+   # Edit .env with your configuration
+   ```
+
+3. **Start development server**
+   ```sh
+   npm run dev
+   ```
+
+### Required Environment Variables
+
+- `VITE_SUPABASE_URL` - Your Supabase project URL
+- `VITE_SUPABASE_ANON_KEY` - Your Supabase anon key  
+- `VITE_PRIVY_APP_ID` - Your Privy app ID
+
+See [DEVELOPMENT_SETUP.md](./DEVELOPMENT_SETUP.md) for detailed configuration instructions.
+
 ## How can I edit this code?
 
 There are several ways of editing your application.
@@ -18,23 +50,7 @@ Changes made via Lovable will be committed automatically to this repo.
 
 If you want to work locally using your own IDE, you can clone this repo and push changes. Pushed changes will also be reflected in Lovable.
 
-The only requirement is having Node.js & npm installed - [install with nvm](https://github.com/nvm-sh/nvm#installing-and-updating)
-
-Follow these steps:
-
-```sh
-# Step 1: Clone the repository using the project's Git URL.
-git clone <YOUR_GIT_URL>
-
-# Step 2: Navigate to the project directory.
-cd <YOUR_PROJECT_NAME>
-
-# Step 3: Install the necessary dependencies.
-npm i
-
-# Step 4: Start the development server with auto-reloading and an instant preview.
-npm run dev
-```
+See [DEVELOPMENT_SETUP.md](./DEVELOPMENT_SETUP.md) for complete setup instructions.
 
 **Edit a file directly in GitHub**
 

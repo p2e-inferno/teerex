@@ -11,6 +11,32 @@
 - **Attestation System**: EAS (Ethereum Attestation Service) for event attendance verification
 - **Reputation System**: User reputation tracking based on honest attestations
 
+## 🔧 Environment Configuration
+
+The project now uses environment variables for secure and flexible configuration:
+
+### Development Setup
+- See [DEVELOPMENT_SETUP.md](./DEVELOPMENT_SETUP.md) for detailed setup instructions
+- All sensitive values moved to environment variables
+- `.env.example` provided for easy setup
+- Fallback values ensure development continuity
+
+### Security Improvements
+- ✅ Removed hardcoded API keys and URLs from codebase
+- ✅ Proper separation of client-side (`VITE_*`) and server-side variables
+- ✅ Git security with `.env` files properly ignored
+- ✅ Contributor-friendly setup with clear documentation
+- ✅ Comprehensive development guide created
+
+### Required Environment Variables
+- `VITE_SUPABASE_URL` - Supabase project URL (client-safe)
+- `VITE_SUPABASE_ANON_KEY` - Supabase anonymous key (client-safe)  
+- `VITE_PRIVY_APP_ID` - Privy application ID (client-safe)
+- `SUPABASE_SERVICE_ROLE_KEY` - Service role for edge functions (secret)
+- `PAYSTACK_SECRET_KEY` - Paystack payment processing (secret)
+- `UNLOCK_SERVICE_PRIVATE_KEY` - Smart contract interactions (secret)
+- `PRIVY_APP_SECRET` - Privy app secret for verification (secret)
+
 ---
 
 ## ✅ Implemented Features

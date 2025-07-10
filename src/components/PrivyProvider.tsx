@@ -16,11 +16,11 @@ interface PrivyProviderProps {
 const queryClient = new QueryClient();
 
 export const PrivyProvider: React.FC<PrivyProviderProps> = ({ children }) => {
-  // Replace this with your actual Privy App ID from https://dashboard.privy.io
-  const appId = 'cm5x5kyq500eo5zk1lykex6s5';
+  // Get Privy App ID from environment variables or fallback to default
+  const appId = import.meta.env.VITE_PRIVY_APP_ID || 'cm5x5kyq500eo5zk1lykex6s5';
 
   // If no valid App ID is provided, show setup instructions
-  if (!appId) {
+  if (!appId || appId === 'your_privy_app_id_here') {
     return (
       <div className="min-h-screen flex items-center justify-center p-4">
         <Card className="w-full max-w-md">
@@ -28,7 +28,7 @@ export const PrivyProvider: React.FC<PrivyProviderProps> = ({ children }) => {
             <AlertTriangle className="h-12 w-12 text-orange-500 mx-auto mb-4" />
             <CardTitle>Privy Setup Required</CardTitle>
             <CardDescription>
-              Replace 'your-actual-privy-app-id-here' in PrivyProvider.tsx with your real Privy App ID
+              Set VITE_PRIVY_APP_ID in your .env file with your real Privy App ID
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
@@ -37,7 +37,8 @@ export const PrivyProvider: React.FC<PrivyProviderProps> = ({ children }) => {
               <ol className="list-decimal list-inside space-y-1 text-muted-foreground">
                 <li>Visit <a href="https://dashboard.privy.io" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">Privy Dashboard</a></li>
                 <li>Copy your App ID from your app settings</li>
-                <li>Replace the placeholder in the code with your real App ID</li>
+                <li>Copy .env.example to .env and set VITE_PRIVY_APP_ID</li>
+                <li>Restart the development server</li>
               </ol>
             </div>
           </CardContent>
