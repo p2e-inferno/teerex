@@ -17,7 +17,6 @@ import Admin from "./pages/Admin";
 import AdminDashboard from "./pages/AdminDashboard";
 import AdminEvents from "./pages/AdminEvents";
 import NotFound from "./pages/NotFound";
-import PaymentCallback from "./pages/PaymentCallback";
 
 const App = () => {
   return (
@@ -40,7 +39,6 @@ const App = () => {
               <Route path="/admin/schemas" element={<Admin />} />
               <Route path="/admin/events" element={<AdminEvents />} />
               <Route path="/event/:id" element={<EventDetails />} />
-              <Route path="/payment/callback" element={<PaymentCallback />} />
               {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
               <Route path="*" element={<NotFound />} />
             </Routes>

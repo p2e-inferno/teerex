@@ -123,13 +123,6 @@ const PublicLockABI = [
     "outputs": [{ "internalType": "bool", "name": "", "type": "bool" }],
     "stateMutability": "view", 
     "type": "function"
-  },
-  {
-    "inputs": [{ "internalType": "address", "name": "_recipient", "type": "address" }],
-    "name": "getHasValidKey",
-    "outputs": [{ "internalType": "bool", "name": "", "type": "bool" }],
-    "stateMutability": "view",
-    "type": "function"
   }
 ];
 
@@ -168,20 +161,6 @@ async function grantKeyToUser(
     const isManager = await lockContract.isLockManager(wallet.address);
     if (!isManager) {
       throw new Error(`Service wallet ${wallet.address} is not a lock manager for contract ${lockAddress}`);
-    }
-
-    // Check if user already has a valid key
-    try {
-      const hasValidKey = await lockContract.getHasValidKey(recipientAddress);
-      if (hasValidKey) {
-        console.log('User already has a valid key for this lock');
-        return {
-          success: true,
-          txHash: 'already-has-key'
-        };
-      }
-    } catch (keyCheckError) {
-      console.log('Could not check existing key status, proceeding with grant:', keyCheckError);
     }
 
     // Calculate expiration timestamp
