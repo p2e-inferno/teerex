@@ -360,6 +360,122 @@ export type Database = {
         }
         Relationships: []
       }
+      gas_transactions: {
+        Row: {
+          block_number: number | null
+          chain_id: number
+          created_at: string | null
+          event_id: string | null
+          gas_cost_eth: number | null
+          gas_cost_wei: number | null
+          gas_price: number | null
+          gas_used: number | null
+          id: string
+          payment_transaction_id: string | null
+          service_wallet_address: string
+          status: string | null
+          transaction_hash: string
+          updated_at: string | null
+        }
+        Insert: {
+          block_number?: number | null
+          chain_id: number
+          created_at?: string | null
+          event_id?: string | null
+          gas_cost_eth?: number | null
+          gas_cost_wei?: number | null
+          gas_price?: number | null
+          gas_used?: number | null
+          id?: string
+          payment_transaction_id?: string | null
+          service_wallet_address: string
+          status?: string | null
+          transaction_hash: string
+          updated_at?: string | null
+        }
+        Update: {
+          block_number?: number | null
+          chain_id?: number
+          created_at?: string | null
+          event_id?: string | null
+          gas_cost_eth?: number | null
+          gas_cost_wei?: number | null
+          gas_price?: number | null
+          gas_used?: number | null
+          id?: string
+          payment_transaction_id?: string | null
+          service_wallet_address?: string
+          status?: string | null
+          transaction_hash?: string
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "gas_transactions_event_id_fkey"
+            columns: ["event_id"]
+            isOneToOne: false
+            referencedRelation: "events"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "gas_transactions_payment_transaction_id_fkey"
+            columns: ["payment_transaction_id"]
+            isOneToOne: false
+            referencedRelation: "paystack_transactions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      key_grant_attempts: {
+        Row: {
+          attempt_number: number
+          created_at: string | null
+          error_message: string | null
+          gas_cost_wei: number | null
+          grant_tx_hash: string | null
+          id: string
+          payment_transaction_id: string
+          service_wallet_balance_after: string | null
+          service_wallet_balance_before: string | null
+          status: string | null
+          updated_at: string | null
+        }
+        Insert: {
+          attempt_number?: number
+          created_at?: string | null
+          error_message?: string | null
+          gas_cost_wei?: number | null
+          grant_tx_hash?: string | null
+          id?: string
+          payment_transaction_id: string
+          service_wallet_balance_after?: string | null
+          service_wallet_balance_before?: string | null
+          status?: string | null
+          updated_at?: string | null
+        }
+        Update: {
+          attempt_number?: number
+          created_at?: string | null
+          error_message?: string | null
+          gas_cost_wei?: number | null
+          grant_tx_hash?: string | null
+          id?: string
+          payment_transaction_id?: string
+          service_wallet_balance_after?: string | null
+          service_wallet_balance_before?: string | null
+          status?: string | null
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "key_grant_attempts_payment_transaction_id_fkey"
+            columns: ["payment_transaction_id"]
+            isOneToOne: false
+            referencedRelation: "paystack_transactions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       network_configs: {
         Row: {
           block_explorer_url: string | null
@@ -448,6 +564,63 @@ export type Database = {
             columns: ["event_id"]
             isOneToOne: false
             referencedRelation: "events"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      tickets: {
+        Row: {
+          created_at: string | null
+          event_id: string
+          expires_at: string | null
+          grant_tx_hash: string | null
+          granted_at: string | null
+          id: string
+          owner_wallet: string
+          payment_transaction_id: string | null
+          status: string | null
+          token_id: string | null
+          updated_at: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          event_id: string
+          expires_at?: string | null
+          grant_tx_hash?: string | null
+          granted_at?: string | null
+          id?: string
+          owner_wallet: string
+          payment_transaction_id?: string | null
+          status?: string | null
+          token_id?: string | null
+          updated_at?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          event_id?: string
+          expires_at?: string | null
+          grant_tx_hash?: string | null
+          granted_at?: string | null
+          id?: string
+          owner_wallet?: string
+          payment_transaction_id?: string | null
+          status?: string | null
+          token_id?: string | null
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "tickets_event_id_fkey"
+            columns: ["event_id"]
+            isOneToOne: false
+            referencedRelation: "events"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "tickets_payment_transaction_id_fkey"
+            columns: ["payment_transaction_id"]
+            isOneToOne: false
+            referencedRelation: "paystack_transactions"
             referencedColumns: ["id"]
           },
         ]

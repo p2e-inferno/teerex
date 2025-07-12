@@ -123,6 +123,23 @@ const PublicLockABI = [
     "outputs": [{ "internalType": "bool", "name": "", "type": "bool" }],
     "stateMutability": "view", 
     "type": "function"
+  },
+  {
+    "inputs": [{ "internalType": "address", "name": "_keyOwner", "type": "address" }],
+    "name": "getHasValidKey",
+    "outputs": [{ "internalType": "bool", "name": "isValid", "type": "bool" }],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      { "indexed": true, "internalType": "address", "name": "from", "type": "address" },
+      { "indexed": true, "internalType": "address", "name": "to", "type": "address" },
+      { "indexed": true, "internalType": "uint256", "name": "tokenId", "type": "uint256" }
+    ],
+    "name": "Transfer",
+    "type": "event"
   }
 ];
 
@@ -131,16 +148,39 @@ async function grantKeyToUser(
   recipientAddress: string,
   expirationDuration: number,
   chainId: number,
-  rpcUrl: string
-): Promise<{ success: boolean; error?: string; txHash?: string }> {
+  rpcUrl: string,
+  paymentTransactionId: string,
+  supabase: any
+): Promise<{ success: boolean; error?: string; txHash?: string; gasUsed?: string; gasPrice?: string; tokenId?: string }> {
+  let balanceBefore = '0';
+  let balanceAfter = '0';
+  let attemptId;
+
   try {
     console.log('Attempting to grant key:', {
       lockAddress,
       recipientAddress,
       expirationDuration,
       chainId,
-      rpcUrl
+      rpcUrl,
+      paymentTransactionId
     });
+
+    // Record the attempt
+    const { data: attempt, error: attemptError } = await supabase
+      .from('key_grant_attempts')
+      .insert({
+        payment_transaction_id: paymentTransactionId,
+        status: 'pending'
+      })
+      .select()
+      .single();
+
+    if (attemptError) {
+      console.error('Failed to record attempt:', attemptError);
+    } else {
+      attemptId = attempt.id;
+    }
 
     // Get the private key for the service account
     const privateKey = Deno.env.get('UNLOCK_SERVICE_PRIVATE_KEY');
@@ -154,6 +194,15 @@ async function grantKeyToUser(
     
     console.log('Service wallet address:', wallet.address);
 
+    // Check service wallet balance before transaction
+    balanceBefore = ethers.formatEther(await provider.getBalance(wallet.address));
+    console.log('Service wallet balance before:', balanceBefore, 'ETH');
+
+    // Alert if balance is low (less than 0.001 ETH)
+    if (parseFloat(balanceBefore) < 0.001) {
+      console.warn('⚠️ Service wallet balance is low:', balanceBefore, 'ETH');
+    }
+
     // Create contract instance
     const lockContract = new ethers.Contract(lockAddress, PublicLockABI, wallet);
 
@@ -161,6 +210,29 @@ async function grantKeyToUser(
     const isManager = await lockContract.isLockManager(wallet.address);
     if (!isManager) {
       throw new Error(`Service wallet ${wallet.address} is not a lock manager for contract ${lockAddress}`);
+    }
+
+    // Check if user already has a valid key
+    const hasValidKey = await lockContract.getHasValidKey(recipientAddress);
+    if (hasValidKey) {
+      console.log('User already has a valid key, skipping grant');
+      
+      // Update attempt status
+      if (attemptId) {
+        await supabase
+          .from('key_grant_attempts')
+          .update({
+            status: 'success',
+            error_message: 'User already has valid key',
+            service_wallet_balance_before: balanceBefore
+          })
+          .eq('id', attemptId);
+      }
+
+      return {
+        success: true,
+        error: 'User already has valid key'
+      };
     }
 
     // Calculate expiration timestamp
@@ -172,6 +244,14 @@ async function grantKeyToUser(
       recipient: recipientAddress,
       keyManager: recipientAddress
     });
+
+    // Estimate gas before transaction
+    const gasEstimate = await lockContract.grantKeys.estimateGas(
+      [expirationTimestamp],
+      [recipientAddress],
+      [recipientAddress]
+    );
+    console.log('Estimated gas:', gasEstimate.toString());
 
     // Grant the key
     const tx = await lockContract.grantKeys(
@@ -186,13 +266,84 @@ async function grantKeyToUser(
     const receipt = await tx.wait();
     console.log('Grant key transaction confirmed:', receipt.hash);
 
+    // Check balance after transaction
+    balanceAfter = ethers.formatEther(await provider.getBalance(wallet.address));
+    console.log('Service wallet balance after:', balanceAfter, 'ETH');
+
     if (receipt.status !== 1) {
       throw new Error('Grant key transaction failed');
     }
 
+    // Calculate gas costs
+    const gasUsed = receipt.gasUsed;
+    const gasPrice = receipt.gasPrice || tx.gasPrice;
+    const gasCostWei = gasUsed * gasPrice;
+    const gasCostEth = ethers.formatEther(gasCostWei);
+
+    console.log('Gas metrics:', {
+      gasUsed: gasUsed.toString(),
+      gasPrice: gasPrice.toString(),
+      gasCostWei: gasCostWei.toString(),
+      gasCostEth
+    });
+
+    // Extract token ID from logs if available
+    let tokenId;
+    if (receipt.logs) {
+      for (const log of receipt.logs) {
+        try {
+          const lockInterface = new ethers.Interface(PublicLockABI);
+          const parsedLog = lockInterface.parseLog({
+            topics: log.topics,
+            data: log.data
+          });
+          
+          if (parsedLog && parsedLog.name === 'Transfer' && parsedLog.args.to === recipientAddress) {
+            tokenId = parsedLog.args.tokenId?.toString();
+            break;
+          }
+        } catch (e) {
+          // Not a relevant log
+        }
+      }
+    }
+
+    // Update attempt status
+    if (attemptId) {
+      await supabase
+        .from('key_grant_attempts')
+        .update({
+          status: 'success',
+          grant_tx_hash: tx.hash,
+          gas_cost_wei: gasCostWei.toString(),
+          service_wallet_balance_before: balanceBefore,
+          service_wallet_balance_after: balanceAfter
+        })
+        .eq('id', attemptId);
+    }
+
+    // Record gas transaction
+    await supabase
+      .from('gas_transactions')
+      .insert({
+        transaction_hash: tx.hash,
+        payment_transaction_id: paymentTransactionId,
+        gas_used: gasUsed.toString(),
+        gas_price: gasPrice.toString(),
+        gas_cost_wei: gasCostWei.toString(),
+        gas_cost_eth: gasCostEth,
+        service_wallet_address: wallet.address,
+        chain_id: chainId,
+        block_number: receipt.blockNumber,
+        status: 'confirmed'
+      });
+
     return {
       success: true,
-      txHash: tx.hash
+      txHash: tx.hash,
+      gasUsed: gasUsed.toString(),
+      gasPrice: gasPrice.toString(),
+      tokenId
     };
 
   } catch (error) {
@@ -201,6 +352,19 @@ async function grantKeyToUser(
     let errorMessage = 'Failed to grant key to user';
     if (error instanceof Error) {
       errorMessage = error.message;
+    }
+
+    // Update attempt status if we have an attempt ID
+    if (attemptId) {
+      await supabase
+        .from('key_grant_attempts')
+        .update({
+          status: 'failed',
+          error_message: errorMessage,
+          service_wallet_balance_before: balanceBefore,
+          service_wallet_balance_after: balanceAfter || balanceBefore
+        })
+        .eq('id', attemptId);
     }
     
     return {
@@ -386,11 +550,29 @@ Deno.serve(async (req) => {
         userAddress,
         expirationDuration,
         event.chain_id,
-        networkConfig.rpc_url
+        networkConfig.rpc_url,
+        transaction.id,
+        supabase
       )
 
       if (grantResult.success) {
         console.log('Key granted successfully:', grantResult.txHash)
+        
+        // Calculate expiration date
+        const expiresAt = new Date(Date.now() + (expirationDuration * 1000));
+        
+        // Create ticket record
+        await supabase
+          .from('tickets')
+          .insert({
+            event_id: transaction.event_id,
+            owner_wallet: userAddress,
+            payment_transaction_id: transaction.id,
+            token_id: grantResult.tokenId,
+            grant_tx_hash: grantResult.txHash,
+            status: 'active',
+            expires_at: expiresAt.toISOString()
+          });
         
         // Update transaction with grant details
         await supabase
@@ -400,7 +582,10 @@ Deno.serve(async (req) => {
               ...webhookData.data,
               key_grant_tx_hash: grantResult.txHash,
               key_granted: true,
-              key_granted_at: new Date().toISOString()
+              key_granted_at: new Date().toISOString(),
+              gas_used: grantResult.gasUsed,
+              gas_price: grantResult.gasPrice,
+              token_id: grantResult.tokenId
             }
           })
           .eq('reference', reference)
