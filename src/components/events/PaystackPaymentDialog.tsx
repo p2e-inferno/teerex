@@ -78,7 +78,9 @@ export const PaystackPaymentDialog: React.FC<PaystackPaymentDialogProps> = ({
 
     setIsLoading(true);
     try {
-      // Record the transaction in our database
+      console.log('Payment successful, reference:', reference);
+      
+      // Record the initial transaction record (webhook will update it)
       const { error } = await supabase
         .from('paystack_transactions')
         .insert({
@@ -87,9 +89,24 @@ export const PaystackPaymentDialog: React.FC<PaystackPaymentDialogProps> = ({
           reference: reference.reference,
           amount: event.ngn_price,
           currency: 'NGN',
-          status: 'success',
-          gateway_response: reference,
-          verified_at: new Date().toISOString()
+          status: 'pending', // Set as pending, webhook will update to success
+          gateway_response: {
+            ...reference,
+            metadata: {
+              custom_fields: [
+                {
+                  display_name: "Wallet Address",
+                  variable_name: "user_wallet_address",
+                  value: userWalletAddress
+                },
+                {
+                  display_name: "Event ID", 
+                  variable_name: "event_id",
+                  value: event.id
+                }
+              ]
+            }
+          }
         });
 
       if (error) {
@@ -97,9 +114,29 @@ export const PaystackPaymentDialog: React.FC<PaystackPaymentDialogProps> = ({
         throw error;
       }
 
+      // Wait a moment for webhook to process (optional)
+      setTimeout(async () => {
+        // Check if the key has been granted by the webhook
+        const { data: updatedTransaction } = await supabase
+          .from('paystack_transactions')
+          .select('*, gateway_response')
+          .eq('reference', reference.reference)
+          .single();
+
+        const keyGranted = (updatedTransaction?.gateway_response as any)?.key_granted;
+        
+        toast({
+          title: 'Payment Successful!',
+          description: keyGranted 
+            ? `Payment successful! Your NFT ticket has been sent to ${userWalletAddress}`
+            : `Payment successful! Your NFT ticket is being processed and will be sent to ${userWalletAddress} shortly.`,
+        });
+      }, 3000); // Give webhook 3 seconds to process
+
+      // Show immediate success message
       toast({
-        title: 'Payment Successful!',
-        description: `You've successfully purchased a ticket for ${event.title}. You'll receive an email confirmation shortly.`,
+        title: 'Payment Processing',
+        description: 'Payment successful! Processing your NFT ticket...',
       });
 
       onSuccess();
