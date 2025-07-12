@@ -78,28 +78,9 @@ export const PaystackPaymentDialog: React.FC<PaystackPaymentDialogProps> = ({
 
     setIsLoading(true);
     try {
-      // Record the transaction in our database
-      const { error } = await supabase
-        .from('paystack_transactions')
-        .insert({
-          event_id: event.id,
-          user_email: userEmail,
-          reference: reference.reference,
-          amount: event.ngn_price,
-          currency: 'NGN',
-          status: 'success',
-          gateway_response: reference,
-          verified_at: new Date().toISOString()
-        });
-
-      if (error) {
-        console.error('Error recording transaction:', error);
-        throw error;
-      }
-
       toast({
         title: 'Payment Successful!',
-        description: `You've successfully purchased a ticket for ${event.title}. You'll receive an email confirmation shortly.`,
+        description: `You've successfully purchased a ticket for ${event.title}. Your NFT ticket will be sent to your wallet shortly.`,
       });
 
       onSuccess();
@@ -108,7 +89,7 @@ export const PaystackPaymentDialog: React.FC<PaystackPaymentDialogProps> = ({
       console.error('Error processing payment:', error);
       toast({
         title: 'Payment Processing Error',
-        description: 'Payment was successful but there was an error recording your ticket. Please contact support.',
+        description: 'Payment was successful. The webhook will process your NFT ticket automatically.',
         variant: 'destructive',
       });
     } finally {
@@ -131,7 +112,7 @@ export const PaystackPaymentDialog: React.FC<PaystackPaymentDialogProps> = ({
     });
   };
 
-  const handlePayment = () => {
+  const handlePayment = async () => {
     if (!userEmail.trim()) {
       toast({
         title: 'Email Required',
@@ -159,16 +140,39 @@ export const PaystackPaymentDialog: React.FC<PaystackPaymentDialogProps> = ({
       return;
     }
 
-    // Close this dialog first to prevent conflicts with Paystack modal
-    onClose();
+    setIsLoading(true);
     
-    // Small delay to ensure dialog is fully closed
-    setTimeout(() => {
-      initializePayment({
-        onSuccess: handlePaymentSuccess,
-        onClose: handlePaymentClose,
+    try {
+      // Initialize payment via our edge function
+      const { data, error } = await supabase.functions.invoke('paystack-init-payment', {
+        body: {
+          eventId: event.id,
+          email: userEmail,
+          walletAddress: userWalletAddress
+        }
       });
-    }, 100);
+
+      if (error) {
+        throw error;
+      }
+
+      if (data?.success && data?.data?.authorization_url) {
+        // Open Paystack payment page in a new tab
+        window.open(data.data.authorization_url, '_blank');
+        onClose();
+      } else {
+        throw new Error('Failed to initialize payment');
+      }
+    } catch (error) {
+      console.error('Payment initialization error:', error);
+      toast({
+        title: 'Payment Initialization Failed',
+        description: 'Could not initialize payment. Please try again.',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   if (!event) return null;
