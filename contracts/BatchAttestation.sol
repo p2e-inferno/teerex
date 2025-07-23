@@ -13,7 +13,8 @@ interface IUnlockV13 {
 
 interface IEAS {
     function attest(AttestationRequest calldata request) external returns (bytes32);
-    function multiAttest(MultiAttestationRequest[] calldata multiRequests) external returns (bytes32[] memory);
+    function attestByDelegation(DelegatedAttestationRequest calldata delegatedRequest) external returns (bytes32);
+    function multiAttestByDelegation(MultiDelegatedAttestationRequest[] calldata multiDelegatedRequests) external returns (bytes32[] memory);
 }
 
 struct AttestationRequest {
@@ -33,6 +34,28 @@ struct AttestationRequestData {
 struct MultiAttestationRequest {
     bytes32 schema;
     AttestationRequestData[] data;
+}
+
+struct DelegatedAttestationRequest {
+    bytes32 schema;
+    AttestationRequestData data;
+    Signature signature;
+    address attester;
+    uint64 deadline;
+}
+
+struct MultiDelegatedAttestationRequest {
+    bytes32 schema;
+    AttestationRequestData[] data;
+    Signature[] signatures;
+    address attester;
+    uint64 deadline;
+}
+
+struct Signature {
+    uint8 v;
+    bytes32 r;
+    bytes32 s;
 }
 
 struct BatchAttestationData {
@@ -58,6 +81,9 @@ contract BatchAttestation is Ownable, ReentrancyGuard, Pausable {
     
     // Admin addresses that can manage events and schemas
     mapping(address => bool) public admins;
+    
+    // Creators mapping - addresses that can register event locks
+    mapping(address => bool) public creators;
     
     // Maximum batch size to prevent gas issues
     uint256 public maxBatchSize = 50;
@@ -93,11 +119,17 @@ contract BatchAttestation is Ownable, ReentrancyGuard, Pausable {
         _;
     }
 
+    modifier onlyCreators() {
+        require(creators[msg.sender], "Not a registered creator");
+        _;
+    }
+
     constructor(address _eas, address _initialOwner) {
         require(_eas != address(0), "Invalid EAS address");
         eas = IEAS(_eas);
         _transferOwnership(_initialOwner);
         admins[_initialOwner] = true;
+        creators[_initialOwner] = true;
     }
 
     /**
@@ -108,7 +140,7 @@ contract BatchAttestation is Ownable, ReentrancyGuard, Pausable {
     function registerEventLock(
         string memory eventId,
         address lockAddress
-    ) external onlyAdmin {
+    ) external onlyCreators {
         require(bytes(eventId).length > 0, "Invalid event ID");
         require(lockAddress != address(0), "Invalid lock address");
         
@@ -141,6 +173,17 @@ contract BatchAttestation is Ownable, ReentrancyGuard, Pausable {
     }
 
     /**
+     * @dev Set creator status for an address
+     * @param creator The address to update
+     * @param enabled Whether the address should be a creator
+     */
+    function setCreator(address creator, bool enabled) external onlyOwner {
+        require(creator != address(0), "Invalid creator address");
+        creators[creator] = enabled;
+        emit AdminUpdated(creator, enabled); // Reusing event for simplicity
+    }
+
+    /**
      * @dev Update maximum batch size
      * @param newMaxSize The new maximum batch size
      */
@@ -151,16 +194,22 @@ contract BatchAttestation is Ownable, ReentrancyGuard, Pausable {
     }
 
     /**
-     * @dev Create batch attestations for event attendees
+     * @dev Create batch attestations for event attendees using delegation
      * @param eventId The event identifier
      * @param schemaUID The schema to use for attestations
      * @param attestations Array of attestation data
+     * @param signatures Array of signatures from users delegating attestation
+     * @param attester The address that users are delegating to (should be this contract)
+     * @param deadline The deadline for the delegation
      * @param revocable Whether attestations can be revoked
      */
-    function createBatchAttestations(
+    function createBatchAttestationsByDelegation(
         string memory eventId,
         bytes32 schemaUID,
         BatchAttestationData[] memory attestations,
+        Signature[] memory signatures,
+        address attester,
+        uint64 deadline,
         bool revocable
     ) 
         external 
@@ -172,6 +221,8 @@ contract BatchAttestation is Ownable, ReentrancyGuard, Pausable {
     {
         require(attestations.length > 0, "No attestations provided");
         require(attestations.length <= maxBatchSize, "Batch size too large");
+        require(signatures.length == attestations.length, "Signatures mismatch");
+        require(block.timestamp <= deadline, "Delegation expired");
 
         // Prepare attestation requests
         AttestationRequestData[] memory attestationData = new AttestationRequestData[](attestations.length);
@@ -189,15 +240,18 @@ contract BatchAttestation is Ownable, ReentrancyGuard, Pausable {
             });
         }
 
-        // Create multi-attestation request
-        MultiAttestationRequest[] memory multiRequests = new MultiAttestationRequest[](1);
-        multiRequests[0] = MultiAttestationRequest({
+        // Create multi-delegated attestation request
+        MultiDelegatedAttestationRequest[] memory multiDelegatedRequests = new MultiDelegatedAttestationRequest[](1);
+        multiDelegatedRequests[0] = MultiDelegatedAttestationRequest({
             schema: schemaUID,
-            data: attestationData
+            data: attestationData,
+            signatures: signatures,
+            attester: attester,
+            deadline: deadline
         });
 
-        // Submit to EAS
-        bytes32[] memory attestationUIDs = eas.multiAttest(multiRequests);
+        // Submit to EAS using delegation
+        bytes32[] memory attestationUIDs = eas.multiAttestByDelegation(multiDelegatedRequests);
 
         emit BatchAttestationCreated(eventId, schemaUID, msg.sender, attestations.length);
         
@@ -205,20 +259,26 @@ contract BatchAttestation is Ownable, ReentrancyGuard, Pausable {
     }
 
     /**
-     * @dev Create a single attestation
+     * @dev Create a single attestation using delegation
      * @param eventId The event identifier
      * @param schemaUID The schema to use
      * @param recipient The attestation recipient
      * @param data The attestation data
+     * @param signature The signature from user delegating attestation
+     * @param attester The address that user is delegating to
+     * @param deadline The deadline for the delegation
      * @param expirationTime When the attestation expires
      * @param revocable Whether the attestation can be revoked
      * @param refUID Reference to another attestation
      */
-    function createAttestation(
+    function createAttestationByDelegation(
         string memory eventId,
         bytes32 schemaUID,
         address recipient,
         bytes memory data,
+        Signature memory signature,
+        address attester,
+        uint64 deadline,
         uint64 expirationTime,
         bool revocable,
         bytes32 refUID
@@ -231,8 +291,9 @@ contract BatchAttestation is Ownable, ReentrancyGuard, Pausable {
         returns (bytes32)
     {
         require(recipient != address(0), "Invalid recipient");
+        require(block.timestamp <= deadline, "Delegation expired");
 
-        AttestationRequest memory request = AttestationRequest({
+        DelegatedAttestationRequest memory delegatedRequest = DelegatedAttestationRequest({
             schema: schemaUID,
             data: AttestationRequestData({
                 recipient: recipient,
@@ -241,10 +302,13 @@ contract BatchAttestation is Ownable, ReentrancyGuard, Pausable {
                 refUID: refUID,
                 data: data,
                 value: 0
-            })
+            }),
+            signature: signature,
+            attester: attester,
+            deadline: deadline
         });
 
-        bytes32 attestationUID = eas.attest(request);
+        bytes32 attestationUID = eas.attestByDelegation(delegatedRequest);
 
         emit BatchAttestationCreated(eventId, schemaUID, msg.sender, 1);
         
