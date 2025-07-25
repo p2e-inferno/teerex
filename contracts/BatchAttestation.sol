@@ -79,11 +79,9 @@ contract BatchAttestation is Ownable, ReentrancyGuard, Pausable {
     // Schema UID => Enabled status
     mapping(bytes32 => bool) public enabledSchemas;
     
-    // Admin addresses that can manage events and schemas
-    mapping(address => bool) public admins;
-    
-    // Creators mapping - addresses that can register event locks
-    mapping(address => bool) public creators;
+    // Lock addresses for access control
+    address public creatorLock;  // Lock that grants creator permissions
+    address public adminLock;    // Lock that grants admin permissions
     
     // Maximum batch size to prevent gas issues
     uint256 public maxBatchSize = 50;
@@ -96,11 +94,16 @@ contract BatchAttestation is Ownable, ReentrancyGuard, Pausable {
         address indexed attester,
         uint256 attestationCount
     );
-    event AdminUpdated(address indexed admin, bool enabled);
+    event CreatorLockUpdated(address indexed lockAddress);
+    event AdminLockUpdated(address indexed lockAddress);
     event MaxBatchSizeUpdated(uint256 newMaxSize);
 
     modifier onlyAdmin() {
-        require(admins[msg.sender] || msg.sender == owner(), "Not authorized");
+        require(
+            msg.sender == owner() || 
+            (adminLock != address(0) && _hasValidKey(adminLock, msg.sender)), 
+            "Not authorized"
+        );
         _;
     }
 
@@ -120,7 +123,10 @@ contract BatchAttestation is Ownable, ReentrancyGuard, Pausable {
     }
 
     modifier onlyCreators() {
-        require(creators[msg.sender], "Not a registered creator");
+        require(
+            creatorLock != address(0) && _hasValidKey(creatorLock, msg.sender), 
+            "Not a registered creator"
+        );
         _;
     }
 
@@ -128,8 +134,6 @@ contract BatchAttestation is Ownable, ReentrancyGuard, Pausable {
         require(_eas != address(0), "Invalid EAS address");
         eas = IEAS(_eas);
         _transferOwnership(_initialOwner);
-        admins[_initialOwner] = true;
-        creators[_initialOwner] = true;
     }
 
     /**
@@ -162,25 +166,32 @@ contract BatchAttestation is Ownable, ReentrancyGuard, Pausable {
     }
 
     /**
-     * @dev Set admin status for an address
-     * @param admin The address to update
-     * @param enabled Whether the address should be an admin
+     * @dev Set the creator lock address
+     * @param lockAddress The Unlock Protocol lock address for creators
      */
-    function setAdmin(address admin, bool enabled) external onlyOwner {
-        require(admin != address(0), "Invalid admin address");
-        admins[admin] = enabled;
-        emit AdminUpdated(admin, enabled);
+    function setCreatorLock(address lockAddress) external onlyOwner {
+        creatorLock = lockAddress;
+        emit CreatorLockUpdated(lockAddress);
     }
 
     /**
-     * @dev Set creator status for an address
-     * @param creator The address to update
-     * @param enabled Whether the address should be a creator
+     * @dev Set the admin lock address
+     * @param lockAddress The Unlock Protocol lock address for admins
      */
-    function setCreator(address creator, bool enabled) external onlyOwner {
-        require(creator != address(0), "Invalid creator address");
-        creators[creator] = enabled;
-        emit AdminUpdated(creator, enabled); // Reusing event for simplicity
+    function setAdminLock(address lockAddress) external onlyOwner {
+        adminLock = lockAddress;
+        emit AdminLockUpdated(lockAddress);
+    }
+
+    /**
+     * @dev Internal function to check if address has valid key for a lock
+     * @param lockAddress The lock to check against
+     * @param keyHolder The address to check
+     */
+    function _hasValidKey(address lockAddress, address keyHolder) internal view returns (bool) {
+        IUnlockV13 lock = IUnlockV13(lockAddress);
+        return lock.getHasValidKey(keyHolder) && 
+               lock.keyExpirationTimestampFor(keyHolder) > block.timestamp;
     }
 
     /**
