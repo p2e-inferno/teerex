@@ -94,11 +94,8 @@ struct BatchAttestationData {
 contract BatchAttestation is Ownable, ReentrancyGuard, Pausable {
     IEAS public immutable eas;
     
-    // Event ID => Lock Address mapping
-    mapping(string => address) public eventLocks;
-    
-    // Lock Address => Event ID mapping (to prevent lock reuse)
-    mapping(address => string) public lockToEvent;
+    // Lock Address => Is Event Lock mapping
+    mapping(address => bool) public isEventLock;
     
     // Schema UID => Enabled status
     mapping(bytes32 => bool) public enabledSchemas;
@@ -110,10 +107,10 @@ contract BatchAttestation is Ownable, ReentrancyGuard, Pausable {
     // Maximum batch size to prevent gas issues
     uint256 public maxBatchSize = 50;
     
-    event EventLockRegistered(string indexed eventId, address indexed lockAddress);
+    event EventLockRegistered(address indexed lockAddress);
     event SchemaEnabled(bytes32 indexed schemaUID, bool enabled);
     event BatchAttestationCreated(
-        string indexed eventId,
+        address indexed lockAddress,
         bytes32 indexed schemaUID,
         address indexed attester,
         uint256 attestationCount
@@ -130,9 +127,8 @@ contract BatchAttestation is Ownable, ReentrancyGuard, Pausable {
         _;
     }
 
-    modifier onlyKeyHolder(string memory eventId) {
-        address lockAddress = eventLocks[eventId];
-        if (lockAddress == address(0)) revert EventNotRegistered();
+    modifier onlyKeyHolder(address lockAddress) {
+        if (!isEventLock[lockAddress]) revert EventNotRegistered();
         
         IUnlockV13 lock = IUnlockV13(lockAddress);
         if (!lock.getHasValidKey(msg.sender)) revert NoValidKey();
@@ -159,26 +155,21 @@ contract BatchAttestation is Ownable, ReentrancyGuard, Pausable {
     }
 
     /**
-     * @dev Register a lock address for an event
-     * @param eventId The event identifier
+     * @dev Register a lock address as an event lock
      * @param lockAddress The Unlock Protocol lock address
      */
     function registerEventLock(
-        string memory eventId,
         address lockAddress
     ) external onlyCreators {
-        if (bytes(eventId).length == 0) revert InvalidEventId();
         if (lockAddress == address(0)) revert InvalidLockAddress();
-        if (eventLocks[eventId] != address(0)) revert EventAlreadyExists();
-        if (bytes(lockToEvent[lockAddress]).length > 0) revert LockAlreadyUsed();
+        if (isEventLock[lockAddress]) revert LockAlreadyUsed();
         
         // Verify caller is a manager of the lock
         IUnlockV13 lock = IUnlockV13(lockAddress);
         if (!lock.isLockManager(msg.sender)) revert NotLockManager();
         
-        eventLocks[eventId] = lockAddress;
-        lockToEvent[lockAddress] = eventId;
-        emit EventLockRegistered(eventId, lockAddress);
+        isEventLock[lockAddress] = true;
+        emit EventLockRegistered(lockAddress);
     }
 
     /**
@@ -235,7 +226,7 @@ contract BatchAttestation is Ownable, ReentrancyGuard, Pausable {
 
     /**
      * @dev Create batch attestations for event attendees using delegation
-     * @param eventId The event identifier
+     * @param lockAddress The event lock address
      * @param schemaUID The schema to use for attestations
      * @param attestations Array of attestation data
      * @param signatures Array of signatures from users delegating attestation
@@ -244,7 +235,7 @@ contract BatchAttestation is Ownable, ReentrancyGuard, Pausable {
      * @param revocable Whether attestations can be revoked
      */
     function createBatchAttestationsByDelegation(
-        string memory eventId,
+        address lockAddress,
         bytes32 schemaUID,
         BatchAttestationData[] memory attestations,
         Signature[] memory signatures,
@@ -255,7 +246,7 @@ contract BatchAttestation is Ownable, ReentrancyGuard, Pausable {
         external 
         nonReentrant 
         whenNotPaused 
-        onlyKeyHolder(eventId)
+        onlyKeyHolder(lockAddress)
         validSchema(schemaUID)
         returns (bytes32[] memory)
     {
@@ -293,14 +284,14 @@ contract BatchAttestation is Ownable, ReentrancyGuard, Pausable {
         // Submit to EAS using delegation
         bytes32[] memory attestationUIDs = eas.multiAttestByDelegation(multiDelegatedRequests);
 
-        emit BatchAttestationCreated(eventId, schemaUID, msg.sender, attestations.length);
+        emit BatchAttestationCreated(lockAddress, schemaUID, msg.sender, attestations.length);
         
         return attestationUIDs;
     }
 
     /**
      * @dev Create a single attestation using delegation
-     * @param eventId The event identifier
+     * @param lockAddress The event lock address
      * @param schemaUID The schema to use
      * @param recipient The attestation recipient
      * @param data The attestation data
@@ -312,7 +303,7 @@ contract BatchAttestation is Ownable, ReentrancyGuard, Pausable {
      * @param refUID Reference to another attestation
      */
     function createAttestationByDelegation(
-        string memory eventId,
+        address lockAddress,
         bytes32 schemaUID,
         address recipient,
         bytes memory data,
@@ -326,7 +317,7 @@ contract BatchAttestation is Ownable, ReentrancyGuard, Pausable {
         external 
         nonReentrant 
         whenNotPaused 
-        onlyKeyHolder(eventId)
+        onlyKeyHolder(lockAddress)
         validSchema(schemaUID)
         returns (bytes32)
     {
@@ -350,22 +341,21 @@ contract BatchAttestation is Ownable, ReentrancyGuard, Pausable {
 
         bytes32 attestationUID = eas.attestByDelegation(delegatedRequest);
 
-        emit BatchAttestationCreated(eventId, schemaUID, msg.sender, 1);
+        emit BatchAttestationCreated(lockAddress, schemaUID, msg.sender, 1);
         
         return attestationUID;
     }
 
     /**
-     * @dev Check if an address has a valid key for an event
-     * @param eventId The event identifier
+     * @dev Check if an address has a valid key for an event lock
+     * @param lockAddress The event lock address
      * @param keyHolder The address to check
      */
     function hasValidKeyForEvent(
-        string memory eventId,
+        address lockAddress,
         address keyHolder
     ) external view returns (bool) {
-        address lockAddress = eventLocks[eventId];
-        if (lockAddress == address(0)) return false;
+        if (!isEventLock[lockAddress]) return false;
         
         IUnlockV13 lock = IUnlockV13(lockAddress);
         return lock.getHasValidKey(keyHolder) && 
@@ -373,16 +363,15 @@ contract BatchAttestation is Ownable, ReentrancyGuard, Pausable {
     }
 
     /**
-     * @dev Get key expiration for an address and event
-     * @param eventId The event identifier
+     * @dev Get key expiration for an address and event lock
+     * @param lockAddress The event lock address
      * @param keyHolder The address to check
      */
     function getKeyExpiration(
-        string memory eventId,
+        address lockAddress,
         address keyHolder
     ) external view returns (uint256) {
-        address lockAddress = eventLocks[eventId];
-        if (lockAddress == address(0)) revert EventNotRegistered();
+        if (!isEventLock[lockAddress]) revert EventNotRegistered();
         
         IUnlockV13 lock = IUnlockV13(lockAddress);
         return lock.keyExpirationTimestampFor(keyHolder);
@@ -402,13 +391,6 @@ contract BatchAttestation is Ownable, ReentrancyGuard, Pausable {
         _unpause();
     }
 
-    /**
-     * @dev Get the lock address for an event
-     * @param eventId The event identifier
-     */
-    function getEventLock(string memory eventId) external view returns (address) {
-        return eventLocks[eventId];
-    }
 
     /**
      * @dev Check if a schema is enabled
