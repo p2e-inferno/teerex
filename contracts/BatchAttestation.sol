@@ -9,7 +9,28 @@ interface IUnlockV13 {
     function getHasValidKey(address _keyOwner) external view returns (bool);
     function balanceOf(address _keyOwner) external view returns (uint256);
     function keyExpirationTimestampFor(address _keyOwner) external view returns (uint256);
+    function isLockManager(address _lockManager) external view returns (bool);
 }
+
+// Custom errors
+error InvalidEASAddress();
+error InvalidEventId();
+error InvalidLockAddress();
+error InvalidRecipient();
+error InvalidBatchSize();
+error InvalidSignatures();
+error EventNotRegistered();
+error EventAlreadyExists();
+error LockAlreadyUsed();
+error NotLockManager();
+error NoValidKey();
+error KeyExpired();
+error SchemaNotEnabled();
+error NotRegisteredCreator();
+error NotAuthorized();
+error DelegationExpired();
+error NoAttestationsProvided();
+error BatchSizeTooLarge();
 
 interface IEAS {
     function attest(AttestationRequest calldata request) external returns (bytes32);
@@ -76,6 +97,9 @@ contract BatchAttestation is Ownable, ReentrancyGuard, Pausable {
     // Event ID => Lock Address mapping
     mapping(string => address) public eventLocks;
     
+    // Lock Address => Event ID mapping (to prevent lock reuse)
+    mapping(address => string) public lockToEvent;
+    
     // Schema UID => Enabled status
     mapping(bytes32 => bool) public enabledSchemas;
     
@@ -99,39 +123,37 @@ contract BatchAttestation is Ownable, ReentrancyGuard, Pausable {
     event MaxBatchSizeUpdated(uint256 newMaxSize);
 
     modifier onlyAdmin() {
-        require(
-            msg.sender == owner() || 
-            (adminLock != address(0) && _hasValidKey(adminLock, msg.sender)), 
-            "Not authorized"
-        );
+        if (msg.sender != owner() && 
+            (adminLock == address(0) || !_hasValidKey(adminLock, msg.sender))) {
+            revert NotAuthorized();
+        }
         _;
     }
 
     modifier onlyKeyHolder(string memory eventId) {
         address lockAddress = eventLocks[eventId];
-        require(lockAddress != address(0), "Event not registered");
+        if (lockAddress == address(0)) revert EventNotRegistered();
         
         IUnlockV13 lock = IUnlockV13(lockAddress);
-        require(lock.getHasValidKey(msg.sender), "No valid key for this event");
-        require(lock.keyExpirationTimestampFor(msg.sender) > block.timestamp, "Key expired");
+        if (!lock.getHasValidKey(msg.sender)) revert NoValidKey();
+        if (lock.keyExpirationTimestampFor(msg.sender) <= block.timestamp) revert KeyExpired();
         _;
     }
 
     modifier validSchema(bytes32 schemaUID) {
-        require(enabledSchemas[schemaUID], "Schema not enabled");
+        if (!enabledSchemas[schemaUID]) revert SchemaNotEnabled();
         _;
     }
 
     modifier onlyCreators() {
-        require(
-            creatorLock != address(0) && _hasValidKey(creatorLock, msg.sender), 
-            "Not a registered creator"
-        );
+        if (creatorLock == address(0) || !_hasValidKey(creatorLock, msg.sender)) {
+            revert NotRegisteredCreator();
+        }
         _;
     }
 
     constructor(address _eas, address _initialOwner) {
-        require(_eas != address(0), "Invalid EAS address");
+        if (_eas == address(0)) revert InvalidEASAddress();
         eas = IEAS(_eas);
         _transferOwnership(_initialOwner);
     }
@@ -145,10 +167,17 @@ contract BatchAttestation is Ownable, ReentrancyGuard, Pausable {
         string memory eventId,
         address lockAddress
     ) external onlyCreators {
-        require(bytes(eventId).length > 0, "Invalid event ID");
-        require(lockAddress != address(0), "Invalid lock address");
+        if (bytes(eventId).length == 0) revert InvalidEventId();
+        if (lockAddress == address(0)) revert InvalidLockAddress();
+        if (eventLocks[eventId] != address(0)) revert EventAlreadyExists();
+        if (bytes(lockToEvent[lockAddress]).length > 0) revert LockAlreadyUsed();
+        
+        // Verify caller is a manager of the lock
+        IUnlockV13 lock = IUnlockV13(lockAddress);
+        if (!lock.isLockManager(msg.sender)) revert NotLockManager();
         
         eventLocks[eventId] = lockAddress;
+        lockToEvent[lockAddress] = eventId;
         emit EventLockRegistered(eventId, lockAddress);
     }
 
@@ -199,7 +228,7 @@ contract BatchAttestation is Ownable, ReentrancyGuard, Pausable {
      * @param newMaxSize The new maximum batch size
      */
     function setMaxBatchSize(uint256 newMaxSize) external onlyAdmin {
-        require(newMaxSize > 0 && newMaxSize <= 100, "Invalid batch size");
+        if (newMaxSize == 0 || newMaxSize > 100) revert InvalidBatchSize();
         maxBatchSize = newMaxSize;
         emit MaxBatchSizeUpdated(newMaxSize);
     }
@@ -230,16 +259,16 @@ contract BatchAttestation is Ownable, ReentrancyGuard, Pausable {
         validSchema(schemaUID)
         returns (bytes32[] memory)
     {
-        require(attestations.length > 0, "No attestations provided");
-        require(attestations.length <= maxBatchSize, "Batch size too large");
-        require(signatures.length == attestations.length, "Signatures mismatch");
-        require(block.timestamp <= deadline, "Delegation expired");
+        if (attestations.length == 0) revert NoAttestationsProvided();
+        if (attestations.length > maxBatchSize) revert BatchSizeTooLarge();
+        if (signatures.length != attestations.length) revert InvalidSignatures();
+        if (block.timestamp > deadline) revert DelegationExpired();
 
         // Prepare attestation requests
         AttestationRequestData[] memory attestationData = new AttestationRequestData[](attestations.length);
         
         for (uint256 i = 0; i < attestations.length; i++) {
-            require(attestations[i].recipient != address(0), "Invalid recipient");
+            if (attestations[i].recipient == address(0)) revert InvalidRecipient();
             
             attestationData[i] = AttestationRequestData({
                 recipient: attestations[i].recipient,
@@ -301,8 +330,8 @@ contract BatchAttestation is Ownable, ReentrancyGuard, Pausable {
         validSchema(schemaUID)
         returns (bytes32)
     {
-        require(recipient != address(0), "Invalid recipient");
-        require(block.timestamp <= deadline, "Delegation expired");
+        if (recipient == address(0)) revert InvalidRecipient();
+        if (block.timestamp > deadline) revert DelegationExpired();
 
         DelegatedAttestationRequest memory delegatedRequest = DelegatedAttestationRequest({
             schema: schemaUID,
@@ -353,7 +382,7 @@ contract BatchAttestation is Ownable, ReentrancyGuard, Pausable {
         address keyHolder
     ) external view returns (uint256) {
         address lockAddress = eventLocks[eventId];
-        require(lockAddress != address(0), "Event not registered");
+        if (lockAddress == address(0)) revert EventNotRegistered();
         
         IUnlockV13 lock = IUnlockV13(lockAddress);
         return lock.keyExpirationTimestampFor(keyHolder);
