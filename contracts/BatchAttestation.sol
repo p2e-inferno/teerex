@@ -132,7 +132,6 @@ contract BatchAttestation is Ownable, ReentrancyGuard, Pausable {
         
         IUnlockV13 lock = IUnlockV13(lockAddress);
         if (!lock.getHasValidKey(msg.sender)) revert NoValidKey();
-        if (lock.keyExpirationTimestampFor(msg.sender) <= block.timestamp) revert KeyExpired();
         _;
     }
 
@@ -210,8 +209,7 @@ contract BatchAttestation is Ownable, ReentrancyGuard, Pausable {
      */
     function _hasValidKey(address lockAddress, address keyHolder) internal view returns (bool) {
         IUnlockV13 lock = IUnlockV13(lockAddress);
-        return lock.getHasValidKey(keyHolder) && 
-               lock.keyExpirationTimestampFor(keyHolder) > block.timestamp;
+        return lock.getHasValidKey(keyHolder);
     }
 
     /**
@@ -358,8 +356,7 @@ contract BatchAttestation is Ownable, ReentrancyGuard, Pausable {
         if (!isEventLock[lockAddress]) return false;
         
         IUnlockV13 lock = IUnlockV13(lockAddress);
-        return lock.getHasValidKey(keyHolder) && 
-               lock.keyExpirationTimestampFor(keyHolder) > block.timestamp;
+        return lock.getHasValidKey(keyHolder);
     }
 
     /**
