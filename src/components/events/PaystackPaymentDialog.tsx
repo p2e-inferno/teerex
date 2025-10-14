@@ -78,9 +78,14 @@ export const PaystackPaymentDialog: React.FC<PaystackPaymentDialogProps> = ({
 
     setIsLoading(true);
     try {
-      console.log('Payment successful, reference:', reference);
+      console.log('🎉 [PAYMENT SUCCESS] Payment completed successfully');
+      console.log('📝 [PAYMENT SUCCESS] Reference:', reference);
+      console.log('📝 [PAYMENT SUCCESS] Event ID:', event.id);
+      console.log('📝 [PAYMENT SUCCESS] Wallet Address:', userWalletAddress);
+      console.log('📝 [PAYMENT SUCCESS] Email:', userEmail);
       
       // Record the initial transaction record (webhook will update it)
+      console.log('💾 [DB INSERT] Attempting to save transaction to database...');
       const { error } = await supabase
         .from('paystack_transactions')
         .insert({
@@ -110,9 +115,11 @@ export const PaystackPaymentDialog: React.FC<PaystackPaymentDialogProps> = ({
         });
 
       if (error) {
-        console.error('Error recording transaction:', error);
+        console.error('❌ [DB INSERT] Error recording transaction:', error);
         throw error;
       }
+      
+      console.log('✅ [DB INSERT] Transaction saved successfully to database');
 
       // Wait a moment for webhook to process (optional)
       setTimeout(async () => {
@@ -169,7 +176,14 @@ export const PaystackPaymentDialog: React.FC<PaystackPaymentDialogProps> = ({
   };
 
   const handlePayment = () => {
+    console.log('🚀 [PAYMENT INIT] User clicked Pay button');
+    console.log('📋 [PAYMENT INIT] Event:', event?.title, '(ID:', event?.id, ')');
+    console.log('📋 [PAYMENT INIT] Amount:', event?.ngn_price, 'NGN');
+    console.log('📋 [PAYMENT INIT] Wallet:', userWalletAddress);
+    console.log('📋 [PAYMENT INIT] Email:', userEmail);
+    
     if (!userEmail.trim()) {
+      console.warn('⚠️ [PAYMENT INIT] Validation failed: Email missing');
       toast({
         title: 'Email Required',
         description: 'Please enter your email address to proceed.',
@@ -179,6 +193,7 @@ export const PaystackPaymentDialog: React.FC<PaystackPaymentDialogProps> = ({
     }
 
     if (!userWalletAddress.trim()) {
+      console.warn('⚠️ [PAYMENT INIT] Validation failed: Wallet address missing');
       toast({
         title: 'Wallet Address Required',
         description: 'Please enter your wallet address to receive the ticket.',
@@ -188,6 +203,7 @@ export const PaystackPaymentDialog: React.FC<PaystackPaymentDialogProps> = ({
     }
 
     if (!event?.paystack_public_key) {
+      console.error('❌ [PAYMENT INIT] Validation failed: Paystack public key missing');
       toast({
         title: 'Payment Configuration Error',
         description: 'Payment is not properly configured for this event.',
@@ -196,11 +212,14 @@ export const PaystackPaymentDialog: React.FC<PaystackPaymentDialogProps> = ({
       return;
     }
 
+    console.log('✅ [PAYMENT INIT] Validation passed, launching Paystack modal...');
+    
     // Close this dialog first to prevent conflicts with Paystack modal
     onClose();
     
     // Small delay to ensure dialog is fully closed
     setTimeout(() => {
+      console.log('🔄 [PAYMENT INIT] Initializing Paystack payment...');
       initializePayment({
         onSuccess: handlePaymentSuccess,
         onClose: handlePaymentClose,

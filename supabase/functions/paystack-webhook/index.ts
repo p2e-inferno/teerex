@@ -388,62 +388,79 @@ Deno.serve(async (req) => {
   }
 
   try {
+    console.log('🔔 [WEBHOOK] ========================================');
+    console.log('🔔 [WEBHOOK] New webhook request received');
+    console.log('🔔 [WEBHOOK] Method:', req.method);
+    console.log('🔔 [WEBHOOK] Headers:', Object.fromEntries(req.headers.entries()));
+    
     // Get the Paystack secret key from environment variables
     const paystackSecret = Deno.env.get('PAYSTACK_SECRET_KEY')
     if (!paystackSecret) {
-      console.error('PAYSTACK_SECRET_KEY not found in environment variables')
+      console.error('❌ [WEBHOOK] PAYSTACK_SECRET_KEY not found in environment variables')
       return new Response('Configuration error', { 
         status: 500, 
         headers: corsHeaders 
       })
     }
+    console.log('✅ [WEBHOOK] Paystack secret key found');
 
     // Get the signature from headers
     const signature = req.headers.get('x-paystack-signature')
     if (!signature) {
-      console.error('Missing x-paystack-signature header')
+      console.error('❌ [WEBHOOK] Missing x-paystack-signature header')
       return new Response('Missing signature', { 
         status: 400, 
         headers: corsHeaders 
       })
     }
+    console.log('✅ [WEBHOOK] Signature header found:', signature.substring(0, 20) + '...');
 
     // Get the raw body
     const body = await req.text()
-    console.log('Webhook received:', body)
+    console.log('📦 [WEBHOOK] Raw body received (length:', body.length, 'bytes)');
+    console.log('📦 [WEBHOOK] Body preview:', body.substring(0, 200) + '...');
 
     // Verify the signature
+    console.log('🔐 [WEBHOOK] Verifying signature...');
     const isValidSignature = await verifyPaystackSignature(body, signature, paystackSecret)
     if (!isValidSignature) {
-      console.error('Invalid webhook signature')
+      console.error('❌ [WEBHOOK] Invalid webhook signature')
       return new Response('Invalid signature', { 
         status: 401, 
         headers: corsHeaders 
       })
     }
+    console.log('✅ [WEBHOOK] Signature verified successfully');
 
     // Parse the webhook data
     const webhookData: PaystackWebhookData = JSON.parse(body)
-    console.log('Webhook event:', webhookData.event)
-    console.log('Transaction data:', webhookData.data)
+    console.log('📋 [WEBHOOK] Event type:', webhookData.event);
+    console.log('📋 [WEBHOOK] Transaction reference:', webhookData.data?.reference);
+    console.log('📋 [WEBHOOK] Amount:', webhookData.data?.amount);
+    console.log('📋 [WEBHOOK] Status:', webhookData.data?.status);
+    console.log('📋 [WEBHOOK] Full data:', JSON.stringify(webhookData.data, null, 2));
 
     // Only process successful charge events
     if (webhookData.event !== 'charge.success') {
-      console.log('Ignoring non-success event:', webhookData.event)
+      console.log('⏭️ [WEBHOOK] Ignoring non-success event:', webhookData.event);
       return new Response('Event ignored', { 
         status: 200, 
         headers: corsHeaders 
       })
     }
+    console.log('✅ [WEBHOOK] Event is charge.success, proceeding...');
 
     // Initialize Supabase client
+    console.log('🔧 [WEBHOOK] Initializing Supabase client...');
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
     const supabase = createClient<Database>(supabaseUrl, supabaseServiceKey)
+    console.log('✅ [WEBHOOK] Supabase client initialized');
 
     const { data, status, reference, amount, customer, paid_at } = webhookData.data
 
     // Find the transaction in our database by reference
+    console.log('🔍 [DB QUERY] Searching for transaction with reference:', reference);
     const { data: transaction, error: fetchError } = await supabase
       .from('paystack_transactions')
       .select('*')
@@ -451,7 +468,7 @@ Deno.serve(async (req) => {
       .single()
 
     if (fetchError) {
-      console.error('Error fetching transaction:', fetchError)
+      console.error('❌ [DB QUERY] Error fetching transaction:', fetchError);
       return new Response('Transaction not found', { 
         status: 404, 
         headers: corsHeaders 
@@ -459,14 +476,22 @@ Deno.serve(async (req) => {
     }
 
     if (!transaction) {
-      console.error('Transaction not found in database:', reference)
+      console.error('❌ [DB QUERY] Transaction not found in database:', reference);
       return new Response('Transaction not found', { 
         status: 404, 
         headers: corsHeaders 
       })
     }
+    
+    console.log('✅ [DB QUERY] Transaction found:', {
+      id: transaction.id,
+      event_id: transaction.event_id,
+      status: transaction.status,
+      amount: transaction.amount
+    });
 
     // Update the transaction status
+    console.log('💾 [DB UPDATE] Updating transaction status to:', status.toLowerCase());
     const { error: updateError } = await supabase
       .from('paystack_transactions')
       .update({
@@ -478,25 +503,29 @@ Deno.serve(async (req) => {
       .eq('reference', reference)
 
     if (updateError) {
-      console.error('Error updating transaction:', updateError)
+      console.error('❌ [DB UPDATE] Error updating transaction:', updateError);
       return new Response('Update failed', { 
         status: 500, 
         headers: corsHeaders 
       })
     }
+    console.log('✅ [DB UPDATE] Transaction updated successfully');
 
     // Log successful verification
-    console.log(`Payment verified successfully:`, {
+    console.log('🎉 [VERIFICATION] Payment verified successfully:', {
       reference,
       amount: amount / 100, // Convert from kobo to naira
       email: customer.email,
       status,
       paid_at
-    })
+    });
 
     // Grant key to user via Unlock Protocol
+    console.log('🔑 [KEY GRANT] ========================================');
+    console.log('🔑 [KEY GRANT] Starting key grant process...');
     try {
       // Get event details
+      console.log('🔍 [KEY GRANT] Fetching event details for ID:', transaction.event_id);
       const { data: event, error: eventError } = await supabase
         .from('events')
         .select('*')
@@ -504,11 +533,18 @@ Deno.serve(async (req) => {
         .single()
 
       if (eventError || !event) {
-        console.error('Error fetching event:', eventError)
+        console.error('❌ [KEY GRANT] Error fetching event:', eventError);
         throw new Error('Event not found')
       }
+      console.log('✅ [KEY GRANT] Event found:', {
+        id: event.id,
+        title: event.title,
+        lock_address: event.lock_address,
+        chain_id: event.chain_id
+      });
 
       // Get network configuration
+      console.log('🔍 [KEY GRANT] Fetching network config for chain ID:', event.chain_id);
       const { data: networkConfig, error: networkError } = await supabase
         .from('network_configs')
         .select('*')
@@ -516,30 +552,45 @@ Deno.serve(async (req) => {
         .single()
 
       if (networkError || !networkConfig) {
-        console.error('Error fetching network config:', networkError)
+        console.error('❌ [KEY GRANT] Error fetching network config:', networkError);
         throw new Error(`Network configuration not found for chain ID ${event.chain_id}`)
       }
+      console.log('✅ [KEY GRANT] Network config found:', {
+        chain_name: networkConfig.chain_name,
+        rpc_url: networkConfig.rpc_url ? 'SET' : 'NOT SET'
+      });
 
       if (!networkConfig.rpc_url) {
+        console.error('❌ [KEY GRANT] RPC URL not configured for chain:', networkConfig.chain_name);
         throw new Error(`RPC URL not configured for chain ${networkConfig.chain_name}`)
       }
 
       // Extract user address from transaction metadata custom fields
+      console.log('🔍 [KEY GRANT] Extracting user wallet address from metadata...');
+      console.log('📋 [KEY GRANT] Gateway response metadata:', JSON.stringify(transaction.gateway_response?.metadata, null, 2));
+      
       const customFields = transaction.gateway_response?.metadata?.custom_fields || [];
+      console.log('📋 [KEY GRANT] Custom fields found:', customFields.length);
+      console.log('📋 [KEY GRANT] Custom fields:', JSON.stringify(customFields, null, 2));
+      
       const userAddressField = customFields.find((field: any) => field.variable_name === 'user_wallet_address');
       const userAddress = userAddressField?.value;
       
       if (!userAddress) {
+        console.error('❌ [KEY GRANT] User wallet address not found in transaction metadata');
+        console.error('❌ [KEY GRANT] Available fields:', customFields.map((f: any) => f.variable_name).join(', '));
         throw new Error('User wallet address not found in transaction metadata')
       }
+      console.log('✅ [KEY GRANT] User wallet address found:', userAddress);
 
-      console.log('Granting key for successful payment:', {
+      console.log('🚀 [KEY GRANT] Initiating key grant with parameters:', {
         eventId: event.id,
         lockAddress: event.lock_address,
         userAddress,
         chainId: event.chain_id,
-        chainName: networkConfig.chain_name
-      })
+        chainName: networkConfig.chain_name,
+        rpcUrl: networkConfig.rpc_url.substring(0, 30) + '...'
+      });
 
       // Grant the key using a reasonable expiration duration
       // Default to 30 days (30 * 24 * 60 * 60 = 2592000 seconds) if no specific duration
@@ -556,12 +607,15 @@ Deno.serve(async (req) => {
       )
 
       if (grantResult.success) {
-        console.log('Key granted successfully:', grantResult.txHash)
+        console.log('🎉 [KEY GRANT] Key granted successfully!');
+        console.log('📝 [KEY GRANT] Transaction hash:', grantResult.txHash);
+        console.log('🎫 [KEY GRANT] Token ID:', grantResult.tokenId);
         
         // Calculate expiration date
         const expiresAt = new Date(Date.now() + (expirationDuration * 1000));
         
         // Create ticket record
+        console.log('💾 [TICKET] Creating ticket record in database...');
         await supabase
           .from('tickets')
           .insert({
@@ -573,8 +627,10 @@ Deno.serve(async (req) => {
             status: 'active',
             expires_at: expiresAt.toISOString()
           });
+        console.log('✅ [TICKET] Ticket record created successfully');
         
         // Update transaction with grant details
+        console.log('💾 [DB UPDATE] Updating transaction with grant details...');
         await supabase
           .from('paystack_transactions')
           .update({
@@ -588,25 +644,33 @@ Deno.serve(async (req) => {
               token_id: grantResult.tokenId
             }
           })
-          .eq('reference', reference)
+          .eq('reference', reference);
+        console.log('✅ [DB UPDATE] Transaction updated with grant details');
       } else {
-        console.error('Failed to grant key:', grantResult.error)
+        console.error('❌ [KEY GRANT] Failed to grant key:', grantResult.error);
+        console.error('❌ [KEY GRANT] Payment was successful but key granting failed');
         // Still continue - payment was successful, key granting is secondary
       }
 
     } catch (grantError) {
-      console.error('Error in key granting process:', grantError)
+      console.error('❌ [KEY GRANT] Critical error in key granting process:', grantError);
+      console.error('❌ [KEY GRANT] Error details:', grantError instanceof Error ? grantError.message : String(grantError));
+      console.error('❌ [KEY GRANT] Stack trace:', grantError instanceof Error ? grantError.stack : 'No stack trace');
       // Don't fail the webhook - payment verification was successful
       // Key granting can be retried later if needed
     }
 
+    console.log('✅ [WEBHOOK] Webhook processed successfully');
+    console.log('🔔 [WEBHOOK] ========================================');
     return new Response('Webhook processed successfully', { 
       status: 200, 
       headers: corsHeaders 
     })
 
   } catch (error) {
-    console.error('Webhook processing error:', error)
+    console.error('💥 [WEBHOOK] Critical webhook processing error:', error);
+    console.error('💥 [WEBHOOK] Error details:', error instanceof Error ? error.message : String(error));
+    console.error('💥 [WEBHOOK] Stack trace:', error instanceof Error ? error.stack : 'No stack trace');
     return new Response('Internal server error', { 
       status: 500, 
       headers: corsHeaders 
