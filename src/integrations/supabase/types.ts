@@ -7,10 +7,10 @@ export type Json =
   | Json[]
 
 export type Database = {
-  // Allows to automatically instanciate createClient with right options
+  // Allows to automatically instantiate createClient with right options
   // instead of createClient<Database, { PostgrestVersion: 'XX' }>(URL, KEY)
   __InternalSupabase: {
-    PostgrestVersion: "12.2.3 (519615d)"
+    PostgrestVersion: "13.0.5"
   }
   public: {
     Tables: {
@@ -296,6 +296,7 @@ export type Database = {
           price: number
           requires_approval: boolean
           review_schema_uid: string | null
+          service_manager_added: boolean
           time: string
           title: string
           transaction_hash: string
@@ -324,6 +325,7 @@ export type Database = {
           price?: number
           requires_approval?: boolean
           review_schema_uid?: string | null
+          service_manager_added?: boolean
           time: string
           title: string
           transaction_hash: string
@@ -352,6 +354,7 @@ export type Database = {
           price?: number
           requires_approval?: boolean
           review_schema_uid?: string | null
+          service_manager_added?: boolean
           time?: string
           title?: string
           transaction_hash?: string
@@ -671,9 +674,9 @@ export type Database = {
     Functions: {
       update_reputation_score: {
         Args: {
-          user_addr: string
-          score_change: number
           attestation_type?: string
+          score_change: number
+          user_addr: string
         }
         Returns: undefined
       }

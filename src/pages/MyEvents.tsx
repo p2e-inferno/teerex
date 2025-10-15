@@ -1,11 +1,12 @@
-
 import React, { useState, useEffect } from 'react';
 import { usePrivy } from '@privy-io/react-auth';
 import { useNavigate, Navigate } from 'react-router-dom';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Plus, Calendar, TrendingUp, Users, DollarSign } from 'lucide-react';
+import { Badge } from '@/components/ui/badge';
+import { Plus, Calendar, TrendingUp, Users, DollarSign, AlertTriangle } from 'lucide-react';
 import { EventCard } from '@/components/events/EventCard';
+import { EventManagementDialog } from '@/components/events/EventManagementDialog';
 import { getUserEvents, PublishedEvent } from '@/utils/eventUtils';
 import { useToast } from '@/hooks/use-toast';
 
@@ -15,6 +16,8 @@ const MyEvents = () => {
   const { toast } = useToast();
   const [events, setEvents] = useState<PublishedEvent[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [selectedEvent, setSelectedEvent] = useState<PublishedEvent | null>(null);
+  const [isManagementDialogOpen, setIsManagementDialogOpen] = useState(false);
 
   if (!authenticated) {
     return <Navigate to="/" replace />;
@@ -44,16 +47,18 @@ const MyEvents = () => {
     loadUserEvents();
   }, [user?.id]);
 
-  const handleEventDetails = (event: PublishedEvent) => {
-    toast({
-      title: "Coming Soon",
-      description: "Event management features will be available soon!",
-    });
+  const handleManageEvent = (event: PublishedEvent) => {
+    setSelectedEvent(event);
+    setIsManagementDialogOpen(true);
   };
 
   const handleEditEvent = (event: PublishedEvent) => {
     console.log('Editing event:', event.id, 'Current image_url:', event.image_url);
     navigate(`/create?eventId=${event.id}`);
+  };
+
+  const hasIncompleteSetup = (event: PublishedEvent) => {
+    return event.payment_methods?.includes('fiat') && !event.service_manager_added;
   };
 
   // Calculate stats
@@ -178,24 +183,53 @@ const MyEvents = () => {
           </Card>
         ) : (
           <div>
-            <div className="mb-6">
-              <h2 className="text-xl font-semibold text-gray-900">Your Events</h2>
-              <p className="text-gray-600">Events you've created and published</p>
+            <div className="mb-6 flex items-center justify-between">
+              <div>
+                <h2 className="text-xl font-semibold text-gray-900">Your Events</h2>
+                <p className="text-gray-600">Events you've created and published</p>
+              </div>
+              {events.some(hasIncompleteSetup) && (
+                <Badge variant="outline" className="border-orange-200 text-orange-600">
+                  <AlertTriangle className="w-3 h-3 mr-1" />
+                  {events.filter(hasIncompleteSetup).length} event(s) need attention
+                </Badge>
+              )}
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
               {events.map((event) => {
                 console.log('Rendering event card for:', event.id, 'with image_url:', event.image_url);
+                const needsAttention = hasIncompleteSetup(event);
                 return (
-                  <EventCard
-                    key={event.id}
-                    event={event}
-                    onViewDetails={handleEditEvent}
-                    actionType="edit"
-                  />
+                  <div key={event.id} className="relative">
+                    {needsAttention && (
+                      <Badge 
+                        variant="outline" 
+                        className="absolute -top-2 -right-2 z-10 border-orange-200 bg-orange-50 text-orange-600"
+                      >
+                        <AlertTriangle className="w-3 h-3 mr-1" />
+                        Setup Incomplete
+                      </Badge>
+                    )}
+                    <EventCard
+                      event={event}
+                      onViewDetails={handleManageEvent}
+                      actionType="manage"
+                    />
+                  </div>
                 );
               })}
             </div>
           </div>
+        )}
+
+        {/* Management Dialog */}
+        {selectedEvent && (
+          <EventManagementDialog
+            event={selectedEvent}
+            open={isManagementDialogOpen}
+            onOpenChange={setIsManagementDialogOpen}
+            onEventUpdated={loadUserEvents}
+          />
         )}
       </div>
     </div>

@@ -31,13 +31,15 @@ export interface PublishedEvent {
   max_keys_per_address: number;
   transferable: boolean;
   requires_approval: boolean;
+  service_manager_added: boolean;
 }
 
 export const savePublishedEvent = async (
   formData: EventFormData, 
   lockAddress: string, 
   transactionHash: string, 
-  creatorId: string
+  creatorId: string,
+  serviceManagerAdded: boolean = false
 ): Promise<void> => {
   try {
     const eventData = {
@@ -57,7 +59,8 @@ export const savePublishedEvent = async (
       image_url: formData.imageUrl || null,
       lock_address: lockAddress,
       transaction_hash: transactionHash,
-      chain_id: baseSepolia.id // Currently we're deploying to Base Sepolia
+      chain_id: baseSepolia.id, // Currently we're deploying to Base Sepolia
+      service_manager_added: serviceManagerAdded
     };
 
     const { error } = await supabase

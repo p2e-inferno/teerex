@@ -114,6 +114,14 @@ const PublicLockABI = [
     "stateMutability": "nonpayable",
     "type": "function"
   },
+  // Renounce lock manager function
+  {
+    "inputs": [],
+    "name": "renounceLockManager",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
   // Grant keys function for lock managers
   {
     "inputs": [
@@ -167,6 +175,36 @@ const PublicLockABI = [
     "type": "function"
   }
 ];
+
+/**
+ * Checks if an address is a lock manager for a given lock
+ */
+export const checkIfLockManager = async (
+  lockAddress: string,
+  managerAddress: string
+): Promise<boolean> => {
+  try {
+    if (!lockAddress || !ethers.isAddress(lockAddress)) {
+      throw new Error('Invalid lock address.');
+    }
+    
+    if (!ethers.isAddress(managerAddress)) {
+      throw new Error('Invalid manager address.');
+    }
+
+    // Use a public RPC provider for read-only operations
+    const rpcUrl = 'https://sepolia.base.org';
+    const provider = new ethers.JsonRpcProvider(rpcUrl);
+    
+    const lockContract = new ethers.Contract(lockAddress, PublicLockABI, provider);
+    const isManager = await lockContract.isLockManager(managerAddress);
+    
+    return isManager;
+  } catch (error) {
+    console.error('Error checking lock manager status:', error);
+    return false;
+  }
+};
 
 /**
  * Adds a lock manager to an existing lock

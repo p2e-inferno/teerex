@@ -60,6 +60,11 @@ export const EventCard: React.FC<EventCardProps> = ({
     return 'Get Ticket';
   };
 
+  const getButtonVariant = () => {
+    if (actionType === 'manage') return 'default' as const;
+    return undefined;
+  };
+
   return (
     <Card 
       className={`border-0 shadow-sm hover:shadow-md transition-all duration-200 group ${!isTicketView ? 'cursor-pointer' : ''}`}
@@ -159,7 +164,8 @@ export const EventCard: React.FC<EventCardProps> = ({
               size="sm" 
               onClick={handleViewDetailsClick}
               disabled={isEventExpired || isSoldOut}
-              className="bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+              variant={getButtonVariant()}
+              className={actionType === 'manage' ? '' : "bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"}
             >
               {getButtonText()}
             </Button>

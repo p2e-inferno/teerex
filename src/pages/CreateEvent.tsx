@@ -236,6 +236,9 @@ const CreateEvent = () => {
       const deploymentResult = await deployLock(lockConfig, wallet);
       
       if (deploymentResult.success && deploymentResult.transactionHash && deploymentResult.lockAddress) {
+        // Track if service manager was successfully added
+        let serviceManagerAdded = false;
+        
         // If fiat payment is enabled, add the service wallet as a lock manager
         if (formData.paymentMethods.includes('fiat')) {
           toast({
@@ -266,6 +269,7 @@ const CreateEvent = () => {
                 });
               } else {
                 console.log('Service manager added successfully:', managerResult.transactionHash);
+                serviceManagerAdded = true;
               }
             }
           } catch (error) {
@@ -277,8 +281,8 @@ const CreateEvent = () => {
             });
           }
         }
-        // Save event to Supabase
-        await savePublishedEvent(formData, deploymentResult.lockAddress, deploymentResult.transactionHash, user.id);
+        // Save event to Supabase with service manager status
+        await savePublishedEvent(formData, deploymentResult.lockAddress, deploymentResult.transactionHash, user.id, serviceManagerAdded);
 
         const explorerUrl = getBlockExplorerUrl(deploymentResult.transactionHash, 'baseSepolia');
         
