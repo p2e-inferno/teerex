@@ -110,13 +110,15 @@ export const EventManagementDialog: React.FC<EventManagementDialogProps> = ({
       if (result.success) {
         // Update database
         const accessToken = await getAccessToken();
+        const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
         const { error } = await supabase.functions.invoke('update-event', {
           body: { 
             eventId: event.id, 
             formData: { service_manager_added: true }
           },
           headers: {
-            Authorization: `Bearer ${accessToken}`,
+            Authorization: `Bearer ${anonKey}`,
+            'X-Privy-Authorization': `Bearer ${accessToken}`,
           },
         });
 
@@ -152,10 +154,12 @@ export const EventManagementDialog: React.FC<EventManagementDialogProps> = ({
     setIsRemovingManager(true);
     try {
       const accessToken = await getAccessToken();
+      const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
       const { data, error } = await supabase.functions.invoke('remove-service-manager', {
         body: { eventId: event.id },
         headers: {
-          Authorization: `Bearer ${accessToken}`,
+          Authorization: `Bearer ${anonKey}`,
+          'X-Privy-Authorization': `Bearer ${accessToken}`,
         },
       });
 

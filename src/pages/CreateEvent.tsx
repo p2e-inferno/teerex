@@ -349,10 +349,12 @@ const CreateEvent = () => {
         throw new Error("Authentication token not available. Please log in again.");
       }
 
+      const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
       const { data, error } = await supabase.functions.invoke('update-event', {
         body: { eventId: editingEventId, formData },
         headers: {
-          Authorization: `Bearer ${accessToken}`,
+          Authorization: `Bearer ${anonKey}`,
+          'X-Privy-Authorization': `Bearer ${accessToken}`,
         },
       });
 

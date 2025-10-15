@@ -3,7 +3,11 @@
 project_id = "nclavsvzjzegqvkjezyz"
 
 [functions.update-event]
-  verify_jwt = false
+  # Require Supabase JWT (anon key in Authorization) for platform check
+  verify_jwt = true
 
 [functions.paystack-webhook]
   verify_jwt = false
+
+# Keep verify_jwt enabled for remove-service-manager; it will receive
+# Supabase JWT in Authorization and Privy JWT in X-Privy-Authorization.
