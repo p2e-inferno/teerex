@@ -157,6 +157,23 @@ async function grantKeyToUser(
   let attemptId;
 
   try {
+    // Redact PII in logs without changing existing log calls
+    const __origLog = console.log;
+    console.log = (...__args: any[]) => {
+      try {
+        if (__args.length && typeof __args[0] === 'string') {
+          const __msg = __args[0] as string;
+          if (__msg.includes('Headers:')) return __origLog('dY"" [WEBHOOK] Headers: [omitted]');
+          if (__msg.includes('Body preview')) return __origLog('dY"� [WEBHOOK] Body preview: [omitted]');
+          if (__msg.includes('Raw body received')) return __origLog('dY"� [WEBHOOK] Raw body length (bytes):', (__args[1]?.length ?? 'unknown'));
+          if (__msg.includes('Gateway response metadata:')) return __origLog('dY"< [KEY GRANT] Gateway response metadata: [omitted]');
+          if (__msg.includes('Custom fields found:')) return __origLog('dY"< [KEY GRANT] Custom fields count:', __args[1]);
+          if (__msg.includes('Custom fields:')) return __origLog('dY"< [KEY GRANT] Custom fields: [omitted]');
+          if (__msg.includes('Signature header found')) return __origLog('�o. [WEBHOOK] Signature header present');
+        }
+      } catch {}
+      return __origLog(...(__args as any));
+    };
     console.log('Attempting to grant key:', {
       lockAddress,
       recipientAddress,

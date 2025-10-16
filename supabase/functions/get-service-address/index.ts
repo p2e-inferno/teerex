@@ -1,11 +1,11 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 import { ethers } from "https://esm.sh/ethers@6.14.4"
-import { corsHeaders } from '../_shared/cors.ts'
+import { corsHeaders, buildPreflightHeaders } from '../_shared/cors.ts'
 
 serve(async (req) => {
   // Handle CORS preflight requests
   if (req.method === 'OPTIONS') {
-    return new Response('ok', { headers: corsHeaders })
+    return new Response('ok', { headers: buildPreflightHeaders(req) })
   }
 
   try {
@@ -25,8 +25,7 @@ serve(async (req) => {
     return new Response(
       JSON.stringify({ 
         success: true,
-        address: serviceAddress,
-        privateKey: unlockServicePrivateKey
+        address: serviceAddress
       }),
       {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },

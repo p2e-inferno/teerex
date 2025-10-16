@@ -51,7 +51,7 @@ interface Transaction {
 }
 
 const AdminEvents: React.FC = () => {
-  const { user } = usePrivy();
+  const { user, getAccessToken } = usePrivy();
   const { wallets } = useWallets();
   const wallet = wallets?.[0];
   const [events, setEvents] = useState<Event[]>([]);
@@ -159,189 +159,30 @@ const AdminEvents: React.FC = () => {
         throw new Error('No event selected');
       }
 
-      console.log('Granting key:', {
-        userAddress,
-        lockAddress: selectedEvent.lock_address,
-        chainId: selectedEvent.chain_id
+      // Call secure edge function to perform manual grant server-side
+      const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
+      const accessToken = await getAccessToken();
+      const { data: grantData, error: grantError } = await supabase.functions.invoke('paystack-grant-keys', {
+        body: { transactionReference: transactionRef.trim() },
+        headers: {
+          Authorization: `Bearer ${anonKey}`,
+          'X-Privy-Authorization': `Bearer ${accessToken}`,
+        }
       });
 
-      // Get network config
-      const { data: networkData, error: networkError } = await supabase
-        .from('network_configs')
-        .select('*')
-        .eq('chain_id', selectedEvent.chain_id)
-        .single();
-
-      if (networkError || !networkData?.rpc_url) {
-        throw new Error(`Network configuration not found for chain ID ${selectedEvent.chain_id}`);
+      if (grantError || grantData?.error) {
+        throw new Error(grantError?.message || grantData?.error || 'Failed to grant keys');
       }
 
-      // Get service account private key from secure Edge Function
-      const { data: serviceData, error: serviceError } = await supabase.functions.invoke('get-service-address');
-      if (serviceError || !serviceData?.privateKey) {
-        throw new Error('Could not get service account private key');
-      }
-      
-      // Create provider and wallet using the actual service private key
-      const provider = new ethers.JsonRpcProvider(networkData.rpc_url);
-      const wallet = new ethers.Wallet(serviceData.privateKey, provider);
-
-      // Contract ABI - comprehensive debug version
-      const lockABI = [
-        {
-          "inputs": [
-            { "internalType": "uint256[]", "name": "_expirationTimestamps", "type": "uint256[]" },
-            { "internalType": "address[]", "name": "_recipients", "type": "address[]" },
-            { "internalType": "address[]", "name": "_keyManagers", "type": "address[]" }
-          ],
-          "name": "grantKeys",
-          "outputs": [{ "internalType": "uint256[]", "name": "tokenIds", "type": "uint256[]" }],
-          "stateMutability": "nonpayable",
-          "type": "function"
-        },
-        {
-          "inputs": [{ "internalType": "address", "name": "account", "type": "address" }],
-          "name": "isKeyGranter",
-          "outputs": [{ "internalType": "bool", "name": "", "type": "bool" }],
-          "stateMutability": "view",
-          "type": "function"
-        },
-        {
-          "inputs": [{ "internalType": "address", "name": "account", "type": "address" }],
-          "name": "isLockManager", 
-          "outputs": [{ "internalType": "bool", "name": "", "type": "bool" }],
-          "stateMutability": "view",
-          "type": "function"
-        },
-        {
-          "inputs": [],
-          "name": "maxNumberOfKeys",
-          "outputs": [{ "internalType": "uint256", "name": "", "type": "uint256" }],
-          "stateMutability": "view",
-          "type": "function"
-        },
-        {
-          "inputs": [],
-          "name": "totalSupply",
-          "outputs": [{ "internalType": "uint256", "name": "", "type": "uint256" }],
-          "stateMutability": "view",
-          "type": "function"
-        },
-        {
-          "inputs": [],
-          "name": "isValidKey",
-          "outputs": [{ "internalType": "bool", "name": "", "type": "bool" }],
-          "stateMutability": "view",
-          "type": "function"
-        },
-        {
-          "inputs": [],
-          "name": "publicLockVersion", 
-          "outputs": [{ "internalType": "uint16", "name": "", "type": "uint16" }],
-          "stateMutability": "view",
-          "type": "function"
-        }
-      ];
-
-      const lockContract = new ethers.Contract(selectedEvent.lock_address, lockABI, wallet);
-
-      // Comprehensive debugging
-      console.log('=== LOCK CONTRACT DEBUG ===');
-      
-      try {
-        const [
-          isKeyGranter,
-          isLockManager,
-          maxKeys,
-          totalSupply,
-          lockVersion
-        ] = await Promise.all([
-          lockContract.isKeyGranter(wallet.address),
-          lockContract.isLockManager(wallet.address),
-          lockContract.maxNumberOfKeys(),
-          lockContract.totalSupply(),
-          lockContract.publicLockVersion()
-        ]);
-
-        console.log('Lock Contract Info:', {
-          address: selectedEvent.lock_address,
-          version: lockVersion.toString(),
-          maxKeys: maxKeys.toString(),
-          totalSupply: totalSupply.toString(),
-          serviceAccount: wallet.address,
-          isKeyGranter,
-          isLockManager
-        });
-
-        if (!isKeyGranter && !isLockManager) {
-          throw new Error(`Service account ${wallet.address} is not a KeyGranter or LockManager for this lock contract`);
-        }
-
-        // Check if we can add more keys
-        if (totalSupply >= maxKeys) {
-          throw new Error(`Lock is at maximum capacity (${totalSupply}/${maxKeys})`);
-        }
-
-      } catch (debugError) {
-        console.error('Debug info error:', debugError);
-        // Continue anyway - some functions might not exist in older versions
-      }
-
-      // Calculate expiration (30 days from now)
-      const currentTime = Math.floor(Date.now() / 1000);
-      const expirationTimestamp = currentTime + (30 * 24 * 60 * 60); // 30 days
-
-      console.log('Sending grant transaction with correct parameters...');
-      console.log('Parameters:', {
-        expirationTimestamps: [expirationTimestamp],
-        recipients: [userAddress],
-        keyManagers: [userAddress]
-      });
-      
-      // Grant the key with correct parameters
-      const tx = await lockContract.grantKeys(
-        [expirationTimestamp],  // _expirationTimestamps array
-        [userAddress],          // _recipients array  
-        [userAddress]           // _keyManagers array
-      );
-
-      console.log('Transaction sent:', tx.hash);
-      
       toast({
-        title: "Transaction Sent",
-        description: `Waiting for confirmation... TX: ${tx.hash.slice(0,10)}...`,
+        title: "Key Granted Successfully!",
+        description: grantData?.txHash ? `Transaction: ${grantData.txHash}` : 'Grant completed',
       });
-
-      // Wait for confirmation
-      const receipt = await tx.wait();
       
-      if (receipt.status === 1) {
-        // Update the transaction record
-        await supabase
-          .from('paystack_transactions')
-          .update({
-            gateway_response: {
-              ...transaction.gateway_response,
-              key_grant_tx_hash: tx.hash,
-              key_granted: true,
-              key_granted_at: new Date().toISOString()
-            }
-          })
-          .eq('reference', transactionRef.trim());
-
-        toast({
-          title: "Key Granted Successfully!",
-          description: `Transaction confirmed: ${tx.hash}`,
-        });
-
-        // Refresh transactions
-        if (selectedEvent) {
-          await fetchEventTransactions(selectedEvent.id);
-        }
-      } else {
-        throw new Error('Transaction failed');
+      // Refresh transactions
+      if (selectedEvent) {
+        await fetchEventTransactions(selectedEvent.id);
       }
-      
       setTransactionRef('');
       
     } catch (error) {

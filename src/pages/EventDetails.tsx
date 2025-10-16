@@ -652,7 +652,7 @@ const EventDetails = () => {
 (window as any).grantKeysManually = async () => {
   const supabase = (await import('@/integrations/supabase/client')).supabase;
   try {
-    const { data, error } = await supabase.functions.invoke('grant-keys-manual', {
+    const { data, error } = await supabase.functions.invoke('paystack-grant-keys', {
       body: { transactionReference: 'TeeRex-d7928d4b-02f0-47b5-b9f0-dcff259b086a-1751938091432' }
     });
     
