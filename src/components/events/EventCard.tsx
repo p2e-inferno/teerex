@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -11,20 +11,33 @@ import { format } from 'date-fns';
 interface EventCardProps {
   event: PublishedEvent;
   onViewDetails?: (event: PublishedEvent) => void;
+  onEdit?: (event: PublishedEvent) => void;
+  onManage?: (event: PublishedEvent) => void;
   keysSold?: number;
   actionType?: string;
   showActions?: boolean;
   isTicketView?: boolean;
 }
 
-export const EventCard: React.FC<EventCardProps> = ({ 
+export const EventCard: React.FC<EventCardProps> = ({
   event, 
   onViewDetails, 
+  onEdit,
+  onManage,
   keysSold = 0,
   actionType,
   showActions = true,
   isTicketView = false
 }) => {
+  const [imgError, setImgError] = useState(false);
+  const imageSrc = useMemo(() => {
+    if (!event.image_url) return '';
+    const ts = (event as any).updated_at instanceof Date
+      ? (event as any).updated_at.getTime()
+      : Date.now();
+    const sep = event.image_url.includes('?') ? '&' : '?';
+    return `${event.image_url}${sep}t=${ts}`;
+  }, [event.image_url, (event as any).updated_at]);
   const navigate = useNavigate();
   const spotsLeft = event.capacity - keysSold;
   const isSoldOut = spotsLeft <= 0;
@@ -49,6 +62,8 @@ export const EventCard: React.FC<EventCardProps> = ({
       onViewDetails(event);
     }
   };
+  const handleEditClick = (e: React.MouseEvent) => { e.stopPropagation(); onEdit?.(event); };
+  const handleManageClick = (e: React.MouseEvent) => { e.stopPropagation(); onManage?.(event); };
 
   // Determine button text based on context
   const getButtonText = () => {
@@ -71,13 +86,20 @@ export const EventCard: React.FC<EventCardProps> = ({
       onClick={handleCardClick}
     >
       <CardHeader className="p-0">
-        {event.image_url ? (
+        {event.image_url && !imgError ? (
           isTicketView ? (
-            <ImageModal src={event.image_url} alt={event.title}>
+            <ImageModal src={imageSrc} alt={event.title}>
               <div className="aspect-video rounded-t-lg overflow-hidden bg-gray-100 cursor-pointer">
                 <img
-                  src={event.image_url}
+                  src={imageSrc}
                   alt={event.title}
+                  onError={(e) => {
+                    console.warn('Event image failed to load:', {
+                      eventId: event.id,
+                      src: (e.currentTarget as HTMLImageElement).src,
+                    });
+                    setImgError(true);
+                  }}
                   className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-200"
                 />
               </div>
@@ -85,8 +107,15 @@ export const EventCard: React.FC<EventCardProps> = ({
           ) : (
             <div className="aspect-video rounded-t-lg overflow-hidden bg-gray-100">
               <img
-                src={event.image_url}
+                src={imageSrc}
                 alt={event.title}
+                onError={(e) => {
+                  console.warn('Event image failed to load:', {
+                    eventId: event.id,
+                    src: (e.currentTarget as HTMLImageElement).src,
+                  });
+                    setImgError(true);
+                }}
                 className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-200"
               />
             </div>
@@ -160,15 +189,26 @@ export const EventCard: React.FC<EventCardProps> = ({
             ) : event.currency === 'FREE' ? 'Free' : `${event.price} ${event.currency}`}
           </div>
           {showActions && (
-            <Button 
-              size="sm" 
-              onClick={handleViewDetailsClick}
-              disabled={isEventExpired || isSoldOut}
-              variant={getButtonVariant()}
-              className={actionType === 'manage' ? '' : "bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"}
-            >
-              {getButtonText()}
-            </Button>
+            (onEdit || onManage) ? (
+              <div className="flex items-center gap-2">
+                {onEdit && (
+                  <Button size="sm" onClick={handleEditClick} className="bg-blue-600 hover:bg-blue-700">Edit</Button>
+                )}
+                {onManage && (
+                  <Button size="sm" variant="outline" onClick={handleManageClick}>Manage</Button>
+                )}
+              </div>
+            ) : (
+              <Button 
+                size="sm" 
+                onClick={handleViewDetailsClick}
+                disabled={isEventExpired || isSoldOut}
+                variant={getButtonVariant()}
+                className={actionType === 'manage' ? '' : "bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"}
+              >
+                {getButtonText()}
+              </Button>
+            )
           )}
         </div>
       </CardContent>

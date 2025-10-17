@@ -1,0 +1,3 @@
+[functions.get-transaction-status]
+verify_jwt = false
+

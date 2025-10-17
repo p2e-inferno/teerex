@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
-import { usePrivy, useWallets } from '@privy-io/react-auth';
-import { usePaystackPayment } from 'react-paystack';
+import React, { useState } from "react";
+import { usePrivy, useWallets } from "@privy-io/react-auth";
+import { usePaystackPayment } from "react-paystack";
 import {
   Dialog,
   DialogContent,
@@ -8,229 +8,240 @@ import {
   DialogTitle,
   DialogDescription,
   DialogFooter,
-} from '@/components/ui/dialog';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { useToast } from '@/hooks/use-toast';
-import { PublishedEvent } from '@/utils/eventUtils';
-import { supabase } from '@/integrations/supabase/client';
-import { Loader2, CreditCard } from 'lucide-react';
-import { format } from 'date-fns';
+} from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { useToast } from "@/hooks/use-toast";
+import { PublishedEvent } from "@/utils/eventUtils";
+import { supabase } from "@/integrations/supabase/client";
+import { Loader2, CreditCard } from "lucide-react";
+import { format } from "date-fns";
+
+interface PaymentData {
+  reference: string;
+  email: string;
+  walletAddress: string;
+  phone: string;
+  eventId: string;
+  amount: number;
+}
 
 interface PaystackPaymentDialogProps {
   event: PublishedEvent | null;
   isOpen: boolean;
   onClose: () => void;
-  onSuccess: () => void;
+  onSuccess: (paymentData: PaymentData) => void;
 }
 
-export const PaystackPaymentDialog: React.FC<PaystackPaymentDialogProps> = ({ 
-  event, 
-  isOpen, 
-  onClose, 
-  onSuccess 
+export const PaystackPaymentDialog: React.FC<PaystackPaymentDialogProps> = ({
+  event,
+  isOpen,
+  onClose,
+  onSuccess,
 }) => {
   const { user } = usePrivy();
   const { wallets } = useWallets();
   const { toast } = useToast();
   const [isLoading, setIsLoading] = useState(false);
-  const [userEmail, setUserEmail] = useState(user?.email?.address || '');
-  const [userPhone, setUserPhone] = useState('');
-  const [userWalletAddress, setUserWalletAddress] = useState(wallets[0]?.address || '');
+  const [paymentHandled, setPaymentHandled] = useState(false);
+  const [isPaystackOpen, setIsPaystackOpen] = useState(false);
+  const [userEmail, setUserEmail] = useState(user?.email?.address || "");
+  const [userPhone, setUserPhone] = useState("");
+  const [userWalletAddress, setUserWalletAddress] = useState(
+    wallets[0]?.address || ""
+  );
 
   const config = {
     reference: `TeeRex-${event?.id}-${Date.now()}`,
     email: userEmail,
     amount: Math.round((event?.ngn_price || 0) * 100), // Paystack expects amount in kobo
-    publicKey: event?.paystack_public_key || '',
-    currency: 'NGN',
+    publicKey: event?.paystack_public_key || "",
+    currency: "NGN",
     metadata: {
+      lock_address: event?.lock_address || "",
+      chain_id: event?.chain_id ?? undefined,
+      event_id: event?.id || "",
       custom_fields: [
         {
           display_name: "Wallet Address",
           variable_name: "user_wallet_address",
-          value: userWalletAddress
+          value: userWalletAddress,
         },
         {
-          display_name: "Event ID", 
+          display_name: "Event ID",
           variable_name: "event_id",
-          value: event?.id || ''
+          value: event?.id || "",
         },
         {
           display_name: "User Email",
-          variable_name: "user_email", 
-          value: userEmail
+          variable_name: "user_email",
+          value: userEmail,
         },
         {
           display_name: "User Phone",
           variable_name: "user_phone",
-          value: userPhone
-        }
-      ]
-    }
+          value: userPhone,
+        },
+      ],
+    },
   };
 
   const initializePayment = usePaystackPayment(config);
 
-  const handlePaymentSuccess = async (reference: any) => {
-    if (!event || !user?.id) return;
-
-    setIsLoading(true);
+  const ensureTransactionRecord = async () => {
+    if (!event) return;
     try {
-      console.log('🎉 [PAYMENT SUCCESS] Payment completed successfully');
-      console.log('📝 [PAYMENT SUCCESS] Reference:', reference);
-      console.log('📝 [PAYMENT SUCCESS] Event ID:', event.id);
-      console.log('📝 [PAYMENT SUCCESS] Wallet Address:', userWalletAddress);
-      console.log('📝 [PAYMENT SUCCESS] Email:', userEmail);
-      
-      // Record the initial transaction record (webhook will update it)
-      console.log('💾 [DB INSERT] Attempting to save transaction to database...');
-      const { error } = await supabase
-        .from('paystack_transactions')
-        .insert({
-          event_id: event.id,
-          user_email: userEmail,
-          reference: reference.reference,
-          amount: event.ngn_price,
-          currency: 'NGN',
-          status: 'pending', // Set as pending, webhook will update to success
-          gateway_response: {
-            ...reference,
-            metadata: {
-              custom_fields: [
-                {
-                  display_name: "Wallet Address",
-                  variable_name: "user_wallet_address",
-                  value: userWalletAddress
-                },
-                {
-                  display_name: "Event ID", 
-                  variable_name: "event_id",
-                  value: event.id
-                }
-              ]
-            }
-          }
-        });
-
-      if (error) {
-        console.error('❌ [DB INSERT] Error recording transaction:', error);
-        throw error;
+      const insertPayload: any = {
+        event_id: event.id,
+        user_email: userEmail,
+        reference: config.reference,
+        amount: config.amount, // kobo
+        currency: "NGN",
+        status: "pending",
+        gateway_response: {
+          reference: config.reference,
+          status: "initialized",
+          metadata: { custom_fields: config.metadata.custom_fields },
+        },
+      };
+      const { error } = await supabase.from("paystack_transactions").insert(insertPayload);
+      if (error && !String(error.message || "").toLowerCase().includes("duplicate")) {
+        console.warn("[PAYSTACK INIT] Failed to create transaction record", error.message);
       }
-      
-      console.log('✅ [DB INSERT] Transaction saved successfully to database');
-
-      // Wait a moment for webhook to process (optional)
-      setTimeout(async () => {
-        // Check if the key has been granted by the webhook
-        const { data: updatedTransaction } = await supabase
-          .from('paystack_transactions')
-          .select('*, gateway_response')
-          .eq('reference', reference.reference)
-          .single();
-
-        const keyGranted = (updatedTransaction?.gateway_response as any)?.key_granted;
-        
-        toast({
-          title: 'Payment Successful!',
-          description: keyGranted 
-            ? `Payment successful! Your NFT ticket has been sent to ${userWalletAddress}`
-            : `Payment successful! Your NFT ticket is being processed and will be sent to ${userWalletAddress} shortly.`,
-        });
-      }, 3000); // Give webhook 3 seconds to process
-
-      // Show immediate success message
-      toast({
-        title: 'Payment Processing',
-        description: 'Payment successful! Processing your NFT ticket...',
-      });
-
-      onSuccess();
-      onClose();
-    } catch (error) {
-      console.error('Error processing payment:', error);
-      toast({
-        title: 'Payment Processing Error',
-        description: 'Payment was successful but there was an error recording your ticket. Please contact support.',
-        variant: 'destructive',
-      });
-    } finally {
-      setIsLoading(false);
+    } catch (e: any) {
+      console.warn("[PAYSTACK INIT] Error ensuring transaction record", e?.message || e);
     }
   };
 
+  const handlePaymentSuccess = (reference: { reference: string }) => {
+    if (!event || !user?.id) return;
+    setPaymentHandled(true);
+    setIsPaystackOpen(false);
+
+    console.log("🎉 [PAYMENT SUCCESS] Payment completed successfully");
+    console.log("📝 [PAYMENT SUCCESS] Reference:", reference);
+    console.log("📝 [PAYMENT SUCCESS] Event ID:", event.id);
+    console.log("📝 [PAYMENT SUCCESS] Wallet Address:", userWalletAddress);
+    console.log("📝 [PAYMENT SUCCESS] Email:", userEmail);
+
+    // Create payment data object
+    const paymentData: PaymentData = {
+      reference: reference.reference,
+      email: userEmail,
+      walletAddress: userWalletAddress,
+      phone: userPhone,
+      eventId: event.id,
+      amount: event.ngn_price,
+    };
+
+    // Pass payment data to parent; parent will open issuing flow
+    onSuccess(paymentData);
+    setIsLoading(false);
+  };
+
   const handlePaymentError = () => {
+    setIsLoading(false);
+    setIsPaystackOpen(false);
     toast({
-      title: 'Payment Failed',
-      description: 'Your payment could not be processed. Please try again.',
-      variant: 'destructive',
+      title: "Payment Failed",
+      description: "Your payment could not be processed. Please try again.",
+      variant: "destructive",
     });
   };
 
   const handlePaymentClose = () => {
+    // Paystack closes after success too; avoid misleading cancel toasts
+    setIsLoading(false);
+    setIsPaystackOpen(false);
+    if (paymentHandled) return;
     toast({
-      title: 'Payment Cancelled',
-      description: 'Payment was cancelled. You can try again anytime.',
+      title: "Payment Window Closed",
+      description:
+        "If you completed payment, your ticket will be issued shortly.",
     });
   };
 
-  const handlePayment = () => {
-    console.log('🚀 [PAYMENT INIT] User clicked Pay button');
-    console.log('📋 [PAYMENT INIT] Event:', event?.title, '(ID:', event?.id, ')');
-    console.log('📋 [PAYMENT INIT] Amount:', event?.ngn_price, 'NGN');
-    console.log('📋 [PAYMENT INIT] Wallet:', userWalletAddress);
-    console.log('📋 [PAYMENT INIT] Email:', userEmail);
-    
+  const handlePayment = (e?: React.MouseEvent) => {
+    e?.preventDefault();
+    setPaymentHandled(false);
+    setIsPaystackOpen(true);
+    console.log("🚀 [PAYMENT INIT] User clicked Pay button");
+    console.log(
+      "📋 [PAYMENT INIT] Event:",
+      event?.title,
+      "(ID:",
+      event?.id,
+      ")"
+    );
+    console.log("📋 [PAYMENT INIT] Amount:", event?.ngn_price, "NGN");
+    console.log("📋 [PAYMENT INIT] Wallet:", userWalletAddress);
+    console.log("📋 [PAYMENT INIT] Email:", userEmail);
+
     if (!userEmail.trim()) {
-      console.warn('⚠️ [PAYMENT INIT] Validation failed: Email missing');
+      console.warn("⚠️ [PAYMENT INIT] Validation failed: Email missing");
       toast({
-        title: 'Email Required',
-        description: 'Please enter your email address to proceed.',
-        variant: 'destructive',
+        title: "Email Required",
+        description: "Please enter your email address to proceed.",
+        variant: "destructive",
       });
       return;
     }
 
     if (!userWalletAddress.trim()) {
-      console.warn('⚠️ [PAYMENT INIT] Validation failed: Wallet address missing');
+      console.warn(
+        "⚠️ [PAYMENT INIT] Validation failed: Wallet address missing"
+      );
       toast({
-        title: 'Wallet Address Required',
-        description: 'Please enter your wallet address to receive the ticket.',
-        variant: 'destructive',
+        title: "Wallet Address Required",
+        description: "Please enter your wallet address to receive the ticket.",
+        variant: "destructive",
       });
       return;
     }
 
     if (!event?.paystack_public_key) {
-      console.error('❌ [PAYMENT INIT] Validation failed: Paystack public key missing');
+      console.error(
+        "❌ [PAYMENT INIT] Validation failed: Paystack public key missing"
+      );
       toast({
-        title: 'Payment Configuration Error',
-        description: 'Payment is not properly configured for this event.',
-        variant: 'destructive',
+        title: "Payment Configuration Error",
+        description: "Payment is not properly configured for this event.",
+        variant: "destructive",
       });
       return;
     }
 
-    console.log('✅ [PAYMENT INIT] Validation passed, launching Paystack modal...');
-    
-    // Close this dialog first to prevent conflicts with Paystack modal
-    onClose();
-    
-    // Small delay to ensure dialog is fully closed
-    setTimeout(() => {
-      console.log('🔄 [PAYMENT INIT] Initializing Paystack payment...');
-      initializePayment({
-        onSuccess: handlePaymentSuccess,
-        onClose: handlePaymentClose,
-      });
-    }, 100);
+    console.log(
+      "✅ [PAYMENT INIT] Validation passed, launching Paystack modal..."
+    );
+
+    // Keep dialog open but hide it to prevent z-index conflicts
+    // This maintains the component lifecycle while avoiding overlay issues
+    const dialogElement = document.querySelector('[role="none"]');
+    if (dialogElement) {
+      (dialogElement as HTMLElement).style.display = "none";
+    }
+
+    console.log("🔄 [PAYMENT INIT] Initializing Paystack payment...");
+    setIsLoading(true);
+    // Pre-create transaction so webhook can find it immediately
+    void ensureTransactionRecord();
+    initializePayment({
+      onSuccess: handlePaymentSuccess,
+      onClose: handlePaymentClose,
+    });
   };
 
   if (!event) return null;
 
   return (
-    <Dialog open={isOpen} onOpenChange={onClose}>
+    <Dialog
+      open={isOpen && !isPaystackOpen}
+      onOpenChange={(open) => {
+        if (!open) onClose();
+      }}
+    >
       <DialogContent className="sm:max-w-[425px]">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
@@ -241,7 +252,7 @@ export const PaystackPaymentDialog: React.FC<PaystackPaymentDialogProps> = ({
             Complete your payment for {event.title}
           </DialogDescription>
         </DialogHeader>
-        
+
         <div className="space-y-4 py-4">
           {/* Event Details */}
           <div className="space-y-3">
@@ -252,7 +263,8 @@ export const PaystackPaymentDialog: React.FC<PaystackPaymentDialogProps> = ({
             <div className="flex justify-between items-center">
               <span className="text-sm text-muted-foreground">Date</span>
               <span className="font-semibold">
-                {event.date ? format(event.date, "MMM d, yyyy") : 'TBD'} at {event.time}
+                {event.date ? format(event.date, "MMM d, yyyy") : "TBD"} at{" "}
+                {event.time}
               </span>
             </div>
             <div className="flex justify-between items-center">
@@ -261,7 +273,9 @@ export const PaystackPaymentDialog: React.FC<PaystackPaymentDialogProps> = ({
             </div>
             <div className="flex justify-between items-center text-lg">
               <span className="text-muted-foreground">Total</span>
-              <span className="font-bold text-primary">₦{event.ngn_price.toLocaleString()}</span>
+              <span className="font-bold text-primary">
+                ₦{event.ngn_price.toLocaleString()}
+              </span>
             </div>
           </div>
 
@@ -281,7 +295,7 @@ export const PaystackPaymentDialog: React.FC<PaystackPaymentDialogProps> = ({
                 required
               />
             </div>
-            
+
             <div className="space-y-2">
               <Label htmlFor="phone">Phone Number (Optional)</Label>
               <Input
@@ -293,7 +307,7 @@ export const PaystackPaymentDialog: React.FC<PaystackPaymentDialogProps> = ({
                 disabled={isLoading}
               />
             </div>
-            
+
             <div className="space-y-2">
               <Label htmlFor="wallet">Wallet Address *</Label>
               <Input
@@ -313,19 +327,28 @@ export const PaystackPaymentDialog: React.FC<PaystackPaymentDialogProps> = ({
 
           <div className="bg-blue-50 p-3 rounded-lg">
             <p className="text-sm text-blue-700">
-              You'll be redirected to Paystack to complete your payment securely. 
-              We accept all major Nigerian banks, cards, and mobile wallets.
+              You'll be redirected to Paystack to complete your payment
+              securely. We accept all major Nigerian banks, cards, and mobile
+              wallets.
             </p>
           </div>
         </div>
 
         <DialogFooter>
-          <Button variant="outline" onClick={onClose} disabled={isLoading}>
+          <Button
+            type="button"
+            variant="outline"
+            onClick={onClose}
+            disabled={isLoading}
+          >
             Cancel
           </Button>
-          <Button 
-            onClick={handlePayment} 
-            disabled={isLoading || !userEmail.trim() || !userWalletAddress.trim()}
+          <Button
+            type="button"
+            onClick={handlePayment}
+            disabled={
+              isLoading || !userEmail.trim() || !userWalletAddress.trim()
+            }
             className="w-32"
           >
             {isLoading ? (

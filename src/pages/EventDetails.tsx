@@ -1,15 +1,15 @@
-import React, { useState, useEffect } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
-import { Card, CardContent, CardHeader } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
-import { Separator } from '@/components/ui/separator';
-import { 
-  Calendar, 
-  Clock, 
-  MapPin, 
-  Users, 
-  Share2, 
+import React, { useState, useEffect } from "react";
+import { useParams, useNavigate } from "react-router-dom";
+import { Card, CardContent, CardHeader } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Separator } from "@/components/ui/separator";
+import {
+  Calendar,
+  Clock,
+  MapPin,
+  Users,
+  Share2,
   Heart,
   ArrowLeft,
   Ticket,
@@ -18,20 +18,26 @@ import {
   Copy,
   Facebook,
   Twitter,
-  Linkedin
-} from 'lucide-react';
-import { getPublishedEvents, PublishedEvent } from '@/utils/eventUtils';
-import { getTotalKeys, getUserKeyBalance, getMaxKeysPerAddress, checkKeyOwnership } from '@/utils/lockUtils';
-import { EventPurchaseDialog } from '@/components/events/EventPurchaseDialog';
-import { PaystackPaymentDialog } from '@/components/events/PaystackPaymentDialog';
-import { PaymentMethodDialog } from '@/components/events/PaymentMethodDialog';
-import { AttestationButton } from '@/components/attestations/AttestationButton';
-import { EventAttestationCard } from '@/components/attestations/EventAttestationCard';
-import { AttendeesList } from '@/components/attestations/AttendeesList';
-import { usePrivy, useWallets } from '@privy-io/react-auth';
-import { useToast } from '@/hooks/use-toast';
-import { getAttestationSchemas } from '@/utils/attestationUtils';
-import { format } from 'date-fns';
+  Linkedin,
+} from "lucide-react";
+import { getPublishedEvents, PublishedEvent } from "@/utils/eventUtils";
+import {
+  getTotalKeys,
+  getUserKeyBalance,
+  getMaxKeysPerAddress,
+  checkKeyOwnership,
+} from "@/utils/lockUtils";
+import { EventPurchaseDialog } from "@/components/events/EventPurchaseDialog";
+import { PaystackPaymentDialog } from "@/components/events/PaystackPaymentDialog";
+import { TicketProcessingDialog } from "@/components/events/TicketProcessingDialog";
+import { PaymentMethodDialog } from "@/components/events/PaymentMethodDialog";
+import { AttestationButton } from "@/components/attestations/AttestationButton";
+import { EventAttestationCard } from "@/components/attestations/EventAttestationCard";
+import { AttendeesList } from "@/components/attestations/AttendeesList";
+import { usePrivy, useWallets } from "@privy-io/react-auth";
+import { useToast } from "@/hooks/use-toast";
+import { getAttestationSchemas } from "@/utils/attestationUtils";
+import { format } from "date-fns";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -46,51 +52,60 @@ const EventDetails = () => {
   const { authenticated } = usePrivy();
   const { wallets } = useWallets();
   const wallet = wallets[0];
-  
+
   const [event, setEvent] = useState<PublishedEvent | null>(null);
   const [keysSold, setKeysSold] = useState<number>(0);
   const [userTicketCount, setUserTicketCount] = useState<number>(0);
   const [maxTicketsPerUser, setMaxTicketsPerUser] = useState<number>(1);
   const [isLoading, setIsLoading] = useState(true);
   // Modal state management - only one modal can be open at a time
-  const [activeModal, setActiveModal] = useState<'none' | 'payment-method' | 'crypto-purchase' | 'paystack-payment'>('none');
+  const [activeModal, setActiveModal] = useState<
+    | "none"
+    | "payment-method"
+    | "crypto-purchase"
+    | "paystack-payment"
+    | "ticket-processing"
+  >("none");
+  const [paymentData, setPaymentData] = useState<any>(null);
   const [isLiked, setIsLiked] = useState(false);
-  const [attendanceSchemaUid, setAttendanceSchemaUid] = useState<string | null>(null);
+  const [attendanceSchemaUid, setAttendanceSchemaUid] = useState<string | null>(
+    null
+  );
 
   useEffect(() => {
     const loadEvent = async () => {
       if (!id) return;
-      
+
       setIsLoading(true);
       try {
         const events = await getPublishedEvents();
-        const foundEvent = events.find(e => e.id === id);
-        
+        const foundEvent = events.find((e) => e.id === id);
+
         if (!foundEvent) {
           toast({
             title: "Event not found",
             description: "The event you're looking for doesn't exist.",
-            variant: "destructive"
+            variant: "destructive",
           });
-          navigate('/explore');
+          navigate("/explore");
           return;
         }
-        
+
         setEvent(foundEvent);
-        
+
         // Get tickets sold
         const sold = await getTotalKeys(foundEvent.lock_address);
         setKeysSold(sold);
-        
+
         // Get max tickets per user for this event
         const maxKeys = await getMaxKeysPerAddress(foundEvent.lock_address);
         setMaxTicketsPerUser(maxKeys);
       } catch (error) {
-        console.error('Error loading event:', error);
+        console.error("Error loading event:", error);
         toast({
           title: "Error loading event",
           description: "There was an error loading the event details.",
-          variant: "destructive"
+          variant: "destructive",
         });
       } finally {
         setIsLoading(false);
@@ -104,12 +119,15 @@ const EventDetails = () => {
   useEffect(() => {
     const loadUserTicketData = async () => {
       if (!authenticated || !wallet?.address || !event?.lock_address) return;
-      
+
       try {
-        const userBalance = await getUserKeyBalance(event.lock_address, wallet.address);
+        const userBalance = await getUserKeyBalance(
+          event.lock_address,
+          wallet.address
+        );
         setUserTicketCount(userBalance);
       } catch (error) {
-        console.error('Error loading user ticket data:', error);
+        console.error("Error loading user ticket data:", error);
       }
     };
 
@@ -120,40 +138,48 @@ const EventDetails = () => {
   useEffect(() => {
     const loadAttendanceSchema = async () => {
       if (!event) return;
-      
-      console.log('Loading attendance schema for event:', event.id);
-      console.log('Event attendance_schema_uid:', event.attendance_schema_uid);
-      
+
+      console.log("Loading attendance schema for event:", event.id);
+      console.log("Event attendance_schema_uid:", event.attendance_schema_uid);
+
       try {
         // First check if event has an attendance schema UID set
         if (event.attendance_schema_uid) {
-          console.log('Using event attendance schema UID:', event.attendance_schema_uid);
+          console.log(
+            "Using event attendance schema UID:",
+            event.attendance_schema_uid
+          );
           setAttendanceSchemaUid(event.attendance_schema_uid);
           return;
         }
-        
+
         // Otherwise, fetch attendance schemas from database
-        console.log('Fetching attendance schemas from database...');
-        const schemas = await getAttestationSchemas('attendance');
-        console.log('Found attendance schemas:', schemas);
-        
+        console.log("Fetching attendance schemas from database...");
+        const schemas = await getAttestationSchemas("attendance");
+        console.log("Found attendance schemas:", schemas);
+
         // Filter out invalid schema UIDs (must be 66 characters and valid hex)
-        const validSchemas = schemas.filter(schema => {
-          const isValid = schema.schema_uid.startsWith('0x') && 
-                         schema.schema_uid.length === 66 && 
-                         /^0x[0-9a-f]{64}$/i.test(schema.schema_uid);
-          console.log(`Schema ${schema.name} (${schema.schema_uid}) is ${isValid ? 'valid' : 'invalid'}`);
+        const validSchemas = schemas.filter((schema) => {
+          const isValid =
+            schema.schema_uid.startsWith("0x") &&
+            schema.schema_uid.length === 66 &&
+            /^0x[0-9a-f]{64}$/i.test(schema.schema_uid);
+          console.log(
+            `Schema ${schema.name} (${schema.schema_uid}) is ${
+              isValid ? "valid" : "invalid"
+            }`
+          );
           return isValid;
         });
-        
+
         if (validSchemas.length > 0) {
-          console.log('Using valid schema UID:', validSchemas[0].schema_uid);
+          console.log("Using valid schema UID:", validSchemas[0].schema_uid);
           setAttendanceSchemaUid(validSchemas[0].schema_uid);
         } else {
-          console.log('No valid attendance schemas found');
+          console.log("No valid attendance schemas found");
         }
       } catch (error) {
-        console.error('Error loading attendance schema:', error);
+        console.error("Error loading attendance schema:", error);
       }
     };
 
@@ -162,20 +188,35 @@ const EventDetails = () => {
 
   const handleShare = (platform?: string) => {
     const url = window.location.href;
-    const title = event?.title || '';
-    const description = event?.description || '';
-    
+    const title = event?.title || "";
+    const description = event?.description || "";
+
     switch (platform) {
-      case 'facebook':
-        window.open(`https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(url)}`, '_blank');
+      case "facebook":
+        window.open(
+          `https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(
+            url
+          )}`,
+          "_blank"
+        );
         break;
-      case 'twitter':
-        window.open(`https://twitter.com/intent/tweet?url=${encodeURIComponent(url)}&text=${encodeURIComponent(title)}`, '_blank');
+      case "twitter":
+        window.open(
+          `https://twitter.com/intent/tweet?url=${encodeURIComponent(
+            url
+          )}&text=${encodeURIComponent(title)}`,
+          "_blank"
+        );
         break;
-      case 'linkedin':
-        window.open(`https://www.linkedin.com/sharing/share-offsite/?url=${encodeURIComponent(url)}`, '_blank');
+      case "linkedin":
+        window.open(
+          `https://www.linkedin.com/sharing/share-offsite/?url=${encodeURIComponent(
+            url
+          )}`,
+          "_blank"
+        );
         break;
-      case 'copy':
+      case "copy":
         navigator.clipboard.writeText(url);
         toast({
           title: "Link copied",
@@ -204,10 +245,12 @@ const EventDetails = () => {
 
     // Parse the event time (assuming format like "7:00 PM" or "19:00")
     const parseEventTime = (timeString: string, eventDate: Date) => {
-      const timeParts = timeString.trim().match(/^(\d{1,2}):(\d{2})\s*(AM|PM)?$/i);
+      const timeParts = timeString
+        .trim()
+        .match(/^(\d{1,2}):(\d{2})\s*(AM|PM)?$/i);
       if (!timeParts) {
         // Fallback to current parsing if format doesn't match
-        console.warn('Could not parse time format:', timeString);
+        console.warn("Could not parse time format:", timeString);
         return eventDate;
       }
 
@@ -216,9 +259,9 @@ const EventDetails = () => {
       const period = timeParts[3]?.toUpperCase();
 
       let hour24 = hours;
-      if (period === 'PM' && hours !== 12) {
+      if (period === "PM" && hours !== 12) {
         hour24 += 12;
-      } else if (period === 'AM' && hours === 12) {
+      } else if (period === "AM" && hours === 12) {
         hour24 = 0;
       }
 
@@ -230,9 +273,9 @@ const EventDetails = () => {
     const startDate = parseEventTime(event.time, new Date(event.date));
     // Default to 2 hours duration if no specific duration is available
     const endDate = new Date(startDate.getTime() + 2 * 60 * 60 * 1000);
-    
+
     const formatDate = (date: Date) => {
-      return date.toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z';
+      return date.toISOString().replace(/[-:]/g, "").split(".")[0] + "Z";
     };
 
     const calendarData = {
@@ -240,54 +283,64 @@ const EventDetails = () => {
       start: formatDate(startDate),
       end: formatDate(endDate),
       description: event.description,
-      location: event.location
+      location: event.location,
     };
 
-    const googleCalendarUrl = `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${encodeURIComponent(calendarData.title)}&dates=${calendarData.start}/${calendarData.end}&details=${encodeURIComponent(calendarData.description)}&location=${encodeURIComponent(calendarData.location)}`;
-    
-    window.open(googleCalendarUrl, '_blank');
+    const googleCalendarUrl = `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${encodeURIComponent(
+      calendarData.title
+    )}&dates=${calendarData.start}/${
+      calendarData.end
+    }&details=${encodeURIComponent(
+      calendarData.description
+    )}&location=${encodeURIComponent(calendarData.location)}`;
+
+    window.open(googleCalendarUrl, "_blank");
   };
 
   const handleGetTicket = () => {
-    console.log('=== HANDLE GET TICKET CALLED ===');
+    console.log("=== HANDLE GET TICKET CALLED ===");
     if (!event) return;
-    
-    console.log('Event data:', event);
-    console.log('Payment methods:', event.payment_methods);
-    console.log('Paystack key:', event.paystack_public_key);
-    console.log('NGN price:', event.ngn_price);
-    
-    const hasCrypto = event.payment_methods?.includes('crypto') || event.currency !== 'FREE';
-    const hasPaystack = event.payment_methods?.includes('fiat') && event.paystack_public_key && event.ngn_price;
-    
-    console.log('Has crypto:', hasCrypto);
-    console.log('Has paystack:', hasPaystack);
-    
+
+    console.log("Event data:", event);
+    console.log("Payment methods:", event.payment_methods);
+    console.log("Paystack key:", event.paystack_public_key);
+    console.log("NGN price:", event.ngn_price);
+
+    const hasCrypto =
+      event.payment_methods?.includes("crypto") || event.currency !== "FREE";
+    const hasPaystack =
+      event.payment_methods?.includes("fiat") &&
+      event.paystack_public_key &&
+      event.ngn_price;
+
+    console.log("Has crypto:", hasCrypto);
+    console.log("Has paystack:", hasPaystack);
+
     // If both payment methods available, show selection dialog
     if (hasCrypto && hasPaystack) {
-      console.log('Opening payment method dialog');
-      setActiveModal('payment-method');
+      console.log("Opening payment method dialog");
+      setActiveModal("payment-method");
     } else if (hasPaystack) {
       // Only Paystack available
-      console.log('Opening paystack dialog');
-      setActiveModal('paystack-payment');
+      console.log("Opening paystack dialog");
+      setActiveModal("paystack-payment");
     } else {
       // Only crypto available (default)
-      console.log('Opening crypto dialog');
-      setActiveModal('crypto-purchase');
+      console.log("Opening crypto dialog");
+      setActiveModal("crypto-purchase");
     }
   };
 
   const handleSelectCrypto = () => {
-    setActiveModal('crypto-purchase');
+    setActiveModal("crypto-purchase");
   };
 
   const handleSelectPaystack = () => {
-    setActiveModal('paystack-payment');
+    setActiveModal("paystack-payment");
   };
 
   const closeAllModals = () => {
-    setActiveModal('none');
+    setActiveModal("none");
   };
 
   const spotsLeft = event ? event.capacity - keysSold : 0;
@@ -313,6 +366,21 @@ const EventDetails = () => {
     return null;
   }
 
+  // Temporary detailed debug log for image diagnostics
+  const __ts =
+    (event as any)?.updated_at instanceof Date
+      ? (event as any).updated_at.getTime()
+      : Date.now();
+  const __imageSrc = event.image_url
+    ? `${event.image_url}${event.image_url.includes("?") ? "&" : "?"}t=${__ts}`
+    : "";
+  console.log("EventDetails debug event", {
+    id: event.id,
+    event,
+    image_url: event.image_url,
+    computedImageSrc: __imageSrc,
+  });
+
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Header */}
@@ -320,7 +388,7 @@ const EventDetails = () => {
         <div className="container mx-auto px-6 max-w-4xl py-4">
           <Button
             variant="ghost"
-            onClick={() => navigate('/explore')}
+            onClick={() => navigate("/explore")}
             className="mb-4"
           >
             <ArrowLeft className="w-4 h-4 mr-2" />
@@ -337,8 +405,22 @@ const EventDetails = () => {
             {event.image_url && (
               <div className="aspect-video rounded-lg overflow-hidden bg-gray-100">
                 <img
-                  src={event.image_url}
+                  src={`${event.image_url}${
+                    event.image_url.includes("?") ? "&" : "?"
+                  }t=${event.updated_at?.getTime?.() ?? Date.now()}`}
                   alt={event.title}
+                  onLoad={(e) => {
+                    console.log("EventDetails image loaded", {
+                      eventId: event.id,
+                      src: (e.currentTarget as HTMLImageElement).src,
+                    });
+                  }}
+                  onError={(e) => {
+                    console.warn("EventDetails image failed to load:", {
+                      eventId: event.id,
+                      src: (e.currentTarget as HTMLImageElement).src,
+                    });
+                  }}
                   className="w-full h-full object-cover"
                 />
               </div>
@@ -358,7 +440,7 @@ const EventDetails = () => {
                     {event.date && (
                       <div className="flex items-center space-x-1">
                         <Calendar className="w-4 h-4" />
-                        <span>{format(event.date, 'EEEE, MMMM do, yyyy')}</span>
+                        <span>{format(event.date, "EEEE, MMMM do, yyyy")}</span>
                       </div>
                     )}
                     <div className="flex items-center space-x-1">
@@ -373,11 +455,15 @@ const EventDetails = () => {
                     size="sm"
                     onClick={() => setIsLiked(!isLiked)}
                   >
-                    <Heart className={`w-4 h-4 ${isLiked ? 'fill-red-500 text-red-500' : ''}`} />
+                    <Heart
+                      className={`w-4 h-4 ${
+                        isLiked ? "fill-red-500 text-red-500" : ""
+                      }`}
+                    />
                   </Button>
-                  <Button 
-                    variant="outline" 
-                    size="sm" 
+                  <Button
+                    variant="outline"
+                    size="sm"
                     onClick={handleAddToCalendar}
                   >
                     <CalendarPlus className="w-4 h-4" />
@@ -389,19 +475,19 @@ const EventDetails = () => {
                       </Button>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end">
-                      <DropdownMenuItem onClick={() => handleShare('facebook')}>
+                      <DropdownMenuItem onClick={() => handleShare("facebook")}>
                         <Facebook className="w-4 h-4 mr-2" />
                         Facebook
                       </DropdownMenuItem>
-                      <DropdownMenuItem onClick={() => handleShare('twitter')}>
+                      <DropdownMenuItem onClick={() => handleShare("twitter")}>
                         <Twitter className="w-4 h-4 mr-2" />
                         Twitter
                       </DropdownMenuItem>
-                      <DropdownMenuItem onClick={() => handleShare('linkedin')}>
+                      <DropdownMenuItem onClick={() => handleShare("linkedin")}>
                         <Linkedin className="w-4 h-4 mr-2" />
                         LinkedIn
                       </DropdownMenuItem>
-                      <DropdownMenuItem onClick={() => handleShare('copy')}>
+                      <DropdownMenuItem onClick={() => handleShare("copy")}>
                         <Copy className="w-4 h-4 mr-2" />
                         Copy Link
                       </DropdownMenuItem>
@@ -431,10 +517,7 @@ const EventDetails = () => {
             </div>
 
             {/* Attendees List */}
-            <AttendeesList
-              eventId={event.id}
-              eventTitle={event.title}
-            />
+            <AttendeesList eventId={event.id} eventTitle={event.title} />
           </div>
 
           {/* Sidebar */}
@@ -444,7 +527,9 @@ const EventDetails = () => {
               <CardHeader className="pb-4">
                 <div className="flex items-center justify-between">
                   <h3 className="font-semibold text-gray-900">
-                    {authenticated && userTicketCount > 0 ? 'Your Tickets' : 'Get tickets'}
+                    {authenticated && userTicketCount > 0
+                      ? "Your Tickets"
+                      : "Get tickets"}
                   </h3>
                   <Ticket className="w-5 h-5 text-gray-400" />
                 </div>
@@ -457,11 +542,15 @@ const EventDetails = () => {
                       <div className="flex items-center space-x-2">
                         <div className="w-2 h-2 bg-green-500 rounded-full"></div>
                         <span className="text-sm font-medium text-green-800">
-                          You own {userTicketCount} ticket{userTicketCount > 1 ? 's' : ''}
+                          You own {userTicketCount} ticket
+                          {userTicketCount > 1 ? "s" : ""}
                         </span>
                       </div>
                       {maxTicketsPerUser > 1 && (
-                        <Badge variant="outline" className="text-green-600 border-green-200">
+                        <Badge
+                          variant="outline"
+                          className="text-green-600 border-green-200"
+                        >
                           {userTicketCount}/{maxTicketsPerUser} max
                         </Badge>
                       )}
@@ -471,10 +560,15 @@ const EventDetails = () => {
 
                 <div className="flex items-center justify-between">
                   <span className="text-2xl font-bold text-gray-900">
-                    {event.currency === 'FREE' ? 'Free' : `${event.price} ${event.currency}`}
+                    {event.currency === "FREE"
+                      ? "Free"
+                      : `${event.price} ${event.currency}`}
                   </span>
                   {!isSoldOut && (
-                    <Badge variant="outline" className="text-green-600 border-green-200">
+                    <Badge
+                      variant="outline"
+                      className="text-green-600 border-green-200"
+                    >
                       {spotsLeft} spots left
                     </Badge>
                   )}
@@ -498,9 +592,14 @@ const EventDetails = () => {
                 </div>
 
                 <div className="w-full bg-gray-200 rounded-full h-2">
-                  <div 
+                  <div
                     className="bg-blue-600 h-2 rounded-full transition-all duration-300"
-                    style={{ width: `${Math.min((keysSold / event.capacity) * 100, 100)}%` }}
+                    style={{
+                      width: `${Math.min(
+                        (keysSold / event.capacity) * 100,
+                        100
+                      )}%`,
+                    }}
                   />
                 </div>
 
@@ -510,19 +609,19 @@ const EventDetails = () => {
                     {attendanceSchemaUid && (
                       <AttestationButton
                         schemaUid={attendanceSchemaUid}
-                        recipient={wallet?.address || ''}
+                        recipient={wallet?.address || ""}
                         eventId={event.id}
                         lockAddress={event.lock_address}
                         eventTitle={event.title}
                         attestationType="attendance"
                       />
                     )}
-                    
+
                     {/* Additional ticket purchase if allowed */}
                     {userTicketCount < maxTicketsPerUser && !isSoldOut && (
-                      <Button 
+                      <Button
                         variant="outline"
-                        className="w-full" 
+                        className="w-full"
                         onClick={handleGetTicket}
                       >
                         Get Additional Ticket
@@ -530,16 +629,25 @@ const EventDetails = () => {
                     )}
                   </div>
                 ) : (
-                  <Button 
-                    className="w-full" 
+                  <Button
+                    className="w-full"
                     onClick={handleGetTicket}
-                    disabled={isSoldOut || (!authenticated && userTicketCount >= maxTicketsPerUser) || (event.date && new Date(event.date) < new Date())}
+                    disabled={
+                      isSoldOut ||
+                      (!authenticated &&
+                        userTicketCount >= maxTicketsPerUser) ||
+                      (event.date && new Date(event.date) < new Date())
+                    }
                   >
-                    {isSoldOut ? 'Sold Out' : 
-                     (event.date && new Date(event.date) < new Date()) ? 'Event has ended' :
-                     !authenticated ? 'Connect Wallet to Get Ticket' :
-                     userTicketCount >= maxTicketsPerUser ? 'Ticket Limit Reached' :
-                     'Get Ticket'}
+                    {isSoldOut
+                      ? "Sold Out"
+                      : event.date && new Date(event.date) < new Date()
+                      ? "Event has ended"
+                      : !authenticated
+                      ? "Connect Wallet to Get Ticket"
+                      : userTicketCount >= maxTicketsPerUser
+                      ? "Ticket Limit Reached"
+                      : "Get Ticket"}
                   </Button>
                 )}
 
@@ -561,18 +669,22 @@ const EventDetails = () => {
                       <Calendar className="w-5 h-5 text-gray-400 mt-0.5" />
                       <div>
                         <div className="font-medium text-gray-900">
-                          {format(event.date, 'EEEE, MMMM do, yyyy')}
+                          {format(event.date, "EEEE, MMMM do, yyyy")}
                         </div>
-                        <div className="text-sm text-gray-600">{event.time}</div>
+                        <div className="text-sm text-gray-600">
+                          {event.time}
+                        </div>
                       </div>
                     </div>
                   )}
-                  
+
                   <div className="flex items-start space-x-3">
                     <MapPin className="w-5 h-5 text-gray-400 mt-0.5" />
                     <div>
                       <div className="font-medium text-gray-900">Location</div>
-                      <div className="text-sm text-gray-600">{event.location}</div>
+                      <div className="text-sm text-gray-600">
+                        {event.location}
+                      </div>
                     </div>
                   </div>
 
@@ -580,7 +692,9 @@ const EventDetails = () => {
                     <Users className="w-5 h-5 text-gray-400 mt-0.5" />
                     <div>
                       <div className="font-medium text-gray-900">Capacity</div>
-                      <div className="text-sm text-gray-600">{event.capacity} attendees</div>
+                      <div className="text-sm text-gray-600">
+                        {event.capacity} attendees
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -593,9 +707,14 @@ const EventDetails = () => {
                   </div>
                   <div className="flex items-center justify-between text-sm">
                     <span className="text-gray-600">Contract</span>
-                    <Button variant="ghost" size="sm" className="h-auto p-0 text-blue-600">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-auto p-0 text-blue-600"
+                    >
                       <span className="font-mono text-xs">
-                        {event.lock_address.slice(0, 6)}...{event.lock_address.slice(-4)}
+                        {event.lock_address.slice(0, 6)}...
+                        {event.lock_address.slice(-4)}
                       </span>
                       <ExternalLink className="w-3 h-3 ml-1" />
                     </Button>
@@ -608,7 +727,7 @@ const EventDetails = () => {
             <EventAttestationCard
               eventId={event.id}
               eventTitle={event.title}
-              eventDate={event.date.toISOString()}
+              eventDate={(event.date ? event.date : new Date()).toISOString()}
               eventTime={event.time}
               lockAddress={event.lock_address}
               userHasTicket={userTicketCount > 0}
@@ -620,7 +739,7 @@ const EventDetails = () => {
       {/* Payment Method Selection Dialog */}
       <PaymentMethodDialog
         event={event}
-        isOpen={activeModal === 'payment-method'}
+        isOpen={activeModal === "payment-method"}
         onClose={closeAllModals}
         onSelectCrypto={handleSelectCrypto}
         onSelectPaystack={handleSelectPaystack}
@@ -629,20 +748,27 @@ const EventDetails = () => {
       {/* Crypto Purchase Dialog */}
       <EventPurchaseDialog
         event={event}
-        isOpen={activeModal === 'crypto-purchase'}
+        isOpen={activeModal === "crypto-purchase"}
         onClose={closeAllModals}
       />
 
       {/* Paystack Payment Dialog */}
       <PaystackPaymentDialog
         event={event}
-        isOpen={activeModal === 'paystack-payment'}
+        isOpen={activeModal === "paystack-payment"}
         onClose={closeAllModals}
-        onSuccess={() => {
-          closeAllModals();
-          // Refresh the page or update ticket count
-          window.location.reload();
+        onSuccess={(paymentData) => {
+          setPaymentData(paymentData);
+          setActiveModal("ticket-processing");
         }}
+      />
+
+      {/* Ticket Processing Dialog */}
+      <TicketProcessingDialog
+        event={event}
+        isOpen={activeModal === "ticket-processing"}
+        onClose={closeAllModals}
+        paymentData={paymentData}
       />
     </div>
   );
@@ -650,20 +776,26 @@ const EventDetails = () => {
 
 // Temporary debug function - can be called from browser console
 (window as any).grantKeysManually = async () => {
-  const supabase = (await import('@/integrations/supabase/client')).supabase;
+  const supabase = (await import("@/integrations/supabase/client")).supabase;
   try {
-    const { data, error } = await supabase.functions.invoke('paystack-grant-keys', {
-      body: { transactionReference: 'TeeRex-d7928d4b-02f0-47b5-b9f0-dcff259b086a-1751938091432' }
-    });
-    
+    const { data, error } = await supabase.functions.invoke(
+      "paystack-grant-keys",
+      {
+        body: {
+          transactionReference:
+            "TeeRex-d7928d4b-02f0-47b5-b9f0-dcff259b086a-1751938091432",
+        },
+      }
+    );
+
     if (error) {
-      console.error('Error:', error);
+      console.error("Error:", error);
       return;
     }
-    
-    console.log('Success:', data);
+
+    console.log("Success:", data);
   } catch (err) {
-    console.error('Failed:', err);
+    console.error("Failed:", err);
   }
 };
 

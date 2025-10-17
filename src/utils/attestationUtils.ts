@@ -126,16 +126,18 @@ export const encodeAttestationData = (schemaDefinition: string, data: Attestatio
           values.push(data.eventTitle);
           console.log('Added eventTitle:', data.eventTitle);
           break;
-        case 'timestamp':
+        case 'timestamp': {
           const timestamp = data.timestamp || Math.floor(Date.now() / 1000);
           values.push(timestamp);
           console.log('Added timestamp:', timestamp);
           break;
-        case 'location':
+        }
+        case 'location': {
           const location = data.location || 'Metaverse';
           values.push(location);
           console.log('Added location:', location);
           break;
+        }
         case 'platform':
           values.push('TeeRex');
           console.log('Added platform: TeeRex');

@@ -1,6 +1,7 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.50.0";
 import { ethers } from "https://esm.sh/ethers@6.14.4";
+import PublicLockV15 from "../_shared/abi/PublicLockV15.json" assert { type: "json" };
 import { corsHeaders, buildPreflightHeaders } from "../_shared/cors.ts";
 import { createRemoteJWKSet, jwtVerify, importSPKI } from "https://deno.land/x/jose@v4.14.4/index.ts";
 
@@ -11,11 +12,7 @@ const PRIVY_APP_SECRET = Deno.env.get("PRIVY_APP_SECRET")!;
 const PRIVY_VERIFICATION_KEY = Deno.env.get("PRIVY_VERIFICATION_KEY");
 const UNLOCK_SERVICE_PRIVATE_KEY = Deno.env.get("UNLOCK_SERVICE_PRIVATE_KEY")!;
 
-const PublicLockABI = [
-  { inputs: [{ internalType: "address", name: "account", type: "address" }], name: "isLockManager", outputs: [{ internalType: "bool", name: "", type: "bool" }], stateMutability: "view", type: "function" },
-  { inputs: [{ internalType: "address", name: "_keyOwner", type: "address" }], name: "getHasValidKey", outputs: [{ internalType: "bool", name: "isValid", type: "bool" }], stateMutability: "view", type: "function" },
-  { inputs: [ { internalType: "uint256[]", name: "_expirationTimestamps", type: "uint256[]" }, { internalType: "address[]", name: "_recipients", type: "address[]" }, { internalType: "address[]", name: "_keyManagers", type: "address[]" } ], name: "grantKeys", outputs: [{ internalType: "uint256[]", name: "tokenIds", type: "uint256[]" }], stateMutability: "nonpayable", type: "function" },
-];
+// Use canonical v15 ABI
 
 serve(async (req) => {
   if (req.method === "OPTIONS") {
@@ -84,7 +81,7 @@ serve(async (req) => {
         const { data: net, error: netErr } = await supabase.from("network_configs").select("rpc_url").eq("chain_id", event.chain_id).single();
         if (netErr || !net?.rpc_url) throw new Error("Network RPC not configured");
         const provider = new ethers.JsonRpcProvider(net.rpc_url);
-        const lock = new ethers.Contract(event.lock_address, PublicLockABI, provider);
+        const lock = new ethers.Contract(event.lock_address, PublicLockV15 as any, provider);
         const isManager = await lock.isLockManager(userWalletAddress);
         authorized = isManager;
       }
@@ -105,7 +102,7 @@ serve(async (req) => {
     // Service wallet
     const provider = new ethers.JsonRpcProvider(netCfg.rpc_url);
     const wallet = new ethers.Wallet(UNLOCK_SERVICE_PRIVATE_KEY, provider);
-    const lock = new ethers.Contract(event.lock_address, PublicLockABI, wallet);
+    const lock = new ethers.Contract(event.lock_address, PublicLockV15 as any, wallet);
     const isServiceManager = await lock.isLockManager(wallet.address);
     if (!isServiceManager) throw new Error("Service wallet is not a lock manager for this lock");
 
@@ -117,8 +114,10 @@ serve(async (req) => {
     const expirationDuration = 2592000;
     const nowSec = Math.floor(Date.now() / 1000);
     const expirationTimestamp = nowSec + expirationDuration;
-    try { await lock.grantKeys.staticCall([expirationTimestamp], [recipient], [recipient]); } catch (_) {}
-    const txSend = await lock.grantKeys([expirationTimestamp], [recipient], [recipient]);
+    const recipients = [recipient];
+    const expirations = [BigInt(expirationTimestamp)];
+    const keyManagers = [recipient];
+    const txSend = await lock.grantKeys(recipients, expirations, keyManagers);
     const receipt = await txSend.wait();
     if (receipt.status !== 1) throw new Error("Grant key transaction failed");
     return new Response(JSON.stringify({ success: true, txHash: txSend.hash || receipt.transactionHash }), { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 200 });
@@ -126,4 +125,3 @@ serve(async (req) => {
     return new Response(JSON.stringify({ error: e?.message || "Internal error" }), { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 400 });
   }
 });
-

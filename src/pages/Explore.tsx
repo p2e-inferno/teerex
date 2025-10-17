@@ -8,6 +8,7 @@ import { getPublishedEvents, PublishedEvent } from '@/utils/eventUtils';
 import { useToast } from '@/hooks/use-toast';
 import { EventPurchaseDialog } from '@/components/events/EventPurchaseDialog';
 import { PaystackPaymentDialog } from '@/components/events/PaystackPaymentDialog';
+import { TicketProcessingDialog } from '@/components/events/TicketProcessingDialog';
 import { PaymentMethodDialog } from '@/components/events/PaymentMethodDialog';
 import { getTotalKeys } from '@/utils/lockUtils';
 
@@ -18,7 +19,8 @@ const Explore = () => {
   const [isLoading, setIsLoading] = useState(true);
   const { toast } = useToast();
   const [selectedEvent, setSelectedEvent] = useState<PublishedEvent | null>(null);
-  const [activeModal, setActiveModal] = useState<'none' | 'payment-method' | 'crypto-purchase' | 'paystack-payment'>('none');
+  const [activeModal, setActiveModal] = useState<'none' | 'payment-method' | 'crypto-purchase' | 'paystack-payment' | 'ticket-processing'>('none');
+  const [paymentData, setPaymentData] = useState<any>(null);
   const [keysSoldMap, setKeysSoldMap] = useState<Record<string, number>>({});
 
   const loadEvents = useCallback(async () => {
@@ -225,7 +227,15 @@ const Explore = () => {
         event={selectedEvent}
         isOpen={activeModal === 'paystack-payment'}
         onClose={closeAllModals}
-        onSuccess={closeAllModals}
+        onSuccess={(data) => { setPaymentData(data); setActiveModal('ticket-processing'); }}
+      />
+
+      {/* Ticket Processing Dialog */}
+      <TicketProcessingDialog
+        event={selectedEvent}
+        isOpen={activeModal === 'ticket-processing'}
+        onClose={closeAllModals}
+        paymentData={paymentData}
       />
     </div>
   );

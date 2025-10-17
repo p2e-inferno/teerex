@@ -12,7 +12,9 @@ export const uploadEventImage = async (file: File, userId: string): Promise<stri
     });
 
     const fileExt = file.name.split('.').pop();
-    const fileName = `${userId}/${Date.now()}.${fileExt}`;
+    // Sanitize folder to avoid brittle characters (e.g., ':' in Privy DIDs)
+    const sanitizedFolder = userId.replace(/:/g, '_');
+    const fileName = `${sanitizedFolder}/${Date.now()}.${fileExt}`;
     
     console.log('Uploading file to path:', fileName);
 

@@ -1,5 +1,6 @@
-
+﻿
 import React, { useState, useEffect } from 'react';
+import { EventCreateSchema } from '@/types/event.schema';
 import { usePrivy, useWallets } from '@privy-io/react-auth';
 import { useNavigate, useSearchParams, Navigate } from 'react-router-dom';
 import { EventBasicInfo } from '@/components/create-event/EventBasicInfo';
@@ -62,9 +63,25 @@ const CreateEvent = () => {
     imageUrl: ''
   });
 
-  if (!authenticated) {
-    return <Navigate to="/" replace />;
-  }
+  const validateRequiredFields = () => {
+    const parsed = EventCreateSchema.safeParse({
+      title: formData.title,
+      date: formData.date,
+      time: formData.time,
+    });
+    if (!parsed.success) {
+      // Surface first issue only to keep UX simple
+      const first = parsed.error.issues[0];
+      toast({
+        title: 'Missing or invalid fields',
+        description: first?.message || 'Please check your inputs',
+        variant: 'destructive',
+      });
+      return false;
+    }
+    return true;
+  };
+
 
   useEffect(() => {
     if (draftId && user?.id) {
@@ -207,6 +224,11 @@ const CreateEvent = () => {
     setIsCreating(true);
     
     try {
+      // Validate required fields before proceeding
+      if (!validateRequiredFields()) {
+        setIsCreating(false);
+        return;
+      }
       const wallet = wallets[0];
       if (!wallet) {
         throw new Error('Please connect a wallet to create your event.');
@@ -344,6 +366,11 @@ const CreateEvent = () => {
     setIsCreating(true);
 
     try {
+      // Validate required fields before proceeding
+      if (!validateRequiredFields()) {
+        setIsCreating(false);
+        return;
+      }
       const accessToken = await getAccessToken();
       if (!accessToken) {
         throw new Error("Authentication token not available. Please log in again.");
@@ -411,7 +438,9 @@ const CreateEvent = () => {
     }
   };
 
-  return (
+    if (!authenticated) {
+    return <Navigate to="/" replace />;
+  }return (
     <div className="min-h-screen bg-gray-50 py-8">
       <div className="container mx-auto px-6 max-w-4xl">
         {/* Header */}
@@ -503,3 +532,6 @@ const CreateEvent = () => {
 };
 
 export default CreateEvent;
+
+
+

@@ -236,17 +236,28 @@ serve(async (req) => {
       );
     }
 
-    // 6. If authorized, prepare and perform the update
-    const eventData = {
-      title: formData.title,
-      description: formData.description,
-      date: formData.date ? new Date(formData.date).toISOString() : null,
-      time: formData.time,
-      location: formData.location,
-      category: formData.category,
-      image_url: formData.imageUrl || null,
+    // 6. If authorized, prepare and perform a partial update only for provided fields
+    const eventData: Record<string, any> = {
       updated_at: new Date().toISOString(),
     };
+
+    if (formData && typeof formData === "object") {
+      if ("title" in formData) eventData.title = formData.title;
+      if ("description" in formData) eventData.description = formData.description;
+      if ("date" in formData) {
+        eventData.date = formData.date ? new Date(formData.date).toISOString() : null;
+      }
+      if ("time" in formData) eventData.time = formData.time;
+      if ("location" in formData) eventData.location = formData.location;
+      if ("category" in formData) eventData.category = formData.category;
+      if ("imageUrl" in formData) {
+        // Only touch image_url if imageUrl was provided explicitly
+        eventData.image_url = formData.imageUrl || null;
+      }
+      if ("service_manager_added" in formData) {
+        eventData.service_manager_added = !!formData.service_manager_added;
+      }
+    }
 
     console.log("Updating event with data:", eventData);
 

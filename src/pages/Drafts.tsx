@@ -1,4 +1,4 @@
-
+﻿
 import React, { useState, useEffect } from 'react';
 import { usePrivy, useWallets } from '@privy-io/react-auth';
 import { useNavigate, Navigate } from 'react-router-dom';
@@ -20,10 +20,6 @@ const Drafts = () => {
   const [drafts, setDrafts] = useState<EventDraft[]>([]);
   const [isPublishing, setIsPublishing] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-
-  if (!authenticated) {
-    return <Navigate to="/" replace />;
-  }
 
   useEffect(() => {
     const loadDrafts = async () => {
@@ -190,7 +186,9 @@ const Drafts = () => {
     );
   }
 
-  return (
+    if (!authenticated) {
+    return <Navigate to="/" replace />;
+  }return (
     <div className="min-h-screen bg-gray-50 py-8">
       <div className="container mx-auto px-6 max-w-6xl">
         <div className="mb-8 flex justify-between items-center">
@@ -248,3 +246,6 @@ const Drafts = () => {
 };
 
 export default Drafts;
+
+
+

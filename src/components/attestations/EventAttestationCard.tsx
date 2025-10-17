@@ -102,37 +102,47 @@ export const EventAttestationCard: React.FC<EventAttestationCardProps> = ({
       let userAttended = false;
       
       if (wallet?.address) {
-        const { data: userGoingData } = await supabase
+        const { count: goingCountHead, error: goingHeadError } = await supabase
           .from('attestations')
-          .select('id')
+          .select('id', { count: 'exact', head: true })
           .eq('event_id', eventId)
           .eq('schema_uid', GOING_SCHEMA_UID)
           .eq('recipient', wallet.address)
-          .eq('is_revoked', false)
-          .single();
+          .eq('is_revoked', false);
 
-        const { data: userAttendedData } = await supabase
+        const { count: attendedCountHead, error: attendedHeadError } = await supabase
           .from('attestations')
-          .select('id')
+          .select('id', { count: 'exact', head: true })
           .eq('event_id', eventId)
           .eq('schema_uid', ATTENDED_SCHEMA_UID)
           .eq('recipient', wallet.address)
-          .eq('is_revoked', false)
-          .single();
+          .eq('is_revoked', false);
 
-        userGoing = !!userGoingData;
-        userAttended = !!userAttendedData;
+        if (goingHeadError) {
+          console.warn('HEAD count for going attestations failed:', goingHeadError.message);
+        }
+        if (attendedHeadError) {
+          console.warn('HEAD count for attended attestations failed:', attendedHeadError.message);
+        }
+
+        userGoing = (goingCountHead ?? 0) > 0;
+        userAttended = (attendedCountHead ?? 0) > 0;
 
         // Get user reputation
-        const { data: reputationData } = await supabase
+        const { data: reputationData, error: reputationError } = await supabase
           .from('user_reputation')
-          .select('reputation_score')
+          .select('reputation_score, updated_at')
           .eq('user_address', wallet.address)
-          .single();
+          .order('updated_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
 
+        if (reputationError) {
+          console.warn('Reputation fetch error:', reputationError.message);
+        }
         setStats(prev => ({
           ...prev,
-          userReputation: reputationData?.reputation_score || 100
+          userReputation: reputationData?.reputation_score ?? prev.userReputation,
         }));
       }
 

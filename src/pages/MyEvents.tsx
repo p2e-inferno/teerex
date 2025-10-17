@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+﻿import React, { useState, useEffect } from 'react';
 import { usePrivy } from '@privy-io/react-auth';
 import { useNavigate, Navigate } from 'react-router-dom';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -18,10 +18,6 @@ const MyEvents = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [selectedEvent, setSelectedEvent] = useState<PublishedEvent | null>(null);
   const [isManagementDialogOpen, setIsManagementDialogOpen] = useState(false);
-
-  if (!authenticated) {
-    return <Navigate to="/" replace />;
-  }
 
   const loadUserEvents = async () => {
     try {
@@ -199,7 +195,9 @@ const MyEvents = () => {
               {events.map((event) => {
                 console.log('Rendering event card for:', event.id, 'with image_url:', event.image_url);
                 const needsAttention = hasIncompleteSetup(event);
-                return (
+                  if (!authenticated) {
+    return <Navigate to="/" replace />;
+  }return (
                   <div key={event.id} className="relative">
                     {needsAttention && (
                       <Badge 
@@ -212,8 +210,8 @@ const MyEvents = () => {
                     )}
                     <EventCard
                       event={event}
-                      onViewDetails={handleManageEvent}
-                      actionType="manage"
+                      onEdit={handleEditEvent}
+                      onManage={handleManageEvent}
                     />
                   </div>
                 );
@@ -237,3 +235,6 @@ const MyEvents = () => {
 };
 
 export default MyEvents;
+
+
+
