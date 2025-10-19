@@ -244,7 +244,7 @@ contract BatchAttestation is Ownable, ReentrancyGuard, Pausable {
         external 
         nonReentrant 
         whenNotPaused 
-        onlyKeyHolder(lockAddress)
+        onlyCreators()
         validSchema(schemaUID)
         returns (bytes32[] memory)
     {
@@ -315,7 +315,7 @@ contract BatchAttestation is Ownable, ReentrancyGuard, Pausable {
         external 
         nonReentrant 
         whenNotPaused 
-        onlyKeyHolder(lockAddress)
+        onlyCreators()
         validSchema(schemaUID)
         returns (bytes32)
     {

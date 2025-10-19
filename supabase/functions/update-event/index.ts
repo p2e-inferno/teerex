@@ -7,11 +7,11 @@ import {
   importSPKI,
 } from "https://deno.land/x/jose@v4.14.4/index.ts";
 import { ethers } from "https://esm.sh/ethers@6.14.4";
+import { getUserWalletAddresses } from "../_shared/privy.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const PRIVY_APP_ID = Deno.env.get("VITE_PRIVY_APP_ID")!;
-const PRIVY_APP_SECRET = Deno.env.get("PRIVY_APP_SECRET")!;
 const PRIVY_VERIFICATION_KEY = Deno.env.get("PRIVY_VERIFICATION_KEY");
 
 const PublicLockABI = [
@@ -131,34 +131,11 @@ serve(async (req) => {
 
     console.log("User authenticated:", privyUserId);
 
-    // 2. Get user's wallet address from Privy API
-    const privyApiResponse = await fetch(
-      `https://auth.privy.io/api/v1/users/${privyUserId}`,
-      {
-        method: "GET",
-        headers: {
-          "privy-app-id": PRIVY_APP_ID,
-          Authorization: "Basic " + btoa(`${PRIVY_APP_ID}:${PRIVY_APP_SECRET}`),
-        },
-      }
-    );
-
-    if (!privyApiResponse.ok) {
-      console.error("Privy API Error:", await privyApiResponse.text());
-      throw new Error("Failed to fetch user details from Privy.");
+    // 2. Get user's wallet addresses via shared helper
+    const userWalletAddresses = await getUserWalletAddresses(privyUserId);
+    if (!userWalletAddresses || userWalletAddresses.length === 0) {
+      throw new Error("Could not find user's wallet addresses.");
     }
-
-    const privyUserData = await privyApiResponse.json();
-    const wallet = privyUserData.linked_accounts?.find(
-      (acc: any) => acc.type === "wallet"
-    );
-    const userWalletAddress = wallet?.address;
-
-    if (!userWalletAddress) {
-      throw new Error("Could not find user's wallet address.");
-    }
-
-    console.log("User wallet address:", userWalletAddress);
 
     // 3. Get event data from request body
     const { eventId, formData } = await req.json();
@@ -195,11 +172,7 @@ serve(async (req) => {
     const lockAddress = event.lock_address;
     const chainId = event.chain_id;
 
-    console.log(
-      `Verifying lock manager for address ${userWalletAddress} on chain ${chainId} for lock ${lockAddress}`
-    );
-
-    // 5. On-chain authorization: Check if the user is a lock manager on the correct network
+    // 5. On-chain authorization: Check if any of the user's wallets is a lock manager
     const rpcUrl = getRpcUrl(chainId);
     const provider = new ethers.JsonRpcProvider(rpcUrl);
     const lockContract = new ethers.Contract(
@@ -209,10 +182,12 @@ serve(async (req) => {
     );
 
     try {
-      const isManager = await lockContract.isLockManager(userWalletAddress);
-      console.log(`Lock manager check result: ${isManager}`);
-
-      if (!isManager) {
+      let authorized = false;
+      for (const addr of userWalletAddresses) {
+        const isManager = await lockContract.isLockManager(addr);
+        if (isManager) { authorized = true; break; }
+      }
+      if (!authorized) {
         return new Response(
           JSON.stringify({
             error: "Unauthorized: You are not a manager for this event.",

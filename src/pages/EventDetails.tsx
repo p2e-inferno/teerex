@@ -517,7 +517,11 @@ const EventDetails = () => {
             </div>
 
             {/* Attendees List */}
-            <AttendeesList eventId={event.id} eventTitle={event.title} />
+            <AttendeesList
+              eventId={event.id}
+              eventTitle={event.title}
+              attendanceSchemaUid={attendanceSchemaUid || undefined}
+            />
           </div>
 
           {/* Sidebar */}
@@ -731,6 +735,7 @@ const EventDetails = () => {
               eventTime={event.time}
               lockAddress={event.lock_address}
               userHasTicket={userTicketCount > 0}
+              attendanceSchemaUid={attendanceSchemaUid || undefined}
             />
           </div>
         </div>

@@ -29,6 +29,7 @@ interface EventAttestationCardProps {
   eventTime: string;
   lockAddress: string;
   userHasTicket: boolean;
+  attendanceSchemaUid?: string;
 }
 
 interface AttestationStats {
@@ -41,7 +42,6 @@ interface AttestationStats {
 }
 
 const GOING_SCHEMA_UID = '0x7234567890abcdef1234567890abcdef12345678';
-const ATTENDED_SCHEMA_UID = '0x8234567890abcdef1234567890abcdef12345678';
 
 export const EventAttestationCard: React.FC<EventAttestationCardProps> = ({
   eventId,
@@ -49,7 +49,8 @@ export const EventAttestationCard: React.FC<EventAttestationCardProps> = ({
   eventDate,
   eventTime,
   lockAddress,
-  userHasTicket
+  userHasTicket,
+  attendanceSchemaUid
 }) => {
   const { authenticated } = usePrivy();
   const { wallets } = useWallets();
@@ -77,7 +78,7 @@ export const EventAttestationCard: React.FC<EventAttestationCardProps> = ({
 
   // Load attestation statistics
   const loadStats = async () => {
-    if (!eventId) return;
+    if (!eventId || !attendanceSchemaUid) return;
     
     setIsLoadingStats(true);
     try {
@@ -94,7 +95,7 @@ export const EventAttestationCard: React.FC<EventAttestationCardProps> = ({
         .from('attestations')
         .select('recipient')
         .eq('event_id', eventId)
-        .eq('schema_uid', ATTENDED_SCHEMA_UID)
+        .eq('schema_uid', attendanceSchemaUid || '')
         .eq('is_revoked', false);
 
       // Check user's attestation status
@@ -114,7 +115,7 @@ export const EventAttestationCard: React.FC<EventAttestationCardProps> = ({
           .from('attestations')
           .select('id', { count: 'exact', head: true })
           .eq('event_id', eventId)
-          .eq('schema_uid', ATTENDED_SCHEMA_UID)
+          .eq('schema_uid', attendanceSchemaUid || '')
           .eq('recipient', wallet.address)
           .eq('is_revoked', false);
 
@@ -151,7 +152,7 @@ export const EventAttestationCard: React.FC<EventAttestationCardProps> = ({
         .from('attestations')
         .select('id')
         .eq('event_id', eventId)
-        .eq('schema_uid', ATTENDED_SCHEMA_UID)
+        .eq('schema_uid', attendanceSchemaUid || '')
         .eq('is_revoked', false);
 
       let challengesCount = 0;
@@ -182,7 +183,7 @@ export const EventAttestationCard: React.FC<EventAttestationCardProps> = ({
 
   useEffect(() => {
     loadStats();
-  }, [eventId, wallet?.address]);
+  }, [eventId, wallet?.address, attendanceSchemaUid]);
 
   const handleDeclareGoing = async () => {
     if (!wallet?.address) return;
@@ -225,11 +226,11 @@ export const EventAttestationCard: React.FC<EventAttestationCardProps> = ({
   };
 
   const handleAttestAttendance = async () => {
-    if (!wallet?.address) return;
+    if (!wallet?.address || !attendanceSchemaUid) return;
 
     try {
       const result = await createEventAttestation({
-        schemaUid: ATTENDED_SCHEMA_UID,
+        schemaUid: attendanceSchemaUid,
         recipient: wallet.address,
         data: {
           eventId,

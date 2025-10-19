@@ -11,6 +11,7 @@ import { Separator } from "@/components/ui/separator";
 import { toast } from "@/hooks/use-toast";
 import { supabase } from '@/integrations/supabase/client';
 import { registerSchema, getAttestationSchemas, checkSchemaExists, importExistingSchema } from '@/utils/schemaUtils';
+import { checkKeyOwnership } from '@/utils/lockUtils';
 import { usePrivy, useWallets } from '@privy-io/react-auth';
 import { Database } from '@/integrations/supabase/types';
 import { 
@@ -39,6 +40,7 @@ const Admin: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [checkingSchemas, setCheckingSchemas] = useState(false);
   const [schemaStatus, setSchemaStatus] = useState<Record<number, { exists: boolean; schemaUid?: string; checked: boolean }>>({});
+  const [schemaToReplace, setSchemaToReplace] = useState<AttestationSchema | null>(null);
   const [formData, setFormData] = useState({
     name: '',
     description: '',
@@ -51,7 +53,7 @@ const Admin: React.FC = () => {
     {
       name: 'TeeRex Event Going v1',
       description: 'Declaration of intent to attend a TeeRex event',
-      category: 'going',
+      category: 'attendance',
       schemaDefinition: 'string eventId, address lockAddress, string eventTitle, uint256 timestamp, string location, address declarer'
     },
     {
@@ -126,6 +128,20 @@ const Admin: React.FC = () => {
   const handleImportSchema = async (index: number) => {
     const schema = predefinedSchemas[index];
     const status = schemaStatus[index];
+    
+    // Gating: Only admins (holders of ADMIN_LOCK_ADDRESS) can insert into DB
+    const ADMIN_LOCK_ADDRESS = (import.meta as any).env?.VITE_ADMIN_LOCK_ADDRESS || (import.meta as any).env?.ADMIN_LOCK_ADDRESS;
+    if (ADMIN_LOCK_ADDRESS && wallet?.address) {
+      const canInsert = await checkKeyOwnership(ADMIN_LOCK_ADDRESS, wallet.address);
+      if (!canInsert) {
+        toast({
+          title: "Insufficient Access",
+          description: "You need an admin key to import schemas into the database.",
+          variant: "destructive"
+        });
+        return;
+      }
+    }
     
     if (!status?.exists || !status.schemaUid) {
       toast({
@@ -202,23 +218,61 @@ const Admin: React.FC = () => {
 
     setLoading(true);
     try {
+      // Gating: determine permissions based on Unlock keys
+      const ADMIN_LOCK_ADDRESS = (import.meta as any).env?.VITE_ADMIN_LOCK_ADDRESS || (import.meta as any).env?.ADMIN_LOCK_ADDRESS;
+      const CREATOR_LOCK_ADDRESS = (import.meta as any).env?.VITE_CREATOR_LOCK_ADDRESS || (import.meta as any).env?.CREATOR_LOCK_ADDRESS;
+      let canInsert = true;
+      let canRegisterOnChain = true;
+
+      if (ADMIN_LOCK_ADDRESS || CREATOR_LOCK_ADDRESS) {
+        canInsert = false;
+        canRegisterOnChain = false;
+        if (ADMIN_LOCK_ADDRESS) {
+          const adminOk = await checkKeyOwnership(ADMIN_LOCK_ADDRESS, wallet.address);
+          if (adminOk) {
+            canInsert = true;
+            canRegisterOnChain = true;
+          }
+        }
+        if (!canRegisterOnChain && CREATOR_LOCK_ADDRESS) {
+          const creatorOk = await checkKeyOwnership(CREATOR_LOCK_ADDRESS, wallet.address);
+          if (creatorOk) {
+            canRegisterOnChain = true;
+          }
+        }
+      }
+
+      if (!canRegisterOnChain) {
+        toast({
+          title: "Access Denied",
+          description: "You need a valid key in the Creator or Admin lock to register schemas on EAS.",
+          variant: "destructive"
+        });
+        return;
+      }
+
       const result = await registerSchema({
         name: schema.name,
         description: schema.description,
         category: schema.category,
         schemaDefinition: schema.schemaDefinition,
         revocable: true,
-        wallet
+        wallet,
+        skipDbInsert: !canInsert
       });
 
       if (result.success) {
         toast({
-          title: "Success",
-          description: `Schema registered with UID: ${result.schemaUid}`
+          title: "Schema Registered",
+          description: canInsert 
+            ? `Registered and saved: ${result.schemaUid}` 
+            : `Registered on EAS only (not saved to DB): ${result.schemaUid}`
         });
         
-        // Refresh schemas list and check status again
-        await fetchSchemas();
+        // Refresh schemas list and check status again (only if inserted)
+        if (canInsert) {
+          await fetchSchemas();
+        }
         await checkPredefinedSchemas();
       } else {
         throw new Error(result.error);
@@ -256,19 +310,55 @@ const Admin: React.FC = () => {
 
     setLoading(true);
     try {
+      // Gating: determine permissions based on Unlock keys
+      const ADMIN_LOCK_ADDRESS = (import.meta as any).env?.VITE_ADMIN_LOCK_ADDRESS || (import.meta as any).env?.ADMIN_LOCK_ADDRESS;
+      const CREATOR_LOCK_ADDRESS = (import.meta as any).env?.VITE_CREATOR_LOCK_ADDRESS || (import.meta as any).env?.CREATOR_LOCK_ADDRESS;
+      let canInsert = true;
+      let canRegisterOnChain = true;
+
+      if (ADMIN_LOCK_ADDRESS || CREATOR_LOCK_ADDRESS) {
+        canInsert = false;
+        canRegisterOnChain = false;
+        if (ADMIN_LOCK_ADDRESS) {
+          const adminOk = await checkKeyOwnership(ADMIN_LOCK_ADDRESS, wallet.address);
+          if (adminOk) {
+            canInsert = true;
+            canRegisterOnChain = true;
+          }
+        }
+        if (!canRegisterOnChain && CREATOR_LOCK_ADDRESS) {
+          const creatorOk = await checkKeyOwnership(CREATOR_LOCK_ADDRESS, wallet.address);
+          if (creatorOk) {
+            canRegisterOnChain = true;
+          }
+        }
+      }
+
+      if (!canRegisterOnChain) {
+        toast({
+          title: "Access Denied",
+          description: "You need a valid key in the Creator or Admin lock to register schemas on EAS.",
+          variant: "destructive"
+        });
+        return;
+      }
+
       const result = await registerSchema({
         name: formData.name,
         description: formData.description,
         category: formData.category,
         schemaDefinition: formData.schemaDefinition,
         revocable: formData.revocable,
-        wallet
+        wallet,
+        skipDbInsert: !canInsert
       });
 
       if (result.success) {
         toast({
-          title: "Success",
-          description: `Schema registered with UID: ${result.schemaUid}`
+          title: "Schema Registered",
+          description: canInsert 
+            ? `Registered and saved: ${result.schemaUid}` 
+            : `Registered on EAS only (not saved to DB): ${result.schemaUid}`
         });
         
         // Reset form
@@ -280,8 +370,22 @@ const Admin: React.FC = () => {
           revocable: true
         });
         
+        // If this was a re-register (Fix Schema UID), delete the old row
+        if (canInsert && schemaToReplace?.id) {
+          const { error: delError } = await supabase
+            .from('attestation_schemas')
+            .delete()
+            .eq('id', schemaToReplace.id);
+          if (delError) {
+            console.error('Failed to delete old schema row:', delError);
+          }
+          setSchemaToReplace(null);
+        }
+        
         // Refresh schemas list
-        await fetchSchemas();
+        if (canInsert) {
+          await fetchSchemas();
+        }
       } else {
         throw new Error(result.error);
       }
@@ -319,6 +423,7 @@ const Admin: React.FC = () => {
       schemaDefinition: schema.schema_definition,
       revocable: schema.revocable
     });
+    setSchemaToReplace(schema);
 
     // Scroll to form and highlight it
     const formElement = document.getElementById('schema-form');

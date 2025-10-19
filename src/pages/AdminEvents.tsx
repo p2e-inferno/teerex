@@ -27,6 +27,11 @@ import {
   ExternalLink
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
+import { baseSepolia } from 'wagmi/chains';
+import { useBatchAttestation } from '@/hooks/useBatchAttestation';
+import { useAttestationEncoding } from '@/hooks/useAttestationEncoding';
+import { useDelegatedAttestation } from '@/hooks/useDelegatedAttestation';
+import { useSSE } from '@/hooks/useSSE';
 
 interface Event {
   id: string;
@@ -60,6 +65,21 @@ const AdminEvents: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [serviceAddress, setServiceAddress] = useState<string>('');
   const [transactionRef, setTransactionRef] = useState<string>('');
+  // Batch Attestation test UI state
+  const [schemaUidInput, setSchemaUidInput] = useState<string>('');
+  const [recipientInput, setRecipientInput] = useState<string>('');
+  const [deadlineSecs, setDeadlineSecs] = useState<number>(3600);
+  const [singleResult, setSingleResult] = useState<string>('');
+
+  const batch = useBatchAttestation(baseSepolia.id);
+  const { encodeEventAttendanceData } = useAttestationEncoding();
+  const { signDelegatedAttestation } = useDelegatedAttestation();
+  const [batchSseLogs, setBatchSseLogs] = useState<string[]>([]);
+  const [txSseLogs, setTxSseLogs] = useState<string[]>([]);
+  const [execSseLogs, setExecSseLogs] = useState<string[]>([]);
+  const batchSse = useSSE();
+  const txSse = useSSE();
+  const execSse = useSSE();
 
   useEffect(() => {
     fetchEvents();
@@ -255,10 +275,10 @@ const AdminEvents: React.FC = () => {
               <h1 className="text-4xl font-bold">Events & Tickets</h1>
               <p className="text-lg text-muted-foreground">Manage events, grant keys, and view analytics</p>
             </div>
-          </div>
         </div>
+      </div>
 
-        <div className="grid grid-cols-1 xl:grid-cols-3 gap-8">
+      <div className="grid grid-cols-1 xl:grid-cols-3 gap-8">
           {/* Service Account Info */}
           <div className="xl:col-span-1">
             <Card className="border-0 shadow-lg">
@@ -449,6 +469,354 @@ const AdminEvents: React.FC = () => {
               </CardContent>
             </Card>
           </div>
+        </div>
+
+        {/* Batch Attestation (Test) */}
+        <div className="mt-8">
+          <Card className="border-0 shadow-lg">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Zap className="h-5 w-5" />
+                Batch Attestations (Test)
+              </CardTitle>
+              <CardDescription>
+                Sign off-chain then execute batch on-chain using the BatchAttestation contract
+              </CardDescription>
+            </CardHeader>
+              <CardContent className="space-y-4">
+                {/* SSE Tester */}
+                <div className="p-3 rounded border bg-muted/30">
+                <div className="flex items-center justify-between mb-2">
+                  <div className="font-medium text-sm">Live Stream (SSE)</div>
+                  <div className="space-x-2">
+                    <Button variant="outline" size="sm" onClick={() => {
+                      if (!selectedEvent) {
+                        toast({ title: 'Select event', description: 'Pick an event to stream', variant: 'destructive' });
+                        return;
+                      }
+                      const fnUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/sse-batch?eventId=${selectedEvent.id}`;
+                      setBatchSseLogs([]);
+                      batchSse.connect(fnUrl, {
+                        onMessage: (ev) => setBatchSseLogs((prev) => [...prev, `message: ${ev.data}`]),
+                        events: {
+                          stats: (ev) => setBatchSseLogs((prev) => [...prev, `stats: ${ev.data}`]),
+                          executed: (ev) => setBatchSseLogs((prev) => [...prev, `executed: ${ev.data}`]),
+                          end: (ev) => setBatchSseLogs((prev) => [...prev, `end: ${ev.data}`]),
+                          error: (ev) => setBatchSseLogs((prev) => [...prev, `error: ${ev.data}`]),
+                        },
+                      });
+                    }}>Start Batch Stream</Button>
+                    <Button variant="outline" size="sm" onClick={() => batchSse.disconnect()}>Stop Batch Stream</Button>
+                  </div>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <div className="text-xs text-muted-foreground mb-1">Batch SSE Log</div>
+                    <div className="h-40 overflow-auto rounded border bg-background p-2 text-xs font-mono">
+                      {batchSseLogs.length === 0 ? (
+                        <div className="text-muted-foreground">No events yet</div>
+                      ) : (
+                        batchSseLogs.map((l, i) => <div key={i}>{l}</div>)
+                      )}
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-xs text-muted-foreground mb-1">Transaction SSE Log</div>
+                    <div className="flex items-center gap-2 mb-2">
+                      <Input placeholder="Transaction reference" value={transactionRef} onChange={(e) => setTransactionRef(e.target.value)} />
+                      <Button variant="outline" size="sm" onClick={() => {
+                        if (!transactionRef) {
+                          toast({ title: 'Missing reference', description: 'Provide transaction ref', variant: 'destructive' });
+                          return;
+                        }
+                        const fnUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/sse-transaction-status?reference=${encodeURIComponent(transactionRef)}`;
+                        setTxSseLogs([]);
+                        txSse.connect(fnUrl, {
+                          onMessage: (ev) => setTxSseLogs((prev) => [...prev, `message: ${ev.data}`]),
+                          events: {
+                            status: (ev) => setTxSseLogs((prev) => [...prev, `status: ${ev.data}`]),
+                            end: (ev) => setTxSseLogs((prev) => [...prev, `end: ${ev.data}`]),
+                            error: (ev) => setTxSseLogs((prev) => [...prev, `error: ${ev.data}`]),
+                          },
+                        });
+                      }}>Start TX Stream</Button>
+                      <Button variant="outline" size="sm" onClick={() => txSse.disconnect()}>Stop TX Stream</Button>
+                    </div>
+                    <div className="h-40 overflow-auto rounded border bg-background p-2 text-xs font-mono">
+                      {txSseLogs.length === 0 ? (
+                        <div className="text-muted-foreground">No events yet</div>
+                      ) : (
+                        txSseLogs.map((l, i) => <div key={i}>{l}</div>)
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
+              {/* Execute via SSE */}
+              <div className="mt-4">
+                <div className="flex items-center gap-2 mb-2">
+                  <Button variant="default" size="sm" onClick={() => {
+                    if (!selectedEvent) {
+                      toast({ title: 'Select event', description: 'Pick an event to execute', variant: 'destructive' });
+                      return;
+                    }
+                    if (!batch.contractAddress) {
+                      toast({ title: 'Missing contract address', description: 'Configure VITE_TEEREX_ADDRESS_BASE_SEPOLIA', variant: 'destructive' });
+                      return;
+                    }
+                    const qs = new URLSearchParams({
+                      sse: '1',
+                      eventId: selectedEvent.id,
+                      chainId: String(batch.chainId),
+                      contractAddress: batch.contractAddress,
+                    }).toString();
+                    const url = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/execute-batch-attestations?${qs}`;
+                    setExecSseLogs([]);
+                    execSse.connect(url, {
+                      onMessage: (ev) => setExecSseLogs((prev) => [...prev, `message: ${ev.data}`]),
+                      events: {
+                        status: (ev) => setExecSseLogs((prev) => [...prev, `status: ${ev.data}`]),
+                        progress: (ev) => setExecSseLogs((prev) => [...prev, `progress: ${ev.data}`]),
+                        submitted: (ev) => setExecSseLogs((prev) => [...prev, `submitted: ${ev.data}`]),
+                        confirmed: (ev) => setExecSseLogs((prev) => [...prev, `confirmed: ${ev.data}`]),
+                        parsed: (ev) => setExecSseLogs((prev) => [...prev, `parsed: ${ev.data}`]),
+                        db: (ev) => setExecSseLogs((prev) => [...prev, `db: ${ev.data}`]),
+                        end: (ev) => setExecSseLogs((prev) => [...prev, `end: ${ev.data}`]),
+                        error: (ev) => setExecSseLogs((prev) => [...prev, `error: ${ev.data}`]),
+                      },
+                    });
+                  }}>Execute via SSE</Button>
+                  <Button variant="outline" size="sm" onClick={() => execSse.disconnect()}>Stop Execution Stream</Button>
+                </div>
+                <div className="h-40 overflow-auto rounded border bg-background p-2 text-xs font-mono">
+                  {execSseLogs.length === 0 ? (
+                    <div className="text-muted-foreground">No events yet</div>
+                  ) : (
+                    execSseLogs.map((l, i) => <div key={i}>{l}</div>)
+                  )}
+                </div>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div className="space-y-2">
+                    <Label>Contract Address (Base Sepolia)</Label>
+                    <Input value={batch.contractAddress || ''} readOnly placeholder="Configure VITE_TEEREX_ADDRESS_BASE_SEPOLIA" />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Schema UID</Label>
+                    <Input
+                      placeholder="0x..."
+                      value={schemaUidInput}
+                      onChange={(e) => setSchemaUidInput(e.target.value)}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Recipient Address</Label>
+                    <Input
+                      placeholder="0xRecipient"
+                      value={recipientInput}
+                      onChange={(e) => setRecipientInput(e.target.value)}
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div className="space-y-2">
+                    <Label>Deadline (seconds from now)</Label>
+                    <Input
+                      type="number"
+                      min={60}
+                      value={deadlineSecs}
+                      onChange={(e) => setDeadlineSecs(parseInt(e.target.value || '0', 10) || 0)}
+                    />
+                  </div>
+                  <div className="md:col-span-2 flex items-end gap-2">
+                    <Button
+                    onClick={async () => {
+                      if (!wallet) {
+                        toast({ title: 'Connect wallet', description: 'Please connect wallet', variant: 'destructive' });
+                        return;
+                      }
+                      if (!schemaUidInput || !recipientInput) {
+                        toast({ title: 'Missing fields', description: 'Provide schema UID and recipient', variant: 'destructive' });
+                        return;
+                      }
+                      if (!selectedEvent) {
+                        toast({ title: 'Select event', description: 'Pick an event to encode data', variant: 'destructive' });
+                        return;
+                      }
+                      try {
+                        const encoded = encodeEventAttendanceData(
+                          selectedEvent.id,
+                          selectedEvent.lock_address,
+                          selectedEvent.title
+                        );
+                        const sa = await batch.signAttestationMessage(
+                          schemaUidInput,
+                          recipientInput,
+                          encoded,
+                          deadlineSecs
+                        );
+                        // Persist to DB for execution
+                        const deadlineIso = new Date(Date.now() + deadlineSecs * 1000).toISOString();
+                        const { error: saveErr } = await supabase.from('attestation_delegations').insert({
+                          event_id: selectedEvent.id,
+                          schema_uid: schemaUidInput,
+                          recipient: recipientInput,
+                          data: encoded,
+                          deadline: deadlineIso,
+                          signer_address: wallet.address,
+                          signature: sa.signature,
+                          message_hash: sa.digest || `${schemaUidInput}:${recipientInput}:${deadlineIso}`,
+                          lock_address: selectedEvent.lock_address,
+                          event_title: selectedEvent.title,
+                        } as any);
+                        if (saveErr) {
+                          throw new Error(saveErr.message);
+                        }
+                        toast({ title: 'Signed', description: `Signature collected for ${sa.recipient}` });
+                      } catch (err: any) {
+                        toast({ title: 'Sign failed', description: err?.message || 'Unknown error', variant: 'destructive' });
+                      }
+                    }}
+                    disabled={batch.isLoading || !batch.contractAddress}
+                  >
+                    {batch.isLoading ? (
+                      <>
+                        <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+                        Signing...
+                      </>
+                    ) : (
+                      'Sign Attestation Message'
+                    )}
+                  </Button>
+                  <Button
+                    variant="secondary"
+                    onClick={async () => {
+                      try {
+                        // Call Edge Function to execute from persisted delegations
+                        const { data, error } = await supabase.functions.invoke('execute-batch-attestations', {
+                          body: {
+                            eventId: selectedEvent?.id,
+                            chainId: batch.chainId,
+                            contractAddress: batch.contractAddress,
+                          },
+                        });
+                        if (error || !data?.ok) {
+                          throw new Error(error?.message || data?.error || 'Failed');
+                        }
+                        const res = { success: true, hash: data.txHash };
+                        if (res.success) {
+                          toast({ title: 'Batch sent', description: `TX: ${res.hash}` });
+                        } else {
+                          throw new Error(res.error);
+                        }
+                      } catch (err: any) {
+                        toast({ title: 'Batch failed', description: err?.message || 'Unknown error', variant: 'destructive' });
+                      }
+                    }}
+                    disabled={batch.isLoading || !batch.contractAddress || !selectedEvent}
+                  >
+                    {batch.isLoading ? (
+                      <>
+                        <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+                        Executing...
+                      </>
+                    ) : (
+                      'Execute Batch Attestation'
+                    )}
+                  </Button>
+                  </div>
+                </div>
+
+                {/* Single Attestation by Delegation */}
+                <div className="mt-2 p-3 rounded border">
+                  <div className="mb-2 text-sm font-medium">Single Attestation (Delegation via Edge Function)</div>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      variant="default"
+                      onClick={async () => {
+                        try {
+                          if (!wallet) { toast({ title: 'Connect wallet', variant: 'destructive' }); return; }
+                          if (!selectedEvent) { toast({ title: 'Select event', variant: 'destructive' }); return; }
+                          if (!schemaUidInput || !recipientInput) { toast({ title: 'Missing fields', variant: 'destructive' }); return; }
+                          const encoded = encodeEventAttendanceData(selectedEvent.id, selectedEvent.lock_address, selectedEvent.title);
+                          // Sign EAS-delegated typed data
+                          const sa = await signDelegatedAttestation({ schemaUid: schemaUidInput, recipient: recipientInput, data: encoded, deadlineSecondsFromNow: deadlineSecs, chainId: batch.chainId });
+                          const deadlineTs = Number(sa.deadline);
+                          const token = await getAccessToken?.();
+                          const { data, error } = await supabase.functions.invoke('attest-by-delegation', {
+                            body: {
+                              eventId: selectedEvent.id,
+                              chainId: batch.chainId,
+                              contractAddress: batch.contractAddress,
+                              schemaUid: schemaUidInput,
+                              recipient: recipientInput,
+                              data: encoded,
+                              deadline: deadlineTs,
+                              signature: sa.signature,
+                              lockAddress: selectedEvent.lock_address,
+                            },
+                            headers: token ? { 'X-Privy-Authorization': `Bearer ${token}` } : undefined,
+                          });
+                          if (error || !data?.ok) throw new Error(error?.message || data?.error || 'Failed');
+                          setSingleResult(`TX: ${data.txHash} UID: ${data.uid || 'unknown'}`);
+                          toast({ title: 'Single attestation sent', description: `TX: ${data.txHash}` });
+                        } catch (err: any) {
+                          setSingleResult(err?.message || 'Failed');
+                          toast({ title: 'Single attestation failed', description: err?.message || 'Unknown error', variant: 'destructive' });
+                        }
+                      }}
+                      disabled={!batch.contractAddress}
+                    >
+                      Sign & Send Single Attestation
+                    </Button>
+                    {singleResult && (
+                      <code className="text-xs bg-muted/50 px-2 py-1 rounded font-mono truncate flex-1">{singleResult}</code>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2 mt-2">
+                    <Button variant="outline" size="sm" onClick={() => {
+                      if (!selectedEvent) { toast({ title: 'Select event', variant: 'destructive' }); return; }
+                      if (!schemaUidInput || !recipientInput) { toast({ title: 'Missing fields', variant: 'destructive' }); return; }
+                      const url = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/sse-single-attestation?eventId=${selectedEvent.id}&recipient=${recipientInput}&schemaUid=${schemaUidInput}`;
+                      setExecSseLogs([]);
+                      execSse.connect(url, {
+                        onMessage: (ev) => setExecSseLogs((prev) => [...prev, `message: ${ev.data}`]),
+                        events: {
+                          status: (ev) => setExecSseLogs((prev) => [...prev, `status: ${ev.data}`]),
+                          found: (ev) => setExecSseLogs((prev) => [...prev, `found: ${ev.data}`]),
+                          end: (ev) => setExecSseLogs((prev) => [...prev, `end: ${ev.data}`]),
+                          error: (ev) => setExecSseLogs((prev) => [...prev, `error: ${ev.data}`]),
+                        },
+                      });
+                    }}>Start Single Attestation Stream</Button>
+                    <Button variant="outline" size="sm" onClick={() => execSse.disconnect()}>Stop</Button>
+                  </div>
+                </div>
+
+                <Separator />
+
+                <div>
+                  <div className="text-sm font-medium mb-2">Signed Messages</div>
+                  {batch.signed.length === 0 ? (
+                  <div className="text-sm text-muted-foreground">No signatures collected yet</div>
+                ) : (
+                  <div className="space-y-2 max-h-[300px] overflow-y-auto">
+                    {batch.signed.map((s, idx) => (
+                      <div key={idx} className="p-3 rounded border">
+                        <div className="text-xs text-muted-foreground">Recipient</div>
+                        <div className="font-mono text-xs truncate">{s.recipient}</div>
+                        <div className="mt-1 text-xs text-muted-foreground">Schema UID</div>
+                        <div className="font-mono text-xs truncate">{s.schemaUid}</div>
+                        <div className="mt-1 text-xs text-muted-foreground">Deadline</div>
+                        <div className="font-mono text-xs truncate">{s.deadline.toString()}</div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </CardContent>
+          </Card>
         </div>
       </div>
     </div>

@@ -32,13 +32,14 @@ interface Attendee {
 interface AttendeesListProps {
   eventId: string;
   eventTitle: string;
+  attendanceSchemaUid?: string;
 }
 
-const ATTENDED_SCHEMA_UID = '0x8234567890abcdef1234567890abcdef12345678';
 
 export const AttendeesList: React.FC<AttendeesListProps> = ({
   eventId,
-  eventTitle
+  eventTitle,
+  attendanceSchemaUid,
 }) => {
   const { wallets } = useWallets();
   const wallet = wallets[0];
@@ -47,7 +48,7 @@ export const AttendeesList: React.FC<AttendeesListProps> = ({
   const [isLoading, setIsLoading] = useState(true);
 
   const loadAttendees = async () => {
-    if (!eventId) return;
+    if (!eventId || !attendanceSchemaUid) return;
 
     setIsLoading(true);
     try {
@@ -61,7 +62,7 @@ export const AttendeesList: React.FC<AttendeesListProps> = ({
           data
         `)
         .eq('event_id', eventId)
-        .eq('schema_uid', ATTENDED_SCHEMA_UID)
+        .eq('schema_uid', attendanceSchemaUid)
         .eq('is_revoked', false)
         .order('created_at', { ascending: false });
 
@@ -118,7 +119,7 @@ export const AttendeesList: React.FC<AttendeesListProps> = ({
 
   useEffect(() => {
     loadAttendees();
-  }, [eventId]);
+  }, [eventId, attendanceSchemaUid]);
 
   const handleVote = async (attestationId: string, voteType: 'support' | 'challenge') => {
     if (!wallet?.address) return;

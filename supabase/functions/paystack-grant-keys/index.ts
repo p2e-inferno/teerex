@@ -4,11 +4,11 @@ import { ethers } from "https://esm.sh/ethers@6.14.4";
 import PublicLockV15 from "../_shared/abi/PublicLockV15.json" assert { type: "json" };
 import { corsHeaders, buildPreflightHeaders } from "../_shared/cors.ts";
 import { createRemoteJWKSet, jwtVerify, importSPKI } from "https://deno.land/x/jose@v4.14.4/index.ts";
+import { getUserWalletAddresses } from "../_shared/privy.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const PRIVY_APP_ID = Deno.env.get("VITE_PRIVY_APP_ID")!;
-const PRIVY_APP_SECRET = Deno.env.get("PRIVY_APP_SECRET")!;
 const PRIVY_VERIFICATION_KEY = Deno.env.get("PRIVY_VERIFICATION_KEY");
 const UNLOCK_SERVICE_PRIVATE_KEY = Deno.env.get("UNLOCK_SERVICE_PRIVATE_KEY")!;
 
@@ -69,21 +69,17 @@ serve(async (req) => {
 
     // Authorization: event creator OR on-chain lock manager
     let authorized = event.creator_id === privyUserId;
-    let userWalletAddress: string | undefined;
     if (!authorized) {
-      const resp = await fetch(`https://auth.privy.io/api/v1/users/${privyUserId}`, { method: "GET", headers: { "privy-app-id": PRIVY_APP_ID, Authorization: "Basic " + btoa(`${PRIVY_APP_ID}:${PRIVY_APP_SECRET}`) } });
-      if (resp.ok) {
-        const privyUserData = await resp.json();
-        const wallet = privyUserData.linked_accounts?.find((acc: any) => acc.type === "wallet");
-        userWalletAddress = wallet?.address;
-      }
-      if (userWalletAddress) {
+      const userWallets = await getUserWalletAddresses(privyUserId);
+      if (userWallets && userWallets.length > 0) {
         const { data: net, error: netErr } = await supabase.from("network_configs").select("rpc_url").eq("chain_id", event.chain_id).single();
         if (netErr || !net?.rpc_url) throw new Error("Network RPC not configured");
         const provider = new ethers.JsonRpcProvider(net.rpc_url);
         const lock = new ethers.Contract(event.lock_address, PublicLockV15 as any, provider);
-        const isManager = await lock.isLockManager(userWalletAddress);
-        authorized = isManager;
+        for (const addr of userWallets) {
+          const isManager = await lock.isLockManager(addr);
+          if (isManager) { authorized = true; break; }
+        }
       }
     }
 

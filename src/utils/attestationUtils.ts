@@ -226,29 +226,98 @@ export const createAttestation = async (params: CreateAttestationParams): Promis
     // Initialize SchemaEncoder with the exact schema definition
     const schemaEncoder = new SchemaEncoder(schema.schema_definition);
     
-    // Prepare data for encoding using the schema encoder
-    const timestamp = data.timestamp || Math.floor(Date.now() / 1000);
-    const location = data.location || 'Metaverse';
-    const platform = 'TeeRex';
-    
-    console.log('Encoding with EAS SDK:', {
-      eventId: data.eventId,
-      lockAddress: data.lockAddress,
-      eventTitle: data.eventTitle,
-      timestamp,
-      location,
-      platform
-    });
+    // Prepare data entries dynamically from the schema definition
+    const defaultTimestamp = BigInt(data.timestamp || Math.floor(Date.now() / 1000));
+    const defaultLocation = data.location || 'Metaverse';
+    const defaultPlatform = 'TeeRex';
 
-    // Encode data using EAS SDK - ensure proper type casting
-    const encodedData = schemaEncoder.encodeData([
-      { name: 'eventId', value: data.eventId, type: 'string' },
-      { name: 'lockAddress', value: data.lockAddress, type: 'address' },
-      { name: 'eventTitle', value: data.eventTitle, type: 'string' },
-      { name: 'timestamp', value: BigInt(timestamp), type: 'uint256' },
-      { name: 'location', value: location, type: 'string' },
-      { name: 'platform', value: platform, type: 'string' }
-    ]);
+    // Helper to coerce values to expected types
+    const toTypedValue = (type: string, val: any): any => {
+      if (type.startsWith('uint')) {
+        try {
+          if (typeof val === 'bigint') return val;
+          if (typeof val === 'number') return BigInt(Math.trunc(val));
+          if (typeof val === 'string') return BigInt(val);
+        } catch (_) {
+          return 0n;
+        }
+        return 0n;
+      }
+      if (type === 'address') {
+        return typeof val === 'string' && val ? val : ethers.ZeroAddress;
+      }
+      if (type === 'bool' || type === 'boolean') {
+        return Boolean(val);
+      }
+      if (type === 'bytes32') {
+        const zero = '0x0000000000000000000000000000000000000000000000000000000000000000';
+        return typeof val === 'string' && val.startsWith('0x') && val.length === 66 ? val : zero;
+      }
+      // default string/bytes
+      return val ?? '';
+    };
+
+    const fields = schema.schema_definition.split(',').map(f => f.trim()).filter(Boolean);
+    const encoderItems: { name: string; value: any; type: string }[] = [];
+
+    for (const field of fields) {
+      const parts = field.split(/\s+/);
+      if (parts.length < 2) continue;
+      const [type, name] = [parts[0], parts[1]];
+
+      // First try to use provided data
+      let value: any = (data as any)[name];
+
+      // Then apply smart defaults for known names
+      if (value === undefined) {
+        switch (name) {
+          case 'eventId':
+            value = data.eventId ?? '';
+            break;
+          case 'lockAddress':
+            value = data.lockAddress ?? ethers.ZeroAddress;
+            break;
+          case 'eventTitle':
+            value = data.eventTitle ?? '';
+            break;
+          case 'timestamp':
+            value = defaultTimestamp;
+            break;
+          case 'location':
+            value = defaultLocation;
+            break;
+          case 'platform':
+            value = defaultPlatform;
+            break;
+          case 'attendee':
+          case 'declarer':
+          case 'ticketHolder':
+          case 'purchaser':
+          case 'keyHolder':
+          case 'creatorAddress':
+            value = recipient;
+            break;
+          case 'tokenId':
+          case 'expirationTime':
+          case 'rating':
+            value = 0n;
+            break;
+          case 'review':
+            value = '';
+            break;
+          default:
+            // Leave undefined; will be coerced to a sensible default below
+            break;
+        }
+      }
+
+      // Coerce to correct type
+      const typedValue = toTypedValue(type, value);
+      encoderItems.push({ name, value: typedValue, type });
+    }
+
+    // Encode data using EAS SDK - dynamic fields
+    const encodedData = schemaEncoder.encodeData(encoderItems);
 
     console.log('EAS SDK encoded data:', encodedData);
 

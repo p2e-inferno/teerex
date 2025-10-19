@@ -25,6 +25,7 @@ export interface RegisterSchemaParams {
   schemaDefinition: string;
   revocable: boolean;
   wallet: any;
+  skipDbInsert?: boolean;
 }
 
 export interface SchemaRegistrationResult {
@@ -39,7 +40,7 @@ export interface SchemaRegistrationResult {
  */
 export const registerSchema = async (params: RegisterSchemaParams): Promise<SchemaRegistrationResult> => {
   try {
-    const { name, description, category, schemaDefinition, revocable, wallet } = params;
+    const { name, description, category, schemaDefinition, revocable, wallet, skipDbInsert } = params;
 
     if (!wallet) {
       throw new Error('Wallet not connected');
@@ -120,21 +121,23 @@ export const registerSchema = async (params: RegisterSchemaParams): Promise<Sche
       throw new Error('Failed to extract schema UID from transaction');
     }
 
-    // Save schema to our database
-    const { error: saveError } = await supabase
-      .from('attestation_schemas')
-      .insert({
-        schema_uid: schemaUid,
-        name,
-        description,
-        category,
-        schema_definition: schemaDefinition,
-        revocable
-      });
+    // Save schema to our database unless skipped
+    if (!skipDbInsert) {
+      const { error: saveError } = await supabase
+        .from('attestation_schemas')
+        .insert({
+          schema_uid: schemaUid,
+          name,
+          description,
+          category,
+          schema_definition: schemaDefinition,
+          revocable
+        });
 
-    if (saveError) {
-      console.error('Error saving schema to database:', saveError);
-      // Don't fail the entire operation if database save fails
+      if (saveError) {
+        console.error('Error saving schema to database:', saveError);
+        // Don't fail the entire operation if database save fails
+      }
     }
 
     return {
