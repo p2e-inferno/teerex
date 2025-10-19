@@ -63,15 +63,19 @@ serve(async (req) => {
     if (req.method === 'GET') {
       eventId = url.searchParams.get('eventId') || undefined;
       chainId = Number(url.searchParams.get('chainId') ?? 84532);
-      contractAddress = url.searchParams.get('contractAddress')
-        ?? (chainId === 8453 ? Deno.env.get('TEEREX_ADDRESS_BASE_MAINNET') : Deno.env.get('TEEREX_ADDRESS_BASE_SEPOLIA')) || undefined;
+      const envAddr = chainId === 8453
+        ? Deno.env.get('TEEREX_ADDRESS_BASE_MAINNET')
+        : Deno.env.get('TEEREX_ADDRESS_BASE_SEPOLIA');
+      contractAddress = url.searchParams.get('contractAddress') ?? envAddr;
     } else {
       const text = await req.text();
       const body = text ? JSON.parse(text) : {};
       eventId = body.eventId;
       chainId = Number(body.chainId ?? 84532);
-      contractAddress = body.contractAddress
-        ?? (chainId === 8453 ? Deno.env.get('TEEREX_ADDRESS_BASE_MAINNET') : Deno.env.get('TEEREX_ADDRESS_BASE_SEPOLIA'));
+      const envAddr = chainId === 8453
+        ? Deno.env.get('TEEREX_ADDRESS_BASE_MAINNET')
+        : Deno.env.get('TEEREX_ADDRESS_BASE_SEPOLIA');
+      contractAddress = body.contractAddress ?? envAddr;
     }
 
     if (!eventId) return json({ ok: false, error: 'Missing eventId' }, 400);
@@ -112,7 +116,7 @@ serve(async (req) => {
     }
 
     // Provider & signer
-    const rpcUrl = Deno.env.get('RPC_URL') ?? (chainId === 8453 ? 'https://mainnet.base.org' : 'https://sepolia.base.org');
+    const rpcUrl = Deno.env.get('PRIMARY_RPC_URL') ?? (chainId === 8453 ? 'https://mainnet.base.org' : 'https://sepolia.base.org');
     const pk = Deno.env.get('UNLOCK_SERVICE_PRIVATE_KEY')
       ?? Deno.env.get('SERVICE_WALLET_PRIVATE_KEY')
       ?? Deno.env.get('SERVICE_PK');

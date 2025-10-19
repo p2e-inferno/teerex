@@ -69,8 +69,10 @@ serve(async (req) => {
     const revocable: boolean = body.revocable ?? false;
     const refUID: string = body.refUID ?? '0x0000000000000000000000000000000000000000000000000000000000000000';
     let chainId: number = Number(body.chainId ?? 84532); // default Base Sepolia
-    let contractAddress: string | undefined = body.contractAddress
-      ?? (chainId === 8453 ? Deno.env.get('TEEREX_ADDRESS_BASE_MAINNET') : Deno.env.get('TEEREX_ADDRESS_BASE_SEPOLIA')) || undefined;
+    const envAddr = chainId === 8453
+      ? Deno.env.get('TEEREX_ADDRESS_BASE_MAINNET')
+      : Deno.env.get('TEEREX_ADDRESS_BASE_SEPOLIA');
+    let contractAddress: string | undefined = body.contractAddress ?? envAddr;
     const signature: string | undefined = body.signature; // 0x rsv
 
     if (!schemaUid || !recipient || !data || !deadline || !signature || !contractAddress) {
@@ -86,7 +88,10 @@ serve(async (req) => {
       const { data: ev } = await supabase.from('events').select('id, title, lock_address, chain_id').eq('id', eventId).maybeSingle();
       if (ev?.chain_id && !body.chainId) chainId = Number(ev.chain_id);
       if (!body.contractAddress) {
-        contractAddress = (chainId === 8453 ? Deno.env.get('TEEREX_ADDRESS_BASE_MAINNET') : Deno.env.get('TEEREX_ADDRESS_BASE_SEPOLIA')) || contractAddress;
+        const envAddr2 = chainId === 8453
+          ? Deno.env.get('TEEREX_ADDRESS_BASE_MAINNET')
+          : Deno.env.get('TEEREX_ADDRESS_BASE_SEPOLIA');
+        contractAddress = envAddr2 || contractAddress;
       }
       lockAddress = lockAddress || ev?.lock_address;
     }
@@ -155,7 +160,7 @@ serve(async (req) => {
         let rpcUrl: string | undefined;
         const { data: net } = await supabase.from('network_configs').select('rpc_url').eq('chain_id', ev?.chain_id || chainId).maybeSingle();
         rpcUrl = net?.rpc_url as string | undefined;
-        if (!rpcUrl) rpcUrl = ({ 8453: 'https://mainnet.base.org', 84532: 'https://sepolia.base.org' } as Record<number, string>)[ev?.chain_id || chainId] || Deno.env.get('RPC_URL') || undefined;
+        if (!rpcUrl) rpcUrl = ({ 8453: 'https://mainnet.base.org', 84532: 'https://sepolia.base.org' } as Record<number, string>)[ev?.chain_id || chainId] || Deno.env.get('PRIMARY_RPC_URL') || undefined;
         if (!rpcUrl) throw new Error('Missing RPC URL');
         const userWallets = await getUserWalletAddresses(privyUserId);
         const { anyHasKey } = await isAnyUserWalletHasValidKeyParallel(lockAddress || ev!.lock_address, userWallets, rpcUrl);
@@ -164,7 +169,7 @@ serve(async (req) => {
     }
 
     // 5) Execute single attestation via service wallet
-    const rpcUrl = Deno.env.get('RPC_URL') ?? (chainId === 8453 ? 'https://mainnet.base.org' : 'https://sepolia.base.org');
+    const rpcUrl = Deno.env.get('PRIMARY_RPC_URL') ?? (chainId === 8453 ? 'https://mainnet.base.org' : 'https://sepolia.base.org');
     const provider = new JsonRpcProvider(rpcUrl);
     const signer = new Wallet(SERVICE_PK!, provider);
 

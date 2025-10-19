@@ -81,7 +81,7 @@ serve(async (req) => {
         rpcUrl = ({ 8453: "https://mainnet.base.org", 84532: "https://sepolia.base.org", 1: "https://eth.llamarpc.com", 11155111: "https://ethereum-sepolia-rpc.publicnode.com", 137: "https://polygon.llamarpc.com" } as Record<number, string>)[chainId];
       }
     }
-    rpcUrl = rpcUrl ?? (md.rpcUrl as string | undefined) ?? (body.rpcUrl as string | undefined) ?? (Deno.env.get("RPC_URL") as string | undefined);
+    rpcUrl = rpcUrl ?? (md.rpcUrl as string | undefined) ?? (body.rpcUrl as string | undefined) ?? (Deno.env.get("PRIMARY_RPC_URL") as string | undefined);
     const serviceWalletPrivateKey: string | undefined = (Deno.env.get("UNLOCK_SERVICE_PRIVATE_KEY") ?? Deno.env.get("SERVICE_WALLET_PRIVATE_KEY") ?? Deno.env.get("SERVICE_PK")) as string | undefined;
 
     if (!rpcUrl) throw new Error("Missing RPC_URL");
