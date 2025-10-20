@@ -147,10 +147,9 @@ contract BatchAttestation is Ownable, ReentrancyGuard, Pausable {
         _;
     }
 
-    constructor(address _eas, address _initialOwner) {
+    constructor(address _eas, address _initialOwner) Ownable(_initialOwner) {
         if (_eas == address(0)) revert InvalidEASAddress();
         eas = IEAS(_eas);
-        _transferOwnership(_initialOwner);
     }
 
     /**
