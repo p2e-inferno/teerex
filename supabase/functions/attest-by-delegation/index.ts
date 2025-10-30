@@ -96,18 +96,22 @@ serve(async (req) => {
       lockAddress = lockAddress || ev?.lock_address;
     }
 
-    // 3) Verify EIP-712 delegated signature against EAS domain
+    // 3) Verify EIP-712 delegated signature against TeeRex proxy domain
     if (!signature || typeof signature !== 'string' || !signature.startsWith('0x')) {
       throw new Error('Missing or invalid signature');
     }
+    // TeeRex proxy contract domain (NOT EAS domain)
     const domain = {
-      name: 'EAS',
-      version: '1.0.0',
+      name: 'TeeRex',
+      version: '1.4.0',
       chainId,
-      verifyingContract: EAS_ADDRESS_BY_CHAIN[chainId] || EAS_ADDRESS_BY_CHAIN[84532],
+      verifyingContract: contractAddress!,
     } as const;
+    // EIP-712 type structure matching ATTEST_PROXY_TYPEHASH from EIP712Proxy.sol
+    // Field order MUST match exactly: attester, schema, recipient, expirationTime, revocable, refUID, data, value, deadline
     const types = {
-      DelegatedAttestation: [
+      Attest: [
+        { name: 'attester', type: 'address' },
         { name: 'schema', type: 'bytes32' },
         { name: 'recipient', type: 'address' },
         { name: 'expirationTime', type: 'uint64' },
@@ -119,6 +123,7 @@ serve(async (req) => {
       ],
     } as const;
     const value = {
+      attester: recipient!, // The user is the attester
       schema: schemaUid,
       recipient,
       expirationTime: BigInt(expirationTime || 0),
@@ -168,55 +173,73 @@ serve(async (req) => {
       }
     }
 
-    // 5) Execute single attestation via service wallet
+    // 5) Execute single attestation via service wallet using TeeRex proxy's attestByDelegation
     const rpcUrl = Deno.env.get('PRIMARY_RPC_URL') ?? (chainId === 8453 ? 'https://mainnet.base.org' : 'https://sepolia.base.org');
     const provider = new JsonRpcProvider(rpcUrl);
     const signer = new Wallet(SERVICE_PK!, provider);
 
-    const BATCH_ABI = [
+    // Use the correct attestByDelegation ABI from EIP712Proxy
+    const TEEREX_ABI = [
       {
         type: 'function',
-        name: 'createAttestationByDelegation',
-        stateMutability: 'nonpayable',
+        name: 'attestByDelegation',
+        stateMutability: 'payable',
         inputs: [
-          { name: 'lockAddress', type: 'address' },
-          { name: 'schemaUID', type: 'bytes32' },
-          { name: 'recipient', type: 'address' },
-          { name: 'data', type: 'bytes' },
           {
-            name: 'signature',
+            name: 'delegatedRequest',
             type: 'tuple',
             components: [
-              { name: 'v', type: 'uint8' },
-              { name: 'r', type: 'bytes32' },
-              { name: 's', type: 'bytes32' },
+              { name: 'schema', type: 'bytes32' },
+              {
+                name: 'data',
+                type: 'tuple',
+                components: [
+                  { name: 'recipient', type: 'address' },
+                  { name: 'expirationTime', type: 'uint64' },
+                  { name: 'revocable', type: 'bool' },
+                  { name: 'refUID', type: 'bytes32' },
+                  { name: 'data', type: 'bytes' },
+                  { name: 'value', type: 'uint256' },
+                ],
+              },
+              {
+                name: 'signature',
+                type: 'tuple',
+                components: [
+                  { name: 'v', type: 'uint8' },
+                  { name: 'r', type: 'bytes32' },
+                  { name: 's', type: 'bytes32' },
+                ],
+              },
+              { name: 'attester', type: 'address' },
+              { name: 'deadline', type: 'uint64' },
             ],
           },
-          { name: 'attester', type: 'address' },
-          { name: 'deadline', type: 'uint64' },
-          { name: 'expirationTime', type: 'uint64' },
-          { name: 'revocable', type: 'bool' },
-          { name: 'refUID', type: 'bytes32' },
         ],
         outputs: [{ name: 'uid', type: 'bytes32' }],
       },
     ] as const;
-    const contract = new Contract(contractAddress!, BATCH_ABI as any, signer);
+    const contract = new Contract(contractAddress!, TEEREX_ABI as any, signer);
 
     if (!lockAddress) throw new Error('Missing lockAddress');
-    const sigStruct = { v, r, s } as any;
-    const tx = await contract.createAttestationByDelegation(
-      lockAddress,
-      schemaUid,
-      recipient,
-      data,
-      sigStruct,
+
+    // Structure the DelegatedProxyAttestationRequest tuple
+    const delegatedRequest = {
+      schema: schemaUid,
+      data: {
+        recipient,
+        expirationTime: BigInt(expirationTime || 0),
+        revocable: Boolean(revocable),
+        refUID,
+        data,
+        value: 0n,
+      },
+      signature: { v, r, s },
       attester,
-      BigInt(deadline),
-      BigInt(expirationTime || 0),
-      revocable,
-      refUID
-    );
+      deadline: BigInt(deadline),
+    };
+
+    const tx = await contract.attestByDelegation(delegatedRequest);
     const receipt = await tx.wait();
 
     // Parse Attested event for UID

@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { toast } from '@/hooks/use-toast';
 import { usePrivy } from '@privy-io/react-auth';
-import { useDelegatedAttestation } from '@/hooks/useDelegatedAttestation';
+import { useTeeRexDelegatedAttestation } from '@/hooks/useTeeRexDelegatedAttestation';
 import { useAttestationEncoding } from '@/hooks/useAttestationEncoding';
 import { supabase } from '@/integrations/supabase/client';
 import { Sparkles, Loader2 } from 'lucide-react';
@@ -33,7 +33,7 @@ export const GaslessEASAttestationButton: React.FC<GaslessEASAttestationButtonPr
   onResult,
 }) => {
   const { getAccessToken } = usePrivy();
-  const { signDelegatedAttestation } = useDelegatedAttestation();
+  const { signTeeRexAttestation } = useTeeRexDelegatedAttestation(); // For TeeRex proxy
   const { encodeEventAttendanceData } = useAttestationEncoding();
   const [loading, setLoading] = useState(false);
 
@@ -65,9 +65,9 @@ export const GaslessEASAttestationButton: React.FC<GaslessEASAttestationButtonPr
         selectedEvent.title
       );
 
-      // Step 2: Sign delegated attestation using EAS SDK
-      onResult?.('Step 2/3: Signing with EAS SDK (user signs, no gas)...');
-      const sa = await signDelegatedAttestation({
+      // Step 2: Sign delegated attestation for TeeRex proxy
+      onResult?.('Step 2/3: Signing with TeeRex domain (user signs, no gas)...');
+      const sa = await signTeeRexAttestation({
         schemaUid,
         recipient,
         data: encoded,

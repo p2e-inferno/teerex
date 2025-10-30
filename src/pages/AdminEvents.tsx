@@ -43,6 +43,7 @@ import { baseSepolia } from "wagmi/chains";
 import { useBatchAttestation } from "@/hooks/useBatchAttestation";
 import { useAttestationEncoding } from "@/hooks/useAttestationEncoding";
 import { useDelegatedAttestation } from "@/hooks/useDelegatedAttestation";
+import { useTeeRexDelegatedAttestation } from "@/hooks/useTeeRexDelegatedAttestation";
 import { useSSE } from "@/hooks/useSSE";
 import { DirectEASAttestationButton } from "@/components/attestations/DirectEASAttestationButton";
 import { GaslessEASAttestationButton } from "@/components/attestations/GaslessEASAttestationButton";
@@ -87,7 +88,8 @@ const AdminEvents: React.FC = () => {
 
   const batch = useBatchAttestation(baseSepolia.id);
   const { encodeEventAttendanceData } = useAttestationEncoding();
-  const { signDelegatedAttestation } = useDelegatedAttestation();
+  const { signDelegatedAttestation } = useDelegatedAttestation(); // For direct EAS attestations
+  const { signTeeRexAttestation } = useTeeRexDelegatedAttestation(); // For TeeRex proxy attestations
   const [batchSseLogs, setBatchSseLogs] = useState<string[]>([]);
   const [txSseLogs, setTxSseLogs] = useState<string[]>([]);
   const [execSseLogs, setExecSseLogs] = useState<string[]>([]);
@@ -1044,8 +1046,8 @@ const AdminEvents: React.FC = () => {
                           selectedEvent.lock_address,
                           selectedEvent.title
                         );
-                        // Sign EAS-delegated typed data
-                        const sa = await signDelegatedAttestation({
+                        // Sign TeeRex-delegated typed data (for proxy contract)
+                        const sa = await signTeeRexAttestation({
                           schemaUid: schemaUidInput,
                           recipient: recipientInput,
                           data: encoded,
