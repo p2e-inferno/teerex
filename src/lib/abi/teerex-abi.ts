@@ -1,5 +1,4 @@
-// Minimal ABI for BatchAttestation/ TeeRex contract based on guide
-// Extend as the on-chain contract evolves
+// Full ABI for BatchAttestation (TeeRex) contract matching contracts/BatchAttestation.sol
 export const TEEREX_ABI = [
   // Write functions
   {
@@ -40,37 +39,82 @@ export const TEEREX_ABI = [
     inputs: [{ name: 'newMaxSize', type: 'uint256' }],
     outputs: [],
   },
+  // EIP712Proxy delegated attestation functions
   {
     type: 'function',
-    name: 'createBatchAttestationsByDelegation',
-    stateMutability: 'nonpayable',
+    name: 'attestByDelegation',
+    stateMutability: 'payable',
     inputs: [
       {
-        name: 'requests',
+        name: 'delegatedRequest',
+        type: 'tuple',
+        components: [
+          { name: 'schema', type: 'bytes32' },
+          {
+            name: 'data',
+            type: 'tuple',
+            components: [
+              { name: 'recipient', type: 'address' },
+              { name: 'expirationTime', type: 'uint64' },
+              { name: 'revocable', type: 'bool' },
+              { name: 'refUID', type: 'bytes32' },
+              { name: 'data', type: 'bytes' },
+              { name: 'value', type: 'uint256' },
+            ],
+          },
+          {
+            name: 'signature',
+            type: 'tuple',
+            components: [
+              { name: 'v', type: 'uint8' },
+              { name: 'r', type: 'bytes32' },
+              { name: 's', type: 'bytes32' },
+            ],
+          },
+          { name: 'attester', type: 'address' },
+          { name: 'deadline', type: 'uint64' },
+        ],
+      },
+    ],
+    outputs: [{ name: 'uid', type: 'bytes32' }],
+  },
+  {
+    type: 'function',
+    name: 'multiAttestByDelegation',
+    stateMutability: 'payable',
+    inputs: [
+      {
+        name: 'multiDelegatedRequests',
         type: 'tuple[]',
         components: [
-          { name: 'schemaUID', type: 'bytes32' },
-          { name: 'recipient', type: 'address' },
-          { name: 'data', type: 'bytes' },
-          { name: 'deadline', type: 'uint256' },
-          { name: 'signature', type: 'bytes' },
+          { name: 'schema', type: 'bytes32' },
+          {
+            name: 'data',
+            type: 'tuple[]',
+            components: [
+              { name: 'recipient', type: 'address' },
+              { name: 'expirationTime', type: 'uint64' },
+              { name: 'revocable', type: 'bool' },
+              { name: 'refUID', type: 'bytes32' },
+              { name: 'data', type: 'bytes' },
+              { name: 'value', type: 'uint256' },
+            ],
+          },
+          {
+            name: 'signatures',
+            type: 'tuple[]',
+            components: [
+              { name: 'v', type: 'uint8' },
+              { name: 'r', type: 'bytes32' },
+              { name: 's', type: 'bytes32' },
+            ],
+          },
+          { name: 'attester', type: 'address' },
+          { name: 'deadline', type: 'uint64' },
         ],
       },
     ],
     outputs: [{ name: 'uids', type: 'bytes32[]' }],
-  },
-  {
-    type: 'function',
-    name: 'createAttestationByDelegation',
-    stateMutability: 'nonpayable',
-    inputs: [
-      { name: 'schemaUID', type: 'bytes32' },
-      { name: 'recipient', type: 'address' },
-      { name: 'data', type: 'bytes' },
-      { name: 'deadline', type: 'uint256' },
-      { name: 'signature', type: 'bytes' },
-    ],
-    outputs: [{ name: 'uid', type: 'bytes32' }],
   },
   { type: 'function', name: 'pause', stateMutability: 'nonpayable', inputs: [], outputs: [] },
   { type: 'function', name: 'unpause', stateMutability: 'nonpayable', inputs: [], outputs: [] },
@@ -134,4 +178,3 @@ export const TEEREX_ABI = [
 ];
 
 export default TEEREX_ABI;
-

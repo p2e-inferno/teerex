@@ -75,7 +75,7 @@ Both paths write a record to Supabase `attestations` and are additive to existin
   - Auth: Privy JWT in `X-Privy-Authorization`.
   - Security: signer must belong to the authenticated Privy user, and equal `recipient`.
 
-- `execute-batch-attestations` (batch delegated)
+- `batch-attest-by-delegation` (batch delegated)
   - JSON and SSE modes; executes all pending delegations for an event.
   - Parses UIDs and writes to `attestations`.
 
@@ -158,7 +158,7 @@ es.addEventListener('found', (ev) => console.log('Attestation:', ev.data));
 
 ```bash
 supabase functions deploy attest-by-delegation
-supabase functions deploy execute-batch-attestations
+supabase functions deploy batch-attest-by-delegation
 supabase functions deploy sse-single-attestation
 ```
 

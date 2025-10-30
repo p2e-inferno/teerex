@@ -312,7 +312,7 @@ The batch attestation functionality is integrated with the existing attestation 
 
 - Delegation persistence table: `public.attestation_delegations` (immutable inserts; service role updates execution status)
 - Edge Functions:
-  - `execute-batch-attestations`: Executes pending delegations in batch; supports JSON and SSE modes; parses EAS `Attested` UIDs from logs and writes `attestations` rows.
+  - `batch-attest-by-delegation`: Executes pending delegations in batch; supports JSON and SSE modes; parses EAS `Attested` UIDs from logs and writes `attestations` rows.
   - `sse-batch`: Streams per-event batch progress (pending/executed and newly executed slices).
   - `sse-transaction-status`: Streams Paystack verification status per `reference`.
   - `attest-by-delegation`: Execute a single EAS attestation by delegation via service wallet and the BatchAttestation contract.
@@ -402,7 +402,7 @@ All three provide heartbeats and retry behaviors; are additive to existing polli
     - Sign EAS delegated data, then call `attest-by-delegation`.
     - Start Single Stream: `/functions/v1/sse-single-attestation?eventId=…&recipient=…&schemaUid=…` to watch for success.
   - Batch Streams: start/stop `sse-batch`; payments stream via `sse-transaction-status`.
-  - Execute Batch via SSE: runs `execute-batch-attestations` with streaming progress.
+  - Execute Batch via SSE: runs `batch-attest-by-delegation` with streaming progress.
 
 ### Shared Utilities
 
@@ -422,8 +422,8 @@ All three provide heartbeats and retry behaviors; are additive to existing polli
 
 ### Execution Modes
 
-- JSON mode (existing): `POST /functions/v1/execute-batch-attestations` with `{ eventId, chainId, contractAddress }` → `{ ok, txHash, count }`.
-- SSE mode (additive): `GET /functions/v1/execute-batch-attestations?sse=1&eventId=...&chainId=...&contractAddress=...`
+- JSON mode (existing): `POST /functions/v1/batch-attest-by-delegation` with `{ eventId, chainId, contractAddress }` → `{ ok, txHash, count }`.
+- SSE mode (additive): `GET /functions/v1/batch-attest-by-delegation?sse=1&eventId=...&chainId=...&contractAddress=...`
 - **NEW**: Single attestation delegation: `POST /functions/v1/execute-attestation-delegation` with signature data → `{ success, attestationUID, transactionHash }`
 
 ### SSE Endpoints (Additive)
@@ -451,7 +451,7 @@ All three provide heartbeats and retry behaviors; are additive to existing polli
 - Navigate to Admin → Events → "Batch Attestations (Test)" card.
   - Start Batch Stream: subscribes to `sse-batch` for the selected event.
   - Start TX Stream: subscribes to `sse-transaction-status` for a given Paystack `reference`.
-  - Execute via SSE: triggers `execute-batch-attestations` in streaming mode and logs detailed progress.
+  - Execute via SSE: triggers `batch-attest-by-delegation` in streaming mode and logs detailed progress.
 - **NEW**: "Single Attestation via Edge Function" card
   - Input fields for attestation parameters
   - Execute button that calls the edge function

@@ -6,17 +6,40 @@
  */
 export async function getUserWalletAddresses(privyUserId: string): Promise<string[]> {
   const PRIVY_APP_SECRET = Deno.env.get('PRIVY_APP_SECRET');
+  const PRIVY_APP_ID = Deno.env.get('VITE_PRIVY_APP_ID') || Deno.env.get('PRIVY_APP_ID') || '';
   if (!PRIVY_APP_SECRET) {
     throw new Error('Privy app secret not configured on server');
   }
 
-  const resp = await fetch(
-    `https://auth.privy.io/api/v1/users/${encodeURIComponent(privyUserId)}`,
-    { headers: { Authorization: `Bearer ${PRIVY_APP_SECRET}` } }
-  );
+  const url = `https://auth.privy.io/api/v1/users/${encodeURIComponent(privyUserId)}`;
+
+  // Try Bearer scheme first (some Privy deployments accept API key as Bearer)
+  let resp = await fetch(url, {
+    headers: { Authorization: `Bearer ${PRIVY_APP_SECRET}` },
+  });
+
+  // Fallback to Basic with appId:appSecret if Bearer fails
+  if (!resp.ok) {
+    try {
+      const basic = typeof btoa === 'function' && PRIVY_APP_ID
+        ? btoa(`${PRIVY_APP_ID}:${PRIVY_APP_SECRET}`)
+        : '';
+      if (basic) {
+        resp = await fetch(url, {
+          headers: {
+            Authorization: `Basic ${basic}`,
+            ...(PRIVY_APP_ID ? { 'privy-app-id': PRIVY_APP_ID } : {}),
+          },
+        });
+      }
+    } catch (_) {
+      // ignore and let the subsequent check throw a helpful error
+    }
+  }
 
   if (!resp.ok) {
-    throw new Error(`Failed to fetch user wallets from Privy: ${resp.status}`);
+    const body = await resp.text().catch(() => '');
+    throw new Error(`Failed to fetch user wallets from Privy: ${resp.status}${body ? ` ${body}` : ''}`);
   }
 
   const data = await resp.json();
@@ -39,4 +62,3 @@ export async function getUserWalletAddresses(privyUserId: string): Promise<strin
   // De-duplicate
   return Array.from(new Set(addrs));
 }
-

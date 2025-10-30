@@ -13,6 +13,17 @@ export interface SignedAttestation {
   digest?: string; // EIP-712 hash
 }
 
+const ZERO32 = '0x0000000000000000000000000000000000000000000000000000000000000000';
+const toTupleSig = (sigHex: string): [number, string, string] => {
+  const hex = (sigHex || '').replace(/^0x/, '');
+  if (hex.length !== 130) throw new Error('Invalid signature length');
+  const r = '0x' + hex.slice(0, 64);
+  const s = '0x' + hex.slice(64, 128);
+  let v = parseInt(hex.slice(128, 130), 16);
+  if (v < 27) v += 27;
+  return [v, r, s];
+};
+
 export const useBatchAttestation = (chainId: number) => {
   const { wallets } = useWallets();
   const wallet = wallets?.[0];
@@ -116,42 +127,85 @@ export const useBatchAttestation = (chainId: number) => {
     }
   }, [getContractRW]);
 
-  const createBatchAttestations = useCallback(async () => {
-    const c = await getContractRW();
-    setIsLoading(true);
-    try {
-      if (signed.length === 0) throw new Error('No signed attestations');
-      const tx = await c.createBatchAttestationsByDelegation(
-        signed.map((s) => [s.schemaUid, s.recipient, s.data, s.deadline, s.signature])
-      );
-      const receipt = await tx.wait();
-      return { success: true, hash: tx.hash, receipt };
-    } catch (e: any) {
-      return { success: false, error: e?.message || 'Failed' };
-    } finally {
-      setIsLoading(false);
-    }
-  }, [getContractRW, signed]);
+  const createBatchAttestations = useCallback(
+    async (params: {
+      lockAddress: string;
+      schemaUid: string;
+      attester: string;
+      deadline: bigint | number;
+      revocable?: boolean;
+      items: Array<{ recipient: string; data: string; expirationTime?: bigint | number; refUID?: string; signature: string }>; // signature hex
+    }) => {
+      const c = await getContractRW();
+      setIsLoading(true);
+      try {
+        if (!params.items || params.items.length === 0) throw new Error('No attestations');
+        const attestations = params.items.map((i) => ({
+          recipient: i.recipient,
+          data: i.data,
+          expirationTime: BigInt(i.expirationTime ?? 0),
+          refUID: i.refUID ?? ZERO32,
+        }));
+        const signatures = params.items.map((i) => toTupleSig(i.signature));
+        const tx = await (c as any).createBatchAttestationsByDelegation(
+          params.lockAddress,
+          params.schemaUid,
+          attestations,
+          signatures,
+          params.attester,
+          BigInt(params.deadline),
+          Boolean(params.revocable ?? false)
+        );
+        const receipt = await tx.wait();
+        return { success: true, hash: tx.hash, receipt };
+      } catch (e: any) {
+        return { success: false, error: e?.message || 'Failed' };
+      } finally {
+        setIsLoading(false);
+      }
+    },
+    [getContractRW]
+  );
 
-  const createSingleAttestation = useCallback(async (sa: SignedAttestation) => {
-    const c = await getContractRW();
-    setIsLoading(true);
-    try {
-      const tx = await c.createAttestationByDelegation(
-        sa.schemaUid,
-        sa.recipient,
-        sa.data,
-        sa.deadline,
-        sa.signature
-      );
-      const receipt = await tx.wait();
-      return { success: true, hash: tx.hash, receipt };
-    } catch (e: any) {
-      return { success: false, error: e?.message || 'Failed' };
-    } finally {
-      setIsLoading(false);
-    }
-  }, [getContractRW]);
+  const createSingleAttestation = useCallback(
+    async (params: {
+      lockAddress: string;
+      schemaUid: string;
+      recipient: string;
+      data: string;
+      signature: string; // hex
+      attester: string;
+      deadline: bigint | number;
+      expirationTime?: bigint | number;
+      revocable?: boolean;
+      refUID?: string;
+    }) => {
+      const c = await getContractRW();
+      setIsLoading(true);
+      try {
+        const sigTuple = toTupleSig(params.signature);
+        const tx = await (c as any).createAttestationByDelegation(
+          params.lockAddress,
+          params.schemaUid,
+          params.recipient,
+          params.data,
+          sigTuple,
+          params.attester,
+          BigInt(params.deadline),
+          BigInt(params.expirationTime ?? 0),
+          Boolean(params.revocable ?? false),
+          params.refUID ?? ZERO32
+        );
+        const receipt = await tx.wait();
+        return { success: true, hash: tx.hash, receipt };
+      } catch (e: any) {
+        return { success: false, error: e?.message || 'Failed' };
+      } finally {
+        setIsLoading(false);
+      }
+    },
+    [getContractRW]
+  );
 
   // Read functions
   const isSchemaEnabled = useCallback(async (schemaUid: string): Promise<boolean> => {
@@ -199,7 +253,7 @@ export const useBatchAttestation = (chainId: number) => {
       const now = Math.floor(Date.now() / 1000);
       const deadline = BigInt(now + Math.max(1, deadlineSecondsFromNow));
       const domain = {
-        name: 'TeeRexBatchAttestation',
+        name: 'TeeRex',
         version: '1',
         chainId,
         verifyingContract: contractAddress,

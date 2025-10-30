@@ -180,3 +180,6 @@ bun.lockb
 
 # Local development
 .env.example
+
+# reference files
+reff/

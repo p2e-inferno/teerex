@@ -16,6 +16,7 @@ import EventDetails from "./pages/EventDetails";
 import Admin from "./pages/Admin";
 import AdminDashboard from "./pages/AdminDashboard";
 import AdminEvents from "./pages/AdminEvents";
+import AdminGaslessConfig from "./pages/AdminGaslessConfig";
 import NotFound from "./pages/NotFound";
 
 const App = () => {
@@ -38,6 +39,7 @@ const App = () => {
               <Route path="/admin" element={<AdminDashboard />} />
               <Route path="/admin/schemas" element={<Admin />} />
               <Route path="/admin/events" element={<AdminEvents />} />
+              <Route path="/admin/gasless" element={<AdminGaslessConfig />} />
               <Route path="/event/:id" element={<EventDetails />} />
               {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
               <Route path="*" element={<NotFound />} />
