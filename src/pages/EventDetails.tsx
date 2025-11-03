@@ -34,6 +34,7 @@ import { PaymentMethodDialog } from "@/components/events/PaymentMethodDialog";
 import { AttestationButton } from "@/components/attestations/AttestationButton";
 import { EventAttestationCard } from "@/components/attestations/EventAttestationCard";
 import { AttendeesList } from "@/components/attestations/AttendeesList";
+import { EventInteractionsCard } from "@/components/interactions/core/EventInteractionsCard";
 import { usePrivy, useWallets } from "@privy-io/react-auth";
 import { useToast } from "@/hooks/use-toast";
 import { getAttestationSchemas } from "@/utils/attestationUtils";
@@ -736,6 +737,13 @@ const EventDetails = () => {
               lockAddress={event.lock_address}
               userHasTicket={userTicketCount > 0}
               attendanceSchemaUid={attendanceSchemaUid || undefined}
+            />
+
+            {/* Event Interactions Card */}
+            <EventInteractionsCard
+              eventId={event.id}
+              lockAddress={event.lock_address}
+              creatorAddress={event.creator_id}
             />
           </div>
         </div>
