@@ -12,6 +12,8 @@ import {
 import { PostHeader } from './PostHeader';
 import { PostContent } from './PostContent';
 import { CommentSection } from '../comments/CommentSection';
+import { usePostReactions } from '../hooks/usePostReactions';
+import { toast } from '@/hooks/use-toast';
 import type { EventPost } from '../types';
 
 interface PostItemProps {
@@ -30,10 +32,37 @@ export const PostItem: React.FC<PostItemProps> = ({
   onToggleComments,
 }) => {
   const [showComments, setShowComments] = useState(false);
+  const { toggleReaction, isLoading: isReacting } = usePostReactions();
 
   const agreeCount = post.agree_count || 0;
   const disagreeCount = post.disagree_count || 0;
   const commentCount = post.comment_count || 0;
+
+  // Handle agree reaction
+  const handleAgree = async () => {
+    try {
+      await toggleReaction(post.id, 'agree');
+    } catch (error) {
+      toast({
+        title: 'Failed to react',
+        description: error instanceof Error ? error.message : 'Unknown error occurred',
+        variant: 'destructive',
+      });
+    }
+  };
+
+  // Handle disagree reaction
+  const handleDisagree = async () => {
+    try {
+      await toggleReaction(post.id, 'disagree');
+    } catch (error) {
+      toast({
+        title: 'Failed to react',
+        description: error instanceof Error ? error.message : 'Unknown error occurred',
+        variant: 'destructive',
+      });
+    }
+  };
 
   return (
     <Card
@@ -86,21 +115,52 @@ export const PostItem: React.FC<PostItemProps> = ({
 
         <Separator />
 
-        {/* Engagement Stats */}
+        {/* Engagement Stats - Clickable Icons */}
         <div className="flex items-center justify-between text-sm">
           <div className="flex items-center space-x-4 text-muted-foreground">
-            <div className="flex items-center space-x-1">
+            {/* Thumbs Up - Clickable */}
+            <button
+              onClick={handleAgree}
+              disabled={isReacting}
+              className={`flex items-center space-x-1 transition-colors hover:text-blue-600 dark:hover:text-blue-400 ${
+                post.user_has_reacted_agree
+                  ? 'text-blue-600 dark:text-blue-400'
+                  : 'text-muted-foreground'
+              } ${isReacting ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
+            >
               <ThumbsUp className="w-4 h-4" />
               <span>{agreeCount}</span>
-            </div>
-            <div className="flex items-center space-x-1">
+            </button>
+
+            {/* Thumbs Down - Clickable */}
+            <button
+              onClick={handleDisagree}
+              disabled={isReacting}
+              className={`flex items-center space-x-1 transition-colors hover:text-red-600 dark:hover:text-red-400 ${
+                post.user_has_reacted_disagree
+                  ? 'text-red-600 dark:text-red-400'
+                  : 'text-muted-foreground'
+              } ${isReacting ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
+            >
               <ThumbsDown className="w-4 h-4" />
               <span>{disagreeCount}</span>
-            </div>
-            <div className="flex items-center space-x-1">
+            </button>
+
+            {/* Comment Icon - Clickable */}
+            <button
+              onClick={() => setShowComments(!showComments)}
+              disabled={!post.comments_enabled}
+              className={`flex items-center space-x-1 transition-colors hover:text-primary ${
+                showComments ? 'text-primary' : 'text-muted-foreground'
+              } ${
+                !post.comments_enabled
+                  ? 'opacity-50 cursor-not-allowed'
+                  : 'cursor-pointer'
+              }`}
+            >
               <MessageSquare className="w-4 h-4" />
               <span>{commentCount}</span>
-            </div>
+            </button>
           </div>
 
           {!post.comments_enabled && (
@@ -111,35 +171,13 @@ export const PostItem: React.FC<PostItemProps> = ({
           )}
         </div>
 
-        {/* Action Buttons - Placeholder for Phase 2 */}
-        <div className="flex items-center space-x-2 pt-2">
-          <Button variant="ghost" size="sm" className="flex-1">
-            <ThumbsUp className="w-4 h-4 mr-1.5" />
-            Agree
-          </Button>
-          <Button variant="ghost" size="sm" className="flex-1">
-            <ThumbsDown className="w-4 h-4 mr-1.5" />
-            Disagree
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            className="flex-1"
-            disabled={!post.comments_enabled}
-            onClick={() => setShowComments(!showComments)}
-          >
-            <MessageSquare className="w-4 h-4 mr-1.5" />
-            {showComments ? 'Hide' : 'Comment'}
-          </Button>
-        </div>
-
         {/* Comment Section */}
         {showComments && (
           <>
             <Separator />
             <CommentSection
               postId={post.id}
-              creatorAddress={post.user_address}
+              creatorAddress={post.creator_address}
               commentsEnabled={post.comments_enabled}
             />
           </>

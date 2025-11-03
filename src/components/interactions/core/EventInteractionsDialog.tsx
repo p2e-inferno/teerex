@@ -10,7 +10,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { PostComposer } from '../posts/PostComposer';
 import { PostList } from '../posts/PostList';
 import { useCreatorPermissions } from '../hooks/useCreatorPermissions';
-import { MessageSquare } from 'lucide-react';
+import { MessageSquare, Loader2 } from 'lucide-react';
 import type { EventPost } from '../types';
 
 interface EventInteractionsDialogProps {
@@ -44,8 +44,19 @@ export const EventInteractionsDialog: React.FC<EventInteractionsDialogProps> = (
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-4xl max-h-[90vh] overflow-hidden flex flex-col p-0">
-        <DialogHeader className="px-6 pt-6 pb-4">
+      <DialogContent className="mx-2 max-w-4xl max-h-[90vh] overflow-hidden flex flex-col p-0 rounded">
+        <div className="relative flex-1 flex flex-col overflow-hidden">
+          {/* Loading overlay - subtle indicator for background updates */}
+          {isLoading && posts.length > 0 && (
+            <div className="absolute top-0 right-0 z-10 p-4">
+              <div className="flex items-center space-x-2 bg-background/80 backdrop-blur-sm rounded-lg px-3 py-1.5 border border-border shadow-sm">
+                <Loader2 className="w-3.5 h-3.5 animate-spin text-muted-foreground" />
+                <span className="text-xs text-muted-foreground">Updating...</span>
+              </div>
+            </div>
+          )}
+
+          <DialogHeader className="px-6 pt-6 pb-4">
           <DialogTitle className="flex items-center space-x-2">
             <MessageSquare className="w-5 h-5 text-primary" />
             <span>Event Discussions</span>
@@ -98,6 +109,7 @@ export const EventInteractionsDialog: React.FC<EventInteractionsDialogProps> = (
             />
           </TabsContent>
         </Tabs>
+        </div>
       </DialogContent>
     </Dialog>
   );

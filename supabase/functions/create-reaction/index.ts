@@ -147,24 +147,55 @@ serve(async (req) => {
       throw new Error("Unauthorized: You must hold a valid ticket to react to posts");
     }
 
-    // 7. Check for existing reaction
-    const { data: existingReaction } = await supabase
+    // 7. Check for ALL existing reactions (both agree and disagree) for this user/post
+    const { data: existingReactions, error: reactionsError } = await supabase
       .from("post_reactions")
-      .select("id")
+      .select("id, reaction_type")
       .eq("post_id", postId)
-      .eq("user_address", holder!.toLowerCase())
-      .eq("reaction_type", reactionType)
-      .maybeSingle();
+      .eq("user_address", holder!.toLowerCase());
 
-    if (existingReaction) {
-      // Already reacted with this type - return success
+    if (reactionsError) {
+      throw new Error(`Failed to check existing reactions: ${reactionsError.message}`);
+    }
+
+    const sameReaction = existingReactions?.find(
+      (r) => r.reaction_type === reactionType
+    );
+    const oppositeReaction = existingReactions?.find(
+      (r) => r.reaction_type !== reactionType
+    );
+
+    // 8. Toggle logic
+    if (sameReaction) {
+      // User clicked the same reaction they already have → remove it
+      const { error: deleteError } = await supabase
+        .from("post_reactions")
+        .delete()
+        .eq("id", sameReaction.id);
+
+      if (deleteError) {
+        throw new Error(`Failed to remove reaction: ${deleteError.message}`);
+      }
+
       return new Response(
-        JSON.stringify({ ok: true, reactionId: existingReaction.id }),
+        JSON.stringify({ ok: true, action: "removed", reactionId: sameReaction.id }),
         { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 200 }
       );
     }
 
-    // 8. Insert new reaction
+    // 9. If user has opposite reaction, remove it first
+    if (oppositeReaction) {
+      const { error: deleteError } = await supabase
+        .from("post_reactions")
+        .delete()
+        .eq("id", oppositeReaction.id);
+
+      if (deleteError) {
+        throw new Error(`Failed to remove opposite reaction: ${deleteError.message}`);
+      }
+    }
+
+    // 10. Insert new reaction
     const { data: newReaction, error: insertError } = await supabase
       .from("post_reactions")
       .insert({
@@ -180,7 +211,11 @@ serve(async (req) => {
     }
 
     return new Response(
-      JSON.stringify({ ok: true, reactionId: newReaction.id }),
+      JSON.stringify({ 
+        ok: true, 
+        action: oppositeReaction ? "switched" : "added",
+        reactionId: newReaction.id 
+      }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 200 }
     );
   } catch (error) {

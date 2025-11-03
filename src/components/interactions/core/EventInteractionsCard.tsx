@@ -28,8 +28,9 @@ export const EventInteractionsCard: React.FC<EventInteractionsCardProps> = ({
   const totalPosts = posts?.length || 0;
   const totalComments = posts?.reduce((sum, post) => sum + (post.comment_count || 0), 0) || 0;
 
-  // Loading state
-  if (isChecking || isLoading) {
+  // Loading state - only show skeleton on initial load when dialog is not open
+  // Once dialog is open, let it handle its own loading state
+  if (isChecking || (isLoading && !dialogOpen && totalPosts === 0)) {
     return (
       <Card className="border-0 shadow-sm animate-pulse">
         <CardContent className="py-8">

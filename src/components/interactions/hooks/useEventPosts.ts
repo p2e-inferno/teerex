@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useWallets, usePrivy } from '@privy-io/react-auth';
 import { supabase } from '@/integrations/supabase/client';
 import type { EventPost, UseEventPostsReturn, EventPostWithStats } from '../types';
@@ -67,6 +67,12 @@ export const useEventPosts = (eventId: string): UseEventPostsReturn => {
     }
   }, [eventId, wallet?.address]);
 
+  // Store latest fetchPosts in ref to avoid stale closures
+  const fetchPostsRef = useRef(fetchPosts);
+  useEffect(() => {
+    fetchPostsRef.current = fetchPosts;
+  }, [fetchPosts]);
+
   // Initial fetch
   useEffect(() => {
     fetchPosts();
@@ -75,8 +81,6 @@ export const useEventPosts = (eventId: string): UseEventPostsReturn => {
   // Realtime subscription
   useEffect(() => {
     if (!eventId) return;
-
-    console.log('[Realtime] Setting up subscription for event:', eventId);
 
     const channel = supabase
       .channel(`event-posts-${eventId}`)
@@ -88,9 +92,8 @@ export const useEventPosts = (eventId: string): UseEventPostsReturn => {
           table: 'event_posts',
           filter: `event_id=eq.${eventId}`,
         },
-        (payload) => {
-          console.log('[Realtime] New post:', payload.new);
-          fetchPosts(); // Refetch to get stats
+        () => {
+          fetchPostsRef.current();
         }
       )
       .on(
@@ -101,9 +104,8 @@ export const useEventPosts = (eventId: string): UseEventPostsReturn => {
           table: 'event_posts',
           filter: `event_id=eq.${eventId}`,
         },
-        (payload) => {
-          console.log('[Realtime] Updated post:', payload.new);
-          fetchPosts(); // Refetch to get stats
+        () => {
+          fetchPostsRef.current();
         }
       )
       .on(
@@ -115,7 +117,6 @@ export const useEventPosts = (eventId: string): UseEventPostsReturn => {
           filter: `event_id=eq.${eventId}`,
         },
         (payload) => {
-          console.log('[Realtime] Deleted post:', payload.old);
           setPosts((prev) => prev.filter((p) => p.id !== (payload.old as EventPost).id));
         }
       )
@@ -127,8 +128,7 @@ export const useEventPosts = (eventId: string): UseEventPostsReturn => {
           table: 'post_reactions',
         },
         () => {
-          // Refetch when reactions change to update counts
-          fetchPosts();
+          fetchPostsRef.current();
         }
       )
       .on(
@@ -139,16 +139,18 @@ export const useEventPosts = (eventId: string): UseEventPostsReturn => {
           table: 'post_engagement_stats',
         },
         () => {
-          // Refetch when stats change
-          fetchPosts();
+          fetchPostsRef.current();
         }
       )
-      .subscribe((status) => {
-        console.log('[Realtime] Subscription status:', status);
+      .subscribe((status, err) => {
+        if (status === 'CHANNEL_ERROR') {
+          console.error('[Realtime] Channel error:', err);
+        } else if (status === 'TIMED_OUT') {
+          console.error('[Realtime] Subscription timed out');
+        }
       });
 
     return () => {
-      console.log('[Realtime] Cleaning up subscription for event:', eventId);
       channel.unsubscribe();
     };
   }, [eventId]); // Only depend on eventId, not fetchPosts
