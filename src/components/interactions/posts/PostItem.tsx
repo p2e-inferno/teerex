@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
@@ -11,6 +11,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { PostHeader } from './PostHeader';
 import { PostContent } from './PostContent';
+import { CommentSection } from '../comments/CommentSection';
 import type { EventPost } from '../types';
 
 interface PostItemProps {
@@ -28,6 +29,8 @@ export const PostItem: React.FC<PostItemProps> = ({
   onDelete,
   onToggleComments,
 }) => {
+  const [showComments, setShowComments] = useState(false);
+
   const agreeCount = post.agree_count || 0;
   const disagreeCount = post.disagree_count || 0;
   const commentCount = post.comment_count || 0;
@@ -118,11 +121,29 @@ export const PostItem: React.FC<PostItemProps> = ({
             <ThumbsDown className="w-4 h-4 mr-1.5" />
             Disagree
           </Button>
-          <Button variant="ghost" size="sm" className="flex-1" disabled={!post.comments_enabled}>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="flex-1"
+            disabled={!post.comments_enabled}
+            onClick={() => setShowComments(!showComments)}
+          >
             <MessageSquare className="w-4 h-4 mr-1.5" />
-            Comment
+            {showComments ? 'Hide' : 'Comment'}
           </Button>
         </div>
+
+        {/* Comment Section */}
+        {showComments && (
+          <>
+            <Separator />
+            <CommentSection
+              postId={post.id}
+              creatorAddress={post.user_address}
+              commentsEnabled={post.comments_enabled}
+            />
+          </>
+        )}
       </CardContent>
     </Card>
   );
