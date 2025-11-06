@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { usePrivy } from "@privy-io/react-auth";
 import { WalletConnect } from "@/components/WalletConnect";
 import { Button } from "@/components/ui/button";
@@ -10,21 +10,54 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import {
-  Ticket,
-  Shield,
-  Users,
-  Zap,
-  ArrowRight,
-  Calendar,
-  MapPin,
-  Clock,
-  Star,
-} from "lucide-react";
+import { Shield, Users, Zap, ArrowRight, Calendar, MapPin, Clock } from "lucide-react";
 import { Link } from "react-router-dom";
+import { format } from "date-fns";
+import { getPublishedEvents, type PublishedEvent } from "@/utils/eventUtils";
+import {
+  selectFeaturedEvent,
+  selectUpcomingEvents,
+  fetchKeysSoldForEvents,
+  computeHomeStats,
+} from "@/lib/home/homeData";
 
 const Index = () => {
   const { authenticated, ready } = usePrivy();
+  const [isLoading, setIsLoading] = useState(true);
+  const [events, setEvents] = useState<PublishedEvent[]>([]);
+  const [featured, setFeatured] = useState<PublishedEvent | null>(null);
+  const [upcoming, setUpcoming] = useState<PublishedEvent[]>([]);
+  const [keysSold, setKeysSold] = useState<Record<string, number>>({});
+
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      try {
+        const all = await getPublishedEvents();
+        if (!mounted) return;
+        setEvents(all);
+
+        const feat = selectFeaturedEvent(all);
+        const upc = selectUpcomingEvents(all, 3);
+        setFeatured(feat);
+        setUpcoming(upc);
+
+        const subset = [feat, ...upc].filter(Boolean) as PublishedEvent[];
+        const sold = await fetchKeysSoldForEvents(subset);
+        if (!mounted) return;
+        setKeysSold(sold);
+      } catch (e) {
+        console.error("Error loading home data:", e);
+      } finally {
+        if (mounted) setIsLoading(false);
+      }
+    })();
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  const stats = useMemo(() => computeHomeStats(events, keysSold), [events, keysSold]);
 
   if (!ready) {
     return (
@@ -82,33 +115,63 @@ const Index = () => {
 
           {/* Featured Event Preview - Luma-style event card */}
           <div className="max-w-4xl mx-auto">
-            <Card className="overflow-hidden border-0 shadow-lg bg-white">
-              <div className="aspect-[2/1] bg-gradient-to-br from-purple-500 to-pink-500 relative">
-                <div className="absolute inset-0 bg-black/20"></div>
-                <div className="absolute bottom-6 left-6 text-white">
-                  <Badge className="bg-white/20 text-white border-white/30 mb-3">
-                    Featured Event
-                  </Badge>
-                  <h3 className="text-2xl font-bold mb-2">
-                    Web3 Developer Conference 2024
-                  </h3>
-                  <div className="flex items-center gap-4 text-white/90">
-                    <div className="flex items-center gap-2">
-                      <Calendar className="w-4 h-4" />
-                      <span>Dec 15, 2024</span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <MapPin className="w-4 h-4" />
-                      <span>San Francisco, CA</span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <Users className="w-4 h-4" />
-                      <span>500+ attending</span>
+            {featured ? (
+              <Link to={`/event/${featured.id}`} className="block group">
+                <Card className="overflow-hidden border-0 shadow-lg bg-white">
+                  <div className="aspect-[2/1] relative cursor-pointer">
+                    {featured.image_url ? (
+                      <img
+                        src={featured.image_url}
+                        alt={featured.title}
+                        className="absolute inset-0 w-full h-full object-cover"
+                      />
+                    ) : (
+                      <div className="absolute inset-0 bg-gradient-to-br from-purple-500 to-pink-500" />
+                    )}
+                    <div className="absolute inset-0 bg-black/30" />
+                    <div className="absolute bottom-6 left-6 right-6 text-white">
+                      <Badge className="bg-white/20 text-white border-white/30 mb-3">
+                        Featured Event
+                      </Badge>
+                      <h3 className="text-2xl font-bold mb-2">
+                        {featured.title}
+                      </h3>
+                      <div className="flex flex-wrap items-center gap-4 text-white/90">
+                        {featured.date && (
+                          <div className="flex items-center gap-2">
+                            <Calendar className="w-4 h-4" />
+                            <span>{format(featured.date, 'MMM d, yyyy')}</span>
+                          </div>
+                        )}
+                        <div className="flex items-center gap-2">
+                          <MapPin className="w-4 h-4" />
+                          <span>{featured.location}</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Users className="w-4 h-4" />
+                          <span>{keysSold[featured.id] ?? 0} attending</span>
+                        </div>
+                      </div>
                     </div>
                   </div>
+                </Card>
+              </Link>
+            ) : (
+              <Card className="overflow-hidden border-0 shadow-lg bg-white">
+                <div className="aspect-[2/1] relative">
+                  <div className="absolute inset-0 bg-gradient-to-br from-purple-500 to-pink-500" />
+                  <div className="absolute inset-0 bg-black/30" />
+                  <div className="absolute bottom-6 left-6 right-6 text-white">
+                    <Badge className="bg-white/20 text-white border-white/30 mb-3">
+                      Featured Event
+                    </Badge>
+                    <h3 className="text-2xl font-bold mb-2">
+                      {isLoading ? 'Loading…' : 'No featured event yet'}
+                    </h3>
+                  </div>
                 </div>
-              </div>
-            </Card>
+              </Card>
+            )}
           </div>
         </div>
       </section>
@@ -186,20 +249,20 @@ const Index = () => {
         <div className="container mx-auto px-6 max-w-4xl">
           <div className="grid grid-cols-2 md:grid-cols-4 gap-8 text-center">
             <div>
-              <div className="text-3xl font-bold text-gray-900 mb-2">10K+</div>
-              <div className="text-gray-600">Events Created</div>
+              <div className="text-3xl font-bold text-gray-900 mb-2">{stats.eventsCount}</div>
+              <div className="text-gray-600">Events</div>
             </div>
             <div>
-              <div className="text-3xl font-bold text-gray-900 mb-2">50K+</div>
+              <div className="text-3xl font-bold text-gray-900 mb-2">{stats.ticketsSold.toLocaleString()}</div>
               <div className="text-gray-600">Tickets Sold</div>
             </div>
             <div>
-              <div className="text-3xl font-bold text-gray-900 mb-2">98%</div>
-              <div className="text-gray-600">Satisfaction</div>
+              <div className="text-3xl font-bold text-gray-900 mb-2">{stats.creatorCount}</div>
+              <div className="text-gray-600">Creators</div>
             </div>
             <div>
-              <div className="text-3xl font-bold text-gray-900 mb-2">24/7</div>
-              <div className="text-gray-600">Support</div>
+              <div className="text-3xl font-bold text-gray-900 mb-2">{stats.chainsCount}</div>
+              <div className="text-gray-600">Chains</div>
             </div>
           </div>
         </div>
@@ -222,53 +285,50 @@ const Index = () => {
               className="border-gray-300 text-gray-700 hover:bg-gray-50"
               asChild
             >
-              <Link to="/events">View All</Link>
+              <Link to="/explore">View All</Link>
             </Button>
           </div>
 
           <div className="space-y-4">
-            {[1, 2, 3].map((i) => (
-              <Card
-                key={i}
-                className="border-0 shadow-sm hover:shadow-md transition-shadow duration-200 bg-white"
-              >
-                <CardContent className="p-6">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-4">
-                      <div className="w-16 h-16 bg-gradient-to-br from-purple-400 to-pink-400 rounded-xl flex items-center justify-center">
-                        <Calendar className="w-8 h-8 text-white" />
-                      </div>
-                      <div>
-                        <h3 className="font-semibold text-gray-900 mb-1">
-                          Blockchain Summit {i + 2023}
-                        </h3>
-                        <div className="flex items-center gap-4 text-sm text-gray-600">
-                          <div className="flex items-center gap-1">
-                            <Clock className="w-4 h-4" />
-                            <span>Dec {15 + i}, 2024</span>
-                          </div>
-                          <div className="flex items-center gap-1">
-                            <MapPin className="w-4 h-4" />
-                            <span>New York, NY</span>
-                          </div>
-                          <div className="flex items-center gap-1">
-                            <Star className="w-4 h-4 text-yellow-500" />
-                            <span>4.9</span>
+            {upcoming.map((e) => (
+              <Link key={e.id} to={`/event/${e.id}`} className="block group">
+                <Card className="border-0 shadow-sm hover:shadow-md transition-shadow duration-200 bg-white">
+                  <CardContent className="p-6">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-4">
+                        <div className="w-16 h-16 bg-gradient-to-br from-purple-400 to-pink-400 rounded-xl flex items-center justify-center">
+                          <Calendar className="w-8 h-8 text-white" />
+                        </div>
+                        <div>
+                          <h3 className="font-semibold text-gray-900 mb-1 group-hover:text-blue-600">
+                            {e.title}
+                          </h3>
+                          <div className="flex items-center gap-4 text-sm text-gray-600">
+                            <div className="flex items-center gap-1">
+                              <Clock className="w-4 h-4" />
+                              <span>{e.date ? format(e.date, 'MMM d, yyyy') : 'TBA'}</span>
+                            </div>
+                            <div className="flex items-center gap-1">
+                              <MapPin className="w-4 h-4" />
+                              <span>{e.location}</span>
+                            </div>
                           </div>
                         </div>
                       </div>
-                    </div>
-                    <div className="text-right">
-                      <div className="text-lg font-semibold text-gray-900">
-                        $299
+                      <div className="text-right">
+                        <div className="text-lg font-semibold text-gray-900">
+                          {e.payment_methods?.includes('fiat') && e.ngn_price > 0
+                            ? `₦${e.ngn_price.toLocaleString()}`
+                            : e.currency === 'FREE' ? 'Free' : `${e.price} ${e.currency}`}
+                        </div>
+                        <div className="text-sm text-gray-600">
+                          {Math.max(0, e.capacity - (keysSold[e.id] ?? 0))} spots left
+                        </div>
                       </div>
-                      <div className="text-sm text-gray-600">
-                        {100 - i * 20} spots left
-                      </div>
                     </div>
-                  </div>
-                </CardContent>
-              </Card>
+                  </CardContent>
+                </Card>
+              </Link>
             ))}
           </div>
         </div>
