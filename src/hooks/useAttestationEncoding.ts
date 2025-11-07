@@ -23,6 +23,22 @@ export const useAttestationEncoding = () => {
 
   return {
     encodeEventAttendanceData,
+    encodeEventLikeData: (
+      eventId: string,
+      lockAddress: string,
+      eventTitle: string,
+      rating: number,
+      ticketHolder: string,
+    ): string => {
+      const schema = 'string eventId,string lockAddress,string eventTitle,uint8 rating,address ticketHolder';
+      const encoder = new SchemaEncoder(schema);
+      return encoder.encodeData([
+        { name: 'eventId', type: 'string', value: eventId },
+        { name: 'lockAddress', type: 'string', value: lockAddress },
+        { name: 'eventTitle', type: 'string', value: eventTitle },
+        { name: 'rating', type: 'uint8', value: rating },
+        { name: 'ticketHolder', type: 'address', value: ticketHolder },
+      ]);
+    }
   };
 };
-

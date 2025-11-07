@@ -20,7 +20,7 @@ import {
   Twitter,
   Linkedin,
 } from "lucide-react";
-import { getPublishedEvents, PublishedEvent } from "@/utils/eventUtils";
+import { getPublishedEventById, PublishedEvent } from "@/utils/eventUtils";
 import {
   getTotalKeys,
   getUserKeyBalance,
@@ -31,7 +31,12 @@ import { EventPurchaseDialog } from "@/components/events/EventPurchaseDialog";
 import { PaystackPaymentDialog } from "@/components/events/PaystackPaymentDialog";
 import { TicketProcessingDialog } from "@/components/events/TicketProcessingDialog";
 import { PaymentMethodDialog } from "@/components/events/PaymentMethodDialog";
-import { AttestationButton } from "@/components/attestations/AttestationButton";
+// import { AttestationButton } from "@/components/attestations/AttestationButton";
+import { useAttestations } from "@/hooks/useAttestations";
+import { useTeeRexDelegatedAttestation } from "@/hooks/useTeeRexDelegatedAttestation";
+import { useAttestationEncoding } from "@/hooks/useAttestationEncoding";
+import { supabase } from "@/integrations/supabase/client";
+import { base, baseSepolia } from "wagmi/chains";
 import { EventAttestationCard } from "@/components/attestations/EventAttestationCard";
 import { AttendeesList } from "@/components/attestations/AttendeesList";
 import { EventInteractionsCard } from "@/components/interactions/core/EventInteractionsCard";
@@ -45,14 +50,18 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 
 const EventDetails = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const { toast } = useToast();
-  const { authenticated } = usePrivy();
+  const { authenticated, getAccessToken } = usePrivy();
   const { wallets } = useWallets();
   const wallet = wallets[0];
+  const { revokeEventAttestation } = useAttestations();
+  const { signTeeRexAttestation } = useTeeRexDelegatedAttestation();
+  const { encodeEventLikeData, encodeEventAttendanceData } = useAttestationEncoding();
 
   const [event, setEvent] = useState<PublishedEvent | null>(null);
   const [keysSold, setKeysSold] = useState<number>(0);
@@ -79,8 +88,7 @@ const EventDetails = () => {
 
       setIsLoading(true);
       try {
-        const events = await getPublishedEvents();
-        const foundEvent = events.find((e) => e.id === id);
+        const foundEvent = await getPublishedEventById(id);
 
         if (!foundEvent) {
           toast({
@@ -99,7 +107,7 @@ const EventDetails = () => {
         setKeysSold(sold);
 
         // Get max tickets per user for this event
-        const maxKeys = await getMaxKeysPerAddress(foundEvent.lock_address);
+        const maxKeys = await getMaxKeysPerAddress(foundEvent.lock_address, undefined, foundEvent.chain_id);
         setMaxTicketsPerUser(maxKeys);
       } catch (error) {
         console.error("Error loading event:", error);
@@ -115,6 +123,116 @@ const EventDetails = () => {
 
     loadEvent();
   }, [id, navigate, toast]);
+
+  // Like schema + counts
+  const [likeSchemaUid, setLikeSchemaUid] = useState<string | null>(null);
+  const [likeCount, setLikeCount] = useState(0);
+  const [userLikeUid, setUserLikeUid] = useState<string | null>(null);
+  const [isLikeLoading, setIsLikeLoading] = useState(false);
+  // Attendance (for top ticket card toggle)
+  const [myAttendanceUidTop, setMyAttendanceUidTop] = useState<string | null>(null);
+  const [isTopAttendanceBusy, setIsTopAttendanceBusy] = useState(false);
+  const [eventHasEnded, setEventHasEnded] = useState(false);
+
+  const networkLabel = event?.chain_id === base.id ? 'Base' : event?.chain_id === baseSepolia.id ? 'Base Sepolia' : '';
+
+  const isValidSchemaUid = (uid?: string | null) => !!uid && uid.startsWith('0x') && uid.length === 66 && /^0x[0-9a-f]{64}$/i.test(uid);
+
+  const refreshLikes = async (ev: PublishedEvent) => {
+    try {
+      const { data: schema } = await supabase
+        .from('attestation_schemas')
+        .select('schema_uid,name')
+        .eq('name', 'TeeRex EventLike')
+        .maybeSingle();
+      if (!schema?.schema_uid || !isValidSchemaUid(schema.schema_uid)) {
+        setLikeSchemaUid(null);
+        setLikeCount(0);
+        setUserLikeUid(null);
+        return;
+      }
+      setLikeSchemaUid(schema.schema_uid);
+      const { data: likes } = await supabase
+        .from('attestations')
+        .select('attestation_uid, recipient, created_at')
+        .eq('event_id', ev.id)
+        .eq('schema_uid', schema.schema_uid)
+        .eq('is_revoked', false);
+      const uniq = new Map<string, any>();
+      (likes || []).forEach((a) => {
+        const prev = uniq.get(a.recipient);
+        if (!prev || new Date(a.created_at) > new Date(prev.created_at)) uniq.set(a.recipient, a);
+      });
+      setLikeCount(uniq.size);
+      if (wallet?.address) {
+        const mine = uniq.get(wallet.address);
+        setUserLikeUid(mine?.attestation_uid || null);
+      }
+    } catch (e) {
+      console.error('Error loading likes:', e);
+    }
+  };
+
+  useEffect(() => {
+    if (event) refreshLikes(event);
+  }, [event?.id, wallet?.address]);
+
+  const handleToggleLike = async () => {
+    if (!event) return;
+    if (!likeSchemaUid) {
+      toast({ title: 'Likes unavailable', description: 'Like schema not configured', variant: 'default' });
+      return;
+    }
+    if (!wallet) {
+      toast({ title: 'Connect wallet', variant: 'destructive' });
+      return;
+    }
+    try {
+      setIsLikeLoading(true);
+      // Unlike (revoke)
+      if (userLikeUid) {
+        const res = await revokeEventAttestation(likeSchemaUid, userLikeUid);
+        if (res.success) {
+          setUserLikeUid(null);
+          setLikeCount((c) => Math.max(0, c - 1));
+          toast({ title: 'Like removed' });
+        } else {
+          throw new Error(res.error || 'Failed to unlike');
+        }
+        return;
+      }
+      // Like via gasless flow
+      const dataEncoded = encodeEventLikeData(event.id, event.lock_address, event.title, 1, wallet.address);
+      const sa = await signTeeRexAttestation({
+        schemaUid: likeSchemaUid,
+        recipient: wallet.address,
+        data: dataEncoded,
+        chainId: event.chain_id,
+        deadlineSecondsFromNow: 3600,
+      });
+      const token = await getAccessToken?.();
+      const { data, error } = await supabase.functions.invoke('eas-gasless-attestation', {
+        body: {
+          schemaUid: likeSchemaUid,
+          recipient: wallet.address,
+          data: dataEncoded,
+          deadline: Number(sa.deadline),
+          signature: sa.signature,
+          chainId: event.chain_id,
+          eventId: event.id,
+        },
+        headers: token ? { 'X-Privy-Authorization': `Bearer ${token}` } : undefined,
+      });
+      if (error || !data?.ok) throw new Error(error?.message || data?.error || 'Failed');
+      setUserLikeUid(data.uid || null);
+      setLikeCount((c) => c + 1);
+      toast({ title: 'Liked' });
+    } catch (e: any) {
+      toast({ title: 'Like failed', description: e?.message || 'Unknown error', variant: 'destructive' });
+    } finally {
+      setIsLikeLoading(false);
+    }
+  };
 
   // Load user ticket data when authenticated
   useEffect(() => {
@@ -136,6 +254,113 @@ const EventDetails = () => {
     loadUserTicketData();
   }, [authenticated, wallet?.address, event?.lock_address]);
 
+  // Compute if event has ended (same 2h duration assumption)
+  useEffect(() => {
+    if (!event?.date || !event?.time) {
+      setEventHasEnded(false);
+      return;
+    }
+    const timeParts = event.time.trim().match(/^(\d{1,2}):(\d{2})\s*(AM|PM)?$/i);
+    const baseDate = new Date(event.date);
+    let start = new Date(baseDate);
+    if (timeParts) {
+      const hours = parseInt(timeParts[1]);
+      const minutes = parseInt(timeParts[2]);
+      const period = timeParts[3]?.toUpperCase();
+      let hour24 = hours;
+      if (period === "PM" && hours !== 12) hour24 += 12;
+      else if (period === "AM" && hours === 12) hour24 = 0;
+      start.setHours(hour24, minutes, 0, 0);
+    }
+    const ended = Date.now() > start.getTime() + 2 * 60 * 60 * 1000;
+    setEventHasEnded(ended);
+  }, [event?.date, event?.time]);
+
+  // Load my attendance UID for top ticket card toggle
+  useEffect(() => {
+    const loadMyAttendance = async () => {
+      try {
+        if (!event?.id || !attendanceSchemaUid || !wallet?.address) {
+          setMyAttendanceUidTop(null);
+          return;
+        }
+        const { data: myAttendance } = await supabase
+          .from('attestations')
+          .select('attestation_uid, created_at')
+          .eq('event_id', event.id)
+          .eq('schema_uid', attendanceSchemaUid)
+          .eq('recipient', wallet.address)
+          .eq('is_revoked', false)
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        setMyAttendanceUidTop(myAttendance?.attestation_uid || null);
+      } catch (e) {
+        console.warn('Failed to load my attendance UID (top):', e);
+        setMyAttendanceUidTop(null);
+      }
+    };
+    loadMyAttendance();
+  }, [event?.id, attendanceSchemaUid, wallet?.address]);
+
+  const handleAttestAttendanceTop = async () => {
+    if (!event || !attendanceSchemaUid || !wallet?.address) return;
+    try {
+      setIsTopAttendanceBusy(true);
+      const encoded = encodeEventAttendanceData(
+        event.id,
+        event.lock_address,
+        event.title,
+        Math.floor(Date.now() / 1000),
+        'Event Location',
+        'TeeRex'
+      );
+      const sa = await signTeeRexAttestation({
+        schemaUid: attendanceSchemaUid,
+        recipient: wallet.address,
+        data: encoded,
+        chainId: event.chain_id,
+        deadlineSecondsFromNow: 3600,
+        revocable: false,
+      });
+      const token = await getAccessToken?.();
+      const { data, error } = await supabase.functions.invoke('eas-gasless-attestation', {
+        body: {
+          schemaUid: attendanceSchemaUid,
+          recipient: wallet.address,
+          data: encoded,
+          deadline: Number(sa.deadline),
+          signature: sa.signature,
+          chainId: event.chain_id,
+          eventId: event.id,
+        },
+        headers: token ? { 'X-Privy-Authorization': `Bearer ${token}` } : undefined,
+      });
+      if (error || !data?.ok) throw new Error(error?.message || data?.error || 'Failed');
+      setMyAttendanceUidTop(data.uid || null);
+      toast({ title: '🎉 Attendance Verified!' });
+    } catch (e: any) {
+      toast({ title: 'Attestation failed', description: e?.message || 'Unknown error', variant: 'destructive' });
+    } finally {
+      setIsTopAttendanceBusy(false);
+    }
+  };
+
+  const handleRevokeAttendanceTop = async () => {
+    if (!attendanceSchemaUid || !myAttendanceUidTop) return;
+    try {
+      setIsTopAttendanceBusy(true);
+      const res = await revokeEventAttestation(attendanceSchemaUid, myAttendanceUidTop);
+      if (!res.success) throw new Error(res.error || 'Failed to revoke');
+      setMyAttendanceUidTop(null);
+      toast({ title: 'Attendance revoked' });
+    } catch (e: any) {
+      toast({ title: 'Revoke failed', description: e?.message || 'Unknown error', variant: 'destructive' });
+    } finally {
+      setIsTopAttendanceBusy(false);
+    }
+  };
+
   // Load attendance schema UID
   useEffect(() => {
     const loadAttendanceSchema = async () => {
@@ -145,8 +370,8 @@ const EventDetails = () => {
       console.log("Event attendance_schema_uid:", event.attendance_schema_uid);
 
       try {
-        // First check if event has an attendance schema UID set
-        if (event.attendance_schema_uid) {
+        // First check if event has an attendance schema UID set and valid
+        if (event.attendance_schema_uid && isValidSchemaUid(event.attendance_schema_uid)) {
           console.log(
             "Using event attendance schema UID:",
             event.attendance_schema_uid
@@ -438,6 +663,9 @@ const EventDetails = () => {
                   <h1 className="text-3xl font-bold text-gray-900 mb-2">
                     {event.title}
                   </h1>
+                  {networkLabel && (
+                    <Badge variant="outline" className="text-xs mb-2">{networkLabel}</Badge>
+                  )}
                   <div className="flex items-center space-x-4 text-gray-600">
                     {event.date && (
                       <div className="flex items-center space-x-1">
@@ -452,17 +680,25 @@ const EventDetails = () => {
                   </div>
                 </div>
                 <div className="flex items-center space-x-2">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setIsLiked(!isLiked)}
-                  >
-                    <Heart
-                      className={`w-4 h-4 ${
-                        isLiked ? "fill-red-500 text-red-500" : ""
-                      }`}
-                    />
-                  </Button>
+                  <TooltipProvider>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <span>
+                          <Button variant="outline" size="sm" onClick={handleToggleLike} disabled={isLikeLoading || (!likeSchemaUid)}>
+                            <div className="flex items-center gap-1">
+                              <Heart className={`w-4 h-4 ${userLikeUid ? 'fill-red-500 text-red-500' : ''}`} />
+                              <span className="text-xs">{likeCount}</span>
+                            </div>
+                          </Button>
+                        </span>
+                      </TooltipTrigger>
+                      {!likeSchemaUid && (
+                        <TooltipContent>
+                          Likes unavailable: schema not configured or invalid. Please contact support/admin.
+                        </TooltipContent>
+                      )}
+                    </Tooltip>
+                  </TooltipProvider>
                   <Button
                     variant="outline"
                     size="sm"
@@ -498,10 +734,12 @@ const EventDetails = () => {
                 </div>
               </div>
 
-              <div className="flex items-center space-x-1 text-gray-600 mb-6">
-                <MapPin className="w-4 h-4" />
-                <span>{event.location}</span>
-              </div>
+              {event.location && (
+                <div className="flex items-center space-x-1 text-gray-600 mb-6">
+                  <MapPin className="w-4 h-4" />
+                  <span>{event.location}</span>
+                </div>
+              )}
 
               <Separator className="my-6" />
 
@@ -566,8 +804,10 @@ const EventDetails = () => {
 
                 <div className="flex items-center justify-between">
                   <span className="text-2xl font-bold text-gray-900">
-                    {event.currency === "FREE"
-                      ? "Free"
+                    {event.payment_methods?.includes('fiat') && event.ngn_price > 0
+                      ? `₦${event.ngn_price.toLocaleString()}`
+                      : event.currency === 'FREE'
+                      ? 'Free'
                       : `${event.price} ${event.currency}`}
                   </span>
                   {!isSoldOut && (
@@ -611,17 +851,38 @@ const EventDetails = () => {
 
                 {authenticated && userTicketCount > 0 ? (
                   <div className="space-y-2">
-                    {/* Attestation Button for ticket holders */}
-                    {attendanceSchemaUid && (
-                      <AttestationButton
-                        schemaUid={attendanceSchemaUid}
-                        recipient={wallet?.address || ""}
-                        eventId={event.id}
-                        lockAddress={event.lock_address}
-                        eventTitle={event.title}
-                        attestationType="attendance"
-                      />
-                    )}
+                    {/* Attendance toggle for ticket holders */}
+                    <TooltipProvider>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <span>
+                            {myAttendanceUidTop ? (
+                              <Button
+                                variant="outline"
+                                className="w-full"
+                                disabled={isTopAttendanceBusy || !attendanceSchemaUid || !isValidSchemaUid(attendanceSchemaUid)}
+                                onClick={handleRevokeAttendanceTop}
+                              >
+                                {isTopAttendanceBusy ? 'Processing...' : 'Revoke Attendance'}
+                              </Button>
+                            ) : (
+                              <Button
+                                className="w-full bg-green-600 hover:bg-green-700 text-white"
+                                disabled={isTopAttendanceBusy || !eventHasEnded || !attendanceSchemaUid || !isValidSchemaUid(attendanceSchemaUid)}
+                                onClick={handleAttestAttendanceTop}
+                              >
+                                {isTopAttendanceBusy ? 'Processing...' : (eventHasEnded ? 'I Attended This Event' : 'Available after event ends')}
+                              </Button>
+                            )}
+                          </span>
+                        </TooltipTrigger>
+                        {(!attendanceSchemaUid || !isValidSchemaUid(attendanceSchemaUid)) && (
+                          <TooltipContent>
+                            Attendance unavailable: schema not configured or invalid. Please contact support/admin.
+                          </TooltipContent>
+                        )}
+                      </Tooltip>
+                    </TooltipProvider>
 
                     {/* Additional ticket purchase if allowed */}
                     {userTicketCount < maxTicketsPerUser && !isSoldOut && (
@@ -684,15 +945,17 @@ const EventDetails = () => {
                     </div>
                   )}
 
-                  <div className="flex items-start space-x-3">
-                    <MapPin className="w-5 h-5 text-gray-400 mt-0.5" />
-                    <div>
-                      <div className="font-medium text-gray-900">Location</div>
-                      <div className="text-sm text-gray-600">
-                        {event.location}
+                  {event.location && (
+                    <div className="flex items-start space-x-3">
+                      <MapPin className="w-5 h-5 text-gray-400 mt-0.5" />
+                      <div>
+                        <div className="font-medium text-gray-900">Location</div>
+                        <div className="text-sm text-gray-600">
+                          {event.location}
+                        </div>
                       </div>
                     </div>
-                  </div>
+                  )}
 
                   <div className="flex items-start space-x-3">
                     <Users className="w-5 h-5 text-gray-400 mt-0.5" />
@@ -738,6 +1001,7 @@ const EventDetails = () => {
               lockAddress={event.lock_address}
               userHasTicket={userTicketCount > 0}
               attendanceSchemaUid={attendanceSchemaUid || undefined}
+              chainId={event.chain_id}
             />
 
             {/* Event Interactions Card */}

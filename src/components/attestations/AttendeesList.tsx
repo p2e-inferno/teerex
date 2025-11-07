@@ -68,15 +68,23 @@ export const AttendeesList: React.FC<AttendeesListProps> = ({
 
       if (!attestationsData) return;
 
+      // Dedupe recipients: keep latest attestation per address
+      const byRecipient = new Map<string, any>();
+      attestationsData.forEach((a) => {
+        const prev = byRecipient.get(a.recipient);
+        if (!prev || new Date(a.created_at) > new Date(prev.created_at)) byRecipient.set(a.recipient, a);
+      });
+      const uniqueAttestations = Array.from(byRecipient.values());
+
       // Get reputation data for each attendee
-      const attendeeAddresses = attestationsData.map(a => a.recipient);
+      const attendeeAddresses = uniqueAttestations.map(a => a.recipient);
       const { data: reputationData } = await supabase
         .from('user_reputation')
         .select('user_address, reputation_score, total_attestations')
         .in('user_address', attendeeAddresses);
 
       // Get challenge counts for each attestation
-      const attestationIds = attestationsData.map(a => a.id);
+      const attestationIds = uniqueAttestations.map(a => a.id);
       const { data: challengesData } = await supabase
         .from('attestation_challenges')
         .select('attestation_id')
@@ -89,7 +97,7 @@ export const AttendeesList: React.FC<AttendeesListProps> = ({
         .in('attestation_id', attestationIds);
 
       // Combine all data
-      const enrichedAttendees: Attendee[] = attestationsData.map(attestation => {
+      const enrichedAttendees: Attendee[] = uniqueAttestations.map(attestation => {
         const reputation = reputationData?.find(r => r.user_address === attestation.recipient);
         const challengesCount = challengesData?.filter(c => c.attestation_id === attestation.id).length || 0;
         const votes = votesData?.filter(v => v.attestation_id === attestation.id) || [];

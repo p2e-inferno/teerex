@@ -126,6 +126,36 @@ export const getPublishedEvents = async (): Promise<PublishedEvent[]> => {
   }
 };
 
+export const getPublishedEventById = async (id: string): Promise<PublishedEvent | null> => {
+  try {
+    const { data, error } = await supabase
+      .from('events')
+      .select('*')
+      .eq('id', id)
+      .single();
+
+    if (error || !data) {
+      console.error('Error fetching event by id:', error);
+      return null;
+    }
+
+    const event = data as any;
+    return {
+      ...event,
+      date: event.date ? new Date(event.date) : null,
+      created_at: new Date(event.created_at),
+      updated_at: new Date(event.updated_at),
+      currency: event.currency as 'ETH' | 'USDC' | 'FREE',
+      ngn_price: event.ngn_price || 0,
+      payment_methods: event.payment_methods || ['crypto'],
+      paystack_public_key: event.paystack_public_key
+    } as PublishedEvent;
+  } catch (error) {
+    console.error('Error fetching event by id:', error);
+    return null;
+  }
+};
+
 export const getUserEvents = async (userId: string): Promise<PublishedEvent[]> => {
   try {
     const { data, error } = await supabase

@@ -707,13 +707,13 @@ export const configureMaxKeysPerAddress = async (
 /**
  * Gets the maximum number of keys a user can own for this lock.
  */
-export const getMaxKeysPerAddress = async (lockAddress: string, userAddress?: string): Promise<number> => {
+export const getMaxKeysPerAddress = async (lockAddress: string, userAddress?: string, chainId: number = baseSepolia.id): Promise<number> => {
   try {
     if (!lockAddress || lockAddress === 'Unknown' || !ethers.isAddress(lockAddress)) {
       return 1; // Default fallback
     }
     
-    const provider = getReadOnlyProvider();
+    const provider = getReadOnlyProvider(chainId);
     const lockContract = new ethers.Contract(lockAddress, PublicLockABI, provider);
     
     // Try user-specific limit first, then global limit
