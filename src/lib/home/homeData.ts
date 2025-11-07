@@ -61,7 +61,7 @@ export async function fetchKeysSoldForEvents(events: PublishedEvent[]): Promise<
   if (!events || events.length === 0) return map;
   const promises = events.map(async (e) => {
     try {
-      const total = await getTotalKeys(e.lock_address);
+      const total = await getTotalKeys(e.lock_address, e.chain_id);
       map[e.id] = total;
     } catch {
       map[e.id] = 0;
@@ -90,4 +90,3 @@ export function computeHomeStats(
     chainsCount: chains.size,
   };
 }
-

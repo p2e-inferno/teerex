@@ -95,7 +95,7 @@ const EventDetails = () => {
         setEvent(foundEvent);
 
         // Get tickets sold
-        const sold = await getTotalKeys(foundEvent.lock_address);
+        const sold = await getTotalKeys(foundEvent.lock_address, foundEvent.chain_id);
         setKeysSold(sold);
 
         // Get max tickets per user for this event
@@ -124,7 +124,8 @@ const EventDetails = () => {
       try {
         const userBalance = await getUserKeyBalance(
           event.lock_address,
-          wallet.address
+          wallet.address,
+          event.chain_id
         );
         setUserTicketCount(userBalance);
       } catch (error) {

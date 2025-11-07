@@ -28,7 +28,7 @@ export const EventBasicInfo: React.FC<EventBasicInfoProps> = ({
   const { toast } = useToast();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isUploading, setIsUploading] = useState(false);
-  const isValid = formData.title.trim() && formData.description.trim() && formData.date;
+  const isValid = formData.title.trim() && formData.description.trim() && formData.date && formData.time;
 
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -234,13 +234,16 @@ export const EventBasicInfo: React.FC<EventBasicInfoProps> = ({
         </div>
 
         <div className="space-y-2">
-          <Label htmlFor="time">Time</Label>
+          <Label htmlFor="time">Time *</Label>
           <Input
             id="time"
             type="time"
             value={formData.time}
             onChange={(e) => updateFormData({ time: e.target.value })}
           />
+          {!formData.time && (
+            <p className="text-sm text-red-600">Event time is required</p>
+          )}
         </div>
       </div>
 

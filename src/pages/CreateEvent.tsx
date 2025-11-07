@@ -25,13 +25,16 @@ export interface EventFormData {
   time: string;
   location: string;
   capacity: number;
+  // Crypto pricing (used only when paymentMethod === 'crypto')
   price: number;
-  currency: 'ETH' | 'USDC' | 'FREE';
+  currency: 'ETH' | 'USDC';
+  // Fiat pricing (used only when paymentMethod === 'fiat')
   ngnPrice: number;
-  paymentMethods: string[];
-  paystackPublicKey: string;
+  // Single, mutually exclusive payment method
+  paymentMethod: 'free' | 'crypto' | 'fiat';
   category: string;
   imageUrl: string;
+  chainId?: number;
 }
 
 const CreateEvent = () => {
@@ -55,10 +58,9 @@ const CreateEvent = () => {
     location: '',
     capacity: 100,
     price: 0,
-    currency: 'FREE',
+    currency: 'ETH',
     ngnPrice: 0,
-    paymentMethods: ['crypto'],
-    paystackPublicKey: '',
+    paymentMethod: 'free',
     category: '',
     imageUrl: ''
   });
@@ -95,11 +97,13 @@ const CreateEvent = () => {
             time: draft.time,
             location: draft.location,
             capacity: draft.capacity,
-            price: draft.price,
-            currency: draft.currency,
+            // derive payment model
+            paymentMethod: (draft.payment_methods && draft.payment_methods[0])
+              ? (draft.payment_methods[0] as 'free' | 'crypto' | 'fiat')
+              : (draft.currency && draft.currency !== 'FREE' ? 'crypto' : 'free'),
+            price: draft.currency !== 'FREE' ? draft.price : 0,
+            currency: (draft.currency && draft.currency !== 'FREE' ? (draft.currency as 'ETH' | 'USDC') : 'ETH'),
             ngnPrice: draft.ngn_price || 0,
-            paymentMethods: draft.payment_methods || ['crypto'],
-            paystackPublicKey: draft.paystack_public_key || '',
             category: draft.category,
             imageUrl: draft.image_url || ''
           });
@@ -119,11 +123,12 @@ const CreateEvent = () => {
             time: event.time,
             location: event.location,
             capacity: event.capacity,
-            price: event.price,
-            currency: event.currency,
+            paymentMethod: (event.payment_methods && event.payment_methods[0])
+              ? (event.payment_methods[0] as 'free' | 'crypto' | 'fiat')
+              : (event.currency && event.currency !== 'FREE' ? 'crypto' : 'free'),
+            price: event.currency !== 'FREE' ? event.price : 0,
+            currency: (event.currency && event.currency !== 'FREE' ? (event.currency as 'ETH' | 'USDC') : 'ETH'),
             ngnPrice: event.ngn_price || 0,
-            paymentMethods: event.payment_methods || ['crypto'],
-            paystackPublicKey: event.paystack_public_key || '',
             category: event.category,
             imageUrl: event.image_url || ''
           });
@@ -172,10 +177,19 @@ const CreateEvent = () => {
   const isStepValid = (step: number): boolean => {
     switch (step) {
       case 1:
-        return !!(formData.title.trim() && formData.description.trim() && formData.date);
+        return !!(formData.title.trim() && formData.description.trim() && formData.date && formData.time);
       case 2:
         return !!(formData.category && formData.capacity > 0);
       case 3:
+        // Validate ticket settings based on payment method
+        if (formData.paymentMethod === 'crypto') {
+          return formData.price > 0 && !!formData.currency;
+        }
+        if (formData.paymentMethod === 'fiat') {
+          const pk = (import.meta as any).env?.VITE_PAYSTACK_PUBLIC_KEY as string | undefined;
+          return !!pk && formData.ngnPrice > 0;
+        }
+        // free
         return true;
       case 4:
         return true;
@@ -248,21 +262,24 @@ const CreateEvent = () => {
       const lockConfig = {
         name: formData.title,
         symbol: `${formData.title.slice(0, 3).toUpperCase()}TIX`,
-        keyPrice: formData.currency === 'FREE' ? '0' : formData.price.toString(),
+        keyPrice: formData.paymentMethod === 'crypto' ? formData.price.toString() : '0',
         maxNumberOfKeys: formData.capacity,
         expirationDuration: 86400,
-        currency: formData.currency,
+        currency: formData.paymentMethod === 'crypto' ? formData.currency : 'FREE',
         price: formData.price
       };
 
-      const deploymentResult = await deployLock(lockConfig, wallet);
+      if (!(formData as any).chainId) {
+        throw new Error('Please select a network for deployment.');
+      }
+      const deploymentResult = await deployLock(lockConfig, wallet, (formData as any).chainId as number);
       
       if (deploymentResult.success && deploymentResult.transactionHash && deploymentResult.lockAddress) {
         // Track if service manager was successfully added
         let serviceManagerAdded = false;
         
         // If fiat payment is enabled, add the service wallet as a lock manager
-        if (formData.paymentMethods.includes('fiat')) {
+        if (formData.paymentMethod === 'fiat') {
           toast({
             title: "Adding Service Manager",
             description: "Adding unlock service as lock manager for fiat payments...",
@@ -306,7 +323,7 @@ const CreateEvent = () => {
         // Save event to Supabase with service manager status
         await savePublishedEvent(formData, deploymentResult.lockAddress, deploymentResult.transactionHash, user.id, serviceManagerAdded);
 
-        const explorerUrl = getBlockExplorerUrl(deploymentResult.transactionHash, 'baseSepolia');
+        const explorerUrl = getBlockExplorerUrl(deploymentResult.transactionHash, (formData as any).chainId as number);
         
         toast({
           title: "Event Created Successfully!",
@@ -532,6 +549,3 @@ const CreateEvent = () => {
 };
 
 export default CreateEvent;
-
-
-

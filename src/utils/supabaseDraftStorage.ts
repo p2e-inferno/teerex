@@ -51,7 +51,9 @@ export const saveDraft = async (formData: EventFormData, userId: string): Promis
       throw new Error('User ID is required to save draft');
     }
 
-    const draftData = {
+    const isCrypto = formData.paymentMethod === 'crypto';
+    const isFiat = formData.paymentMethod === 'fiat';
+    const draftBase = {
       user_id: userId, // This will now be a Privy DID string
       title: formData.title,
       description: formData.description,
@@ -59,20 +61,33 @@ export const saveDraft = async (formData: EventFormData, userId: string): Promis
       time: formData.time,
       location: formData.location,
       capacity: formData.capacity,
-      price: formData.price,
-      currency: formData.currency,
-      ngn_price: formData.ngnPrice,
-      payment_methods: formData.paymentMethods,
-      paystack_public_key: formData.paystackPublicKey || null,
+      price: isCrypto ? formData.price : 0,
+      currency: isCrypto ? formData.currency : 'FREE',
+      ngn_price: isFiat ? formData.ngnPrice : 0,
+      payment_methods: [formData.paymentMethod],
       category: formData.category,
       image_url: formData.imageUrl || null
     };
 
-    const { data, error } = await supabase
-      .from('event_drafts')
-      .insert(draftData)
-      .select()
-      .single();
+    // Try with chain_id if the column exists; fallback without if not
+    let data: any = null;
+    let error: any = null;
+    try {
+      ({ data, error } = await supabase
+        .from('event_drafts')
+        .insert({ ...draftBase, chain_id: (formData as any).chainId } as any)
+        .select()
+        .single());
+      if (error && /column.*chain_id/i.test(String(error.message))) {
+        ({ data, error } = await supabase
+          .from('event_drafts')
+          .insert(draftBase as any)
+          .select()
+          .single());
+      }
+    } catch (e: any) {
+      error = e;
+    }
 
     if (error) {
       console.error('Error saving draft:', error);
@@ -92,28 +107,41 @@ export const updateDraft = async (id: string, formData: EventFormData, userId: s
       throw new Error('User ID is required to update draft');
     }
 
-    const draftData = {
+    const isCryptoU = formData.paymentMethod === 'crypto';
+    const isFiatU = formData.paymentMethod === 'fiat';
+    const draftBase = {
       title: formData.title,
       description: formData.description,
       date: formData.date?.toISOString(),
       time: formData.time,
       location: formData.location,
       capacity: formData.capacity,
-      price: formData.price,
-      currency: formData.currency,
-      ngn_price: formData.ngnPrice,
-      payment_methods: formData.paymentMethods,
-      paystack_public_key: formData.paystackPublicKey || null,
+      price: isCryptoU ? formData.price : 0,
+      currency: isCryptoU ? formData.currency : 'FREE',
+      ngn_price: isFiatU ? formData.ngnPrice : 0,
+      payment_methods: [formData.paymentMethod],
       category: formData.category,
       image_url: formData.imageUrl || null,
       updated_at: new Date().toISOString()
     };
 
-    const { error } = await supabase
-      .from('event_drafts')
-      .update(draftData)
-      .eq('id', id)
-      .eq('user_id', userId);
+    let error: any = null;
+    try {
+      ({ error } = await supabase
+        .from('event_drafts')
+        .update({ ...draftBase, chain_id: (formData as any).chainId } as any)
+        .eq('id', id)
+        .eq('user_id', userId));
+      if (error && /column.*chain_id/i.test(String(error.message))) {
+        ({ error } = await supabase
+          .from('event_drafts')
+          .update(draftBase as any)
+          .eq('id', id)
+          .eq('user_id', userId));
+      }
+    } catch (e: any) {
+      error = e;
+    }
 
     if (error) {
       console.error('Error updating draft:', error);
@@ -151,7 +179,8 @@ export const getDrafts = async (userId: string): Promise<EventDraft[]> => {
       ngn_price: draft.ngn_price || 0,
       payment_methods: draft.payment_methods || ['crypto'],
       paystack_public_key: draft.paystack_public_key,
-      image_url: draft.image_url
+      image_url: draft.image_url,
+      chain_id: (draft as any).chain_id
     }));
   } catch (error) {
     console.error('Error fetching drafts:', error);
@@ -186,7 +215,8 @@ export const getDraft = async (id: string, userId: string): Promise<EventDraft |
       ngn_price: data.ngn_price || 0,
       payment_methods: data.payment_methods || ['crypto'],
       paystack_public_key: data.paystack_public_key,
-      image_url: data.image_url
+      image_url: data.image_url,
+      chain_id: (data as any).chain_id
     };
   } catch (error) {
     console.error('Error fetching draft:', error);

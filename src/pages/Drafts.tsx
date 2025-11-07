@@ -11,6 +11,7 @@ import { savePublishedEvent } from '@/utils/eventUtils';
 import { DraftCard } from '@/components/create-event/DraftCard';
 import { useToast } from '@/hooks/use-toast';
 import { deployLock, getBlockExplorerUrl } from '@/utils/lockUtils';
+import { baseSepolia } from 'wagmi/chains';
 
 const Drafts = () => {
   const { authenticated, user } = usePrivy();
@@ -93,7 +94,7 @@ const Drafts = () => {
         price: draft.price
       };
 
-      const deploymentResult = await deployLock(lockConfig, wallet);
+      const deploymentResult = await deployLock(lockConfig, wallet, draft.chain_id ?? baseSepolia.id);
       
       if (deploymentResult.success && deploymentResult.transactionHash && deploymentResult.lockAddress) {
         // Convert draft to EventFormData format
@@ -104,19 +105,22 @@ const Drafts = () => {
           time: draft.time,
           location: draft.location,
           capacity: draft.capacity,
-          price: draft.price,
-          currency: draft.currency,
+          // derive payment model
+          paymentMethod: (draft.payment_methods && draft.payment_methods[0])
+            ? (draft.payment_methods[0] as 'free' | 'crypto' | 'fiat')
+            : (draft.currency && draft.currency !== 'FREE' ? 'crypto' : 'free'),
+          price: draft.currency !== 'FREE' ? draft.price : 0,
+          currency: (draft.currency && draft.currency !== 'FREE' ? (draft.currency as 'ETH' | 'USDC') : 'ETH'),
           ngnPrice: draft.ngn_price || 0,
-          paymentMethods: draft.payment_methods || ['crypto'],
-          paystackPublicKey: draft.paystack_public_key || '',
           category: draft.category,
-          imageUrl: draft.image_url || ''
-        };
+          imageUrl: draft.image_url || '',
+          chainId: draft.chain_id ?? baseSepolia.id,
+        } as any;
 
         // Save to published events
         await savePublishedEvent(formData, deploymentResult.lockAddress, deploymentResult.transactionHash, user.id);
 
-        const explorerUrl = getBlockExplorerUrl(deploymentResult.transactionHash, 'baseSepolia');
+        const explorerUrl = getBlockExplorerUrl(deploymentResult.transactionHash, baseSepolia.id);
         
         toast({
           title: "Event Published Successfully!",
@@ -246,6 +250,3 @@ const Drafts = () => {
 };
 
 export default Drafts;
-
-
-

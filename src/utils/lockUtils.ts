@@ -1,6 +1,7 @@
 
-import { parseEther } from 'viem';
+import { parseEther, parseUnits } from 'viem';
 import { base, baseSepolia } from 'wagmi/chains';
+import { getRpcUrl, getExplorerTxUrl, getTokenAddress, ZERO_ADDRESS, CHAINS } from '@/lib/config/network-config';
 import { ethers } from 'ethers';
 
 interface LockConfig {
@@ -176,6 +177,51 @@ const PublicLockABI = [
   }
 ];
 
+// Minimal ERC20 ABI for decimals/allowance/approve
+const ERC20_ABI = [
+  { inputs: [], name: 'decimals', outputs: [{ internalType: 'uint8', name: '', type: 'uint8' }], stateMutability: 'view', type: 'function' },
+  { inputs: [{ internalType: 'address', name: 'owner', type: 'address' }, { internalType: 'address', name: 'spender', type: 'address' }], name: 'allowance', outputs: [{ internalType: 'uint256', name: '', type: 'uint256' }], stateMutability: 'view', type: 'function' },
+  { inputs: [{ internalType: 'address', name: 'spender', type: 'address' }, { internalType: 'uint256', name: 'value', type: 'uint256' }], name: 'approve', outputs: [{ internalType: 'bool', name: '', type: 'bool' }], stateMutability: 'nonpayable', type: 'function' },
+] as const;
+
+const decimalsCache: Record<string, number> = {};
+
+const getTokenInfo = async (chainId: number, symbol: string): Promise<{ address: string; decimals: number }> => {
+  if (symbol === 'FREE') return { address: ZERO_ADDRESS, decimals: 18 };
+  if (symbol === 'ETH') return { address: ZERO_ADDRESS, decimals: 18 };
+  const address = getTokenAddress(chainId, symbol as 'USDC');
+  if (decimalsCache[address]) return { address, decimals: decimalsCache[address] };
+  const provider = new ethers.JsonRpcProvider(getRpcUrl(chainId));
+  const token = new ethers.Contract(address, ERC20_ABI, provider);
+  const dec = Number(await token.decimals());
+  decimalsCache[address] = dec;
+  return { address, decimals: dec };
+};
+
+const ensureCorrectNetwork = async (rawProvider: any, chainId: number) => {
+  const chain = CHAINS[chainId as keyof typeof CHAINS];
+  if (!chain) throw new Error(`Unsupported chainId ${chainId}`);
+  const targetChainIdHex = `0x${chainId.toString(16)}`;
+  try {
+    await rawProvider.request({ method: 'wallet_switchEthereumChain', params: [{ chainId: targetChainIdHex }] });
+  } catch (switchError: any) {
+    if (switchError?.code === 4902) {
+      await rawProvider.request({
+        method: 'wallet_addEthereumChain',
+        params: [{
+          chainId: targetChainIdHex,
+          chainName: chain.name,
+          nativeCurrency: chain.nativeCurrency,
+          rpcUrls: chain.rpcUrls?.default?.http || [getRpcUrl(chainId)],
+          blockExplorerUrls: [chain.blockExplorers?.default?.url].filter(Boolean),
+        }],
+      });
+    } else {
+      throw switchError;
+    }
+  }
+};
+
 /**
  * Checks if an address is a lock manager for a given lock
  */
@@ -270,7 +316,7 @@ export const addLockManager = async (
   }
 };
 
-export const deployLock = async (config: LockConfig, wallet: any): Promise<DeploymentResult> => {
+export const deployLock = async (config: LockConfig, wallet: any, chainId: number): Promise<DeploymentResult> => {
   try {
     console.log('Deploying lock with config:', config);
     
@@ -278,59 +324,15 @@ export const deployLock = async (config: LockConfig, wallet: any): Promise<Deplo
       throw new Error('No wallet provided. Please connect your wallet first.');
     }
 
+    if (!chainId) {
+      throw new Error('Missing chainId for deployment.');
+    }
+
     // Get the Ethereum provider from Privy wallet
     const provider = await wallet.getEthereumProvider();
+    await ensureCorrectNetwork(provider, chainId);
 
-    // Always switch to Base Sepolia for testing
-    const targetChainId = baseSepolia.id;
-    const targetChainIdHex = `0x${targetChainId.toString(16)}`;
-
-    console.log(`Switching wallet to Base Sepolia (Chain ID: ${targetChainId})`);
-
-    try {
-      await provider.request({
-        method: 'wallet_switchEthereumChain',
-        params: [{ chainId: targetChainIdHex }],
-      });
-    } catch (switchError: any) {
-      // If the chain hasn't been added to MetaMask, add it
-      if (switchError.code === 4902) {
-        console.log('Adding Base Sepolia network to wallet');
-        await provider.request({
-          method: 'wallet_addEthereumChain',
-          params: [
-            {
-              chainId: targetChainIdHex,
-              chainName: 'Base Sepolia',
-              nativeCurrency: {
-                name: 'Ethereum',
-                symbol: 'ETH',
-                decimals: 18,
-              },
-              rpcUrls: ['https://sepolia.base.org'],
-              blockExplorerUrls: ['https://sepolia.basescan.org'],
-            },
-          ],
-        });
-      } else {
-        throw switchError;
-      }
-    }
-
-    // Wait a moment for the network switch to complete
-    await new Promise(resolve => setTimeout(resolve, 1000));
-
-    // Verify we're on the correct network
-    const currentChainId = await provider.request({ method: 'eth_chainId' });
-    const currentChainIdDecimal = parseInt(currentChainId, 16);
-    
-    console.log('Current chain ID after switch:', currentChainIdDecimal);
-    
-    if (currentChainIdDecimal !== targetChainId) {
-      throw new Error(`Failed to switch to Base Sepolia. Current network: ${currentChainIdDecimal}, Expected: ${targetChainId}`);
-    }
-
-    const factoryAddress = UNLOCK_FACTORY_ADDRESSES[baseSepolia.id];
+    const factoryAddress = UNLOCK_FACTORY_ADDRESSES[chainId as keyof typeof UNLOCK_FACTORY_ADDRESSES];
     console.log('Using Unlock Factory Address:', factoryAddress);
 
     // Create ethers provider and signer
@@ -343,13 +345,16 @@ export const deployLock = async (config: LockConfig, wallet: any): Promise<Deplo
     // Create an instance of the Unlock factory contract
     const unlock = new ethers.Contract(factoryAddress, UnlockABI, signer);
 
-    // Convert price to wei (assuming ETH/native token)
-    const keyPriceWei = config.currency === 'FREE' 
-      ? 0n 
-      : parseEther(config.price.toString());
-
-    // Token address (0x0 for native ETH)
-    const tokenAddress = '0x0000000000000000000000000000000000000000';
+    // Resolve token address & decimals
+    let tokenAddress = ZERO_ADDRESS;
+    let keyPriceWei = 0n;
+    if (config.currency !== 'FREE') {
+      const { address, decimals } = await getTokenInfo(chainId, config.currency);
+      tokenAddress = address;
+      keyPriceWei = tokenAddress === ZERO_ADDRESS
+        ? parseEther(config.price.toString())
+        : parseUnits(config.price.toString(), decimals);
+    }
 
     // Create calldata using PublicLock's ABI to encode the initialize function
     const lockInterface = new ethers.Interface(PublicLockABI);
@@ -462,9 +467,10 @@ export const deployLock = async (config: LockConfig, wallet: any): Promise<Deplo
 
 export const purchaseKey = async (
   lockAddress: string,
-  price: number, // The price in ETH (not wei)
+  price: number,
   currency: string,
-  wallet: any
+  wallet: any,
+  chainId: number
 ): Promise<PurchaseResult> => {
   try {
     console.log(`Purchasing key for lock: ${lockAddress}`);
@@ -478,49 +484,73 @@ export const purchaseKey = async (
       throw new Error('No wallet provided or not connected.');
     }
 
+    if (!chainId) throw new Error('Missing chainId for purchase.');
+
     const provider = await wallet.getEthereumProvider();
+    await ensureCorrectNetwork(provider, chainId);
     const ethersProvider = new ethers.BrowserProvider(provider);
     const signer = await ethersProvider.getSigner();
 
     const lockContract = new ethers.Contract(lockAddress, PublicLockABI, signer);
+    let decimals = 18;
+    let tokenAddress = ZERO_ADDRESS;
+    if (currency !== 'FREE') {
+      const info = await getTokenInfo(chainId, currency);
+      tokenAddress = info.address;
+      decimals = info.decimals;
+    }
 
-    const keyPriceWei = currency === 'FREE'
-      ? 0n
-      : parseEther(price.toString());
-
-    // Verify on-chain price matches expected price
+    const expectedPrice = currency === 'FREE' ? 0n : (tokenAddress === ZERO_ADDRESS ? parseEther(price.toString()) : parseUnits(price.toString(), decimals));
     const onChainKeyPrice = await lockContract.keyPrice();
-    if (onChainKeyPrice !== keyPriceWei) {
-        console.error(`Price mismatch: Expected ${keyPriceWei}, but on-chain price is ${onChainKeyPrice}`);
-        throw new Error('The ticket price has changed. Please refresh and try again.');
+    if (onChainKeyPrice !== expectedPrice) {
+      console.error(`Price mismatch: Expected ${expectedPrice}, on-chain ${onChainKeyPrice}`);
+      throw new Error('The ticket price has changed. Please refresh and try again.');
     }
-    
-    console.log(`Calling purchase for recipient: ${wallet.address} with value: ${keyPriceWei.toString()} wei`);
 
-    const tx = await lockContract.purchase(
-      [keyPriceWei], // _values: For a single key purchase, this is the price.
-      [wallet.address], // _recipients
-      ['0x0000000000000000000000000000000000000000'], // _referrers
-      ['0x0000000000000000000000000000000000000000'], // _keyManagers
-      ['0x'], // _data: An array with a single empty bytes value.
-      {
-        value: keyPriceWei // Send ETH with the transaction
+    // ERC20 path
+    if (tokenAddress !== ZERO_ADDRESS) {
+      const token = new ethers.Contract(tokenAddress, ERC20_ABI, signer);
+      const owner = await signer.getAddress();
+      const allowance = await token.allowance(owner, lockAddress);
+      if (allowance < onChainKeyPrice) {
+        try {
+          const approveTx = await token.approve(lockAddress, onChainKeyPrice);
+          await approveTx.wait();
+        } catch (e: any) {
+          if (String(e?.message || '').toLowerCase().includes('must be zero')) {
+            const resetTx = await token.approve(lockAddress, 0);
+            await resetTx.wait();
+            const approveTx2 = await token.approve(lockAddress, onChainKeyPrice);
+            await approveTx2.wait();
+          } else {
+            throw e;
+          }
+        }
       }
-    );
-
-    console.log('Purchase transaction sent:', tx.hash);
-
-    const receipt = await tx.wait();
-    console.log('Transaction receipt:', receipt);
-
-    if (receipt.status !== 1) {
-      throw new Error('Transaction failed. Please try again.');
+      const tx = await lockContract.purchase(
+        [onChainKeyPrice],
+        [owner],
+        ['0x0000000000000000000000000000000000000000'],
+        ['0x0000000000000000000000000000000000000000'],
+        ['0x']
+      );
+      const receipt = await tx.wait();
+      if (receipt.status !== 1) throw new Error('Transaction failed.');
+      return { success: true, transactionHash: tx.hash };
     }
 
-    return {
-      success: true,
-      transactionHash: tx.hash,
-    };
+    // ETH path
+    const tx = await lockContract.purchase(
+      [onChainKeyPrice],
+      [wallet.address],
+      ['0x0000000000000000000000000000000000000000'],
+      ['0x0000000000000000000000000000000000000000'],
+      ['0x'],
+      { value: onChainKeyPrice }
+    );
+    const receipt = await tx.wait();
+    if (receipt.status !== 1) throw new Error('Transaction failed.');
+    return { success: true, transactionHash: tx.hash };
 
   } catch (error) {
     console.error('Error purchasing key:', error);
@@ -544,26 +574,21 @@ export const purchaseKey = async (
 };
 
 
-export const getBlockExplorerUrl = (txHash: string, network: string = 'baseSepolia'): string => {
-  const explorers = {
-    base: 'https://basescan.org/tx/',
-    baseSepolia: 'https://sepolia.basescan.org/tx/'
-  };
-  
-  return `${explorers[network as keyof typeof explorers] || explorers.baseSepolia}${txHash}`;
+export const getBlockExplorerUrl = (txHash: string, chainId?: number): string => {
+  if (chainId) return getExplorerTxUrl(chainId, txHash);
+  return getExplorerTxUrl(baseSepolia.id, txHash);
 };
 
 // --- New Functions ---
 
-const getReadOnlyProvider = () => {
-  // Using a public RPC for read-only operations on Base Sepolia
-  return new ethers.JsonRpcProvider('https://sepolia.base.org');
+const getReadOnlyProvider = (chainId: number = baseSepolia.id) => {
+  return new ethers.JsonRpcProvider(getRpcUrl(chainId));
 };
 
 /**
  * Gets the total number of keys that have been sold for a lock.
  */
-export const getTotalKeys = async (lockAddress: string): Promise<number> => {
+export const getTotalKeys = async (lockAddress: string, chainId: number = baseSepolia.id): Promise<number> => {
   try {
     // Validate lock address before proceeding
     if (!lockAddress || lockAddress === 'Unknown' || !ethers.isAddress(lockAddress)) {
@@ -571,7 +596,7 @@ export const getTotalKeys = async (lockAddress: string): Promise<number> => {
       return 0;
     }
     
-    const provider = getReadOnlyProvider();
+    const provider = getReadOnlyProvider(chainId);
     const lockContract = new ethers.Contract(lockAddress, PublicLockABI, provider);
     const totalSupply = await lockContract.totalSupply();
     return Number(totalSupply);
@@ -584,7 +609,7 @@ export const getTotalKeys = async (lockAddress: string): Promise<number> => {
 /**
  * Checks if a user has a valid, non-expired key for a specific lock.
  */
-export const checkKeyOwnership = async (lockAddress: string, userAddress: string): Promise<boolean> => {
+export const checkKeyOwnership = async (lockAddress: string, userAddress: string, chainId: number = baseSepolia.id): Promise<boolean> => {
   try {
     if (!ethers.isAddress(lockAddress) || !ethers.isAddress(userAddress)) {
       return false;
@@ -595,7 +620,7 @@ export const checkKeyOwnership = async (lockAddress: string, userAddress: string
       return false;
     }
     
-    const provider = getReadOnlyProvider();
+    const provider = getReadOnlyProvider(chainId);
     const lockContract = new ethers.Contract(lockAddress, PublicLockABI, provider);
     return await lockContract.getHasValidKey(userAddress);
   } catch (error) {
@@ -607,7 +632,7 @@ export const checkKeyOwnership = async (lockAddress: string, userAddress: string
 /**
  * Gets the number of keys (tickets) owned by a specific user for a lock.
  */
-export const getUserKeyBalance = async (lockAddress: string, userAddress: string): Promise<number> => {
+export const getUserKeyBalance = async (lockAddress: string, userAddress: string, chainId: number = baseSepolia.id): Promise<number> => {
   try {
     if (!ethers.isAddress(lockAddress) || !ethers.isAddress(userAddress)) {
       return 0;
@@ -618,7 +643,7 @@ export const getUserKeyBalance = async (lockAddress: string, userAddress: string
       return 0;
     }
     
-    const provider = getReadOnlyProvider();
+    const provider = getReadOnlyProvider(chainId);
     const lockContract = new ethers.Contract(lockAddress, PublicLockABI, provider);
     const balance = await lockContract.balanceOf(userAddress);
     return Number(balance);

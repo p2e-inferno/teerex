@@ -15,6 +15,7 @@ export interface EventDraft {
   paystack_public_key: string | null;
   category: string;
   image_url: string | null;
+  chain_id?: number;
   created_at: Date;
   updated_at: Date;
 }

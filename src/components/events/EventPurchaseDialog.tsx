@@ -42,10 +42,10 @@ export const EventPurchaseDialog: React.FC<EventPurchaseDialogProps> = ({ event,
 
     setIsPurchasing(true);
     try {
-      const result = await purchaseKey(event.lock_address, event.price, event.currency, wallet);
+      const result = await purchaseKey(event.lock_address, event.price, event.currency, wallet, event.chain_id);
 
       if (result.success && result.transactionHash) {
-        const explorerUrl = getBlockExplorerUrl(result.transactionHash, 'baseSepolia');
+        const explorerUrl = getBlockExplorerUrl(result.transactionHash, event.chain_id);
         toast({
           title: 'Purchase Successful!',
           description: (

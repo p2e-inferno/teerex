@@ -6,6 +6,8 @@ const DRAFTS_KEY = 'event_drafts';
 export const saveDraftLocally = (formData: EventFormData): string => {
   const drafts = getDraftsLocally();
   const id = Date.now().toString();
+  const isCrypto = formData.paymentMethod === 'crypto';
+  const isFiat = formData.paymentMethod === 'fiat';
   const draft: EventDraft = {
     id,
     user_id: '', // This would need to be set properly for local storage
@@ -15,11 +17,11 @@ export const saveDraftLocally = (formData: EventFormData): string => {
     time: formData.time,
     location: formData.location,
     capacity: formData.capacity,
-    price: formData.price,
-    currency: formData.currency,
-    ngn_price: formData.ngnPrice,
-    payment_methods: formData.paymentMethods,
-    paystack_public_key: formData.paystackPublicKey,
+    price: isCrypto ? formData.price : 0,
+    currency: isCrypto ? formData.currency : 'FREE',
+    ngn_price: isFiat ? formData.ngnPrice : 0,
+    payment_methods: [formData.paymentMethod],
+    paystack_public_key: null,
     category: formData.category,
     image_url: formData.imageUrl || null,
     created_at: new Date(),
@@ -36,6 +38,8 @@ export const updateDraftLocally = (id: string, formData: EventFormData): void =>
   const index = drafts.findIndex(draft => draft.id === id);
   
   if (index !== -1) {
+    const isCryptoU = formData.paymentMethod === 'crypto';
+    const isFiatU = formData.paymentMethod === 'fiat';
     drafts[index] = {
       ...drafts[index],
       title: formData.title,
@@ -44,11 +48,11 @@ export const updateDraftLocally = (id: string, formData: EventFormData): void =>
       time: formData.time,
       location: formData.location,
       capacity: formData.capacity,
-      price: formData.price,
-      currency: formData.currency,
-      ngn_price: formData.ngnPrice,
-      payment_methods: formData.paymentMethods,
-      paystack_public_key: formData.paystackPublicKey,
+      price: isCryptoU ? formData.price : 0,
+      currency: isCryptoU ? formData.currency : 'FREE',
+      ngn_price: isFiatU ? formData.ngnPrice : 0,
+      payment_methods: [formData.paymentMethod],
+      paystack_public_key: null,
       category: formData.category,
       image_url: formData.imageUrl || null,
       updated_at: new Date()

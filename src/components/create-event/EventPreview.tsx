@@ -90,22 +90,15 @@ export const EventPreview: React.FC<EventPreviewProps> = ({
               <div className="flex items-center gap-2 text-gray-600">
                 <Ticket className="w-4 h-4" />
                 <div className="flex flex-col gap-1">
-                  {/* Crypto pricing */}
-                  {formData.paymentMethods.includes('crypto') && (
-                    <span>
-                      {formData.currency === 'FREE' 
-                        ? 'Free (Crypto)' 
-                        : `${formData.price} ${formData.currency}`
-                      }
-                    </span>
+                  {/* Pricing */}
+                  {formData.paymentMethod === 'free' && (
+                    <span>Free</span>
                   )}
-                  {/* NGN pricing */}
-                  {formData.paymentMethods.includes('fiat') && formData.ngnPrice && (
+                  {formData.paymentMethod === 'crypto' && (
+                    <span>{`${formData.price} ${formData.currency}`}</span>
+                  )}
+                  {formData.paymentMethod === 'fiat' && formData.ngnPrice > 0 && (
                     <span>₦{formData.ngnPrice.toLocaleString()} (Card/Bank)</span>
-                  )}
-                  {/* Show pricing options if both available */}
-                  {formData.paymentMethods.includes('crypto') && formData.paymentMethods.includes('fiat') && (
-                    <span className="text-xs text-gray-500">Multiple payment options available</span>
                   )}
                 </div>
               </div>
@@ -117,7 +110,7 @@ export const EventPreview: React.FC<EventPreviewProps> = ({
                 className="w-full bg-purple-600 hover:bg-purple-700 text-white font-medium"
                 disabled
               >
-                {formData.currency === 'FREE' ? 'Register for Free' : 'Get Tickets'}
+                {formData.paymentMethod === 'free' ? 'Register for Free' : 'Get Tickets'}
               </Button>
             </div>
           </div>

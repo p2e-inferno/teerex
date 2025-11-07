@@ -3,6 +3,7 @@ import React from 'react';
 import { Card, CardContent } from '@/components/ui/card';
 import { EventFormData } from '@/pages/CreateEvent';
 import { DollarSign, Ticket, Globe } from 'lucide-react';
+ 
 
 interface TicketSettingsDisplayProps {
   formData: EventFormData;
@@ -34,7 +35,9 @@ export const TicketSettingsDisplay: React.FC<TicketSettingsDisplayProps> = ({ fo
             <div>
               <p className="text-sm font-medium text-gray-500">Ticket Price</p>
               <p className="text-lg font-semibold text-gray-900">
-                {formData.currency === 'FREE' ? 'Free' : `${formData.price} ${formData.currency}`}
+                {formData.paymentMethod === 'free' && 'Free'}
+                {formData.paymentMethod === 'crypto' && `${formData.price} ${formData.currency}`}
+                {formData.paymentMethod === 'fiat' && `₦${formData.ngnPrice.toLocaleString()}`}
               </p>
             </div>
           </div>

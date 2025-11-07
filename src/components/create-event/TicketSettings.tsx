@@ -1,13 +1,14 @@
 
-import React from 'react';
+import React, { useEffect } from 'react';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Checkbox } from '@/components/ui/checkbox';
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Shield, Zap, Ticket, ChevronRight, CreditCard } from 'lucide-react';
+import { base, baseSepolia } from 'wagmi/chains';
 import { EventFormData } from '@/pages/CreateEvent';
 
 interface TicketSettingsProps {
@@ -21,33 +22,30 @@ export const TicketSettings: React.FC<TicketSettingsProps> = ({
   updateFormData,
   onNext
 }) => {
-  const handleContinue = () => {
-    // Validation: Ensure at least one payment method is selected
-    if (formData.paymentMethods.length === 0) {
-      alert('Please select at least one payment method');
-      return;
+  // Initialize chainId from UI default if not set (UI default shows Base)
+  useEffect(() => {
+    if (!(formData as any).chainId) {
+      updateFormData({ chainId: base.id } as any);
     }
-    
-    // Validation: If fiat is selected, ensure NGN price and Paystack key are provided
-    if (formData.paymentMethods.includes('fiat')) {
+  }, []);
+  const handleContinue = () => {
+    if (formData.paymentMethod === 'fiat') {
+      const pk = (import.meta as any).env?.VITE_PAYSTACK_PUBLIC_KEY as string | undefined;
+      if (!pk) {
+        alert('PAYSTACK public key not configured. Please set VITE_PAYSTACK_PUBLIC_KEY.');
+        return;
+      }
       if (!formData.ngnPrice || formData.ngnPrice <= 0) {
         alert('Please enter a valid NGN price for fiat payments');
         return;
       }
-      if (!formData.paystackPublicKey?.trim()) {
-        alert('Please enter your Paystack public key for fiat payments');
-        return;
-      }
     }
-    
-    // Validation: If crypto is selected and not free, ensure crypto price is set
-    if (formData.paymentMethods.includes('crypto') && formData.currency !== 'FREE') {
+    if (formData.paymentMethod === 'crypto') {
       if (!formData.price || formData.price <= 0) {
         alert('Please enter a valid price for crypto payments');
         return;
       }
     }
-    
     console.log('Ticket settings completed, proceeding to next step');
     onNext();
   };
@@ -80,53 +78,37 @@ export const TicketSettings: React.FC<TicketSettingsProps> = ({
         </CardContent>
       </Card>
 
-      {/* Payment Methods */}
+      {/* Payment Method */}
       <div className="space-y-4">
-        <h3 className="text-lg font-medium text-gray-900">Payment Methods</h3>
-        
-        <div className="space-y-3">
+        <h3 className="text-lg font-medium text-gray-900">Payment Method</h3>
+        <RadioGroup
+          value={formData.paymentMethod}
+          onValueChange={(v) => updateFormData({ paymentMethod: v as any })}
+          className="grid grid-cols-1 md:grid-cols-3 gap-3"
+        >
           <div className="flex items-center space-x-2">
-            <Checkbox 
-              id="crypto"
-              checked={formData.paymentMethods.includes('crypto')}
-              onCheckedChange={(checked) => {
-                if (checked) {
-                  updateFormData({ paymentMethods: [...formData.paymentMethods, 'crypto'] });
-                } else {
-                  updateFormData({ paymentMethods: formData.paymentMethods.filter(m => m !== 'crypto') });
-                }
-              }}
-            />
-            <Label htmlFor="crypto" className="flex items-center gap-2">
-              <Shield className="w-4 h-4" />
-              Cryptocurrency Payments (ETH, USDC)
+            <RadioGroupItem id="pm-free" value="free" />
+            <Label htmlFor="pm-free">Free</Label>
+          </div>
+          <div className="flex items-center space-x-2">
+            <RadioGroupItem id="pm-crypto" value="crypto" />
+            <Label htmlFor="pm-crypto" className="flex items-center gap-2">
+              <Shield className="w-4 h-4" /> Crypto (ETH, USDC)
             </Label>
           </div>
-
           <div className="flex items-center space-x-2">
-            <Checkbox 
-              id="fiat"
-              checked={formData.paymentMethods.includes('fiat')}
-              onCheckedChange={(checked) => {
-                if (checked) {
-                  updateFormData({ paymentMethods: [...formData.paymentMethods, 'fiat'] });
-                } else {
-                  updateFormData({ paymentMethods: formData.paymentMethods.filter(m => m !== 'fiat') });
-                }
-              }}
-            />
-            <Label htmlFor="fiat" className="flex items-center gap-2">
-              <CreditCard className="w-4 h-4" />
-              Fiat Payments (NGN via Paystack)
+            <RadioGroupItem id="pm-fiat" value="fiat" />
+            <Label htmlFor="pm-fiat" className="flex items-center gap-2">
+              <CreditCard className="w-4 h-4" /> Fiat (NGN via Paystack)
             </Label>
           </div>
-        </div>
+        </RadioGroup>
       </div>
 
       {/* Crypto Pricing */}
-      {formData.paymentMethods.includes('crypto') && (
+      {formData.paymentMethod === 'crypto' && (
         <div className="space-y-4">
-          <h3 className="text-lg font-medium text-gray-900">Cryptocurrency Pricing</h3>
+          <h3 className="text-lg font-medium text-gray-900">Crypto Pricing</h3>
           
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="space-y-2">
@@ -144,12 +126,11 @@ export const TicketSettings: React.FC<TicketSettingsProps> = ({
 
             <div className="space-y-2">
               <Label>Currency</Label>
-              <Select value={formData.currency} onValueChange={(value: 'ETH' | 'USDC' | 'FREE') => updateFormData({ currency: value })}>
+              <Select value={formData.currency} onValueChange={(value: 'ETH' | 'USDC') => updateFormData({ currency: value })}>
                 <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="FREE">Free</SelectItem>
                   <SelectItem value="ETH">ETH</SelectItem>
                   <SelectItem value="USDC">USDC</SelectItem>
                 </SelectContent>
@@ -160,7 +141,7 @@ export const TicketSettings: React.FC<TicketSettingsProps> = ({
       )}
 
       {/* NGN Pricing */}
-      {formData.paymentMethods.includes('fiat') && (
+      {formData.paymentMethod === 'fiat' && (
         <div className="space-y-4">
           <h3 className="text-lg font-medium text-gray-900">Fiat Pricing (NGN)</h3>
           
@@ -178,16 +159,7 @@ export const TicketSettings: React.FC<TicketSettingsProps> = ({
               />
             </div>
 
-            <div className="space-y-2">
-              <Label htmlFor="paystack-key">Paystack Public Key</Label>
-              <Input
-                id="paystack-key"
-                type="text"
-                placeholder="pk_test_..."
-                value={formData.paystackPublicKey}
-                onChange={(e) => updateFormData({ paystackPublicKey: e.target.value })}
-              />
-            </div>
+            {/* Paystack key is provided via env; no input */}
           </div>
 
           <div className="bg-blue-50 p-4 rounded-lg">
@@ -211,7 +183,7 @@ export const TicketSettings: React.FC<TicketSettingsProps> = ({
       )}
 
       {/* NFT Benefits for Paid Events */}
-      {(formData.paymentMethods.includes('crypto') && formData.currency !== 'FREE') && (
+      {formData.paymentMethod === 'crypto' && (
         <div className="bg-blue-50 p-4 rounded-lg">
           <div className="flex items-start gap-3">
             <Ticket className="w-5 h-5 text-blue-600 mt-0.5" />
@@ -253,7 +225,10 @@ export const TicketSettings: React.FC<TicketSettingsProps> = ({
 
           <div className="space-y-2">
             <Label>Network</Label>
-            <Select defaultValue="base">
+            <Select
+              value={(formData as any).chainId === baseSepolia.id ? 'baseSepolia' : 'base'}
+              onValueChange={(v) => updateFormData({ chainId: v === 'base' ? base.id : baseSepolia.id } as any)}
+            >
               <SelectTrigger>
                 <SelectValue />
               </SelectTrigger>

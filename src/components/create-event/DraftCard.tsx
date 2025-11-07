@@ -3,6 +3,7 @@ import React from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { base, baseSepolia } from 'wagmi/chains';
 import { Calendar, Clock, MapPin, Edit, Trash2, Upload, Loader2 } from 'lucide-react';
 import { format } from 'date-fns';
 import { EventDraft } from '@/types/event';
@@ -22,6 +23,11 @@ export const DraftCard: React.FC<DraftCardProps> = ({
   onPublish,
   isPublishing = false
 }) => {
+  const networkLabel = draft.chain_id === base.id
+    ? 'Base'
+    : draft.chain_id === baseSepolia.id
+    ? 'Base Sepolia'
+    : 'Network';
   return (
     <Card className="border-0 shadow-sm">
       <div className="aspect-[2/1] relative">
@@ -36,6 +42,11 @@ export const DraftCard: React.FC<DraftCardProps> = ({
         )}
         <div className="absolute top-3 left-3">
           <Badge className="bg-orange-500 text-white">Draft</Badge>
+        </div>
+        <div className="absolute top-3 right-3">
+          <Badge variant="outline" className="bg-white/90 text-gray-900 border-gray-200">
+            {networkLabel}
+          </Badge>
         </div>
       </div>
 

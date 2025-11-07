@@ -42,6 +42,21 @@ export const savePublishedEvent = async (
   serviceManagerAdded: boolean = false
 ): Promise<void> => {
   try {
+    // Map payment method to persisted fields
+    const isCrypto = formData.paymentMethod === 'crypto';
+    const isFiat = formData.paymentMethod === 'fiat';
+    const isFree = formData.paymentMethod === 'free';
+
+    // Require Paystack public key for fiat
+    let paystackPublicKey: string | null = null;
+    if (isFiat) {
+      const pk = (import.meta as any).env?.VITE_PAYSTACK_PUBLIC_KEY as string | undefined;
+      if (!pk) {
+        throw new Error('PAYSTACK public key is not configured. Please set VITE_PAYSTACK_PUBLIC_KEY.');
+      }
+      paystackPublicKey = pk;
+    }
+
     const eventData = {
       creator_id: creatorId,
       title: formData.title,
@@ -50,16 +65,20 @@ export const savePublishedEvent = async (
       time: formData.time,
       location: formData.location,
       capacity: formData.capacity,
-      price: formData.price,
-      currency: formData.currency,
-      ngn_price: formData.ngnPrice,
-      payment_methods: formData.paymentMethods,
-      paystack_public_key: formData.paystackPublicKey || null,
+      // For crypto use the crypto price; otherwise 0
+      price: isCrypto ? formData.price : 0,
+      // Currency is crypto currency for crypto, or FREE for fiat/free
+      currency: isCrypto ? formData.currency : 'FREE',
+      // NGN price only for fiat
+      ngn_price: isFiat ? formData.ngnPrice : 0,
+      // Persist single selected method in array for compatibility
+      payment_methods: [formData.paymentMethod],
+      paystack_public_key: paystackPublicKey,
       category: formData.category,
       image_url: formData.imageUrl || null,
       lock_address: lockAddress,
       transaction_hash: transactionHash,
-      chain_id: baseSepolia.id, // Currently we're deploying to Base Sepolia
+      chain_id: (formData as any).chainId,
       service_manager_added: serviceManagerAdded
     };
 
@@ -151,7 +170,7 @@ export const getEventsWithUserTickets = async (userAddress: string): Promise<Pub
     // as it makes one RPC call per event. A better solution for production
     // would be to use the Unlock Subgraph to query all keys for a user in one go.
     const ownershipChecks = await Promise.all(
-      allEvents.map(event => checkKeyOwnership(event.lock_address, userAddress))
+      allEvents.map(event => checkKeyOwnership(event.lock_address, userAddress, event.chain_id))
     );
 
     const userEvents = allEvents.filter((_, index) => ownershipChecks[index]);
