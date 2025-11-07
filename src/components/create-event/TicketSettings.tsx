@@ -59,10 +59,10 @@ export const TicketSettings: React.FC<TicketSettingsProps> = ({
       {/* Unlock Protocol Integration */}
       <Card className="border-purple-200 bg-purple-50/50">
         <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-purple-900">
+          {/* <CardTitle className="flex items-center gap-2 text-purple-900">
             <Shield className="w-5 h-5" />
             Unlock Protocol Integration
-          </CardTitle>
+          </CardTitle> */}
           <CardDescription className="text-purple-700">
             Your tickets will be minted as NFTs on the blockchain for verification and authenticity
           </CardDescription>
@@ -71,9 +71,9 @@ export const TicketSettings: React.FC<TicketSettingsProps> = ({
           <div className="flex items-center gap-2">
             <Badge variant="secondary" className="bg-green-100 text-green-800">
               <Zap className="w-3 h-3 mr-1" />
-              Enabled
+              Blockchain Enabled
             </Badge>
-            <span className="text-sm text-gray-600">Blockchain verification active</span>
+            <span className="text-sm text-gray-600"> Verifiable tickets</span>
           </div>
         </CardContent>
       </Card>
