@@ -42,7 +42,10 @@ import { AttendeesList } from "@/components/attestations/AttendeesList";
 import { EventInteractionsCard } from "@/components/interactions/core/EventInteractionsCard";
 import { usePrivy, useWallets } from "@privy-io/react-auth";
 import { useToast } from "@/hooks/use-toast";
-import { getAttestationSchemas } from "@/utils/attestationUtils";
+import { getAttestationSchemas, isValidAttestationUid, isAttestationRevocableOnChain } from "@/utils/attestationUtils";
+import { useEventAttestationState } from "@/hooks/useEventAttestationState";
+import { getDisableMessage } from "@/utils/attestationMessages";
+import { getBatchAttestationAddress } from "@/lib/config/contract-config";
 import { format } from "date-fns";
 import {
   DropdownMenu,
@@ -124,15 +127,27 @@ const EventDetails = () => {
     loadEvent();
   }, [id, navigate, toast]);
 
+  // Centralized attestation state (schemas, UIDs, on-chain instance revocability)
+  const { state } = useEventAttestationState({
+    eventId: event?.id || '',
+    chainId: event?.chain_id || baseSepolia.id,
+    lockAddress: event?.lock_address || '',
+    userAddress: wallet?.address,
+    preferredAttendanceSchemaUid: event?.attendance_schema_uid || null,
+  });
+
   // Like schema + counts
   const [likeSchemaUid, setLikeSchemaUid] = useState<string | null>(null);
+  const [likeSchemaRevocable, setLikeSchemaRevocable] = useState<boolean | null>(null);
   const [likeCount, setLikeCount] = useState(0);
   const [userLikeUid, setUserLikeUid] = useState<string | null>(null);
   const [isLikeLoading, setIsLikeLoading] = useState(false);
+  const [likeInstanceRevocable, setLikeInstanceRevocable] = useState<boolean | null>(null);
   // Attendance (for top ticket card toggle)
   const [myAttendanceUidTop, setMyAttendanceUidTop] = useState<string | null>(null);
   const [isTopAttendanceBusy, setIsTopAttendanceBusy] = useState(false);
   const [eventHasEnded, setEventHasEnded] = useState(false);
+  const [attendanceSchemaRevocable, setAttendanceSchemaRevocable] = useState<boolean | null>(null);
 
   const networkLabel = event?.chain_id === base.id ? 'Base' : event?.chain_id === baseSepolia.id ? 'Base Sepolia' : '';
 
@@ -142,16 +157,18 @@ const EventDetails = () => {
     try {
       const { data: schema } = await supabase
         .from('attestation_schemas')
-        .select('schema_uid,name')
+        .select('schema_uid,name,revocable')
         .eq('name', 'TeeRex EventLike')
         .maybeSingle();
       if (!schema?.schema_uid || !isValidSchemaUid(schema.schema_uid)) {
         setLikeSchemaUid(null);
         setLikeCount(0);
         setUserLikeUid(null);
+        setLikeSchemaRevocable(null);
         return;
       }
       setLikeSchemaUid(schema.schema_uid);
+      setLikeSchemaRevocable(Boolean((schema as any).revocable));
       const { data: likes } = await supabase
         .from('attestations')
         .select('attestation_uid, recipient, created_at')
@@ -166,7 +183,19 @@ const EventDetails = () => {
       setLikeCount(uniq.size);
       if (wallet?.address) {
         const mine = uniq.get(wallet.address);
-        setUserLikeUid(mine?.attestation_uid || null);
+        const uid: string | null = mine?.attestation_uid || null;
+        if (isValidAttestationUid(uid)) {
+          setUserLikeUid(uid);
+          try {
+            const r = await isAttestationRevocableOnChain(uid!, ev.chain_id);
+            setLikeInstanceRevocable(r);
+          } catch (_) {
+            setLikeInstanceRevocable(null);
+          }
+        } else {
+          setUserLikeUid(null);
+          setLikeInstanceRevocable(null);
+        }
       }
     } catch (e) {
       console.error('Error loading likes:', e);
@@ -176,6 +205,69 @@ const EventDetails = () => {
   useEffect(() => {
     if (event) refreshLikes(event);
   }, [event?.id, wallet?.address]);
+
+  // Going schema + my UID + instance revocability
+  const [goingSchemaUid, setGoingSchemaUid] = useState<string | null>(null);
+  const [goingSchemaRevocable, setGoingSchemaRevocable] = useState<boolean | null>(null);
+  const [myGoingUid, setMyGoingUid] = useState<string | null>(null);
+  const [goingInstanceRevocable, setGoingInstanceRevocable] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    const loadGoingSchema = async () => {
+      try {
+        const { data: schema } = await supabase
+          .from('attestation_schemas')
+          .select('schema_uid,name,revocable')
+          .eq('name', 'TeeRex EventGoing')
+          .maybeSingle();
+        if (schema?.schema_uid && isValidSchemaUid(schema.schema_uid)) {
+          setGoingSchemaUid(schema.schema_uid);
+          setGoingSchemaRevocable(Boolean(schema.revocable));
+        } else {
+          setGoingSchemaUid(null);
+          setGoingSchemaRevocable(null);
+        }
+      } catch (_) {
+        setGoingSchemaUid(null);
+        setGoingSchemaRevocable(null);
+      }
+    };
+    loadGoingSchema();
+  }, []);
+
+  useEffect(() => {
+    const loadMyGoing = async () => {
+      try {
+        if (!event?.id || !wallet?.address || !goingSchemaUid) {
+          setMyGoingUid(null);
+          setGoingInstanceRevocable(null);
+          return;
+        }
+        const { data: myGoing } = await supabase
+          .from('attestations')
+          .select('attestation_uid, created_at')
+          .eq('event_id', event.id)
+          .eq('schema_uid', goingSchemaUid)
+          .eq('recipient', wallet.address)
+          .eq('is_revoked', false)
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        const uid = myGoing?.attestation_uid || null;
+        setMyGoingUid(isValidAttestationUid(uid) ? uid : null);
+        if (isValidAttestationUid(uid)) {
+          const r = await isAttestationRevocableOnChain(uid!, event!.chain_id);
+          setGoingInstanceRevocable(r);
+        } else {
+          setGoingInstanceRevocable(null);
+        }
+      } catch (_) {
+        setMyGoingUid(null);
+        setGoingInstanceRevocable(null);
+      }
+    };
+    loadMyGoing();
+  }, [event?.id, wallet?.address, goingSchemaUid, event?.chain_id]);
 
   const handleToggleLike = async () => {
     if (!event) return;
@@ -191,7 +283,14 @@ const EventDetails = () => {
       setIsLikeLoading(true);
       // Unlike (revoke)
       if (userLikeUid) {
-        const res = await revokeEventAttestation(likeSchemaUid, userLikeUid);
+        if (state.like.flags && !state.like.flags.canRevoke) {
+          toast({ title: 'Action unavailable', description: getDisableMessage('like', state.like.flags.reason) || 'Removing your like isn’t available for this event.', variant: 'destructive' });
+          return;
+        }
+        if (!isValidAttestationUid(userLikeUid)) {
+          throw new Error('Invalid attestation UID for like. Please refresh and try again.');
+        }
+        const res = await revokeEventAttestation(likeSchemaUid, userLikeUid, event?.chain_id);
         if (res.success) {
           setUserLikeUid(null);
           setLikeCount((c) => Math.max(0, c - 1));
@@ -209,17 +308,22 @@ const EventDetails = () => {
         data: dataEncoded,
         chainId: event.chain_id,
         deadlineSecondsFromNow: 3600,
+        revocable: true,
       });
+      //
       const token = await getAccessToken?.();
-      const { data, error } = await supabase.functions.invoke('eas-gasless-attestation', {
+      const { data, error } = await supabase.functions.invoke('attest-by-delegation', {
         body: {
+          eventId: event.id,
+          chainId: event.chain_id,
           schemaUid: likeSchemaUid,
           recipient: wallet.address,
           data: dataEncoded,
           deadline: Number(sa.deadline),
           signature: sa.signature,
-          chainId: event.chain_id,
-          eventId: event.id,
+          revocable: true,
+          lockAddress: event.lock_address,
+          contractAddress: getBatchAttestationAddress(event.chain_id || 84532),
         },
         headers: token ? { 'X-Privy-Authorization': `Bearer ${token}` } : undefined,
       });
@@ -294,7 +398,8 @@ const EventDetails = () => {
           .order('created_at', { ascending: false })
           .limit(1)
           .maybeSingle();
-        setMyAttendanceUidTop(myAttendance?.attestation_uid || null);
+        const uid: string | null = myAttendance?.attestation_uid || null;
+        setMyAttendanceUidTop(isValidAttestationUid(uid) ? uid : null);
       } catch (e) {
         console.warn('Failed to load my attendance UID (top):', e);
         setMyAttendanceUidTop(null);
@@ -323,16 +428,19 @@ const EventDetails = () => {
         deadlineSecondsFromNow: 3600,
         revocable: false,
       });
+      //
       const token = await getAccessToken?.();
-      const { data, error } = await supabase.functions.invoke('eas-gasless-attestation', {
+      const { data, error } = await supabase.functions.invoke('attest-by-delegation', {
         body: {
+          eventId: event.id,
+          chainId: event.chain_id,
           schemaUid: attendanceSchemaUid,
           recipient: wallet.address,
           data: encoded,
           deadline: Number(sa.deadline),
           signature: sa.signature,
-          chainId: event.chain_id,
-          eventId: event.id,
+          lockAddress: event.lock_address,
+          contractAddress: getBatchAttestationAddress(event.chain_id || 84532),
         },
         headers: token ? { 'X-Privy-Authorization': `Bearer ${token}` } : undefined,
       });
@@ -347,10 +455,14 @@ const EventDetails = () => {
   };
 
   const handleRevokeAttendanceTop = async () => {
-    if (!attendanceSchemaUid || !myAttendanceUidTop) return;
+    if (!attendanceSchemaUid || !myAttendanceUidTop || !isValidAttestationUid(myAttendanceUidTop)) return;
+    if (attendanceSchemaRevocable === false) {
+      toast({ title: 'Not revocable', description: 'This schema does not allow revocation.', variant: 'destructive' });
+      return;
+    }
     try {
       setIsTopAttendanceBusy(true);
-      const res = await revokeEventAttestation(attendanceSchemaUid, myAttendanceUidTop);
+      const res = await revokeEventAttestation(attendanceSchemaUid, myAttendanceUidTop, event?.chain_id);
       if (!res.success) throw new Error(res.error || 'Failed to revoke');
       setMyAttendanceUidTop(null);
       toast({ title: 'Attendance revoked' });
@@ -377,6 +489,16 @@ const EventDetails = () => {
             event.attendance_schema_uid
           );
           setAttendanceSchemaUid(event.attendance_schema_uid);
+          try {
+            const { data: schema } = await supabase
+              .from('attestation_schemas')
+              .select('revocable, name, schema_definition')
+              .eq('schema_uid', event.attendance_schema_uid)
+              .maybeSingle();
+            setAttendanceSchemaRevocable(schema ? Boolean(schema.revocable) : null);
+          } catch (_) {
+            setAttendanceSchemaRevocable(null);
+          }
           return;
         }
 
@@ -402,8 +524,10 @@ const EventDetails = () => {
         if (validSchemas.length > 0) {
           console.log("Using valid schema UID:", validSchemas[0].schema_uid);
           setAttendanceSchemaUid(validSchemas[0].schema_uid);
+          setAttendanceSchemaRevocable(Boolean((validSchemas[0] as any).revocable));
         } else {
           console.log("No valid attendance schemas found");
+          setAttendanceSchemaRevocable(null);
         }
       } catch (error) {
         console.error("Error loading attendance schema:", error);
@@ -684,7 +808,7 @@ const EventDetails = () => {
                     <Tooltip>
                       <TooltipTrigger asChild>
                         <span>
-                          <Button variant="outline" size="sm" onClick={handleToggleLike} disabled={isLikeLoading || (!likeSchemaUid)}>
+                          <Button variant="outline" size="sm" onClick={handleToggleLike} disabled={isLikeLoading || (!likeSchemaUid) || (Boolean(userLikeUid) && state.like.flags && !state.like.flags.canRevoke)}>
                             <div className="flex items-center gap-1">
                               <Heart className={`w-4 h-4 ${userLikeUid ? 'fill-red-500 text-red-500' : ''}`} />
                               <span className="text-xs">{likeCount}</span>
@@ -692,9 +816,11 @@ const EventDetails = () => {
                           </Button>
                         </span>
                       </TooltipTrigger>
-                      {!likeSchemaUid && (
+                      {((!likeSchemaUid) || (Boolean(userLikeUid) && state.like.flags && !state.like.flags.canRevoke)) && (
                         <TooltipContent>
-                          Likes unavailable: schema not configured or invalid. Please contact support/admin.
+                          {!likeSchemaUid
+                            ? 'Likes unavailable: schema not configured or invalid.'
+                            : (getDisableMessage('like', state.like.flags?.reason) || 'Removing your like isn’t available for this event.')}
                         </TooltipContent>
                       )}
                     </Tooltip>
@@ -860,7 +986,7 @@ const EventDetails = () => {
                               <Button
                                 variant="outline"
                                 className="w-full"
-                                disabled={isTopAttendanceBusy || !attendanceSchemaUid || !isValidSchemaUid(attendanceSchemaUid)}
+                                disabled={isTopAttendanceBusy || !attendanceSchemaUid || !isValidSchemaUid(attendanceSchemaUid) || (state.attendance.flags && !state.attendance.flags.canRevoke) || !isValidAttestationUid(myAttendanceUidTop)}
                                 onClick={handleRevokeAttendanceTop}
                               >
                                 {isTopAttendanceBusy ? 'Processing...' : 'Revoke Attendance'}
@@ -876,9 +1002,11 @@ const EventDetails = () => {
                             )}
                           </span>
                         </TooltipTrigger>
-                        {(!attendanceSchemaUid || !isValidSchemaUid(attendanceSchemaUid)) && (
+                        {(!attendanceSchemaUid || !isValidSchemaUid(attendanceSchemaUid) || (state.attendance.flags && !state.attendance.flags.canRevoke)) && (
                           <TooltipContent>
-                            Attendance unavailable: schema not configured or invalid. Please contact support/admin.
+                            {state.attendance.flags && !state.attendance.flags.canRevoke
+                              ? (getDisableMessage('attendance', state.attendance.flags.reason) || 'Attendance records for this event are permanent.')
+                              : 'Attendance unavailable: schema not configured or invalid.'}
                           </TooltipContent>
                         )}
                       </Tooltip>
@@ -991,6 +1119,13 @@ const EventDetails = () => {
                 </div>
               </CardContent>
             </Card>
+            
+            {/* Event Interactions Card */}
+            <EventInteractionsCard
+              eventId={event.id}
+              lockAddress={event.lock_address}
+              creatorAddress={event.creator_id}
+            />
 
             {/* Enhanced Attestation Card */}
             <EventAttestationCard
@@ -1002,13 +1137,10 @@ const EventDetails = () => {
               userHasTicket={userTicketCount > 0}
               attendanceSchemaUid={attendanceSchemaUid || undefined}
               chainId={event.chain_id}
-            />
-
-            {/* Event Interactions Card */}
-            <EventInteractionsCard
-              eventId={event.id}
-              lockAddress={event.lock_address}
-              creatorAddress={event.creator_id}
+              canRevokeAttendanceOverride={myAttendanceUidTop ? !((attendanceSchemaRevocable === false)) : undefined}
+              attendanceDisableReason={myAttendanceUidTop && attendanceSchemaRevocable === false ? 'Attendance records for this event are permanent.' : undefined}
+              canRevokeGoingOverride={myGoingUid ? !((goingSchemaRevocable === false || goingInstanceRevocable === false)) : undefined}
+              goingDisableReason={myGoingUid && (goingSchemaRevocable === false || goingInstanceRevocable === false) ? 'This going status can’t be revoked.' : undefined}
             />
           </div>
         </div>

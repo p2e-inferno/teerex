@@ -93,13 +93,7 @@ export const GaslessEASAttestationButton: React.FC<GaslessEASAttestationButtonPr
         eventId: selectedEvent.id,
       };
 
-      console.log('[GaslessEAS] Sending to edge function:', requestBody);
-      console.log('[GaslessEAS] Signature details:', {
-        signature: sa.signature,
-        type: typeof sa.signature,
-        length: sa.signature?.length,
-        startsWithOx: sa.signature?.startsWith?.('0x'),
-      });
+      
 
       const token = await getAccessToken?.();
       const { data, error } = await supabase.functions.invoke('eas-gasless-attestation', {
@@ -107,11 +101,8 @@ export const GaslessEASAttestationButton: React.FC<GaslessEASAttestationButtonPr
         headers: token ? { 'X-Privy-Authorization': `Bearer ${token}` } : undefined,
       });
 
-      console.log('[GaslessEAS] Edge function response:', { data, error });
-
       if (error || !data?.ok) {
         const errorDetail = error?.message || data?.error || JSON.stringify(data) || 'Failed';
-        console.error('[GaslessEAS] Edge function error:', errorDetail);
         throw new Error(errorDetail);
       }
 

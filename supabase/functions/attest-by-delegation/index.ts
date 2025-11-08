@@ -259,15 +259,17 @@ serve(async (req) => {
 
     // 6) Persist to DB (best effort)
     try {
-      const ev = eventId ? (await supabase.from('events').select('id, title, lock_address').eq('id', eventId).maybeSingle()).data : null;
-      await supabase.from('attestations').insert({
-        attestation_uid: uid || `temp_${Date.now()}`,
-        schema_uid: schemaUid,
-        attester: signer.address,
-        recipient,
-        event_id: eventId || null,
-        data: { eventId, lockAddress: ev?.lock_address || '0x0000000000000000000000000000000000000000', eventTitle: ev?.title || '', platform: 'TeeRex' } as any,
-      } as any);
+      if (uid) {
+        const ev = eventId ? (await supabase.from('events').select('id, title, lock_address').eq('id', eventId).maybeSingle()).data : null;
+        await supabase.from('attestations').insert({
+          attestation_uid: uid,
+          schema_uid: schemaUid,
+          attester: signer.address,
+          recipient,
+          event_id: eventId || null,
+          data: { eventId, lockAddress: ev?.lock_address || '0x0000000000000000000000000000000000000000', eventTitle: ev?.title || '', platform: 'TeeRex' } as any,
+        } as any);
+      }
     } catch (dbErr) {
       console.warn('DB insert failed:', (dbErr as Error).message);
     }

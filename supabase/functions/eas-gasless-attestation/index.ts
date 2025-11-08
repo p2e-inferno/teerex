@@ -135,11 +135,45 @@ serve(async (req) => {
       throw new Error(rateLimitCheck?.reason || 'Rate limit exceeded');
     }
 
-    // 3.6) EAS SDK accepts signature as either string or {v, r, s} object
-    // We'll pass it directly without conversion
-    if (config.log_sensitive_data) {
-      console.log('[eas-gasless] Using signature as-is (EAS SDK handles both formats):', signature);
+    // 3.6) Validate and normalize inputs for EAS tuple encoding
+    const isHex32 = (v: unknown): v is string => typeof v === 'string' && /^0x[0-9a-fA-F]{64}$/.test(v);
+    const isHex = (v: unknown): v is string => typeof v === 'string' && /^0x[0-9a-fA-F]*$/.test(v);
+
+    if (!isHex32(schemaUid)) {
+      return new Response(JSON.stringify({ ok: false, error: 'Invalid schema UID' }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 400 });
     }
+
+    if (!ethers.isAddress(recipient!)) {
+      return new Response(JSON.stringify({ ok: false, error: 'Invalid recipient address' }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 400 });
+    }
+
+    const refUid32 = isHex32(refUID) ? refUID : '0x0000000000000000000000000000000000000000000000000000000000000000';
+    const encodedDataHex = data as string;
+    if (!isHex(encodedDataHex)) {
+      return new Response(JSON.stringify({ ok: false, error: 'Invalid encoded data' }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 400 });
+    }
+
+    let expirationBig: bigint;
+    let deadlineBig: bigint;
+    try {
+      expirationBig = BigInt(Math.floor(Number(expirationTime || 0)));
+      deadlineBig = BigInt(Math.floor(Number(deadline)));
+    } catch (_) {
+      return new Response(JSON.stringify({ ok: false, error: 'Invalid deadline/expiration values' }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 400 });
+    }
+
+    if (expirationBig < 0n || deadlineBig < 0n) {
+      return new Response(JSON.stringify({ ok: false, error: 'Negative deadline/expiration not allowed' }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 400 });
+    }
+
+    let normalizedSignature: string;
+    try {
+      const sig = ethers.Signature.from(signature as any);
+      normalizedSignature = sig.serialized;
+    } catch (e) {
+      return new Response(JSON.stringify({ ok: false, error: 'Invalid signature format' }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 400 });
+    }
+
 
     const userWallets = await getUserWalletAddresses(privyUserId);
     const recipientLc = recipient!.toLowerCase();
@@ -166,27 +200,23 @@ serve(async (req) => {
 
     let transaction, newAttestationUID;
     try {
-      console.log('[eas-gasless] Submitting attestByDelegation', {
-        easAddress,
-        chainId,
-        schema: schemaUid,
-        gaslessTx: true,
-      });
+      // Submitting attestation by delegation
 
-      // Execute delegated attestation using EAS SDK
-      // User is both attester AND recipient
+      // Execute delegated attestation using EAS SDK (user is attester & recipient)
+
+      const sigTuple = ethers.Signature.from(normalizedSignature);
       transaction = await eas.attestByDelegation({
         schema: schemaUid,
         data: {
           recipient,
-          expirationTime: BigInt(expirationTime || 0),
+          expirationTime: expirationBig,
           revocable: Boolean(revocable),
-          refUID,
-          data,
+          refUID: refUid32,
+          data: encodedDataHex,
         },
-        signature: signature as any, // EAS SDK accepts both string and {v, r, s} object
+        signature: { v: sigTuple.v, r: sigTuple.r, s: sigTuple.s },
         attester: recipient, // USER is the attester (not service wallet!)
-        deadline: BigInt(deadline),
+        deadline: deadlineBig,
       });
 
       // Wait for the transaction and get UID
@@ -227,11 +257,11 @@ serve(async (req) => {
     }
 
     // 6) Persist to legacy attestations table (best effort) - optional
-    if (eventId) {
+    if (eventId && uid) {
       try {
         const ev = (await supabase.from('events').select('id, title, lock_address').eq('id', eventId).maybeSingle()).data;
         await supabase.from('attestations').insert({
-          attestation_uid: uid || `temp_${Date.now()}`,
+          attestation_uid: uid,
           schema_uid: schemaUid,
           attester: recipient, // User is the attester
           recipient,

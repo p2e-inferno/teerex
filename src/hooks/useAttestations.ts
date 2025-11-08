@@ -34,7 +34,7 @@ export const useAttestations = () => {
     }
   };
 
-  const revokeEventAttestation = async (schemaUid: string, attestationUid: string): Promise<AttestationResult> => {
+  const revokeEventAttestation = async (schemaUid: string, attestationUid: string, chainId?: number): Promise<AttestationResult> => {
     setIsLoading(true);
     try {
       const wallet = wallets[0];
@@ -42,7 +42,7 @@ export const useAttestations = () => {
         throw new Error('No wallet connected');
       }
 
-      const result = await revokeAttestation(schemaUid, attestationUid, wallet);
+      const result = await revokeAttestation(schemaUid, attestationUid, wallet, chainId);
       return result;
     } finally {
       setIsLoading(false);

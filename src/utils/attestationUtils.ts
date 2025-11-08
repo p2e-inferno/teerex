@@ -95,6 +95,41 @@ export interface AttestationResult {
   error?: string;
 }
 
+export const isValidAttestationUid = (uid?: string | null): boolean => {
+  return typeof uid === 'string' && ethers.isHexString(uid, 32);
+};
+
+// Helpers for chain selection
+const EAS_ADDRESS_BY_CHAIN: Record<number, string> = {
+  8453: '0x4200000000000000000000000000000000000021',
+  84532: '0x4200000000000000000000000000000000000021',
+};
+const RPC_URL_BY_CHAIN: Record<number, string> = {
+  8453: 'https://mainnet.base.org',
+  84532: 'https://sepolia.base.org',
+};
+
+export const isAttestationRevocableOnChain = async (
+  uid: string,
+  chainId: number = 84532
+): Promise<boolean | null> => {
+  try {
+    if (!isValidAttestationUid(uid)) return null;
+    const easAddr = EAS_ADDRESS_BY_CHAIN[chainId] || EAS_ADDRESS_BY_CHAIN[84532];
+    const rpc = RPC_URL_BY_CHAIN[chainId] || RPC_URL_BY_CHAIN[84532];
+    const provider = new ethers.JsonRpcProvider(rpc);
+    const eas = new EAS(easAddr);
+    eas.connect(provider as any);
+    const rec: any = await eas.getAttestation(uid);
+    if (!rec) return null;
+    // EAS SDK returns an object with `revocable` boolean
+    return Boolean((rec as any).revocable);
+  } catch (e) {
+    console.warn('isAttestationRevocableOnChain failed:', e);
+    return null;
+  }
+};
+
 /**
  * Encodes attestation data according to the schema definition
  */
@@ -332,37 +367,20 @@ export const createAttestation = async (params: CreateAttestationParams): Promis
         data: encodedData,
       }
     });
-
+    
     console.log('EAS SDK transaction sent:', tx);
-    
-    // Handle transaction response - EAS SDK returns different formats
-    let transactionHash = '';
-    if (typeof tx === 'string') {
-      transactionHash = tx;
-    } else if (tx && typeof tx === 'object' && 'wait' in tx) {
-      // For EAS SDK transactions, the hash might be in different places
-      if ((tx as any).hash) {
-        transactionHash = (tx as any).hash;
-      } else if ((tx as any).data?.hash) {
-        transactionHash = (tx as any).data.hash;
-      } else {
-        // Wait for the transaction to be mined to get the hash
-        try {
-          const receipt = await (tx as any).wait();
-          transactionHash = receipt?.transactionHash || receipt?.hash || '';
-        } catch (e) {
-          console.warn('Could not get transaction receipt:', e);
-          // Generate a temporary unique ID if we can't get the hash
-          transactionHash = `temp_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-        }
-      }
+    // Wait for chain receipt and get the actual UID
+    const newUid: string = await (tx as any).wait();
+    if (!isValidAttestationUid(newUid)) {
+      throw new Error('Failed to obtain attestation UID from EAS');
     }
-    
-    if (!transactionHash) {
-      transactionHash = `temp_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    // Try to capture tx hash for logging (not used as UID)
+    let transactionHash: string | undefined;
+    try {
+      transactionHash = (tx as any).hash || (tx as any).data?.hash || undefined;
+    } catch (_) {
+      transactionHash = undefined;
     }
-    
-    console.log('Transaction hash:', transactionHash);
 
     // Check if user already has an attestation for this event
     const { data: existingAttestation } = await supabase
@@ -381,11 +399,11 @@ export const createAttestation = async (params: CreateAttestationParams): Promis
       };
     }
 
-    // Save attestation to our database
+    // Save attestation to our database using the real UID
     const { error: saveError } = await supabase
       .from('attestations')
       .insert({
-        attestation_uid: transactionHash,
+        attestation_uid: newUid,
         schema_uid: schemaUid,
         attester: wallet.address,
         recipient: recipient,
@@ -402,8 +420,8 @@ export const createAttestation = async (params: CreateAttestationParams): Promis
 
     return {
       success: true,
-      attestationUid: transactionHash,
-      transactionHash: transactionHash
+      attestationUid: newUid,
+      transactionHash,
     };
 
   } catch (error) {
@@ -431,18 +449,24 @@ export const createAttestation = async (params: CreateAttestationParams): Promis
 export const revokeAttestation = async (
   schemaUid: string,
   attestationUid: string,
-  wallet: any
+  wallet: any,
+  chainId?: number
 ): Promise<AttestationResult> => {
   try {
     if (!wallet) {
       throw new Error('Wallet not connected');
     }
 
+    if (!isValidAttestationUid(attestationUid)) {
+      throw new Error('Invalid attestation UID. Please reload and try again.');
+    }
+
     const provider = await wallet.getEthereumProvider();
     const ethersProvider = new ethers.BrowserProvider(provider);
     const signer = await ethersProvider.getSigner();
 
-    const easContract = new ethers.Contract(EAS_CONTRACT_ADDRESS, EAS_ABI, signer);
+    const easAddress = (chainId && EAS_ADDRESS_BY_CHAIN[chainId]) ? EAS_ADDRESS_BY_CHAIN[chainId] : EAS_CONTRACT_ADDRESS;
+    const easContract = new ethers.Contract(easAddress, EAS_ABI, signer);
 
     const revocationRequest = {
       schema: schemaUid,

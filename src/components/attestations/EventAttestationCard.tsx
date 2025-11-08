@@ -9,7 +9,8 @@ import { supabase } from '@/integrations/supabase/client';
 import { usePrivy, useWallets } from '@privy-io/react-auth';
 import { useTeeRexDelegatedAttestation } from '@/hooks/useTeeRexDelegatedAttestation';
 import { useAttestationEncoding } from '@/hooks/useAttestationEncoding';
-import { encodeAttestationData } from '@/utils/attestationUtils';
+import { encodeAttestationData, isValidAttestationUid, isAttestationRevocableOnChain } from '@/utils/attestationUtils';
+import { getBatchAttestationAddress } from '@/lib/config/contract-config';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import {
   CalendarCheck,
@@ -48,7 +49,12 @@ interface AttestationStats {
 
 const isValidSchemaUid = (uid?: string | null) => !!uid && uid.startsWith('0x') && uid.length === 66 && /^0x[0-9a-f]{64}$/i.test(uid);
 
-export const EventAttestationCard: React.FC<EventAttestationCardProps> = ({
+export const EventAttestationCard: React.FC<EventAttestationCardProps & {
+  canRevokeGoingOverride?: boolean;
+  goingDisableReason?: string;
+  canRevokeAttendanceOverride?: boolean;
+  attendanceDisableReason?: string;
+}> = ({
   eventId,
   eventTitle,
   eventDate,
@@ -56,7 +62,11 @@ export const EventAttestationCard: React.FC<EventAttestationCardProps> = ({
   lockAddress,
   userHasTicket,
   attendanceSchemaUid,
-  chainId
+  chainId,
+  canRevokeGoingOverride,
+  goingDisableReason,
+  canRevokeAttendanceOverride,
+  attendanceDisableReason
 }) => {
   const { authenticated, getAccessToken } = usePrivy();
   const { wallets } = useWallets();
@@ -78,8 +88,12 @@ export const EventAttestationCard: React.FC<EventAttestationCardProps> = ({
   const [myAttendanceUid, setMyAttendanceUid] = useState<string | null>(null);
   const [goingSchemaUid, setGoingSchemaUid] = useState<string | null>(null);
   const [goingSchemaDef, setGoingSchemaDef] = useState<string | null>(null);
+  const [goingSchemaRevocable, setGoingSchemaRevocable] = useState<boolean | null>(null);
   const [myGoingUid, setMyGoingUid] = useState<string | null>(null);
   const [isGoingBusy, setIsGoingBusy] = useState(false);
+  const [attendanceSchemaRevocable, setAttendanceSchemaRevocable] = useState<boolean | null>(null);
+  const [goingInstanceRevocable, setGoingInstanceRevocable] = useState<boolean | null>(null);
+  const [attendanceInstanceRevocable, setAttendanceInstanceRevocable] = useState<boolean | null>(null);
 
   // Calculate event timing - handle both ISO and regular date formats
   const eventDateTime = new Date(`${eventDate.split('T')[0]}T${eventTime}`);
@@ -95,16 +109,18 @@ export const EventAttestationCard: React.FC<EventAttestationCardProps> = ({
       try {
         const { data: schema } = await supabase
           .from('attestation_schemas')
-          .select('schema_uid, schema_definition, name')
+          .select('schema_uid, schema_definition, name, revocable')
           .eq('name', 'TeeRex EventGoing')
           .maybeSingle();
 
         if (schema?.schema_uid && isValidSchemaUid(schema.schema_uid)) {
           setGoingSchemaUid(schema.schema_uid);
           setGoingSchemaDef(schema.schema_definition || null);
+          setGoingSchemaRevocable(Boolean(schema.revocable));
         } else {
           setGoingSchemaUid(null);
           setGoingSchemaDef(null);
+          setGoingSchemaRevocable(null);
         }
       } catch (e) {
         console.warn('Failed to load going schema:', e);
@@ -114,6 +130,28 @@ export const EventAttestationCard: React.FC<EventAttestationCardProps> = ({
     };
     loadGoingSchema();
   }, []);
+
+  // Track revocable flag for attendance schema (by UID)
+  useEffect(() => {
+    const loadAttendanceRevocable = async () => {
+      try {
+        if (!attendanceSchemaUid || !isValidSchemaUid(attendanceSchemaUid)) {
+          return;
+        }
+        const { data: schema } = await supabase
+          .from('attestation_schemas')
+          .select('revocable')
+          .eq('schema_uid', attendanceSchemaUid)
+          .maybeSingle();
+        if (schema) {
+          setAttendanceSchemaRevocable(Boolean(schema.revocable));
+        } else {
+          setAttendanceSchemaRevocable(null);
+        }
+      } catch (_) {}
+    };
+    loadAttendanceRevocable();
+  }, [attendanceSchemaUid]);
 
   // Load attestation statistics
   const loadStats = async () => {
@@ -148,7 +186,7 @@ export const EventAttestationCard: React.FC<EventAttestationCardProps> = ({
           .limit(1)
           .maybeSingle();
 
-        userAttended = Boolean(myAttendance?.attestation_uid);
+        userAttended = Boolean(myAttendance?.attestation_uid) && isValidAttestationUid(myAttendance?.attestation_uid);
         // Fetch latest going attestation for user
         if (isValidSchemaUid(goingSchemaUid)) {
           const { data: myGoing } = await supabase
@@ -161,12 +199,30 @@ export const EventAttestationCard: React.FC<EventAttestationCardProps> = ({
             .order('created_at', { ascending: false })
             .limit(1)
             .maybeSingle();
-          userGoingAttUid = myGoing?.attestation_uid || null;
+          userGoingAttUid = isValidAttestationUid(myGoing?.attestation_uid) ? (myGoing?.attestation_uid as string) : null;
         }
         userGoing = Boolean(userGoingAttUid) && !eventHasEnded;
-        userAttendanceUid = myAttendance?.attestation_uid || null;
+        userAttendanceUid = isValidAttestationUid(myAttendance?.attestation_uid) ? (myAttendance?.attestation_uid as string) : null;
         setMyAttendanceUid(userAttendanceUid);
         setMyGoingUid(userGoingAttUid);
+
+        // Check instance-level revocable flags on-chain
+        try {
+          if (userAttendanceUid) {
+            const r = await isAttestationRevocableOnChain(userAttendanceUid, chainId || 84532);
+            setAttendanceInstanceRevocable(r);
+          } else {
+            setAttendanceInstanceRevocable(null);
+          }
+        } catch (_) {}
+        try {
+          if (userGoingAttUid) {
+            const r2 = await isAttestationRevocableOnChain(userGoingAttUid, chainId || 84532);
+            setGoingInstanceRevocable(r2);
+          } else {
+            setGoingInstanceRevocable(null);
+          }
+        } catch (_) {}
 
         // Get user reputation
         const { data: reputationData, error: reputationError } = await supabase
@@ -253,26 +309,33 @@ export const EventAttestationCard: React.FC<EventAttestationCardProps> = ({
         declarer: wallet.address,
         platform: 'TeeRex'
       });
+      
       const sa = await signTeeRexAttestation({
         schemaUid: goingSchemaUid!,
         recipient: wallet.address,
         data: encoded,
         deadlineSecondsFromNow: 3600,
         chainId,
+        revocable: true,
       });
+      
       const token = await getAccessToken?.();
-      const { data, error } = await supabase.functions.invoke('eas-gasless-attestation', {
+      const { data, error } = await supabase.functions.invoke('attest-by-delegation', {
         body: {
+          eventId,
+          chainId,
           schemaUid: goingSchemaUid,
           recipient: wallet.address,
           data: encoded,
           deadline: Number(sa.deadline),
           signature: sa.signature,
-          chainId,
-          eventId,
+          lockAddress,
+          contractAddress: getBatchAttestationAddress(chainId || 84532),
+          revocable: true,
         },
         headers: token ? { 'X-Privy-Authorization': `Bearer ${token}` } : undefined,
       });
+      
       if (error || !data?.ok) throw new Error(error?.message || data?.error || 'Failed');
       setMyGoingUid(data.uid || null);
       setStats(prev => ({ ...prev, goingCount: prev.goingCount + 1, userGoingStatus: true }));
@@ -285,10 +348,14 @@ export const EventAttestationCard: React.FC<EventAttestationCardProps> = ({
   };
 
   const handleRevokeGoing = async () => {
-    if (!isValidSchemaUid(goingSchemaUid) || !myGoingUid) return;
+    if (!isValidSchemaUid(goingSchemaUid) || !myGoingUid || !isValidAttestationUid(myGoingUid)) return;
+    if (goingSchemaRevocable === false) {
+      toast({ title: 'Action unavailable', description: 'This going status can’t be revoked.', variant: 'destructive' });
+      return;
+    }
     try {
       setIsGoingBusy(true);
-      const res = await revokeEventAttestation(goingSchemaUid!, myGoingUid);
+      const res = await revokeEventAttestation(goingSchemaUid!, myGoingUid, chainId);
       if (!res.success) throw new Error(res.error || 'Failed to revoke going');
       setMyGoingUid(null);
       setStats(prev => ({ ...prev, goingCount: Math.max(0, prev.goingCount - 1), userGoingStatus: false }));
@@ -317,6 +384,7 @@ export const EventAttestationCard: React.FC<EventAttestationCardProps> = ({
         'Event Location',
         'TeeRex'
       );
+      
 
       // Sign delegated attestation using TeeRex EIP712 domain
       const sa = await signTeeRexAttestation({
@@ -327,21 +395,25 @@ export const EventAttestationCard: React.FC<EventAttestationCardProps> = ({
         deadlineSecondsFromNow: 3600,
         revocable: false,
       });
+      
 
-      // Call gasless edge function to submit attestation
+      // Call TeeRex proxy edge function to submit attestation
       const token = await getAccessToken?.();
-      const { data, error } = await supabase.functions.invoke('eas-gasless-attestation', {
+      const { data, error } = await supabase.functions.invoke('attest-by-delegation', {
         body: {
+          eventId,
+          chainId,
           schemaUid: attendanceSchemaUid,
           recipient: wallet.address,
           data: dataEncoded,
           deadline: Number(sa.deadline),
           signature: sa.signature,
-          chainId,
-          eventId,
+          lockAddress,
+          contractAddress: getBatchAttestationAddress(chainId || 84532),
         },
         headers: token ? { 'X-Privy-Authorization': `Bearer ${token}` } : undefined,
       });
+      
 
       if (error || !data?.ok) throw new Error(error?.message || data?.error || 'Failed to attest');
 
@@ -376,9 +448,13 @@ export const EventAttestationCard: React.FC<EventAttestationCardProps> = ({
   };
 
   const handleRevokeAttendance = async () => {
-    if (!attendanceSchemaUid || !myAttendanceUid) return;
+    if (!attendanceSchemaUid || !myAttendanceUid || !isValidAttestationUid(myAttendanceUid)) return;
+    if (attendanceSchemaRevocable === false) {
+      toast({ title: 'Permanent record', description: 'Attendance records for this event are permanent.', variant: 'destructive' });
+      return;
+    }
     try {
-      const res = await revokeEventAttestation(attendanceSchemaUid, myAttendanceUid);
+      const res = await revokeEventAttestation(attendanceSchemaUid, myAttendanceUid, chainId);
       if (!res.success) throw new Error(res.error || 'Failed to revoke');
       setMyAttendanceUid(null);
       setStats(prev => ({
@@ -403,6 +479,8 @@ export const EventAttestationCard: React.FC<EventAttestationCardProps> = ({
       </Card>
     );
   }
+
+  
 
   return (
     <Card className="border-0 shadow-sm bg-gradient-to-br from-background to-muted/20">
@@ -504,29 +582,33 @@ export const EventAttestationCard: React.FC<EventAttestationCardProps> = ({
                     <CheckCircle className="w-4 h-4 mr-2 text-blue-600" />
                     <span className="text-sm text-blue-600 font-medium">You're going to this event!</span>
                   </div>
-                  <TooltipProvider>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <span>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            className="w-full"
-                            disabled={!isValidSchemaUid(goingSchemaUid) || isGoingBusy}
-                            onClick={handleRevokeGoing}
-                          >
-                            {isGoingBusy ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <XCircle className="w-4 h-4 mr-2" />}
-                            Revoke Going
-                          </Button>
-                        </span>
-                      </TooltipTrigger>
-                      {!isValidSchemaUid(goingSchemaUid) && (
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <span>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="w-full"
+                            disabled={!isValidSchemaUid(goingSchemaUid) || !isValidAttestationUid(myGoingUid) || isGoingBusy || goingSchemaRevocable === false || goingInstanceRevocable === false || canRevokeGoingOverride === false}
+                          onClick={handleRevokeGoing}
+                        >
+                        {isGoingBusy ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <XCircle className="w-4 h-4 mr-2" />}
+                        Revoke Going
+                      </Button>
+                    </span>
+                  </TooltipTrigger>
+                      {(!isValidSchemaUid(goingSchemaUid) || !isValidAttestationUid(myGoingUid) || goingSchemaRevocable === false || goingInstanceRevocable === false || canRevokeGoingOverride === false) && (
                         <TooltipContent>
-                          Revoke unavailable: going schema invalid. Please contact support/admin.
+                          {!isValidSchemaUid(goingSchemaUid)
+                            ? 'Going unavailable: schema not configured or invalid.'
+                            : (goingSchemaRevocable === false || goingInstanceRevocable === false || canRevokeGoingOverride === false)
+                              ? (goingDisableReason || 'This going status can’t be revoked.')
+                              : 'Revoke unavailable: attestation UID not available yet. Please refresh.'}
                         </TooltipContent>
                       )}
-                    </Tooltip>
-                  </TooltipProvider>
+                </Tooltip>
+              </TooltipProvider>
                 </div>
               )}
 
@@ -570,7 +652,7 @@ export const EventAttestationCard: React.FC<EventAttestationCardProps> = ({
                           variant="outline"
                           size="sm"
                           className="w-full"
-                          disabled={!myAttendanceUid || !isValidSchemaUid(attendanceSchemaUid)}
+                          disabled={!myAttendanceUid || !isValidAttestationUid(myAttendanceUid) || !isValidSchemaUid(attendanceSchemaUid) || attendanceSchemaRevocable === false || attendanceInstanceRevocable === false || canRevokeAttendanceOverride === false}
                         >
                           {isLoading ? (
                             <Loader2 className="w-4 h-4 mr-2 animate-spin" />
@@ -581,9 +663,13 @@ export const EventAttestationCard: React.FC<EventAttestationCardProps> = ({
                         </Button>
                       </span>
                     </TooltipTrigger>
-                    {(!isValidSchemaUid(attendanceSchemaUid)) && (
+                    {(!isValidSchemaUid(attendanceSchemaUid) || !isValidAttestationUid(myAttendanceUid) || attendanceSchemaRevocable === false || attendanceInstanceRevocable === false || canRevokeAttendanceOverride === false) && (
                       <TooltipContent>
-                        Revoke unavailable: attendance schema invalid. Please contact support/admin.
+                        {!isValidSchemaUid(attendanceSchemaUid)
+                          ? 'Attendance unavailable: schema not configured or invalid.'
+                          : (attendanceSchemaRevocable === false || attendanceInstanceRevocable === false || canRevokeAttendanceOverride === false)
+                            ? (attendanceDisableReason || 'Attendance records for this event are permanent.')
+                            : 'Revoke unavailable: attestation UID not available yet. Please refresh.'}
                       </TooltipContent>
                     )}
                   </Tooltip>
