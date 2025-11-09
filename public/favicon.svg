@@ -1,0 +1,16 @@
+<svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Purple rounded square background matching Header component -->
+  <rect width="32" height="32" rx="6" fill="#9333ea"/>
+  
+  <!-- Ticket icon (matching Lucide Ticket icon design) -->
+  <path d="M8 10C8 9.44772 8.44772 9 9 9H23C23.5523 9 24 9.44772 24 10V12C24 12.5523 23.5523 13 23 13C23.5523 13 24 13.4477 24 14V22C24 22.5523 23.5523 23 23 23H9C8.44772 23 8 22.5523 8 22V14C8 13.4477 8.44772 13 9 13C8.44772 13 8 12.5523 8 12V10Z" 
+        stroke="white" 
+        stroke-width="1.5" 
+        stroke-linecap="round" 
+        stroke-linejoin="round" 
+        fill="none"/>
+  <!-- Ticket perforations (circles) -->
+  <circle cx="16" cy="13" r="1" fill="white"/>
+  <circle cx="16" cy="19" r="1" fill="white"/>
+</svg>
+
