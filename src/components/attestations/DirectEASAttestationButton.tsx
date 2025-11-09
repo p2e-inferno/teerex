@@ -96,6 +96,8 @@ export const DirectEASAttestationButton: React.FC<DirectEASAttestationButtonProp
 
       // Step 4: Execute delegated attestation
       onResult?.('Step 4/4: Executing attestByDelegation...');
+      // Convert signature to EAS tuple format
+      const sigParsed = ethers.Signature.from(sa.signature as any);
       const transaction = await eas.attestByDelegation({
         schema: schemaUid,
         data: {
@@ -105,7 +107,7 @@ export const DirectEASAttestationButton: React.FC<DirectEASAttestationButtonProp
           refUID: '0x0000000000000000000000000000000000000000000000000000000000000000',
           data: encoded,
         },
-        signature: sa.signature,
+        signature: { v: sigParsed.v, r: sigParsed.r, s: sigParsed.s },
         attester: sa.attester,
         deadline: sa.deadline,
       });

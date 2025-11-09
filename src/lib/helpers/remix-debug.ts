@@ -204,10 +204,10 @@ export async function signDelegatedEASWithNonce(params: {
 
   let sig: string;
   try {
-    // @ts-expect-error - ethers v6 signTypedData compatibility
+    // ethers v6 signTypedData compatibility
     sig = await (signer as any).signTypedData(domain, types, value);
   } catch {
-    // @ts-expect-error - ethers v5 _signTypedData fallback
+    // ethers v5 _signTypedData fallback
     sig = await (signer as any)._signTypedData(domain, types, value);
   }
   const signatureTuple = toRemixSignatureTuple(sig);
@@ -275,7 +275,6 @@ export function buildDelegatedTypedData(params: {
 
   let digest: string | undefined;
   try {
-    // @ts-expect-error - TypedDataEncoder compatibility
     digest = (ethers as any).TypedDataEncoder?.hash(domain as any, types as any, value as any);
   } catch (_) {
     digest = undefined;

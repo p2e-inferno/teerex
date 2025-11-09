@@ -7,7 +7,9 @@ import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { toast } from '@/hooks/use-toast';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Loader2, RefreshCw, Settings, Database, Bell, Activity } from 'lucide-react';
+import { Loader2, RefreshCw, Settings, Database, Bell, Activity, AlertTriangle } from 'lucide-react';
+import { usePrivy } from '@privy-io/react-auth';
+import { Alert, AlertDescription } from '@/components/ui/alert';
 
 interface GaslessConfig {
   id: string;
@@ -56,30 +58,32 @@ interface Alert {
 }
 
 export default function AdminGaslessConfig() {
+  const { getAccessToken, user } = usePrivy();
   const [loading, setLoading] = useState(true);
   const [config, setConfig] = useState<GaslessConfig | null>(null);
   const [chains, setChains] = useState<Chain[]>([]);
   const [schemas, setSchemas] = useState<Schema[]>([]);
   const [logs, setLogs] = useState<AttestationLog[]>([]);
   const [alerts, setAlerts] = useState<Alert[]>([]);
+  const [isAdmin, setIsAdmin] = useState<boolean | null>(null);
 
   // Load all data
   const loadData = async () => {
     setLoading(true);
     try {
       const [configRes, chainsRes, schemasRes, logsRes, alertsRes] = await Promise.all([
-        supabase.from('gasless_config').select('*').order('created_at', { ascending: false }).limit(1).maybeSingle(),
-        supabase.from('gasless_chains').select('*').order('chain_id'),
-        supabase.from('gasless_schemas').select('*').order('category, name'),
-        supabase.from('gasless_attestation_log').select('*').order('created_at', { ascending: false }).limit(50),
-        supabase.from('gasless_alerts').select('*').order('alert_type'),
+        supabase.from('gasless_config' as any).select('*').order('created_at', { ascending: false }).limit(1).maybeSingle(),
+        supabase.from('gasless_chains' as any).select('*').order('chain_id'),
+        supabase.from('gasless_schemas' as any).select('*').order('category, name'),
+        supabase.from('gasless_attestation_log' as any).select('*').order('created_at', { ascending: false }).limit(50),
+        supabase.from('gasless_alerts' as any).select('*').order('alert_type'),
       ]);
 
-      if (configRes.data) setConfig(configRes.data);
-      if (chainsRes.data) setChains(chainsRes.data);
-      if (schemasRes.data) setSchemas(schemasRes.data);
-      if (logsRes.data) setLogs(logsRes.data);
-      if (alertsRes.data) setAlerts(alertsRes.data);
+      if ((configRes as any)?.data) setConfig((configRes as any).data as any);
+      if ((chainsRes as any)?.data) setChains(((chainsRes as any).data as any) as Chain[]);
+      if ((schemasRes as any)?.data) setSchemas(((schemasRes as any).data as any) as Schema[]);
+      if ((logsRes as any)?.data) setLogs(((logsRes as any).data as any) as AttestationLog[]);
+      if ((alertsRes as any)?.data) setAlerts(((alertsRes as any).data as any) as Alert[]);
     } catch (error) {
       toast({
         title: 'Failed to load data',
@@ -95,12 +99,32 @@ export default function AdminGaslessConfig() {
     loadData();
   }, []);
 
+  useEffect(() => {
+    const checkAdmin = async () => {
+      try {
+        const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
+        const accessToken = await getAccessToken?.();
+        const { data, error } = await supabase.functions.invoke('is-admin', {
+          headers: {
+            ...(anonKey ? { Authorization: `Bearer ${anonKey}` } : {}),
+            ...(accessToken ? { 'X-Privy-Authorization': `Bearer ${accessToken}` } : {}),
+          },
+        });
+        if (error) throw error;
+        setIsAdmin(Boolean(data?.is_admin));
+      } catch (e) {
+        setIsAdmin(false);
+      }
+    };
+    checkAdmin();
+  }, [getAccessToken]);
+
   // Update global config
   const updateConfig = async (updates: Partial<GaslessConfig>) => {
     if (!config) return;
     try {
       const { error } = await supabase
-        .from('gasless_config')
+        .from('gasless_config' as any)
         .update(updates)
         .eq('id', config.id);
 
@@ -121,7 +145,7 @@ export default function AdminGaslessConfig() {
   const toggleChain = async (chainId: number, enabled: boolean) => {
     try {
       const { error } = await supabase
-        .from('gasless_chains')
+        .from('gasless_chains' as any)
         .update({ enabled })
         .eq('chain_id', chainId);
 
@@ -142,7 +166,7 @@ export default function AdminGaslessConfig() {
   const toggleSchema = async (schemaUid: string, enabled: boolean) => {
     try {
       const { error } = await supabase
-        .from('gasless_schemas')
+        .from('gasless_schemas' as any)
         .update({ enabled })
         .eq('schema_uid', schemaUid);
 
@@ -163,7 +187,7 @@ export default function AdminGaslessConfig() {
   const updateSchemaLimit = async (schemaUid: string, dailyLimit: number | null) => {
     try {
       const { error } = await supabase
-        .from('gasless_schemas')
+        .from('gasless_schemas' as any)
         .update({ daily_limit_per_user: dailyLimit })
         .eq('schema_uid', schemaUid);
 
@@ -184,7 +208,7 @@ export default function AdminGaslessConfig() {
   const toggleAlert = async (id: string, enabled: boolean) => {
     try {
       const { error } = await supabase
-        .from('gasless_alerts')
+        .from('gasless_alerts' as any)
         .update({ enabled })
         .eq('id', id);
 
@@ -205,6 +229,41 @@ export default function AdminGaslessConfig() {
     return (
       <div className="flex items-center justify-center min-h-screen">
         <Loader2 className="h-8 w-8 animate-spin" />
+      </div>
+    );
+  }
+
+  if (!user) {
+    return (
+      <div className="container mx-auto px-4 py-8">
+        <Alert>
+          <AlertDescription>
+            Please connect your wallet to access the admin panel.
+          </AlertDescription>
+        </Alert>
+      </div>
+    );
+  }
+
+  if (isAdmin === null) {
+    return (
+      <div className="container mx-auto px-4 py-8">
+        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+          <RefreshCw className="h-4 w-4 animate-spin" /> Checking admin access...
+        </div>
+      </div>
+    );
+  }
+
+  if (isAdmin === false) {
+    return (
+      <div className="container mx-auto px-4 py-8">
+        <Alert>
+          <AlertTriangle className="h-4 w-4" />
+          <AlertDescription>
+            Access denied. You must be an admin (lock manager) to view this page.
+          </AlertDescription>
+        </Alert>
       </div>
     );
   }

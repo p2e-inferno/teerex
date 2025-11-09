@@ -30,7 +30,7 @@ export function useEventAttestationState(params: Params) {
 
   // Effect A: DB schemas (independent)
   useEffect(() => {
-    let cancelled = false;
+    const abort = { cancelled: false } as { cancelled: boolean };
     const run = async () => {
       try {
         // Attendance
@@ -45,13 +45,13 @@ export function useEventAttestationState(params: Params) {
         // Like & Going by name
         const like = await getSchemaByName('TeeRex EventLike');
         const going = await getSchemaByName('TeeRex EventGoing');
-        if (!cancelled) {
+        if (!abort.cancelled) {
           setAttendanceSchema(att);
           setLikeSchema(like);
           setGoingSchema(going);
         }
       } catch (_) {
-        if (!cancelled) {
+        if (!abort.cancelled) {
           setAttendanceSchema({ uid: null, revocable: null });
           setLikeSchema({ uid: null, revocable: null });
           setGoingSchema({ uid: null, revocable: null });
@@ -59,16 +59,16 @@ export function useEventAttestationState(params: Params) {
       }
     };
     run();
-    return () => { cancelled = true; };
+    return () => { abort.cancelled = true; };
   }, [eventId, preferredAttendanceSchemaUid]);
 
   // Effect B: DB user UIDs (depends on schemas + userAddress)
   useEffect(() => {
-    let cancelled = false;
+    const abort = { cancelled: false } as { cancelled: boolean };
     const run = async () => {
       try {
         if (!userAddress) {
-          if (!cancelled) {
+          if (!abort.cancelled) {
             setAttendanceInstance({ uid: null, revocable: null });
             setLikeInstance({ uid: null, revocable: null });
             setGoingInstance({ uid: null, revocable: null });
@@ -80,13 +80,13 @@ export function useEventAttestationState(params: Params) {
           likeSchema.uid ? getLatestUserUid(eventId, likeSchema.uid, userAddress) : Promise.resolve(null),
           goingSchema.uid ? getLatestUserUid(eventId, goingSchema.uid, userAddress) : Promise.resolve(null),
         ]);
-        if (!cancelled) {
+        if (!abort.cancelled) {
           setAttendanceInstance((p) => ({ ...p, uid: attUid }));
           setLikeInstance((p) => ({ ...p, uid: likeUid }));
           setGoingInstance((p) => ({ ...p, uid: goingUid }));
         }
       } catch (_) {
-        if (!cancelled) {
+        if (!abort.cancelled) {
           setAttendanceInstance((p) => ({ ...p, uid: null }));
           setLikeInstance((p) => ({ ...p, uid: null }));
           setGoingInstance((p) => ({ ...p, uid: null }));
@@ -99,7 +99,7 @@ export function useEventAttestationState(params: Params) {
 
   // Effect C: On-chain instance revocable (depends on instance UIDs)
   useEffect(() => {
-    let cancelled = false;
+    const abort = { cancelled: false } as { cancelled: boolean };
     const run = async () => {
       try {
         const [attR, likeR, goingR] = await Promise.all([
@@ -107,13 +107,13 @@ export function useEventAttestationState(params: Params) {
           likeInstance.uid ? isAttestationRevocableOnChain(likeInstance.uid, chainId) : Promise.resolve(null),
           goingInstance.uid ? isAttestationRevocableOnChain(goingInstance.uid, chainId) : Promise.resolve(null),
         ]);
-        if (!cancelled) {
+        if (!abort.cancelled) {
           setAttendanceInstance((p) => ({ ...p, revocable: attR }));
           setLikeInstance((p) => ({ ...p, revocable: likeR }));
           setGoingInstance((p) => ({ ...p, revocable: goingR }));
         }
       } catch (_) {
-        if (!cancelled) {
+        if (!abort.cancelled) {
           setAttendanceInstance((p) => ({ ...p, revocable: null }));
           setLikeInstance((p) => ({ ...p, revocable: null }));
           setGoingInstance((p) => ({ ...p, revocable: null }));
@@ -150,4 +150,3 @@ export function useEventAttestationState(params: Params) {
     setBusy,
   } as const;
 }
-

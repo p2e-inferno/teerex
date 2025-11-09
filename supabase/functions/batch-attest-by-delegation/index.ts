@@ -2,6 +2,13 @@
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { Contract, JsonRpcProvider, Wallet, ethers } from "https://esm.sh/ethers@6.14.4";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.50.0";
+import { corsHeaders, buildPreflightHeaders } from "../_shared/cors.ts";
+import { getUserWalletAddresses } from "../_shared/privy.ts";
+import {
+  createRemoteJWKSet,
+  jwtVerify,
+  importSPKI,
+} from "https://deno.land/x/jose@v4.14.4/index.ts";
 import BatchAttABI from "../_shared/abi/BatchAttestation.json" assert { type: "json" };
 
 function json(data: any, status = 200) {
@@ -30,18 +37,36 @@ const toTupleSig = (sigHex: string): [number, string, string] => {
 
 serve(async (req) => {
   if (req.method === "OPTIONS") {
-    return new Response(null, {
-      status: 204,
-      headers: {
-        "Access-Control-Allow-Origin": "*",
-        "Access-Control-Allow-Headers": "*,x-privy-authorization,authorization,content-type",
-        "Access-Control-Allow-Methods": "GET,POST,OPTIONS",
-      },
-    });
+    return new Response("ok", { headers: buildPreflightHeaders(req) });
   }
 
   try {
     const url = new URL(req.url);
+    // Require Privy auth
+    const PRIVY_APP_ID = Deno.env.get("VITE_PRIVY_APP_ID")!;
+    const PRIVY_VERIFICATION_KEY = Deno.env.get("PRIVY_VERIFICATION_KEY");
+    const authHeader = req.headers.get('X-Privy-Authorization');
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return new Response(JSON.stringify({ ok: false, error: 'Missing or invalid X-Privy-Authorization header' }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 401 });
+    }
+    const token = authHeader.split(' ')[1];
+    let privyUserId: string | undefined;
+    try {
+      const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('JWKS verification timeout after 3 seconds')), 3000));
+      const jwksPromise = (async () => {
+        const JWKS = createRemoteJWKSet(new URL(`https://auth.privy.io/api/v1/apps/${PRIVY_APP_ID}/jwks.json`));
+        const { payload } = await jwtVerify(token, JWKS, { issuer: 'privy.io', audience: PRIVY_APP_ID });
+        return payload;
+      })();
+      const payload: any = await Promise.race([jwksPromise, timeoutPromise]);
+      privyUserId = payload.sub as string | undefined;
+    } catch (jwksError) {
+      if (!PRIVY_VERIFICATION_KEY) throw jwksError;
+      const publicKey = await importSPKI(PRIVY_VERIFICATION_KEY, 'ES256');
+      const { payload } = await jwtVerify(token, publicKey, { issuer: 'privy.io', audience: PRIVY_APP_ID });
+      privyUserId = (payload as any).sub as string | undefined;
+    }
+    if (!privyUserId) throw new Error('Token verification failed');
     const sse = url.searchParams.get('sse') === '1' || req.headers.get('accept')?.includes('text/event-stream');
     let eventId: string | undefined;
     let chainId: number = 84532;
@@ -68,10 +93,32 @@ serve(async (req) => {
     const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
-    // Event for lock address
+    // Event for lock address and chain id
     const { data: ev, error: evErr } = await supabase
-      .from('events').select('id, title, lock_address').eq('id', eventId).maybeSingle();
+      .from('events').select('id, title, lock_address, chain_id, creator_id').eq('id', eventId).maybeSingle();
     if (evErr || !ev?.lock_address) return json({ ok: false, error: 'Event lock not found' }, 400);
+
+    // Authorization: event creator OR on-chain lock manager
+    let authorized = ev.creator_id === privyUserId;
+    if (!authorized) {
+      const userWallets = await getUserWalletAddresses(privyUserId);
+      if (userWallets && userWallets.length > 0) {
+        // Resolve RPC URL
+        const { data: net } = await supabase.from('network_configs').select('rpc_url').eq('chain_id', ev.chain_id).maybeSingle();
+        const rpcUrl = net?.rpc_url || (ev.chain_id === 8453 ? 'https://mainnet.base.org' : 'https://sepolia.base.org') || Deno.env.get('PRIMARY_RPC_URL');
+        if (!rpcUrl) return json({ ok: false, error: 'RPC URL not configured' }, 400);
+        const provider = new JsonRpcProvider(rpcUrl);
+        const lockManagerABI = [{ inputs: [{ internalType: 'address', name: '_account', type: 'address' }], name: 'isLockManager', outputs: [{ internalType: 'bool', name: '', type: 'bool' }], stateMutability: 'view', type: 'function' }];
+        const lock = new Contract(ev.lock_address, lockManagerABI, provider);
+        for (const addr of userWallets) {
+          try {
+            const isMgr = await lock.isLockManager(addr);
+            if (isMgr) { authorized = true; break; }
+          } catch (_) {}
+        }
+      }
+    }
+    if (!authorized) return json({ ok: false, error: 'Unauthorized' }, 403);
 
     // Fetch pending delegations for the event
     const { data: delegations, error: fetchErr } = await supabase
@@ -206,4 +253,3 @@ serve(async (req) => {
     return json({ ok: false, error: (err as Error).message }, 200);
   }
 });
-

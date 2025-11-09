@@ -30,16 +30,16 @@ export const CommentSection: React.FC<CommentSectionProps> = ({
       setIsLoading(true);
       setError(null);
 
-      const { data, error: fetchError } = await supabase
-        .from('post_comments')
+      const res: any = await supabase
+        .from('post_comments' as any)
         .select('*')
         .eq('post_id', postId)
         .eq('is_deleted', false)
         .order('created_at', { ascending: true });
 
-      if (fetchError) throw fetchError;
+      if (res.error) throw res.error;
 
-      setComments((data as PostComment[]) || []);
+      setComments((res.data as PostComment[]) || []);
     } catch (err) {
       console.error('Error fetching comments:', err);
       setError(err as Error);

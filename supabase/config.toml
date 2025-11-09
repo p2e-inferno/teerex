@@ -11,3 +11,12 @@ project_id = "nclavsvzjzegqvkjezyz"
 
 # Keep verify_jwt enabled for remove-service-manager; it will receive
 # Supabase JWT in Authorization and Privy JWT in X-Privy-Authorization.
+
+[functions.is-admin]
+  verify_jwt = true
+
+[functions.init-paystack-transaction]
+  verify_jwt = true
+
+[functions.admin-get-transactions]
+  verify_jwt = true

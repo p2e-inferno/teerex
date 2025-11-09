@@ -148,7 +148,9 @@ export const EventAttestationCard: React.FC<EventAttestationCardProps & {
         } else {
           setAttendanceSchemaRevocable(null);
         }
-      } catch (_) {}
+      } catch (_) {
+        // ignore
+      }
     };
     loadAttendanceRevocable();
   }, [attendanceSchemaUid]);
@@ -214,7 +216,9 @@ export const EventAttestationCard: React.FC<EventAttestationCardProps & {
           } else {
             setAttendanceInstanceRevocable(null);
           }
-        } catch (_) {}
+        } catch (_) {
+          // ignore
+        }
         try {
           if (userGoingAttUid) {
             const r2 = await isAttestationRevocableOnChain(userGoingAttUid, chainId || 84532);
@@ -222,7 +226,9 @@ export const EventAttestationCard: React.FC<EventAttestationCardProps & {
           } else {
             setGoingInstanceRevocable(null);
           }
-        } catch (_) {}
+        } catch (_) {
+          // ignore
+        }
 
         // Get user reputation
         const { data: reputationData, error: reputationError } = await supabase

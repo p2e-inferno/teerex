@@ -25,8 +25,8 @@ export const useEventPosts = (eventId: string): UseEventPostsReturn => {
       setError(null);
 
       // Query posts with stats
-      const { data: postsData, error: postsError } = await supabase
-        .from('event_posts')
+      const postsRes: any = await supabase
+        .from('event_posts' as any)
         .select(`
           *,
           post_engagement_stats (*),
@@ -37,11 +37,11 @@ export const useEventPosts = (eventId: string): UseEventPostsReturn => {
         .order('is_pinned', { ascending: false })
         .order('created_at', { ascending: false });
 
-      if (postsError) throw postsError;
+      if (postsRes.error) throw postsRes.error;
 
       // Transform data and add user-specific flags
       const userAddress = wallet?.address?.toLowerCase();
-      const transformedPosts: EventPost[] = (postsData as EventPostWithStats[] || []).map((post) => {
+      const transformedPosts: EventPost[] = ((postsRes.data as EventPostWithStats[]) || []).map((post) => {
         const stats = post.post_engagement_stats;
         const userReactions = post.post_reactions.filter(
           (r) => r.user_address.toLowerCase() === userAddress

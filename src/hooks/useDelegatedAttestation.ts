@@ -6,7 +6,8 @@ import { EAS } from '@ethereum-attestation-service/eas-sdk';
 const EAS_CONTRACT_ADDRESS = '0x4200000000000000000000000000000000000021';
 
 export interface DelegatedAttestationSignature {
-  signature: string; // 0x rsv
+  // Support either 0x-rsv string or EAS tuple-like signature
+  signature: string | { v: number; r: string; s: string };
   deadline: bigint;
   attester: string; // user's address
 }
@@ -56,7 +57,7 @@ export const useDelegatedAttestation = () => {
     );
 
     return {
-      signature: response.signature,
+      signature: response.signature as any,
       deadline,
       attester
     };

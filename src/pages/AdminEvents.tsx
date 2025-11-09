@@ -96,6 +96,27 @@ const AdminEvents: React.FC = () => {
   const batchSse = useSSE();
   const txSse = useSSE();
   const execSse = useSSE();
+  const [isAdmin, setIsAdmin] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    const checkAdmin = async () => {
+      try {
+        const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
+        const accessToken = await getAccessToken?.();
+        const { data, error } = await supabase.functions.invoke('is-admin', {
+          headers: {
+            ...(anonKey ? { Authorization: `Bearer ${anonKey}` } : {}),
+            ...(accessToken ? { 'X-Privy-Authorization': `Bearer ${accessToken}` } : {}),
+          },
+        });
+        if (error) throw error;
+        setIsAdmin(Boolean(data?.is_admin));
+      } catch (e) {
+        setIsAdmin(false);
+      }
+    };
+    checkAdmin();
+  }, [getAccessToken]);
 
   useEffect(() => {
     fetchEvents();
@@ -146,10 +167,16 @@ const AdminEvents: React.FC = () => {
     console.log("Fetching transactions for event:", eventId);
     try {
       // Use admin function to bypass RLS
+      const accessToken = await getAccessToken?.();
+      const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
       const { data, error } = await supabase.functions.invoke(
         "admin-get-transactions",
         {
           body: { eventId },
+          headers: {
+            ...(anonKey ? { Authorization: `Bearer ${anonKey}` } : {}),
+            ...(accessToken ? { "X-Privy-Authorization": `Bearer ${accessToken}` } : {}),
+          },
         }
       );
 
@@ -303,6 +330,29 @@ const AdminEvents: React.FC = () => {
         <Alert>
           <AlertDescription>
             Please connect your wallet to access the admin panel.
+          </AlertDescription>
+        </Alert>
+      </div>
+    );
+  }
+
+  if (isAdmin === null) {
+    return (
+      <div className="container mx-auto px-4 py-8">
+        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+          <RefreshCw className="h-4 w-4 animate-spin" /> Checking admin access...
+        </div>
+      </div>
+    );
+  }
+
+  if (isAdmin === false) {
+    return (
+      <div className="container mx-auto px-4 py-8">
+        <Alert>
+          <AlertTriangle className="h-4 w-4" />
+          <AlertDescription>
+            Access denied. You must be an admin (lock manager) to view this page.
           </AlertDescription>
         </Alert>
       </div>

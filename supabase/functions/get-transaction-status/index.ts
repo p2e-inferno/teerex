@@ -40,8 +40,10 @@ serve(async (req) => {
       });
     }
 
+    // Return minimal payload: do not expose full gateway_response
+    const keyGranted = Boolean((tx as any)?.gateway_response?.key_granted);
     return new Response(
-      JSON.stringify({ found: true, status: tx.status, gateway_response: tx.gateway_response }),
+      JSON.stringify({ found: true, status: tx.status, key_granted: keyGranted }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 200 }
     );
   } catch (e: any) {
@@ -51,4 +53,3 @@ serve(async (req) => {
     });
   }
 });
-

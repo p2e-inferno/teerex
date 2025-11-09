@@ -150,6 +150,13 @@ const EventDetails = () => {
   const [attendanceSchemaRevocable, setAttendanceSchemaRevocable] = useState<boolean | null>(null);
 
   const networkLabel = event?.chain_id === base.id ? 'Base' : event?.chain_id === baseSepolia.id ? 'Base Sepolia' : '';
+  const explorerUrl = event
+    ? (event.chain_id === base.id
+        ? `https://basescan.org/address/${event.lock_address}`
+        : event.chain_id === baseSepolia.id
+        ? `https://sepolia.basescan.org/address/${event.lock_address}`
+        : `https://etherscan.io/address/${event.lock_address}`)
+    : '#';
 
   const isValidSchemaUid = (uid?: string | null) => !!uid && uid.startsWith('0x') && uid.length === 66 && /^0x[0-9a-f]{64}$/i.test(uid);
 
@@ -366,7 +373,7 @@ const EventDetails = () => {
     }
     const timeParts = event.time.trim().match(/^(\d{1,2}):(\d{2})\s*(AM|PM)?$/i);
     const baseDate = new Date(event.date);
-    let start = new Date(baseDate);
+    const start = new Date(baseDate);
     if (timeParts) {
       const hours = parseInt(timeParts[1]);
       const minutes = parseInt(timeParts[2]);
@@ -1108,12 +1115,15 @@ const EventDetails = () => {
                       variant="ghost"
                       size="sm"
                       className="h-auto p-0 text-blue-600"
+                      asChild
                     >
-                      <span className="font-mono text-xs">
-                        {event.lock_address.slice(0, 6)}...
-                        {event.lock_address.slice(-4)}
-                      </span>
-                      <ExternalLink className="w-3 h-3 ml-1" />
+                      <a href={explorerUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center">
+                        <span className="font-mono text-xs">
+                          {event.lock_address.slice(0, 6)}...
+                          {event.lock_address.slice(-4)}
+                        </span>
+                        <ExternalLink className="w-3 h-3 ml-1" />
+                      </a>
                     </Button>
                   </div>
                 </div>

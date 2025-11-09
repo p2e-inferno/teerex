@@ -40,7 +40,7 @@ export const PaystackPaymentDialog: React.FC<PaystackPaymentDialogProps> = ({
   onClose,
   onSuccess,
 }) => {
-  const { user } = usePrivy();
+  const { user, getAccessToken } = usePrivy();
   const { wallets } = useWallets();
   const { toast } = useToast();
   const [isLoading, setIsLoading] = useState(false);
@@ -92,22 +92,26 @@ export const PaystackPaymentDialog: React.FC<PaystackPaymentDialogProps> = ({
   const ensureTransactionRecord = async () => {
     if (!event) return;
     try {
-      const insertPayload: any = {
-        event_id: event.id,
-        user_email: userEmail,
-        reference: config.reference,
-        amount: config.amount, // kobo
-        currency: "NGN",
-        status: "pending",
-        gateway_response: {
-          reference: config.reference,
-          status: "initialized",
-          metadata: { custom_fields: config.metadata.custom_fields },
-        },
-      };
-      const { error } = await supabase.from("paystack_transactions").insert(insertPayload);
-      if (error && !String(error.message || "").toLowerCase().includes("duplicate")) {
-        console.warn("[PAYSTACK INIT] Failed to create transaction record", error.message);
+      const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
+      const accessToken = await getAccessToken?.();
+      const { data, error } = await supabase.functions.invoke(
+        "init-paystack-transaction",
+        {
+          body: {
+            event_id: event.id,
+            reference: config.reference,
+            email: userEmail,
+            wallet_address: userWalletAddress,
+            amount: config.amount,
+          },
+          headers: {
+            ...(anonKey ? { Authorization: `Bearer ${anonKey}` } : {}),
+            ...(accessToken ? { "X-Privy-Authorization": `Bearer ${accessToken}` } : {}),
+          },
+        }
+      );
+      if (error || data?.error) {
+        console.warn("[PAYSTACK INIT] Failed to create transaction record", error?.message || data?.error);
       }
     } catch (e: any) {
       console.warn("[PAYSTACK INIT] Error ensuring transaction record", e?.message || e);

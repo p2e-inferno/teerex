@@ -33,7 +33,7 @@ import {
 type AttestationSchema = Database['public']['Tables']['attestation_schemas']['Row'];
 
 const Admin: React.FC = () => {
-  const { user, authenticated } = usePrivy();
+  const { user, authenticated, getAccessToken } = usePrivy();
   const { wallets } = useWallets();
   const wallet = wallets?.[0];
   const [schemas, setSchemas] = useState<AttestationSchema[]>([]);
@@ -41,6 +41,7 @@ const Admin: React.FC = () => {
   const [checkingSchemas, setCheckingSchemas] = useState(false);
   const [schemaStatus, setSchemaStatus] = useState<Record<number, { exists: boolean; schemaUid?: string; checked: boolean }>>({});
   const [schemaToReplace, setSchemaToReplace] = useState<AttestationSchema | null>(null);
+  const [isAdmin, setIsAdmin] = useState<boolean | null>(null);
   const [formData, setFormData] = useState({
     name: '',
     description: '',
@@ -81,24 +82,24 @@ const Admin: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    if (wallet && user) {
-      checkPredefinedSchemas();
-    }
-  }, [wallet, user]);
-
-  const fetchSchemas = async () => {
-    try {
-      const data = await getAttestationSchemas();
-      setSchemas(data);
-    } catch (error) {
-      console.error('Error fetching schemas:', error);
-      toast({
-        title: "Error",
-        description: "Failed to fetch schemas",
-        variant: "destructive"
-      });
-    }
-  };
+    const checkAdmin = async () => {
+      try {
+        const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
+        const accessToken = await getAccessToken?.();
+        const { data, error } = await supabase.functions.invoke('is-admin', {
+          headers: {
+            ...(anonKey ? { Authorization: `Bearer ${anonKey}` } : {}),
+            ...(accessToken ? { 'X-Privy-Authorization': `Bearer ${accessToken}` } : {}),
+          },
+        });
+        if (error) throw error;
+        setIsAdmin(Boolean(data?.is_admin));
+      } catch (e) {
+        setIsAdmin(false);
+      }
+    };
+    checkAdmin();
+  }, [getAccessToken]);
 
   const checkPredefinedSchemas = async () => {
     if (!wallet) return;
@@ -124,6 +125,63 @@ const Admin: React.FC = () => {
       setCheckingSchemas(false);
     }
   };
+
+  useEffect(() => {
+    if (wallet && user) {
+      checkPredefinedSchemas();
+    }
+  }, [wallet, user]);
+
+  const fetchSchemas = async () => {
+    try {
+      const data = await getAttestationSchemas();
+      setSchemas(data);
+    } catch (error) {
+      console.error('Error fetching schemas:', error);
+      toast({
+        title: "Error",
+        description: "Failed to fetch schemas",
+        variant: "destructive"
+      });
+    }
+  };
+
+  if (!user) {
+    return (
+      <div className="container mx-auto px-4 py-8">
+        <Alert>
+          <AlertDescription>
+            Please connect your wallet to access the admin panel.
+          </AlertDescription>
+        </Alert>
+      </div>
+    );
+  }
+
+  if (isAdmin === null) {
+    return (
+      <div className="container mx-auto px-4 py-8">
+        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+          <RefreshCw className="h-4 w-4 animate-spin" /> Checking admin access...
+        </div>
+      </div>
+    );
+  }
+
+  if (isAdmin === false) {
+    return (
+      <div className="container mx-auto px-4 py-8">
+        <Alert>
+          <AlertTriangle className="h-4 w-4" />
+          <AlertDescription>
+            Access denied. You must be an admin (lock manager) to view this page.
+          </AlertDescription>
+        </Alert>
+      </div>
+    );
+  }
+
+  
 
   const handleImportSchema = async (index: number) => {
     const schema = predefinedSchemas[index];
