@@ -1,0 +1,21 @@
+[
+  {
+    "inputs": [
+      { "internalType": "bytes", "name": "calldata", "type": "bytes" },
+      { "internalType": "uint16", "name": "version", "type": "uint16" }
+    ],
+    "name": "createUpgradeableLockAtVersion",
+    "outputs": [{ "internalType": "address", "name": "", "type": "address" }],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      { "indexed": true, "internalType": "address", "name": "lockOwner", "type": "address" },
+      { "indexed": true, "internalType": "address", "name": "newLockAddress", "type": "address" }
+    ],
+    "name": "NewLock",
+    "type": "event"
+  }
+]

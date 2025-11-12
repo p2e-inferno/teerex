@@ -116,6 +116,17 @@ serve(async (req) => {
     const txSend = await lock.grantKeys(recipients, expirations, keyManagers);
     const receipt = await txSend.wait();
     if (receipt.status !== 1) throw new Error("Grant key transaction failed");
+
+    // Store ticket record with email from paystack transaction
+    await supabase.from('tickets').insert({
+      event_id: event.id,
+      owner_wallet: recipient.toLowerCase(),
+      payment_transaction_id: tx.id,
+      grant_tx_hash: receipt.transactionHash,
+      status: 'active',
+      user_email: tx.user_email || null, // Copy email from paystack_transactions
+    });
+
     return new Response(JSON.stringify({ success: true, txHash: txSend.hash || receipt.transactionHash }), { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 200 });
   } catch (e: any) {
     return new Response(JSON.stringify({ error: e?.message || "Internal error" }), { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 400 });

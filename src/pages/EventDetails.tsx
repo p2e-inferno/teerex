@@ -8,12 +8,13 @@ import {
   Calendar,
   Clock,
   MapPin,
+  Globe,
+  ExternalLink,
   Users,
   Share2,
   Heart,
   ArrowLeft,
   Ticket,
-  ExternalLink,
   CalendarPlus,
   Copy,
   Facebook,
@@ -54,12 +55,13 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { RichTextDisplay } from "@/components/ui/rich-text/RichTextDisplay";
 
 const EventDetails = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const { toast } = useToast();
-  const { authenticated, getAccessToken } = usePrivy();
+  const { authenticated, getAccessToken, login } = usePrivy();
   const { wallets } = useWallets();
   const wallet = wallets[0];
   const { revokeEventAttestation } = useAttestations();
@@ -659,6 +661,12 @@ const EventDetails = () => {
     console.log("=== HANDLE GET TICKET CALLED ===");
     if (!event) return;
 
+    // Check if user is authenticated
+    if (!authenticated) {
+      login(); // Trigger wallet connection
+      return;
+    }
+
     console.log("Event data:", event);
     console.log("Payment methods:", event.payment_methods);
     console.log("Paystack key:", event.paystack_public_key);
@@ -869,8 +877,25 @@ const EventDetails = () => {
 
               {event.location && (
                 <div className="flex items-center space-x-1 text-gray-600 mb-6">
-                  <MapPin className="w-4 h-4" />
-                  <span>{event.location}</span>
+                  {event.event_type === 'virtual' ? (
+                    <>
+                      <Globe className="w-4 h-4" />
+                      <a
+                        href={event.location}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-blue-600 hover:text-blue-800 underline flex items-center gap-1"
+                      >
+                        Virtual Event Link
+                        <ExternalLink className="w-3 h-3" />
+                      </a>
+                    </>
+                  ) : (
+                    <>
+                      <MapPin className="w-4 h-4" />
+                      <span>{event.location}</span>
+                    </>
+                  )}
                 </div>
               )}
 
@@ -881,11 +906,7 @@ const EventDetails = () => {
                 <h2 className="text-xl font-semibold text-gray-900 mb-4">
                   About this event
                 </h2>
-                <div className="prose prose-gray max-w-none">
-                  <p className="text-gray-700 whitespace-pre-wrap">
-                    {event.description}
-                  </p>
-                </div>
+                <RichTextDisplay content={event.description} />
               </div>
             </div>
 
@@ -1036,9 +1057,8 @@ const EventDetails = () => {
                     onClick={handleGetTicket}
                     disabled={
                       isSoldOut ||
-                      (!authenticated &&
-                        userTicketCount >= maxTicketsPerUser) ||
-                      (event.date && new Date(event.date) < new Date())
+                      (event.date && new Date(event.date) < new Date()) ||
+                      (authenticated && userTicketCount >= maxTicketsPerUser)
                     }
                   >
                     {isSoldOut

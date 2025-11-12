@@ -40,10 +40,31 @@ serve(async (req) => {
       });
     }
 
-    // Return minimal payload: do not expose full gateway_response
-    const keyGranted = Boolean((tx as any)?.gateway_response?.key_granted);
+    const rawGatewayResponse = (tx as any)?.gateway_response;
+    const keyGranted = Boolean(rawGatewayResponse?.key_granted);
+    const gatewayTxnHash =
+      rawGatewayResponse?.tx_hash ||
+      rawGatewayResponse?.transactionHash ||
+      rawGatewayResponse?.transaction_hash ||
+      rawGatewayResponse?.key_grant_tx_hash ||
+      rawGatewayResponse?.hash ||
+      null;
+
+    const gatewayResponse =
+      rawGatewayResponse == null
+        ? null
+        : {
+            key_granted: keyGranted,
+            tx_hash: gatewayTxnHash,
+          };
+
     return new Response(
-      JSON.stringify({ found: true, status: tx.status, key_granted: keyGranted }),
+      JSON.stringify({
+        found: true,
+        status: tx.status,
+        key_granted: keyGranted,
+        gateway_response: gatewayResponse,
+      }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 200 }
     );
   } catch (e: any) {

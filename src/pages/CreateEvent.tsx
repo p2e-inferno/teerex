@@ -17,6 +17,9 @@ import { savePublishedEvent } from '@/utils/eventUtils';
 import { saveDraft, updateDraft, getDraft, deleteDraft, getPublishedEvent } from '@/utils/supabaseDraftStorage';
 import { supabase } from '@/integrations/supabase/client';
 import { addLockManager } from '@/utils/lockUtils';
+import { EventCreationSuccessModal } from '@/components/events/EventCreationSuccessModal';
+import { WalletConnectionGate } from '@/components/WalletConnectionGate';
+import { useGaslessFallback } from '@/hooks/useGasless';
 
 export interface EventFormData {
   title: string;
@@ -24,6 +27,7 @@ export interface EventFormData {
   date: Date | null;
   time: string;
   location: string;
+  eventType: 'physical' | 'virtual';
   capacity: number;
   // Crypto pricing (used only when paymentMethod === 'crypto')
   price: number;
@@ -50,12 +54,15 @@ const CreateEvent = () => {
   const [isCreating, setIsCreating] = useState(false);
   const [currentDraftId, setCurrentDraftId] = useState<string | null>(draftId);
   const [editingEventId, setEditingEventId] = useState<string | null>(eventId);
+  const [showSuccessModal, setShowSuccessModal] = useState(false);
+  const [createdEvent, setCreatedEvent] = useState<any>(null);
   const [formData, setFormData] = useState<EventFormData>({
     title: '',
     description: '',
     date: null,
     time: '',
     location: '',
+    eventType: 'physical',
     capacity: 100,
     price: 0,
     currency: 'ETH',
@@ -64,6 +71,20 @@ const CreateEvent = () => {
     category: '',
     imageUrl: ''
   });
+
+  // Gasless deployment fallback hook
+  const deployLockWithGasless = useGaslessFallback(
+    'gasless-deploy-lock',
+    async (lockConfig: any) => {
+      // Fallback: client-side deployment
+      toast({
+        title: "Deploying with wallet",
+        description: "Please confirm the transaction in your wallet...",
+      });
+      return await deployLock(lockConfig, wallets[0], lockConfig.chainId);
+    },
+    true // enabled by default
+  );
 
   const validateRequiredFields = () => {
     const parsed = EventCreateSchema.safeParse({
@@ -96,6 +117,7 @@ const CreateEvent = () => {
             date: draft.date,
             time: draft.time,
             location: draft.location,
+            eventType: (draft as any).event_type || 'physical',
             capacity: draft.capacity,
             // derive payment model
             paymentMethod: (draft.payment_methods && draft.payment_methods[0])
@@ -122,6 +144,7 @@ const CreateEvent = () => {
             date: event.date,
             time: event.time,
             location: event.location,
+            eventType: (event as any).event_type || 'physical',
             capacity: event.capacity,
             paymentMethod: (event.payment_methods && event.payment_methods[0])
               ? (event.payment_methods[0] as 'free' | 'crypto' | 'fiat')
@@ -179,9 +202,21 @@ const CreateEvent = () => {
       case 1:
         return !!(formData.title.trim() && formData.description.trim() && formData.date && formData.time);
       case 2:
-        return !!(formData.category && formData.capacity > 0);
+        // Validate basic details
+        const hasBasicDetails = !!(formData.category && (editingEventId || formData.capacity > 0));
+
+        // Validate location based on event type
+        const hasValidLocation = formData.eventType === 'physical'
+          ? !!formData.location.trim()
+          : !!formData.location.trim(); // Virtual events also need a link
+
+        return hasBasicDetails && hasValidLocation;
       case 3:
-        // Validate ticket settings based on payment method
+        // Skip ticket validation when editing - settings are read-only
+        if (editingEventId) {
+          return true;
+        }
+        // Validate ticket settings based on payment method for new events
         if (formData.paymentMethod === 'crypto') {
           return formData.price > 0 && !!formData.currency;
         }
@@ -254,11 +289,6 @@ const CreateEvent = () => {
 
       console.log('Using wallet:', wallet);
 
-      toast({
-        title: "Deploying Smart Contract",
-        description: "Please confirm the transaction in your wallet...",
-      });
-
       const lockConfig = {
         name: formData.title,
         symbol: `${formData.title.slice(0, 3).toUpperCase()}TIX`,
@@ -266,14 +296,43 @@ const CreateEvent = () => {
         maxNumberOfKeys: formData.capacity,
         expirationDuration: 86400,
         currency: formData.paymentMethod === 'crypto' ? formData.currency : 'FREE',
-        price: formData.price
+        price: formData.price,
+        chainId: (formData as any).chainId as number
       };
 
-      if (!(formData as any).chainId) {
+      if (!lockConfig.chainId) {
         throw new Error('Please select a network for deployment.');
       }
-      const deploymentResult = await deployLock(lockConfig, wallet, (formData as any).chainId as number);
-      
+
+      // Try gasless deployment first, fallback to client-side if it fails
+      const result: any = await deployLockWithGasless({
+        name: formData.title,
+        expirationDuration: 86400,
+        currency: formData.paymentMethod === 'crypto' ? formData.currency : 'FREE',
+        price: formData.price,
+        maxNumberOfKeys: formData.capacity,
+        chain_id: lockConfig.chainId,
+        maxKeysPerAddress: 1,
+        transferable: true,
+        requiresApproval: false,
+        creator_address: wallet.address?.toLowerCase(),
+        // Include lockConfig properties for fallback
+        ...lockConfig
+      });
+
+      // Normalize response format (gasless returns {ok, lock_address, tx_hash}, client returns {success, lockAddress, transactionHash})
+      const deploymentResult = result.ok
+        ? { success: true, lockAddress: result.lock_address, transactionHash: result.tx_hash }
+        : result;
+
+      // Show success message for gasless
+      if (result.ok) {
+        toast({
+          title: "Lock deployed!",
+          description: "Gas sponsored by TeeRex ✨",
+        });
+      }
+
       if (deploymentResult.success && deploymentResult.transactionHash && deploymentResult.lockAddress) {
         // Track if service manager was successfully added
         let serviceManagerAdded = false;
@@ -321,38 +380,18 @@ const CreateEvent = () => {
           }
         }
         // Save event to Supabase with service manager status
-        await savePublishedEvent(formData, deploymentResult.lockAddress, deploymentResult.transactionHash, user.id, serviceManagerAdded);
-
-        const explorerUrl = getBlockExplorerUrl(deploymentResult.transactionHash, (formData as any).chainId as number);
-        
-        toast({
-          title: "Event Created Successfully!",
-          description: (
-            <div className="space-y-2">
-              <p>Your event has been deployed to the blockchain.</p>
-              <div className="text-sm text-gray-600">
-                <p>Lock Address: {deploymentResult.lockAddress}</p>
-              </div>
-              <a 
-                href={explorerUrl} 
-                target="_blank" 
-                rel="noopener noreferrer"
-                className="inline-flex items-center gap-1 text-blue-600 hover:text-blue-800 underline"
-              >
-                View Transaction <ExternalLink className="w-3 h-3" />
-              </a>
-            </div>
-          ),
-        });
+        const savedEvent = await savePublishedEvent(formData, deploymentResult.lockAddress, deploymentResult.transactionHash, user.id, serviceManagerAdded);
 
         if (currentDraftId && user?.id) {
           await deleteDraft(currentDraftId, user.id);
         }
+
+        // Show success modal instead of navigating immediately
+        setCreatedEvent(savedEvent);
+        setShowSuccessModal(true);
       } else {
         throw new Error(deploymentResult.error || 'Failed to deploy smart contract');
       }
-      
-      navigate('/my-events');
     } catch (error) {
       console.error('Error creating event:', error);
       
@@ -431,11 +470,49 @@ const CreateEvent = () => {
 
   const canContinue = isStepValid(currentStep);
 
+  const handleViewEvent = () => {
+    setShowSuccessModal(false);
+    if (createdEvent) {
+      navigate(`/event/${createdEvent.id}`);
+    }
+  };
+
+  const handleCreateAnother = () => {
+    setShowSuccessModal(false);
+    setCreatedEvent(null);
+    // Reset form to initial state
+    setFormData({
+      title: '',
+      description: '',
+      date: null,
+      time: '',
+      location: '',
+      eventType: 'physical',
+      capacity: 100,
+      price: 0,
+      currency: 'ETH',
+      ngnPrice: 0,
+      paymentMethod: 'free',
+      category: '',
+      imageUrl: ''
+    });
+    setCurrentStep(1);
+    setCurrentDraftId(null);
+    setEditingEventId(null);
+  };
+
+  const handleCloseSuccessModal = () => {
+    setShowSuccessModal(false);
+    setCreatedEvent(null);
+    navigate('/my-events');
+  };
+
   const renderStepComponent = () => {
     const commonProps = {
       formData,
       updateFormData,
-      onNext: nextStep
+      onNext: nextStep,
+      editingEventId
     };
 
     switch (currentStep) {
@@ -455,9 +532,17 @@ const CreateEvent = () => {
     }
   };
 
-    if (!authenticated) {
-    return <Navigate to="/" replace />;
-  }return (
+  if (!authenticated) {
+    return (
+      <WalletConnectionGate
+        title="Connect Your Wallet to Create Events"
+        description="You need to connect your wallet to create and manage Web3 events"
+        fullPage={true}
+      />
+    );
+  }
+
+  return (
     <div className="min-h-screen bg-gray-50 py-8">
       <div className="container mx-auto px-6 max-w-4xl">
         {/* Header */}
@@ -544,6 +629,17 @@ const CreateEvent = () => {
           )}
         </div>
       </div>
+
+      {/* Success Modal */}
+      {createdEvent && (
+        <EventCreationSuccessModal
+          event={createdEvent}
+          isOpen={showSuccessModal}
+          onClose={handleCloseSuccessModal}
+          onViewEvent={handleViewEvent}
+          onCreateAnother={handleCreateAnother}
+        />
+      )}
     </div>
   );
 };

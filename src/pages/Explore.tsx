@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { usePrivy } from '@privy-io/react-auth';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -19,6 +20,7 @@ import { fetchEventsPage, fetchKeysForPage, ExploreFilters } from '@/lib/explore
 
 const Explore = () => {
   const PAGE_SIZE = 12;
+  const { authenticated, login } = usePrivy();
   const [events, setEvents] = useState<PublishedEvent[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [debouncedQuery, setDebouncedQuery] = useState('');
@@ -189,7 +191,7 @@ const Explore = () => {
         {/* Header */}
         <div className="mb-8">
           <h1 className="text-3xl font-bold text-gray-900 mb-2">Explore Events</h1>
-          <p className="text-gray-600">Discover amazing Web3 events with blockchain-verified tickets</p>
+          <p className="text-gray-600">Discover amazing events with blockchain-verified tickets</p>
         </div>
 
         {/* Search and Filters */}
@@ -318,6 +320,8 @@ const Explore = () => {
                 event={event}
                 onViewDetails={handleEventDetails}
                 keysSold={keysSoldMap[event.id]}
+                authenticated={authenticated}
+                onConnectWallet={login}
               />
             ))}
             {isLoadingMore && Array.from({ length: 3 }).map((_, i) => (

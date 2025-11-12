@@ -4,9 +4,12 @@ import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { ImageModal } from '@/components/ui/image-modal';
-import { Calendar, Clock, MapPin, Users } from 'lucide-react';
+import { Calendar, Clock, MapPin, Users, Globe, ExternalLink } from 'lucide-react';
 import { PublishedEvent } from '@/utils/eventUtils';
 import { format } from 'date-fns';
+import { ShareButton } from '@/components/interactions/ShareButton';
+import { RichTextDisplay } from '@/components/ui/rich-text/RichTextDisplay';
+import { stripHtml } from '@/utils/textUtils';
 
 interface EventCardProps {
   event: PublishedEvent;
@@ -16,18 +19,24 @@ interface EventCardProps {
   keysSold?: number;
   actionType?: string;
   showActions?: boolean;
+  showShareButton?: boolean;
   isTicketView?: boolean;
+  authenticated?: boolean;
+  onConnectWallet?: () => void;
 }
 
 export const EventCard: React.FC<EventCardProps> = ({
-  event, 
-  onViewDetails, 
+  event,
+  onViewDetails,
   onEdit,
   onManage,
   keysSold = 0,
   actionType,
   showActions = true,
-  isTicketView = false
+  showShareButton = false,
+  isTicketView = false,
+  authenticated = false,
+  onConnectWallet
 }) => {
   const [imgError, setImgError] = useState(false);
   const imageSrc = useMemo(() => {
@@ -65,8 +74,19 @@ export const EventCard: React.FC<EventCardProps> = ({
   const handleEditClick = (e: React.MouseEvent) => { e.stopPropagation(); onEdit?.(event); };
   const handleManageClick = (e: React.MouseEvent) => { e.stopPropagation(); onManage?.(event); };
 
+  const handleButtonClick = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!authenticated) {
+      onConnectWallet?.();
+      return;
+    }
+    // Normal ticket purchase flow for authenticated users
+    onViewDetails?.(event);
+  };
+
   // Determine button text based on context
   const getButtonText = () => {
+    if (!authenticated) return 'Connect Wallet';
     if (isTicketView) return 'View Ticket';
     if (actionType === 'edit') return 'Edit';
     if (actionType === 'manage') return 'Manage';
@@ -141,9 +161,12 @@ export const EventCard: React.FC<EventCardProps> = ({
           {event.title}
         </h3>
         
-        <p className="text-gray-600 text-sm mb-4 line-clamp-2">
-          {event.description}
-        </p>
+        <div className="text-gray-600 text-sm mb-4">
+          <RichTextDisplay
+            content={event.description}
+            className="prose-sm prose-gray max-w-none line-clamp-2 prose-card"
+          />
+        </div>
         
         <div className="space-y-2 mb-4">
           {event.date && (
@@ -156,8 +179,21 @@ export const EventCard: React.FC<EventCardProps> = ({
           )}
           
           <div className="flex items-center text-sm text-gray-600">
-            <MapPin className="w-4 h-4 mr-2" />
-            <span className="truncate">{event.location}</span>
+            {event.event_type === 'virtual' ? (
+              <>
+                <Globe className="w-4 h-4 mr-2" />
+                <span className="truncate">
+                  Virtual Event
+                </span>
+              </>
+            ) : (
+              <>
+                <MapPin className="w-4 h-4 mr-2" />
+                <span className="truncate">
+                  {event.location || 'Metaverse'}
+                </span>
+              </>
+            )}
           </div>
           
           <div className="flex items-center justify-between text-sm">
@@ -189,26 +225,35 @@ export const EventCard: React.FC<EventCardProps> = ({
             ) : event.currency === 'FREE' ? 'Free' : `${event.price} ${event.currency}`}
           </div>
           {showActions && (
-            (onEdit || onManage) ? (
-              <div className="flex items-center gap-2">
-                {onEdit && (
-                  <Button size="sm" onClick={handleEditClick} className="bg-blue-600 hover:bg-blue-700">Edit</Button>
-                )}
-                {onManage && (
-                  <Button size="sm" variant="outline" onClick={handleManageClick}>Manage</Button>
-                )}
-              </div>
-            ) : (
-              <Button 
-                size="sm" 
-                onClick={handleViewDetailsClick}
-                disabled={isEventExpired || isSoldOut}
-                variant={getButtonVariant()}
-                className={actionType === 'manage' ? '' : "bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"}
-              >
-                {getButtonText()}
-              </Button>
-            )
+            <div className="flex items-center gap-2">
+              {(onEdit || onManage) ? (
+                <>
+                  {onEdit && (
+                    <Button size="sm" onClick={handleEditClick} className="bg-blue-600 hover:bg-blue-700">Edit</Button>
+                  )}
+                  {onManage && (
+                    <Button size="sm" variant="outline" onClick={handleManageClick}>Manage</Button>
+                  )}
+                </>
+              ) : (
+                <Button
+                  size="sm"
+                  onClick={handleButtonClick}
+                  disabled={isEventExpired || isSoldOut || (!authenticated && !onConnectWallet)}
+                  variant={getButtonVariant()}
+                  className={!authenticated ? "bg-purple-600 hover:bg-purple-700" : actionType === 'manage' ? '' : "bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"}
+                >
+                  {getButtonText()}
+                </Button>
+              )}
+              {showShareButton && (
+                <ShareButton
+                  url={`${window.location.origin}/event/${event.id}`}
+                  title={event.title}
+                  description={stripHtml(event.description)}
+                />
+              )}
+            </div>
           )}
         </div>
       </CardContent>

@@ -3,7 +3,6 @@ import React, { useRef, useState } from 'react';
 import { usePrivy } from '@privy-io/react-auth';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
 import { Calendar } from '@/components/ui/calendar';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Button } from '@/components/ui/button';
@@ -12,6 +11,7 @@ import { format } from 'date-fns';
 import { EventFormData } from '@/pages/CreateEvent';
 import { uploadEventImage } from '@/utils/supabaseDraftStorage';
 import { useToast } from '@/hooks/use-toast';
+import { RichTextEditor } from '@/components/ui/rich-text/RichTextEditor';
 
 interface EventBasicInfoProps {
   formData: EventFormData;
@@ -28,7 +28,7 @@ export const EventBasicInfo: React.FC<EventBasicInfoProps> = ({
   const { toast } = useToast();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isUploading, setIsUploading] = useState(false);
-  const isValid = formData.title.trim() && formData.description.trim() && formData.date && formData.time;
+  const isValid = formData.title.trim() && (formData.description && formData.description.trim() !== '<p></p>' && formData.description.trim() !== '') && formData.date && formData.time;
 
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -192,14 +192,13 @@ export const EventBasicInfo: React.FC<EventBasicInfoProps> = ({
       {/* Event Description */}
       <div className="space-y-2">
         <Label htmlFor="description">Description *</Label>
-        <Textarea
-          id="description"
-          placeholder="Tell people what your event is about..."
+        <RichTextEditor
           value={formData.description}
-          onChange={(e) => updateFormData({ description: e.target.value })}
-          rows={4}
+          onChange={(value) => updateFormData({ description: value })}
+          placeholder="Tell people what your event is about..."
+          disabled={isUploading}
         />
-        {!formData.description.trim() && (
+        {(!formData.description || formData.description.trim() === '<p></p>' || formData.description.trim() === '') && (
           <p className="text-sm text-red-600">Event description is required</p>
         )}
       </div>

@@ -101,3 +101,72 @@
     @apply bg-background text-foreground;
   }
 }
+
+/* Card-specific rich text styles */
+@layer components {
+  .prose-card {
+    @apply text-gray-600;
+  }
+
+  .prose-card p {
+    margin: 0;
+    line-height: 1.4;
+  }
+
+  .prose-card h1,
+  .prose-card h2,
+  .prose-card h3,
+  .prose-card h4,
+  .prose-card h5,
+  .prose-card h6 {
+    font-size: 0.875rem;
+    font-weight: 600;
+    margin: 0;
+    line-height: 1.3;
+    color: inherit;
+  }
+
+  .prose-card strong {
+    font-weight: 600;
+  }
+
+  .prose-card em {
+    font-style: italic;
+  }
+
+  .prose-card a {
+    color: inherit;
+    text-decoration: underline;
+    text-underline-offset: 2px;
+  }
+
+  .prose-card a:hover {
+    opacity: 0.8;
+  }
+
+  .prose-card ul,
+  .prose-card ol {
+    margin: 0;
+    padding-left: 1rem;
+  }
+
+  .prose-card li {
+    margin: 0;
+    line-height: 1.4;
+  }
+
+  .prose-card blockquote {
+    margin: 0;
+    padding-left: 0.5rem;
+    border-left: 2px solid hsl(var(--border));
+    font-style: italic;
+  }
+
+  .prose-card code {
+    background-color: hsl(var(--muted));
+    padding: 0.125rem 0.25rem;
+    border-radius: 0.25rem;
+    font-size: 0.8em;
+    font-family: ui-monospace, SFMono-Regular, "SF Mono", monospace;
+  }
+}

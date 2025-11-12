@@ -4,15 +4,16 @@ import { Button } from "@/components/ui/button";
 import { useNavigate } from 'react-router-dom';
 import { usePrivy } from '@privy-io/react-auth';
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { 
-  Settings, 
-  Shield, 
-  Ticket, 
+import {
+  Settings,
+  Shield,
+  Ticket,
   BarChart3,
   Users,
   Database,
   Zap,
-  ExternalLink
+  ExternalLink,
+  Network
 } from 'lucide-react';
 
 const AdminDashboard: React.FC = () => {
@@ -20,6 +21,14 @@ const AdminDashboard: React.FC = () => {
   const navigate = useNavigate();
 
   const adminSections = [
+    {
+      title: "Network Management",
+      description: "Configure blockchain networks and RPC endpoints",
+      icon: Network,
+      color: "bg-purple-500/10 border-purple-500/20",
+      iconColor: "text-purple-600",
+      path: "/admin/networks"
+    },
     {
       title: "Schemas & Attestations",
       description: "Manage attestation schemas and view attestation data",
@@ -29,7 +38,7 @@ const AdminDashboard: React.FC = () => {
       path: "/admin/schemas"
     },
     {
-      title: "Tickets & Events", 
+      title: "Tickets & Events",
       description: "Manage events, grant keys manually, and view analytics",
       icon: Ticket,
       color: "bg-green-500/10 border-green-500/20",
@@ -40,8 +49,8 @@ const AdminDashboard: React.FC = () => {
       title: "Service Account",
       description: "View service account details and transaction history",
       icon: Settings,
-      color: "bg-purple-500/10 border-purple-500/20", 
-      iconColor: "text-purple-600",
+      color: "bg-gray-500/10 border-gray-500/20",
+      iconColor: "text-gray-600",
       path: "/admin/service-account"
     },
     {

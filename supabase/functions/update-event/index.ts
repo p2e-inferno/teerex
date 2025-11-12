@@ -224,6 +224,7 @@ serve(async (req) => {
       }
       if ("time" in formData) eventData.time = formData.time;
       if ("location" in formData) eventData.location = formData.location;
+      if ("eventType" in formData) eventData.event_type = formData.eventType;
       if ("category" in formData) eventData.category = formData.category;
       if ("imageUrl" in formData) {
         // Only touch image_url if imageUrl was provided explicitly

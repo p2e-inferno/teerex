@@ -12,6 +12,7 @@ export interface PublishedEvent {
   date: Date | null;
   time: string;
   location: string;
+  event_type: 'physical' | 'virtual';
   capacity: number;
   price: number;
   currency: 'ETH' | 'USDC' | 'FREE';
@@ -64,6 +65,7 @@ export const savePublishedEvent = async (
       date: formData.date?.toISOString(),
       time: formData.time,
       location: formData.location,
+      event_type: formData.eventType,
       capacity: formData.capacity,
       // For crypto use the crypto price; otherwise 0
       price: isCrypto ? formData.price : 0,

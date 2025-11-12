@@ -17,6 +17,8 @@ import Admin from "./pages/Admin";
 import AdminDashboard from "./pages/AdminDashboard";
 import AdminEvents from "./pages/AdminEvents";
 import AdminGaslessConfig from "./pages/AdminGaslessConfig";
+import AdminGasSponsorship from "./pages/AdminGasSponsorship";
+import AdminNetworks from "./pages/AdminNetworks";
 import AdminRoute from "./components/routes/AdminRoute";
 import NotFound from "./pages/NotFound";
 
@@ -38,9 +40,11 @@ const App = () => {
               <Route path="/attestations" element={<Attestations />} />
               <Route path="/drafts" element={<Drafts />} />
               <Route path="/admin" element={<AdminRoute><AdminDashboard /></AdminRoute>} />
+              <Route path="/admin/networks" element={<AdminRoute><AdminNetworks /></AdminRoute>} />
               <Route path="/admin/schemas" element={<AdminRoute><Admin /></AdminRoute>} />
               <Route path="/admin/events" element={<AdminRoute><AdminEvents /></AdminRoute>} />
               <Route path="/admin/gasless" element={<AdminRoute><AdminGaslessConfig /></AdminRoute>} />
+              <Route path="/admin/gas-sponsorship" element={<AdminRoute><AdminGasSponsorship /></AdminRoute>} />
               <Route path="/event/:id" element={<EventDetails />} />
               {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
               <Route path="*" element={<NotFound />} />

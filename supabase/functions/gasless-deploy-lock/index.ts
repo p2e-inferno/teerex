@@ -1,0 +1,167 @@
+import { serve } from 'https://deno.land/std@0.224.0/http/server.ts';
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.50.0';
+import { Contract, Wallet, JsonRpcProvider, ethers } from 'https://esm.sh/ethers@6.14.4';
+import { corsHeaders, buildPreflightHeaders } from '../_shared/cors.ts';
+import UnlockABI from '../_shared/abi/Unlock.json' assert { type: 'json' };
+import PublicLockABI from '../_shared/abi/PublicLockV15.json' assert { type: 'json' };
+import { verifyPrivyToken, validateUserWallet } from '../_shared/privy.ts';
+import { checkRateLimit, logActivity } from '../_shared/rate-limit.ts';
+import { logGasTransaction } from '../_shared/gas-tracking.ts';
+import { handleError } from '../_shared/error-handler.ts';
+import { RATE_LIMITS, SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, SERVICE_PK } from '../_shared/constants.ts';
+import { validateChain } from '../_shared/network-helpers.ts';
+
+serve(async (req) => {
+  if (req.method === 'OPTIONS') {
+    return new Response('ok', { headers: buildPreflightHeaders(req) });
+  }
+
+  let privyUserId: string;
+  try {
+    // 1. Verify Privy JWT
+    privyUserId = await verifyPrivyToken(req.headers.get('X-Privy-Authorization'));
+
+    // 2. Parse request body
+    const body = await req.json();
+    const {
+      name,
+      expirationDuration,
+      currency,
+      price,
+      maxNumberOfKeys,
+      chain_id,
+      maxKeysPerAddress = 1,
+      transferable = true,
+      requiresApproval = false,
+      creator_address,
+    } = body;
+
+    // 3. Validate creator wallet
+    const normalizedCreator = await validateUserWallet(
+      privyUserId,
+      creator_address,
+      'creator_wallet_not_authorized'
+    );
+
+    // 4. Create Supabase client and validate chain
+    const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+
+    const networkConfig = await validateChain(supabase, chain_id);
+    if (!networkConfig) {
+      return new Response(
+        JSON.stringify({ ok: false, error: 'chain_not_supported' }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 200 }
+      );
+    }
+
+    // Validate that network has required configuration for lock deployment
+    if (!networkConfig.rpc_url || !networkConfig.unlock_factory_address) {
+      return new Response(
+        JSON.stringify({ ok: false, error: 'network_not_fully_configured' }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 200 }
+      );
+    }
+
+    // 5. Check rate limit
+    const rateLimit = await checkRateLimit(
+      supabase,
+      privyUserId,
+      'lock_deploy',
+      RATE_LIMITS.DEPLOY
+    );
+
+    if (!rateLimit.allowed) {
+      return new Response(
+        JSON.stringify({
+          ok: false,
+          error: 'limit_exceeded',
+          limits: { remaining_today: 0 },
+        }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 200 }
+      );
+    }
+
+    // 6. Setup provider and contracts using network config from database
+    const provider = new JsonRpcProvider(networkConfig.rpc_url);
+    const signer = new Wallet(SERVICE_PK, provider);
+    const unlock = new Contract(networkConfig.unlock_factory_address, UnlockABI, signer);
+
+    // 7. Compute token address and price
+    let tokenAddress = ethers.ZeroAddress;
+    let keyPrice = 0n;
+
+    if (currency === 'USDC' && networkConfig.usdc_token_address) {
+      tokenAddress = networkConfig.usdc_token_address;
+      keyPrice = ethers.parseUnits(String(price), 6); // USDC has 6 decimals
+    } else if (currency === 'ETH') {
+      tokenAddress = ethers.ZeroAddress;
+      keyPrice = ethers.parseEther(String(price));
+    } else if (currency === 'FREE') {
+      tokenAddress = ethers.ZeroAddress;
+      keyPrice = 0n;
+    }
+
+    // 9. Encode initialize calldata (following lockUtils.ts pattern)
+    const lockInterface = new ethers.Interface(PublicLockABI);
+    const initializeCalldata = lockInterface.encodeFunctionData('initialize', [
+      normalizedCreator, // _lockCreator (creator owns the lock)
+      expirationDuration,
+      tokenAddress,
+      keyPrice,
+      maxNumberOfKeys,
+      name,
+    ]);
+
+    // 10. Deploy lock via createUpgradeableLockAtVersion
+    const tx = await unlock.createUpgradeableLockAtVersion(initializeCalldata, 14);
+    const receipt = await tx.wait();
+
+    // 11. Parse lock address from event logs
+    const unlockInterface = new ethers.Interface(UnlockABI);
+    const event = receipt.logs
+      .map((log: any) => {
+        try {
+          return unlockInterface.parseLog({
+            topics: log.topics,
+            data: log.data
+          });
+        } catch {
+          return null;
+        }
+      })
+      .find((e: any) => e?.name === 'NewLock');
+
+    if (!event) {
+      throw new Error('Lock deployment failed: NewLock event not found');
+    }
+
+    const lockAddress = event.args.newLockAddress;
+
+    // 12. Add service wallet as lock manager
+    const lock = new Contract(lockAddress, PublicLockABI, signer);
+    const addManagerTx = await lock.addLockManager(await signer.getAddress());
+    await addManagerTx.wait();
+
+    // 13. Log activity and gas cost in parallel
+    await Promise.all([
+      logActivity(supabase, privyUserId, 'lock_deploy', chain_id, null, {
+        name,
+        lock_address: lockAddress,
+      }),
+      logGasTransaction(supabase, receipt, tx, chain_id, await signer.getAddress()),
+    ]);
+
+    // 14. Return success
+    return new Response(
+      JSON.stringify({
+        ok: true,
+        lock_address: lockAddress,
+        tx_hash: tx.hash || receipt.transactionHash,
+        limits: { remaining_today: rateLimit.remaining - 1 },
+      }),
+      { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 200 }
+    );
+  } catch (e: any) {
+    return handleError(e, privyUserId);
+  }
+});

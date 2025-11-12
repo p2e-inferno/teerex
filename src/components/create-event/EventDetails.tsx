@@ -3,18 +3,22 @@ import React from 'react';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { EventFormData } from '@/pages/CreateEvent';
+import { MapPin, Globe } from 'lucide-react';
 
 interface EventDetailsProps {
   formData: EventFormData;
   updateFormData: (updates: Partial<EventFormData>) => void;
   onNext: () => void;
+  editingEventId?: string;
 }
 
 export const EventDetails: React.FC<EventDetailsProps> = ({
   formData,
   updateFormData,
-  onNext
+  onNext,
+  editingEventId
 }) => {
   const categories = [
     'Conference',
@@ -53,19 +57,92 @@ export const EventDetails: React.FC<EventDetailsProps> = ({
         )}
       </div>
 
+      {/* Event Type */}
+      <div className="space-y-2">
+        <Label>Event Type *</Label>
+        <RadioGroup
+          value={formData.eventType}
+          onValueChange={(value: 'physical' | 'virtual') => updateFormData({ eventType: value })}
+          className="flex gap-6"
+        >
+          <div className="flex items-center space-x-2">
+            <RadioGroupItem value="physical" id="physical" />
+            <Label htmlFor="physical" className="flex items-center gap-2 cursor-pointer">
+              <MapPin className="h-4 w-4" />
+              In-person
+            </Label>
+          </div>
+          <div className="flex items-center space-x-2">
+            <RadioGroupItem value="virtual" id="virtual" />
+            <Label htmlFor="virtual" className="flex items-center gap-2 cursor-pointer">
+              <Globe className="h-4 w-4" />
+              Virtual
+            </Label>
+          </div>
+        </RadioGroup>
+        <p className="text-sm text-gray-600">
+          Choose whether your event will be held in person or online
+        </p>
+      </div>
+
+      {/* Location */}
+      {formData.eventType === 'physical' && (
+        <div className="space-y-2">
+          <Label htmlFor="location">Location *</Label>
+          <Input
+            id="location"
+            placeholder="Enter the event location"
+            value={formData.location}
+            onChange={(e) => updateFormData({ location: e.target.value })}
+          />
+          {!formData.location && (
+            <p className="text-sm text-red-600">Location is required for in-person events</p>
+          )}
+        </div>
+      )}
+
+      {formData.eventType === 'virtual' && (
+        <div className="space-y-2">
+          <Label htmlFor="location">Virtual Link *</Label>
+          <Input
+            id="location"
+            type="url"
+            placeholder="https://zoom.us/meeting/..."
+            value={formData.location}
+            onChange={(e) => updateFormData({ location: e.target.value })}
+          />
+          {!formData.location && (
+            <p className="text-sm text-red-600">Virtual meeting link is required</p>
+          )}
+        </div>
+      )}
+
       {/* Capacity */}
       <div className="space-y-2">
-        <Label htmlFor="capacity">Event Capacity *</Label>
-        <Input
-          id="capacity"
-          type="number"
-          placeholder="How many people can attend?"
-          value={formData.capacity}
-          onChange={(e) => updateFormData({ capacity: parseInt(e.target.value) || 0 })}
-          min="1"
-        />
-        <p className="text-sm text-gray-600">Set the maximum number of attendees</p>
-        {formData.capacity <= 0 && (
+        <Label>Event Capacity{!editingEventId && ' *'}</Label>
+        {editingEventId ? (
+          // Read-only display for editing existing events
+          <div className="px-3 py-2 bg-gray-50 border border-gray-200 rounded-md text-gray-900 font-medium">
+            {formData.capacity} attendees
+          </div>
+        ) : (
+          // Editable input for creating new events
+          <Input
+            id="capacity"
+            type="number"
+            placeholder="How many people can attend?"
+            value={formData.capacity}
+            onChange={(e) => updateFormData({ capacity: parseInt(e.target.value) || 0 })}
+            min="1"
+          />
+        )}
+        <p className="text-sm text-gray-600">
+          {editingEventId
+            ? "Capacity is set during event creation and cannot be changed."
+            : "Set the maximum number of attendees"
+          }
+        </p>
+        {!editingEventId && formData.capacity <= 0 && (
           <p className="text-sm text-red-600">Capacity must be greater than 0</p>
         )}
       </div>
