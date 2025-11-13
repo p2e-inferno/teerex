@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Calendar, Clock, MapPin, Users, Ticket, Save } from 'lucide-react';
 import { format } from 'date-fns';
 import { EventFormData } from '@/pages/CreateEvent';
+import { RichTextDisplay } from '@/components/ui/rich-text/RichTextDisplay';
 
 interface EventPreviewProps {
   formData: EventFormData;
@@ -76,9 +77,12 @@ export const EventPreview: React.FC<EventPreviewProps> = ({
             {/* Description */}
             <div>
               <h4 className="font-medium text-gray-900 mb-2">About this event</h4>
-              <p className="text-gray-600 leading-relaxed">
-                {formData.description || 'Event description will appear here...'}
-              </p>
+              <div className="text-gray-600">
+                <RichTextDisplay
+                  content={formData.description || ''}
+                  className="prose prose-sm leading-relaxed"
+                />
+              </div>
             </div>
 
             {/* Event Details */}

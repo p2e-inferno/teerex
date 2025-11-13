@@ -12,6 +12,7 @@ import { DraftCard } from '@/components/create-event/DraftCard';
 import { useToast } from '@/hooks/use-toast';
 import { deployLock, getBlockExplorerUrl } from '@/utils/lockUtils';
 import { baseSepolia } from 'wagmi/chains';
+import { useGaslessFallback } from '@/hooks/useGasless';
 
 const Drafts = () => {
   const { authenticated, user } = usePrivy();
@@ -21,6 +22,20 @@ const Drafts = () => {
   const [drafts, setDrafts] = useState<EventDraft[]>([]);
   const [isPublishing, setIsPublishing] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+
+  // Gasless deployment fallback hook
+  const deployLockWithGasless = useGaslessFallback(
+    'gasless-deploy-lock',
+    async (lockConfig: any) => {
+      // Fallback: client-side deployment
+      toast({
+        title: "Deploying with wallet",
+        description: "Please confirm the transaction in your wallet...",
+      });
+      return await deployLock(lockConfig, wallets[0], lockConfig.chainId);
+    },
+    true // enabled by default
+  );
 
   useEffect(() => {
     const loadDrafts = async () => {
@@ -84,18 +99,54 @@ const Drafts = () => {
 
       console.log('Using wallet for publishing:', wallet);
 
-      const lockConfig = {
+      const chainId = draft.chain_id ?? baseSepolia.id;
+
+      // Determine payment method
+      const paymentMethod = (draft.payment_methods && draft.payment_methods[0])
+        ? (draft.payment_methods[0] as 'free' | 'crypto' | 'fiat')
+        : (draft.currency && draft.currency !== 'FREE' ? 'crypto' : 'free');
+
+      // Determine price based on payment method
+      const isCrypto = paymentMethod === 'crypto';
+      const isFiat = paymentMethod === 'fiat';
+      const eventPrice = isCrypto ? (draft.price || 0) : (isFiat ? (draft.ngn_price || 0) : 0);
+
+      // Try gasless deployment first, fallback to client-side if it fails
+      const result: any = await deployLockWithGasless({
         name: draft.title,
+        expirationDuration: 86400,
+        currency: draft.currency || 'FREE',
+        price: eventPrice,
+        maxNumberOfKeys: draft.capacity,
+        chain_id: chainId,
+        maxKeysPerAddress: 1,
+        transferable: true,
+        requiresApproval: false,
+        creator_address: wallet.address?.toLowerCase(),
+        // Fields for idempotency hash
+        eventDate: draft.date ? new Date(draft.date).toISOString() : null,
+        eventTime: draft.time || '',
+        eventLocation: draft.location || '',
+        paymentMethod: paymentMethod,
+        // Include additional properties for fallback
         symbol: `${draft.title.slice(0, 3).toUpperCase()}TIX`,
         keyPrice: draft.currency === 'FREE' ? '0' : draft.price.toString(),
-        maxNumberOfKeys: draft.capacity,
-        expirationDuration: 86400,
-        currency: draft.currency,
-        price: draft.price
-      };
+        chainId: chainId,
+      });
 
-      const deploymentResult = await deployLock(lockConfig, wallet, draft.chain_id ?? baseSepolia.id);
-      
+      // Normalize response format (gasless returns {ok, lock_address, tx_hash}, client returns {success, lockAddress, transactionHash})
+      const deploymentResult = result.ok
+        ? { success: true, lockAddress: result.lock_address, transactionHash: result.tx_hash }
+        : result;
+
+      // Show success message for gasless
+      if (result.ok) {
+        toast({
+          title: "Lock deployed!",
+          description: "Gas sponsored by TeeRex ✨",
+        });
+      }
+
       if (deploymentResult.success && deploymentResult.transactionHash && deploymentResult.lockAddress) {
         // Convert draft to EventFormData format
         const formData = {
@@ -154,9 +205,53 @@ const Drafts = () => {
       }
     } catch (error) {
       console.error('Error publishing event:', error);
-      
+
+      // Handle duplicate event detection
+      if (error instanceof Error && error.message === 'DUPLICATE_EVENT') {
+        const eventId = (error as any).eventId;
+        const eventTitle = (error as any).eventTitle;
+
+        toast({
+          title: "Event Already Exists",
+          description: (
+            <div className="space-y-2">
+              <p className="text-sm">An event with these core details already exists:</p>
+              <p className="font-medium text-sm">"{eventTitle}"</p>
+              <p className="text-xs text-gray-600 mt-2">
+                The event was already published from this draft. You can view it in your events.
+              </p>
+              <div className="flex gap-2 mt-3">
+                <Button
+                  size="sm"
+                  onClick={() => {
+                    toast.dismiss();
+                    navigate(`/event/${eventId}`);
+                  }}
+                >
+                  View Event
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => {
+                    toast.dismiss();
+                    navigate('/my-events');
+                  }}
+                >
+                  My Events
+                </Button>
+              </div>
+            </div>
+          ),
+          duration: 15000, // 15 seconds to give time to read
+        });
+
+        setIsPublishing(null);
+        return;
+      }
+
       let errorMessage = 'There was an error publishing your event. Please try again.';
-      
+
       if (error instanceof Error) {
         if (error.message.includes('User rejected')) {
           errorMessage = 'Transaction was cancelled. Please try again when ready.';
@@ -172,6 +267,8 @@ const Drafts = () => {
         description: errorMessage,
         variant: "destructive"
       });
+
+      setIsPublishing(null);
     } finally {
       setIsPublishing(null);
     }

@@ -48,6 +48,7 @@ import { useEventAttestationState } from "@/hooks/useEventAttestationState";
 import { getDisableMessage } from "@/utils/attestationMessages";
 import { getBatchAttestationAddress } from "@/lib/config/contract-config";
 import { format } from "date-fns";
+import { useEventTicketRealtime } from "@/hooks/useEventTicketRealtime";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -69,10 +70,17 @@ const EventDetails = () => {
   const { encodeEventLikeData, encodeEventAttendanceData } = useAttestationEncoding();
 
   const [event, setEvent] = useState<PublishedEvent | null>(null);
-  const [keysSold, setKeysSold] = useState<number>(0);
   const [userTicketCount, setUserTicketCount] = useState<number>(0);
   const [maxTicketsPerUser, setMaxTicketsPerUser] = useState<number>(1);
   const [isLoading, setIsLoading] = useState(true);
+
+  // Real-time ticket count subscription
+  const { ticketsSold: keysSold, isLoading: isLoadingTickets } = useEventTicketRealtime({
+    eventId: event?.id || '',
+    lockAddress: event?.lock_address || '',
+    chainId: event?.chain_id || baseSepolia.id,
+    enabled: !!event, // Only enable when event is loaded
+  });
   // Modal state management - only one modal can be open at a time
   const [activeModal, setActiveModal] = useState<
     | "none"
@@ -106,10 +114,6 @@ const EventDetails = () => {
         }
 
         setEvent(foundEvent);
-
-        // Get tickets sold
-        const sold = await getTotalKeys(foundEvent.lock_address, foundEvent.chain_id);
-        setKeysSold(sold);
 
         // Get max tickets per user for this event
         const maxKeys = await getMaxKeysPerAddress(foundEvent.lock_address, undefined, foundEvent.chain_id);

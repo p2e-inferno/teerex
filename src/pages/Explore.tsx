@@ -17,6 +17,7 @@ import { PaystackPaymentDialog } from '@/components/events/PaystackPaymentDialog
 import { TicketProcessingDialog } from '@/components/events/TicketProcessingDialog';
 import { PaymentMethodDialog } from '@/components/events/PaymentMethodDialog';
 import { fetchEventsPage, fetchKeysForPage, ExploreFilters } from '@/lib/explore/exploreData';
+import { useMultiEventTicketRealtime } from '@/hooks/useMultiEventTicketRealtime';
 
 const Explore = () => {
   const PAGE_SIZE = 12;
@@ -32,8 +33,10 @@ const Explore = () => {
   const [selectedEvent, setSelectedEvent] = useState<PublishedEvent | null>(null);
   const [activeModal, setActiveModal] = useState<'none' | 'payment-method' | 'crypto-purchase' | 'paystack-payment' | 'ticket-processing'>('none');
   const [paymentData, setPaymentData] = useState<any>(null);
-  const [keysSoldMap, setKeysSoldMap] = useState<Record<string, number>>({});
   const loadMoreRef = useRef<HTMLDivElement | null>(null);
+
+  // Real-time ticket counts for all displayed events
+  const { keysSoldMap, refreshAllTicketCounts } = useMultiEventTicketRealtime(events);
 
   const [filters, setFilters] = useState<ExploreFilters>({ sortBy: 'date-desc', isFree: null });
   const [filtersOpen, setFiltersOpen] = useState(false);
@@ -45,7 +48,6 @@ const Explore = () => {
     setPage(1);
     setHasMore(true);
     setEvents([]);
-    setKeysSoldMap({});
     try {
       const result = await fetchEventsPage(1, PAGE_SIZE, {
         ...filters,
@@ -55,8 +57,7 @@ const Explore = () => {
       });
       setEvents(result.events);
       setHasMore(result.hasMore);
-      const keys = await fetchKeysForPage(result.events);
-      setKeysSoldMap(keys);
+      // Ticket counts will be fetched by useMultiEventTicketRealtime hook
     } catch (error) {
       console.error('Error loading events:', error);
       toast({
@@ -92,8 +93,7 @@ const Explore = () => {
       setEvents(prev => [...prev, ...result.events]);
       setPage(nextPage);
       setHasMore(result.hasMore);
-      const keys = await fetchKeysForPage(result.events);
-      setKeysSoldMap(prev => ({ ...prev, ...keys }));
+      // Ticket counts will be fetched by useMultiEventTicketRealtime hook
     } catch (error) {
       console.error('Error loading more events:', error);
     } finally {
@@ -160,8 +160,7 @@ const Explore = () => {
   const closeAllModals = () => {
     setActiveModal('none');
     setSelectedEvent(null);
-    // Refresh event data to show updated spot count
-    loadFirstPage();
+    // No manual refresh needed - real-time subscription will update ticket counts
   };
 
   const renderSkeleton = () => (

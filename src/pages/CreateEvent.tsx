@@ -201,7 +201,7 @@ const CreateEvent = () => {
     switch (step) {
       case 1:
         return !!(formData.title.trim() && formData.description.trim() && formData.date && formData.time);
-      case 2:
+      case 2: {
         // Validate basic details
         const hasBasicDetails = !!(formData.category && (editingEventId || formData.capacity > 0));
 
@@ -211,6 +211,7 @@ const CreateEvent = () => {
           : !!formData.location.trim(); // Virtual events also need a link
 
         return hasBasicDetails && hasValidLocation;
+      }
       case 3:
         // Skip ticket validation when editing - settings are read-only
         if (editingEventId) {
@@ -309,13 +310,18 @@ const CreateEvent = () => {
         name: formData.title,
         expirationDuration: 86400,
         currency: formData.paymentMethod === 'crypto' ? formData.currency : 'FREE',
-        price: formData.price,
+        price: formData.paymentMethod === 'crypto' ? formData.price : (formData.paymentMethod === 'fiat' ? formData.ngnPrice : 0),
         maxNumberOfKeys: formData.capacity,
         chain_id: lockConfig.chainId,
         maxKeysPerAddress: 1,
         transferable: true,
         requiresApproval: false,
         creator_address: wallet.address?.toLowerCase(),
+        // Fields for idempotency hash
+        eventDate: formData.date?.toISOString() || null,
+        eventTime: formData.time,
+        eventLocation: formData.location,
+        paymentMethod: formData.paymentMethod,
         // Include lockConfig properties for fallback
         ...lockConfig
       });
@@ -394,9 +400,53 @@ const CreateEvent = () => {
       }
     } catch (error) {
       console.error('Error creating event:', error);
-      
+
+      // Handle duplicate event detection
+      if (error instanceof Error && error.message === 'DUPLICATE_EVENT') {
+        const eventId = (error as any).eventId;
+        const eventTitle = (error as any).eventTitle;
+
+        toast({
+          title: "Event Already Exists",
+          description: (
+            <div className="space-y-2">
+              <p className="text-sm">An event with these core details already exists:</p>
+              <p className="font-medium text-sm">"{eventTitle}"</p>
+              <p className="text-xs text-gray-600 mt-2">
+                If you want to update the description, image, or other details, please view the existing event.
+              </p>
+              <div className="flex gap-2 mt-3">
+                <Button
+                  size="sm"
+                  onClick={() => {
+                    toast.dismiss();
+                    navigate(`/event/${eventId}`);
+                  }}
+                >
+                  View Event
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => {
+                    toast.dismiss();
+                    navigate('/my-events');
+                  }}
+                >
+                  My Events
+                </Button>
+              </div>
+            </div>
+          ),
+          duration: 15000, // 15 seconds to give time to read
+        });
+
+        setIsCreating(false);
+        return;
+      }
+
       let errorMessage = 'There was an error creating your event. Please try again.';
-      
+
       if (error instanceof Error) {
         if (error.message.includes('User rejected')) {
           errorMessage = 'Transaction was cancelled. Please try again when ready.';
@@ -412,6 +462,8 @@ const CreateEvent = () => {
         description: errorMessage,
         variant: "destructive"
       });
+
+      setIsCreating(false);
     } finally {
       setIsCreating(false);
     }

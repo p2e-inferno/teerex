@@ -104,7 +104,7 @@
     "type": "function"
   },
   {
-    "inputs": [{ "internalType": "address", "name": "_user", "type": "address" }],
+    "inputs": [],
     "name": "maxKeysPerAddress",
     "outputs": [{ "internalType": "uint256", "name": "", "type": "uint256" }],
     "stateMutability": "view",

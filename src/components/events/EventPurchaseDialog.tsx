@@ -144,28 +144,109 @@ export const EventPurchaseDialog: React.FC<EventPurchaseDialogProps> = ({ event,
 
     // FREE tickets: try gasless first, fallback to client-side
     if (event?.currency === 'FREE') {
-      const result: any = await purchaseFreeTicketWithGasless({
-        event_id: event.id,
-        lock_address: event.lock_address,
-        chain_id: event.chain_id,
-        recipient: wallets[0]?.address?.toLowerCase(),
-        user_email: email,
-      }, email);
+      setIsPurchasing(true);
+      try {
+        const gaslessArgs = {
+          event_id: event.id,
+          lock_address: event.lock_address,
+          chain_id: event.chain_id,
+          recipient: wallets[0]?.address?.toLowerCase(),
+          user_email: email,
+        };
+        const result: any = await purchaseFreeTicketWithGasless(gaslessArgs, email);
 
-      if (result.ok) {
-        sonnerToast.success('Ticket claimed! Gas sponsored by TeeRex ✨');
-        toast({
-          title: 'Ticket Claimed!',
-          description: 'Your free ticket has been issued. Gas sponsored by TeeRex!',
-        });
-        onClose();
+        if (result.ok) {
+          // Check if already claimed (idempotent response)
+          if (result.already_claimed) {
+            const explorerUrl = result.purchase_tx_hash
+              ? getBlockExplorerUrl(result.purchase_tx_hash, event.chain_id)
+              : null;
+
+            toast({
+              title: result.recovered ? 'Ticket Recovered! ✅' : 'Already Claimed',
+              description: (
+                <div>
+                  <p>
+                    {result.recovered
+                      ? 'Your ticket record has been recovered. You already own this ticket on-chain.'
+                      : 'You have already claimed a ticket for this event.'}
+                  </p>
+                  {explorerUrl && (
+                    <a href={explorerUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-blue-600 hover:text-blue-800 underline mt-2">
+                      View Transaction <ExternalLink className="w-3 h-3" />
+                    </a>
+                  )}
+                </div>
+              ),
+            });
+            onClose();
+            return;
+          }
+
+          // Normal gasless purchase succeeded
+          const explorerUrl = result.purchase_tx_hash
+            ? getBlockExplorerUrl(result.purchase_tx_hash, event.chain_id)
+            : null;
+
+          toast({
+            title: 'Ticket Claimed! ✨',
+            description: (
+              <div>
+                <p>Your free ticket has been issued. Gas sponsored by TeeRex!</p>
+                {explorerUrl && (
+                  <a href={explorerUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-blue-600 hover:text-blue-800 underline mt-2">
+                    View Transaction <ExternalLink className="w-3 h-3" />
+                  </a>
+                )}
+                {result.limits?.remaining_today !== undefined && (
+                  <p className="text-xs text-muted-foreground mt-2">
+                    {result.limits.remaining_today} gasless tickets remaining today
+                  </p>
+                )}
+                {result.db_sync_status === 'partial' && (
+                  <p className="text-xs text-yellow-600 mt-2">
+                    ⚠️ Ticket minted successfully, but some records may sync later.
+                  </p>
+                )}
+              </div>
+            ),
+          });
+          onClose();
+        } else if (result.error) {
+          // Gasless returned an error before fallback
+          toast({
+            title: 'Gasless Purchase Failed',
+            description: getErrorMessage(result.error),
+            variant: 'destructive',
+          });
+        }
+        // If result.success is false but no result.ok, fallback was already called
+      } finally {
+        setIsPurchasing(false);
       }
-      // If gasless failed, handleClientSidePurchase was already called as fallback
       return;
     }
 
     // ETH/USDC tickets: client-side purchase with email storage
     await handleClientSidePurchase(email);
+  };
+
+  // Helper to convert error codes to user-friendly messages
+  const getErrorMessage = (errorCode: string): string => {
+    const errorMessages: Record<string, string> = {
+      'recipient_wallet_not_authorized': 'Your wallet is not authorized for this action.',
+      'invalid_email_format': 'Please provide a valid email address.',
+      'chain_not_supported': 'This blockchain network is not supported.',
+      'network_not_fully_configured': 'Network configuration is incomplete.',
+      'event_not_found': 'Event not found.',
+      'only_free_tickets_supported': 'Only free tickets can use gasless purchase.',
+      'lock_address_mismatch': 'Event configuration mismatch.',
+      'chain_id_mismatch': 'Chain ID mismatch.',
+      'limit_exceeded': 'Daily gasless limit exceeded. Please use your wallet instead.',
+      'max_keys_reached': 'You have reached the maximum number of tickets allowed for this event.',
+      'ticket_already_claimed': 'You have already claimed a ticket for this event.',
+    };
+    return errorMessages[errorCode] || errorCode;
   };
 
   if (!event) return null;

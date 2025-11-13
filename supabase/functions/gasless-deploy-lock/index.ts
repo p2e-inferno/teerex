@@ -11,12 +11,55 @@ import { handleError } from '../_shared/error-handler.ts';
 import { RATE_LIMITS, SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, SERVICE_PK } from '../_shared/constants.ts';
 import { validateChain } from '../_shared/network-helpers.ts';
 
+/**
+ * Creates a deterministic SHA-256 hash from event data for idempotency.
+ * Must match the hash generation logic in src/utils/eventIdempotency.ts
+ */
+async function createEventHash(data: {
+  creator_id: string;
+  title: string;
+  date: string | null;
+  time: string;
+  location: string;
+  capacity: number;
+  price: number;
+  currency: string;
+  paymentMethod: string;
+}): Promise<string> {
+  // Normalize data to ensure consistency
+  const normalized = {
+    creator_id: data.creator_id.trim().toLowerCase(),
+    title: data.title.trim().toLowerCase(),
+    date: data.date || '',
+    time: data.time.trim(),
+    location: data.location.trim().toLowerCase(),
+    capacity: data.capacity,
+    price: data.price,
+    currency: data.currency.toUpperCase(),
+    paymentMethod: data.paymentMethod.toLowerCase(),
+  };
+
+  // Create canonical string representation (sorted keys for consistency)
+  const canonical = JSON.stringify(normalized, Object.keys(normalized).sort());
+
+  // Generate SHA-256 hash using Web Crypto API
+  const encoder = new TextEncoder();
+  const dataBuffer = encoder.encode(canonical);
+  const hashBuffer = await crypto.subtle.digest('SHA-256', dataBuffer);
+
+  // Convert to hex string
+  const hashArray = Array.from(new Uint8Array(hashBuffer));
+  const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+
+  return hashHex;
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: buildPreflightHeaders(req) });
   }
 
-  let privyUserId: string;
+  let privyUserId: string | undefined;
   try {
     // 1. Verify Privy JWT
     privyUserId = await verifyPrivyToken(req.headers.get('X-Privy-Authorization'));
@@ -31,9 +74,14 @@ serve(async (req) => {
       maxNumberOfKeys,
       chain_id,
       maxKeysPerAddress = 1,
-      transferable = true,
+      transferable = false,
       requiresApproval = false,
       creator_address,
+      // Additional fields needed for hash generation
+      eventDate,
+      eventTime,
+      eventLocation,
+      paymentMethod,
     } = body;
 
     // 3. Validate creator wallet
@@ -62,6 +110,53 @@ serve(async (req) => {
       );
     }
 
+    // 4.5. Hash-based idempotency check
+    // Generate idempotency hash from event properties (matches frontend logic)
+    const isCrypto = paymentMethod === 'crypto';
+    const isFiat = paymentMethod === 'fiat';
+
+    const idempotencyHash = await createEventHash({
+      creator_id: privyUserId,
+      title: name,
+      date: eventDate || null,
+      time: eventTime || '',
+      location: eventLocation || '',
+      capacity: maxNumberOfKeys,
+      price: isCrypto ? price : (isFiat ? price : 0),
+      currency: isCrypto ? currency : (isFiat ? 'NGN' : 'FREE'),
+      paymentMethod: paymentMethod || 'crypto',
+    });
+
+    // Check if event with this hash already exists in the events table
+    const { data: existingEvent, error: checkError } = await supabase
+      .from('events')
+      .select('lock_address, transaction_hash, title')
+      .eq('creator_id', privyUserId)
+      .eq('idempotency_hash', idempotencyHash)
+      .maybeSingle();
+
+    if (checkError && checkError.code !== 'PGRST116') { // PGRST116 = no rows found
+      console.error('Error checking for existing event:', checkError);
+      throw checkError;
+    }
+
+    if (existingEvent) {
+      console.log('Duplicate event detected via hash:', idempotencyHash, 'Lock:', existingEvent.lock_address);
+
+      // Return the existing event's lock address and transaction hash
+      return new Response(
+        JSON.stringify({
+          ok: true,
+          lock_address: existingEvent.lock_address,
+          tx_hash: existingEvent.transaction_hash,
+          from_cache: true,
+          message: 'Event already deployed',
+          event_title: existingEvent.title,
+        }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 200 }
+      );
+    }
+
     // 5. Check rate limit
     const rateLimit = await checkRateLimit(
       supabase,
@@ -84,6 +179,10 @@ serve(async (req) => {
     // 6. Setup provider and contracts using network config from database
     const provider = new JsonRpcProvider(networkConfig.rpc_url);
     const signer = new Wallet(SERVICE_PK, provider);
+    const serviceWalletAddress= await signer.getAddress();
+    if (!serviceWalletAddress) {
+      throw new Error('Service wallet address not found');
+    }
     const unlock = new Contract(networkConfig.unlock_factory_address, UnlockABI, signer);
 
     // 7. Compute token address and price
@@ -104,7 +203,7 @@ serve(async (req) => {
     // 9. Encode initialize calldata (following lockUtils.ts pattern)
     const lockInterface = new ethers.Interface(PublicLockABI);
     const initializeCalldata = lockInterface.encodeFunctionData('initialize', [
-      normalizedCreator, // _lockCreator (creator owns the lock)
+      serviceWalletAddress, // _lockCreator (creator owns the lock)
       expirationDuration,
       tokenAddress,
       keyPrice,
@@ -139,16 +238,18 @@ serve(async (req) => {
 
     // 12. Add service wallet as lock manager
     const lock = new Contract(lockAddress, PublicLockABI, signer);
-    const addManagerTx = await lock.addLockManager(await signer.getAddress());
+    const addManagerTx = await lock.addLockManager(normalizedCreator);
     await addManagerTx.wait();
 
     // 13. Log activity and gas cost in parallel
     await Promise.all([
       logActivity(supabase, privyUserId, 'lock_deploy', chain_id, null, {
         name,
+        capacity: maxNumberOfKeys,
         lock_address: lockAddress,
+        tx_hash: tx.hash || receipt.transactionHash,
       }),
-      logGasTransaction(supabase, receipt, tx, chain_id, await signer.getAddress()),
+      logGasTransaction(supabase, receipt, tx, chain_id, serviceWalletAddress),
     ]);
 
     // 14. Return success

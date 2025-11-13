@@ -7,6 +7,7 @@ import { base, baseSepolia } from 'wagmi/chains';
 import { Calendar, Clock, MapPin, Edit, Trash2, Upload, Loader2 } from 'lucide-react';
 import { format } from 'date-fns';
 import { EventDraft } from '@/types/event';
+import { RichTextDisplay } from '@/components/ui/rich-text/RichTextDisplay';
 
 interface DraftCardProps {
   draft: EventDraft;
@@ -75,10 +76,13 @@ export const DraftCard: React.FC<DraftCardProps> = ({
       </CardHeader>
 
       <CardContent className="pt-0">
-        <p className="text-gray-600 text-sm mb-4 line-clamp-2">
-          {draft.description}
-        </p>
-        
+        <div className="mb-4">
+          <RichTextDisplay
+            content={draft.description}
+            className="prose-sm text-gray-600 line-clamp-2"
+          />
+        </div>
+
         <div className="flex gap-2">
           <Button
             variant="outline"

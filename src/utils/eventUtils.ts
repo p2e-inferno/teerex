@@ -3,6 +3,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { EventFormData } from '@/pages/CreateEvent';
 import { checkKeyOwnership } from './lockUtils';
 import { baseSepolia } from 'wagmi/chains';
+import { createEventHash } from './eventIdempotency';
 
 export interface PublishedEvent {
   id: string;
@@ -36,12 +37,12 @@ export interface PublishedEvent {
 }
 
 export const savePublishedEvent = async (
-  formData: EventFormData, 
-  lockAddress: string, 
-  transactionHash: string, 
+  formData: EventFormData,
+  lockAddress: string,
+  transactionHash: string,
   creatorId: string,
   serviceManagerAdded: boolean = false
-): Promise<void> => {
+): Promise<PublishedEvent> => {
   try {
     // Map payment method to persisted fields
     const isCrypto = formData.paymentMethod === 'crypto';
@@ -58,6 +59,43 @@ export const savePublishedEvent = async (
       paystackPublicKey = pk;
     }
 
+    // Generate idempotency hash from event properties
+    const idempotencyHash = await createEventHash({
+      creator_id: creatorId,
+      title: formData.title,
+      date: formData.date?.toISOString() || null,
+      time: formData.time,
+      location: formData.location,
+      capacity: formData.capacity,
+      price: isCrypto ? formData.price : (isFiat ? formData.ngnPrice : 0),
+      currency: isCrypto ? formData.currency : (isFiat ? 'NGN' : 'FREE'),
+      paymentMethod: formData.paymentMethod,
+    });
+
+    // Check if event with this hash already exists
+    const { data: existingEvent, error: checkError } = await supabase
+      .from('events')
+      .select('*')
+      .eq('creator_id', creatorId)
+      .eq('idempotency_hash', idempotencyHash)
+      .maybeSingle();
+
+    if (checkError && checkError.code !== 'PGRST116') { // PGRST116 = no rows found
+      console.error('Error checking for existing event:', checkError);
+      throw checkError;
+    }
+
+    if (existingEvent) {
+      console.log('Duplicate event detected:', idempotencyHash, 'Event ID:', existingEvent.id);
+
+      // Throw custom error that frontend can catch and handle gracefully
+      const error = new Error('DUPLICATE_EVENT') as any;
+      error.eventId = existingEvent.id;
+      error.eventTitle = existingEvent.title;
+      throw error;
+    }
+
+    // Prepare event data with hash
     const eventData = {
       creator_id: creatorId,
       title: formData.title,
@@ -81,19 +119,60 @@ export const savePublishedEvent = async (
       lock_address: lockAddress,
       transaction_hash: transactionHash,
       chain_id: (formData as any).chainId,
-      service_manager_added: serviceManagerAdded
+      service_manager_added: serviceManagerAdded,
+      idempotency_hash: idempotencyHash, // Add the hash
     };
 
-    const { error } = await supabase
+    const { data, error } = await supabase
       .from('events')
-      .insert(eventData);
+      .insert(eventData)
+      .select()
+      .single();
 
     if (error) {
+      // Handle unique constraint violation gracefully (race condition)
+      if (error.code === '23505' && error.message.includes('events_creator_idempotency_unique')) {
+        console.log('Race condition detected during event creation, fetching existing event');
+        // Another request created the same event between our check and insert
+        // Fetch and return that event
+        const { data: raceEvent } = await supabase
+          .from('events')
+          .select('*')
+          .eq('creator_id', creatorId)
+          .eq('idempotency_hash', idempotencyHash)
+          .single();
+
+        if (raceEvent) {
+          console.log('Duplicate detected in race condition:', raceEvent.id);
+
+          // Throw custom error for duplicate event
+          const error = new Error('DUPLICATE_EVENT') as any;
+          error.eventId = raceEvent.id;
+          error.eventTitle = raceEvent.title;
+          throw error;
+        }
+      }
       console.error('Error saving published event:', error);
       throw error;
     }
 
-    console.log('Event successfully saved to database');
+    if (!data) {
+      throw new Error('Failed to retrieve created event data');
+    }
+
+    console.log('Event successfully saved to database:', data.id);
+
+    // Map the database response to PublishedEvent type
+    return {
+      ...data,
+      date: data.date ? new Date(data.date) : null,
+      created_at: new Date(data.created_at),
+      updated_at: new Date(data.updated_at),
+      currency: data.currency as 'ETH' | 'USDC' | 'FREE',
+      ngn_price: data.ngn_price || 0,
+      payment_methods: data.payment_methods || [formData.paymentMethod],
+      paystack_public_key: data.paystack_public_key
+    } as PublishedEvent;
   } catch (error) {
     console.error('Error saving published event:', error);
     throw error;
