@@ -10,12 +10,12 @@ UPDATE network_configs SET
 WHERE native_currency_symbol = 'ETH';
 
 UPDATE network_configs SET
-  native_currency_name = 'Polygon Ecosystem Token',
+  native_currency_name = 'Polygon',
   native_currency_decimals = 18
 WHERE native_currency_symbol = 'POL';
 
 -- Update Polygon records to use POL instead of MATIC
 UPDATE network_configs SET
   native_currency_symbol = 'POL',
-  native_currency_name = 'Polygon Ecosystem Token'
+  native_currency_name = 'Polygon'
 WHERE chain_id IN (137, 80002); -- Polygon mainnet and Amoy testnet

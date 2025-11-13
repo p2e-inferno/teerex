@@ -14,6 +14,9 @@
 -- Drop the insecure public delete policy
 DROP POLICY IF EXISTS "Allow public delete of event images" ON storage.objects;
 
+-- Drop existing secure policy if it exists (to allow re-running migration)
+DROP POLICY IF EXISTS "Users can delete their own event images" ON storage.objects;
+
 -- Restore secure ownership-based delete policy
 -- Users can only delete files in their own folder (sanitized user ID)
 CREATE POLICY "Users can delete their own event images"
@@ -26,6 +29,9 @@ CREATE POLICY "Users can delete their own event images"
 
 -- Also restore secure update policy for consistency
 DROP POLICY IF EXISTS "Allow public update of event images" ON storage.objects;
+
+-- Drop existing secure policy if it exists (to allow re-running migration)
+DROP POLICY IF EXISTS "Users can update their own event images" ON storage.objects;
 
 CREATE POLICY "Users can update their own event images"
   ON storage.objects
