@@ -39,6 +39,10 @@ export interface EventFormData {
   category: string;
   imageUrl: string;
   chainId?: number;
+  // Visibility and access control
+  isPublic: boolean;
+  allowWaitlist: boolean;
+  hasAllowList: boolean;
 }
 
 const CreateEvent = () => {
@@ -69,7 +73,10 @@ const CreateEvent = () => {
     ngnPrice: 0,
     paymentMethod: 'free',
     category: '',
-    imageUrl: ''
+    imageUrl: '',
+    isPublic: true,
+    allowWaitlist: false,
+    hasAllowList: false
   });
 
   // Gasless deployment fallback hook
@@ -127,7 +134,10 @@ const CreateEvent = () => {
             currency: (draft.currency && draft.currency !== 'FREE' ? (draft.currency as 'ETH' | 'USDC') : 'ETH'),
             ngnPrice: draft.ngn_price || 0,
             category: draft.category,
-            imageUrl: draft.image_url || ''
+            imageUrl: draft.image_url || '',
+            isPublic: (draft as any).is_public ?? true,
+            allowWaitlist: (draft as any).allow_waitlist ?? false,
+            hasAllowList: (draft as any).has_allow_list ?? false
           });
           setCurrentDraftId(draftId);
           setEditingEventId(null);
@@ -153,7 +163,10 @@ const CreateEvent = () => {
             currency: (event.currency && event.currency !== 'FREE' ? (event.currency as 'ETH' | 'USDC') : 'ETH'),
             ngnPrice: event.ngn_price || 0,
             category: event.category,
-            imageUrl: event.image_url || ''
+            imageUrl: event.image_url || '',
+            isPublic: (event as any).is_public ?? true,
+            allowWaitlist: (event as any).allow_waitlist ?? false,
+            hasAllowList: (event as any).has_allow_list ?? false
           });
           setEditingEventId(eventId);
           setCurrentDraftId(null);
@@ -403,7 +416,7 @@ const CreateEvent = () => {
 
       // Handle duplicate event detection
       if (error instanceof Error && error.message === 'DUPLICATE_EVENT') {
-        const eventId = (error as any).eventId;
+        const lockAddress = (error as any).lockAddress;
         const eventTitle = (error as any).eventTitle;
 
         toast({
@@ -420,7 +433,7 @@ const CreateEvent = () => {
                   size="sm"
                   onClick={() => {
                     toast.dismiss();
-                    navigate(`/event/${eventId}`);
+                    navigate(`/event/${lockAddress}`);
                   }}
                 >
                   View Event
@@ -525,7 +538,7 @@ const CreateEvent = () => {
   const handleViewEvent = () => {
     setShowSuccessModal(false);
     if (createdEvent) {
-      navigate(`/event/${createdEvent.id}`);
+      navigate(`/event/${createdEvent.lock_address}`);
     }
   };
 
@@ -546,7 +559,10 @@ const CreateEvent = () => {
       ngnPrice: 0,
       paymentMethod: 'free',
       category: '',
-      imageUrl: ''
+      imageUrl: '',
+      isPublic: true,
+      allowWaitlist: false,
+      hasAllowList: false
     });
     setCurrentStep(1);
     setCurrentDraftId(null);

@@ -208,7 +208,7 @@ const Drafts = () => {
 
       // Handle duplicate event detection
       if (error instanceof Error && error.message === 'DUPLICATE_EVENT') {
-        const eventId = (error as any).eventId;
+        const lockAddress = (error as any).lockAddress;
         const eventTitle = (error as any).eventTitle;
 
         toast({
@@ -225,7 +225,7 @@ const Drafts = () => {
                   size="sm"
                   onClick={() => {
                     toast.dismiss();
-                    navigate(`/event/${eventId}`);
+                    navigate(`/event/${lockAddress}`);
                   }}
                 >
                   View Event

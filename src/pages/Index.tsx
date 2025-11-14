@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { usePrivy } from "@privy-io/react-auth";
-import { WalletConnect } from "@/components/WalletConnect";
+import { GetStartedSteps } from "@/components/GetStartedSteps";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -80,17 +80,13 @@ const Index = () => {
               Create events that <span className="text-purple-600">matter</span>
             </h1>
             <p className="text-xl text-gray-600 max-w-3xl mx-auto mb-12 leading-relaxed">
-              Host memorable events with blockchain-verified tickets, on-chain
+              Host memorable events with blockchain-verified tickets, onchain
               attestations, and seamless payment processing. Built for the
               future of events.
             </p>
 
-            {!authenticated ? (
-              <div className="max-w-md mx-auto">
-                <WalletConnect />
-              </div>
-            ) : (
-              <div className="flex flex-col sm:flex-row gap-4 justify-center">
+            {authenticated && (
+              <div className="flex flex-col sm:flex-row gap-4 justify-center mb-12">
                 <Button
                   size="lg"
                   className="bg-purple-600 hover:bg-purple-700 text-white px-8 py-4 text-lg font-medium rounded-xl"
@@ -113,10 +109,13 @@ const Index = () => {
             )}
           </div>
 
+          {/* Get Started Steps Section */}
+          <GetStartedSteps />
+
           {/* Featured Event Preview - Luma-style event card */}
           <div className="max-w-4xl mx-auto">
             {featured ? (
-              <Link to={`/event/${featured.id}`} className="block group">
+              <Link to={`/event/${featured.lock_address}`} className="block group">
                 <Card className="overflow-hidden border-0 shadow-lg bg-white">
                   <div className="aspect-[2/1] relative cursor-pointer">
                     {featured.image_url ? (
@@ -291,7 +290,7 @@ const Index = () => {
 
           <div className="space-y-4">
             {upcoming.map((e) => (
-              <Link key={e.id} to={`/event/${e.id}`} className="block group">
+              <Link key={e.id} to={`/event/${e.lock_address}`} className="block group">
                 <Card className="border-0 shadow-sm hover:shadow-md transition-shadow duration-200 bg-white">
                   <CardContent className="p-6">
                     <div className="flex items-center justify-between">

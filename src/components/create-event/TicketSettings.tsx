@@ -1,5 +1,5 @@
 
-import React, { useEffect } from 'react';
+import React, { useEffect, useMemo } from 'react';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -7,9 +7,10 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
-import { Shield, Zap, Ticket, ChevronRight, CreditCard } from 'lucide-react';
+import { Shield, Zap, Ticket, ChevronRight, CreditCard, Info } from 'lucide-react';
 import { base, baseSepolia } from 'wagmi/chains';
 import { EventFormData } from '@/pages/CreateEvent';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 
 interface TicketSettingsProps {
   formData: EventFormData;
@@ -22,13 +23,30 @@ export const TicketSettings: React.FC<TicketSettingsProps> = ({
   updateFormData,
   onNext
 }) => {
+  const fiatEnabled = useMemo(() => {
+    const raw = (import.meta as any).env?.VITE_ENABLE_FIAT;
+    if (raw === undefined || raw === null || raw === '') return false;
+    return String(raw).toLowerCase() === 'true';
+  }, []);
+
   // Initialize chainId from UI default if not set (UI default shows Base)
   useEffect(() => {
     if (!(formData as any).chainId) {
       updateFormData({ chainId: base.id } as any);
     }
   }, []);
+
+  useEffect(() => {
+    if (!fiatEnabled && formData.paymentMethod === 'fiat') {
+      updateFormData({ paymentMethod: 'free' });
+    }
+  }, [fiatEnabled, formData.paymentMethod, updateFormData]);
+
   const handleContinue = () => {
+    if (!fiatEnabled && formData.paymentMethod === 'fiat') {
+      alert('Fiat checkout is temporarily unavailable.');
+      return;
+    }
     if (formData.paymentMethod === 'fiat') {
       const pk = (import.meta as any).env?.VITE_PAYSTACK_PUBLIC_KEY as string | undefined;
       if (!pk) {
@@ -96,11 +114,32 @@ export const TicketSettings: React.FC<TicketSettingsProps> = ({
               <Shield className="w-4 h-4" /> Crypto (ETH, USDC)
             </Label>
           </div>
-          <div className="flex items-center space-x-2">
-            <RadioGroupItem id="pm-fiat" value="fiat" />
-            <Label htmlFor="pm-fiat" className="flex items-center gap-2">
-              <CreditCard className="w-4 h-4" /> Fiat (NGN via Paystack)
-            </Label>
+          <div className="flex items-center justify-between space-x-2">
+            <div className="flex items-center space-x-2">
+              <RadioGroupItem id="pm-fiat" value="fiat" disabled={!fiatEnabled} />
+              <Label
+                htmlFor="pm-fiat"
+                className={`flex items-center gap-2 ${!fiatEnabled ? 'text-gray-400' : ''}`}
+              >
+                <CreditCard className="w-4 h-4" /> Fiat (NGN via Paystack)
+              </Label>
+            </div>
+            {!fiatEnabled && (
+              <Popover>
+                <PopoverTrigger asChild>
+                  <button
+                    type="button"
+                    aria-label="Fiat checkout status"
+                    className="text-gray-400 hover:text-gray-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-purple-500 rounded-full p-1 transition-colors"
+                  >
+                    <Info className="h-4 w-4" />
+                  </button>
+                </PopoverTrigger>
+                <PopoverContent className="text-sm font-medium text-gray-700 max-w-xs">
+                  Fiat checkout is temporarily unavailable.
+                </PopoverContent>
+              </Popover>
+            )}
           </div>
         </RadioGroup>
       </div>

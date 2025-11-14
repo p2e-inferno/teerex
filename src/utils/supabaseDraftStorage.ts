@@ -60,13 +60,17 @@ export const saveDraft = async (formData: EventFormData, userId: string): Promis
       date: formData.date?.toISOString(),
       time: formData.time,
       location: formData.location,
+      event_type: formData.eventType,
       capacity: formData.capacity,
       price: isCrypto ? formData.price : 0,
       currency: isCrypto ? formData.currency : 'FREE',
       ngn_price: isFiat ? formData.ngnPrice : 0,
       payment_methods: [formData.paymentMethod],
       category: formData.category,
-      image_url: formData.imageUrl || null
+      image_url: formData.imageUrl || null,
+      is_public: formData.isPublic,
+      allow_waitlist: formData.allowWaitlist,
+      has_allow_list: formData.hasAllowList
     };
 
     // Try with chain_id if the column exists; fallback without if not
@@ -115,6 +119,7 @@ export const updateDraft = async (id: string, formData: EventFormData, userId: s
       date: formData.date?.toISOString(),
       time: formData.time,
       location: formData.location,
+      event_type: formData.eventType,
       capacity: formData.capacity,
       price: isCryptoU ? formData.price : 0,
       currency: isCryptoU ? formData.currency : 'FREE',
@@ -122,7 +127,10 @@ export const updateDraft = async (id: string, formData: EventFormData, userId: s
       payment_methods: [formData.paymentMethod],
       category: formData.category,
       image_url: formData.imageUrl || null,
-      updated_at: new Date().toISOString()
+      updated_at: new Date().toISOString(),
+      is_public: formData.isPublic,
+      allow_waitlist: formData.allowWaitlist,
+      has_allow_list: formData.hasAllowList
     };
 
     let error: any = null;

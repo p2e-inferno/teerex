@@ -34,6 +34,9 @@ export interface PublishedEvent {
   transferable: boolean;
   requires_approval: boolean;
   service_manager_added: boolean;
+  is_public: boolean;
+  allow_waitlist: boolean;
+  has_allow_list: boolean;
 }
 
 export const savePublishedEvent = async (
@@ -92,6 +95,7 @@ export const savePublishedEvent = async (
       const error = new Error('DUPLICATE_EVENT') as any;
       error.eventId = existingEvent.id;
       error.eventTitle = existingEvent.title;
+      error.lockAddress = existingEvent.lock_address;
       throw error;
     }
 
@@ -121,6 +125,10 @@ export const savePublishedEvent = async (
       chain_id: (formData as any).chainId,
       service_manager_added: serviceManagerAdded,
       idempotency_hash: idempotencyHash, // Add the hash
+      // Visibility and access control
+      is_public: formData.isPublic,
+      allow_waitlist: formData.allowWaitlist,
+      has_allow_list: formData.hasAllowList,
     };
 
     const { data, error } = await supabase
@@ -149,6 +157,7 @@ export const savePublishedEvent = async (
           const error = new Error('DUPLICATE_EVENT') as any;
           error.eventId = raceEvent.id;
           error.eventTitle = raceEvent.title;
+          error.lockAddress = raceEvent.lock_address;
           throw error;
         }
       }
@@ -207,8 +216,61 @@ export const getPublishedEvents = async (): Promise<PublishedEvent[]> => {
   }
 };
 
+/**
+ * Fetches an event by its lock address (case-insensitive)
+ * This enables Web3-native URLs like /event/0x1234...abcd
+ */
+export const getPublishedEventByLockAddress = async (
+  lockAddress: string
+): Promise<PublishedEvent | null> => {
+  try {
+    const normalizedAddress = lockAddress.toLowerCase();
+
+    const { data, error } = await supabase
+      .from('events')
+      .select('*')
+      .ilike('lock_address', normalizedAddress)
+      .maybeSingle();
+
+    if (error || !data) {
+      console.error('Error fetching event by lock address:', error);
+      return null;
+    }
+
+    const event = data as any;
+    return {
+      ...event,
+      date: event.date ? new Date(event.date) : null,
+      created_at: new Date(event.created_at),
+      updated_at: new Date(event.updated_at),
+      currency: event.currency as 'ETH' | 'USDC' | 'FREE',
+      ngn_price: event.ngn_price || 0,
+      payment_methods: event.payment_methods || ['crypto'],
+      paystack_public_key: event.paystack_public_key
+    } as PublishedEvent;
+  } catch (error) {
+    console.error('Error fetching event by lock address:', error);
+    return null;
+  }
+};
+
+/**
+ * Fetches an event by ID (supports both UUID and lock address formats)
+ * - If id matches Ethereum address format (0x + 40 hex chars), lookup by lock_address
+ * - Otherwise, lookup by UUID
+ * This provides backwards compatibility while enabling Web3-native URLs
+ */
 export const getPublishedEventById = async (id: string): Promise<PublishedEvent | null> => {
   try {
+    // Check if id is an Ethereum address (0x + 40 hex chars)
+    const isAddress = /^0x[a-fA-F0-9]{40}$/.test(id);
+
+    if (isAddress) {
+      // Use lock_address lookup
+      return await getPublishedEventByLockAddress(id);
+    }
+
+    // Otherwise, treat as UUID
     const { data, error } = await supabase
       .from('events')
       .select('*')

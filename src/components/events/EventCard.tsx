@@ -10,6 +10,7 @@ import { format } from 'date-fns';
 import { ShareButton } from '@/components/interactions/ShareButton';
 import { RichTextDisplay } from '@/components/ui/rich-text/RichTextDisplay';
 import { stripHtml } from '@/utils/textUtils';
+import { WaitlistDialog } from './WaitlistDialog';
 
 interface EventCardProps {
   event: PublishedEvent;
@@ -39,6 +40,7 @@ export const EventCard: React.FC<EventCardProps> = ({
   onConnectWallet
 }) => {
   const [imgError, setImgError] = useState(false);
+  const [waitlistDialogOpen, setWaitlistDialogOpen] = useState(false);
   const imageSrc = useMemo(() => {
     if (!event.image_url) return '';
     const ts = (event as any).updated_at instanceof Date
@@ -50,19 +52,19 @@ export const EventCard: React.FC<EventCardProps> = ({
   const navigate = useNavigate();
   const spotsLeft = event.capacity - keysSold;
   const isSoldOut = spotsLeft <= 0;
-  
+
   // Check if event has expired
   const isEventExpired = event.date && new Date(event.date) < new Date();
 
   const handleCardClick = () => {
     if (!isTicketView) {
-      navigate(`/event/${event.id}`);
+      navigate(`/event/${event.lock_address}`);
     }
   };
 
   const handleTitleClick = (e: React.MouseEvent) => {
     e.stopPropagation();
-    navigate(`/event/${event.id}`);
+    navigate(`/event/${event.lock_address}`);
   };
 
   const handleViewDetailsClick = (e: React.MouseEvent) => {
@@ -80,6 +82,11 @@ export const EventCard: React.FC<EventCardProps> = ({
       onConnectWallet?.();
       return;
     }
+    // If sold out and waitlist enabled, open waitlist dialog
+    if (isSoldOut && event.allow_waitlist) {
+      setWaitlistDialogOpen(true);
+      return;
+    }
     // Normal ticket purchase flow for authenticated users
     onViewDetails?.(event);
   };
@@ -91,6 +98,7 @@ export const EventCard: React.FC<EventCardProps> = ({
     if (actionType === 'edit') return 'Edit';
     if (actionType === 'manage') return 'Manage';
     if (isEventExpired) return 'Event Ended';
+    if (isSoldOut && event.allow_waitlist) return 'Join Waitlist';
     if (isSoldOut) return 'Sold Out';
     return 'Get Ticket';
   };
@@ -239,7 +247,7 @@ export const EventCard: React.FC<EventCardProps> = ({
                 <Button
                   size="sm"
                   onClick={handleButtonClick}
-                  disabled={isEventExpired || isSoldOut || (!authenticated && !onConnectWallet)}
+                  disabled={isEventExpired || (isSoldOut && !event.allow_waitlist) || (!authenticated && !onConnectWallet)}
                   variant={getButtonVariant()}
                   className={!authenticated ? "bg-purple-600 hover:bg-purple-700" : actionType === 'manage' ? '' : "bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"}
                 >
@@ -248,7 +256,7 @@ export const EventCard: React.FC<EventCardProps> = ({
               )}
               {showShareButton && (
                 <ShareButton
-                  url={`${window.location.origin}/event/${event.id}`}
+                  url={`${window.location.origin}/event/${event.lock_address}`}
                   title={event.title}
                   description={stripHtml(event.description)}
                 />
@@ -257,6 +265,13 @@ export const EventCard: React.FC<EventCardProps> = ({
           )}
         </div>
       </CardContent>
+
+      {/* Waitlist Dialog */}
+      <WaitlistDialog
+        event={event}
+        isOpen={waitlistDialogOpen}
+        onClose={() => setWaitlistDialogOpen(false)}
+      />
     </Card>
   );
 };

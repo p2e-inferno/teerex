@@ -142,6 +142,35 @@ export const EventPurchaseDialog: React.FC<EventPurchaseDialogProps> = ({ event,
       return;
     }
 
+    // Check allow list if event has one
+    if (event?.has_allow_list && wallets[0]?.address) {
+      const { data: allowListEntry, error } = await supabase
+        .from('event_allow_list')
+        .select('id')
+        .eq('event_id', event.id)
+        .eq('wallet_address', wallets[0].address.toLowerCase())
+        .maybeSingle();
+
+      if (error) {
+        console.error('Error checking allow list:', error);
+        toast({
+          title: 'Error',
+          description: 'Failed to verify allow list access',
+          variant: 'destructive',
+        });
+        return;
+      }
+
+      if (!allowListEntry) {
+        toast({
+          title: 'Not authorized',
+          description: 'This is a private event. Your wallet address is not on the allow list.',
+          variant: 'destructive',
+        });
+        return;
+      }
+    }
+
     // FREE tickets: try gasless first, fallback to client-side
     if (event?.currency === 'FREE') {
       setIsPurchasing(true);

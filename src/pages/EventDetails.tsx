@@ -32,6 +32,7 @@ import { EventPurchaseDialog } from "@/components/events/EventPurchaseDialog";
 import { PaystackPaymentDialog } from "@/components/events/PaystackPaymentDialog";
 import { TicketProcessingDialog } from "@/components/events/TicketProcessingDialog";
 import { PaymentMethodDialog } from "@/components/events/PaymentMethodDialog";
+import { WaitlistDialog } from "@/components/events/WaitlistDialog";
 // import { AttestationButton } from "@/components/attestations/AttestationButton";
 import { useAttestations } from "@/hooks/useAttestations";
 import { useTeeRexDelegatedAttestation } from "@/hooks/useTeeRexDelegatedAttestation";
@@ -88,6 +89,7 @@ const EventDetails = () => {
     | "crypto-purchase"
     | "paystack-payment"
     | "ticket-processing"
+    | "waitlist"
   >("none");
   const [paymentData, setPaymentData] = useState<any>(null);
   const [isLiked, setIsLiked] = useState(false);
@@ -551,7 +553,10 @@ const EventDetails = () => {
   }, [event]);
 
   const handleShare = (platform?: string) => {
-    const url = window.location.href;
+    // Use lock_address for Web3-native shareable URLs
+    const url = event?.lock_address
+      ? `${window.location.origin}/event/${event.lock_address}`
+      : window.location.href;
     const title = event?.title || "";
     const description = event?.description || "";
 
@@ -1056,25 +1061,37 @@ const EventDetails = () => {
                     )}
                   </div>
                 ) : (
-                  <Button
-                    className="w-full"
-                    onClick={handleGetTicket}
-                    disabled={
-                      isSoldOut ||
-                      (event.date && new Date(event.date) < new Date()) ||
-                      (authenticated && userTicketCount >= maxTicketsPerUser)
-                    }
-                  >
-                    {isSoldOut
-                      ? "Sold Out"
-                      : event.date && new Date(event.date) < new Date()
-                      ? "Event has ended"
-                      : !authenticated
-                      ? "Connect Wallet to Get Ticket"
-                      : userTicketCount >= maxTicketsPerUser
-                      ? "Ticket Limit Reached"
-                      : "Get Ticket"}
-                  </Button>
+                  <>
+                    <Button
+                      className="w-full"
+                      onClick={handleGetTicket}
+                      disabled={
+                        isSoldOut ||
+                        (event.date && new Date(event.date) < new Date()) ||
+                        (authenticated && userTicketCount >= maxTicketsPerUser)
+                      }
+                    >
+                      {isSoldOut
+                        ? "Sold Out"
+                        : event.date && new Date(event.date) < new Date()
+                        ? "Event has ended"
+                        : !authenticated
+                        ? "Connect Wallet to Get Ticket"
+                        : userTicketCount >= maxTicketsPerUser
+                        ? "Ticket Limit Reached"
+                        : "Get Ticket"}
+                    </Button>
+                    {/* Waitlist button when event is sold out */}
+                    {isSoldOut && event.allow_waitlist && (
+                      <Button
+                        variant="outline"
+                        className="w-full"
+                        onClick={() => setActiveModal("waitlist")}
+                      >
+                        Join Waitlist
+                      </Button>
+                    )}
+                  </>
                 )}
 
                 <div className="text-xs text-gray-500 text-center">
@@ -1213,6 +1230,13 @@ const EventDetails = () => {
         isOpen={activeModal === "ticket-processing"}
         onClose={closeAllModals}
         paymentData={paymentData}
+      />
+
+      {/* Waitlist Dialog */}
+      <WaitlistDialog
+        event={event}
+        isOpen={activeModal === "waitlist"}
+        onClose={closeAllModals}
       />
     </div>
   );
