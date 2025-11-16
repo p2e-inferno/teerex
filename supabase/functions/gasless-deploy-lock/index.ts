@@ -10,6 +10,15 @@ import { logGasTransaction } from '../_shared/gas-tracking.ts';
 import { handleError } from '../_shared/error-handler.ts';
 import { RATE_LIMITS, SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, SERVICE_PK } from '../_shared/constants.ts';
 import { validateChain } from '../_shared/network-helpers.ts';
+import { retryWithBackoff, isRetryableTransactionError } from '../_shared/retry-helper.ts';
+
+// Retry configuration for addLockManager transaction
+const RETRY_CONFIG = {
+  MAX_ATTEMPTS: 3,        // Total attempts (1 initial + 2 retries)
+  INITIAL_DELAY: 1000,    // 1 second
+  BACKOFF_MULTIPLIER: 2,  // Each retry doubles the delay (1s, 2s)
+  MAX_DELAY: 5000,        // Cap at 5 seconds
+};
 
 /**
  * Creates a deterministic SHA-256 hash from event data for idempotency.
@@ -236,13 +245,33 @@ serve(async (req) => {
 
     const lockAddress = event.args.newLockAddress;
 
-    // 12. Add service wallet as lock manager
+    // 12. Add service wallet as lock manager with retry logic
     const lock = new Contract(lockAddress, PublicLockABI, signer);
-    // Explicitly pass nonce to prevent race condition with sequential transactions
-    const addManagerTx = await lock.addLockManager(normalizedCreator, {
-      nonce: receipt.nonce + 1
-    });
-    await addManagerTx.wait();
+
+    // Retry the addLockManager transaction with exponential backoff
+    const addManagerReceipt = await retryWithBackoff(
+      async () => {
+        // Get fresh nonce for each retry attempt to avoid nonce conflicts
+        const currentNonce = await signer.getNonce();
+        console.log(`Attempting addLockManager with nonce: ${currentNonce} for lock ${lockAddress}`);
+
+        const addManagerTx = await lock.addLockManager(normalizedCreator, {
+          nonce: currentNonce
+        });
+
+        return await addManagerTx.wait();
+      },
+      {
+        maxAttempts: RETRY_CONFIG.MAX_ATTEMPTS,
+        initialDelay: RETRY_CONFIG.INITIAL_DELAY,
+        backoffMultiplier: RETRY_CONFIG.BACKOFF_MULTIPLIER,
+        maxDelay: RETRY_CONFIG.MAX_DELAY,
+        shouldRetry: isRetryableTransactionError,
+      },
+      `addLockManager for ${normalizedCreator}`
+    );
+
+    console.log(`Successfully added lock manager. Tx: ${addManagerReceipt.transactionHash}`);
 
     // 13. Log activity and gas cost in parallel
     await Promise.all([
