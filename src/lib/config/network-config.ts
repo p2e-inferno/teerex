@@ -133,7 +133,60 @@ export function buildPrivyChains(networkConfigs: NetworkConfig[]): any[] {
   }));
 }
 
+// Cache configuration
+const CACHE_KEY = 'teerex_privy_config';
+const CACHE_TTL = 60 * 60 * 1000; // 1 hour in milliseconds
+
+interface CachedConfig {
+  data: any;
+  timestamp: number;
+}
+
+function getCachedPrivyConfig(): any | null {
+  try {
+    const cached = localStorage.getItem(CACHE_KEY);
+    if (!cached) return null;
+
+    const { data, timestamp }: CachedConfig = JSON.parse(cached);
+    const now = Date.now();
+
+    // Check if cache is still valid
+    if (now - timestamp < CACHE_TTL) {
+      console.log('Using cached Privy config');
+      return data;
+    }
+
+    // Cache expired, remove it
+    localStorage.removeItem(CACHE_KEY);
+    return null;
+  } catch (error) {
+    console.warn('Failed to read Privy config cache:', error);
+    localStorage.removeItem(CACHE_KEY);
+    return null;
+  }
+}
+
+function setCachedPrivyConfig(config: any): void {
+  try {
+    const cached: CachedConfig = {
+      data: config,
+      timestamp: Date.now(),
+    };
+    localStorage.setItem(CACHE_KEY, JSON.stringify(cached));
+  } catch (error) {
+    console.warn('Failed to cache Privy config:', error);
+  }
+}
+
 export async function getPrivyConfig(): Promise<any> {
+  // Try to get from cache first
+  const cachedConfig = getCachedPrivyConfig();
+  if (cachedConfig) {
+    return cachedConfig;
+  }
+
+  // Cache miss - fetch from database
+  console.log('Fetching fresh Privy config from database');
   const networks = await getActiveNetworks();
   const chains = buildPrivyChains(networks);
   const defaultChainId = getDefaultChainId();
@@ -141,7 +194,7 @@ export async function getPrivyConfig(): Promise<any> {
   // Find the default chain from loaded networks
   const defaultChain = chains.find(chain => chain.id === defaultChainId) || chains[0];
 
-  return {
+  const config = {
     appearance: {
       theme: 'light' as const,
       accentColor: '#676FFF',
@@ -153,5 +206,16 @@ export async function getPrivyConfig(): Promise<any> {
     defaultChain,
     supportedChains: chains,
   };
+
+  // Cache the result
+  setCachedPrivyConfig(config);
+
+  return config;
+}
+
+// Export function to manually clear cache (useful for admin updates)
+export function clearPrivyConfigCache(): void {
+  localStorage.removeItem(CACHE_KEY);
+  console.log('Privy config cache cleared');
 }
 

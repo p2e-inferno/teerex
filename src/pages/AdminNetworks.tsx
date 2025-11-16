@@ -11,6 +11,7 @@ import { toast } from '@/hooks/use-toast';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Loader2, Plus, Edit, Trash2, Network, CheckCircle, AlertTriangle, RefreshCw } from 'lucide-react';
 import { usePrivy } from '@privy-io/react-auth';
+import { clearPrivyConfigCache } from '@/lib/config/network-config';
 
 interface NetworkConfig {
   id: string;
@@ -115,9 +116,12 @@ const AdminNetworks: React.FC = () => {
 
         if (error) throw error;
 
+        // Clear Privy config cache so users get updated network settings
+        clearPrivyConfigCache();
+
         toast({
           title: "Network Updated",
-          description: `${formData.chain_name} has been updated successfully.`,
+          description: `${formData.chain_name} has been updated successfully. Cache cleared for all users.`,
         });
       } else {
         // Create new network
@@ -139,9 +143,12 @@ const AdminNetworks: React.FC = () => {
 
         if (error) throw error;
 
+        // Clear Privy config cache so users get updated network settings
+        clearPrivyConfigCache();
+
         toast({
           title: "Network Added",
-          description: `${formData.chain_name} has been added successfully.`,
+          description: `${formData.chain_name} has been added successfully. Cache cleared for all users.`,
         });
       }
 
@@ -192,9 +199,12 @@ const AdminNetworks: React.FC = () => {
 
       if (error) throw error;
 
+      // Clear Privy config cache so users get updated network settings
+      clearPrivyConfigCache();
+
       toast({
         title: "Network Deleted",
-        description: `${network.chain_name} has been deleted successfully.`,
+        description: `${network.chain_name} has been deleted successfully. Cache cleared for all users.`,
       });
 
       loadNetworks();
@@ -217,9 +227,12 @@ const AdminNetworks: React.FC = () => {
 
       if (error) throw error;
 
+      // Clear Privy config cache so users get updated network settings
+      clearPrivyConfigCache();
+
       toast({
         title: network.is_active ? "Network Deactivated" : "Network Activated",
-        description: `${network.chain_name} has been ${network.is_active ? 'deactivated' : 'activated'}.`,
+        description: `${network.chain_name} has been ${network.is_active ? 'deactivated' : 'activated'}. Cache cleared for all users.`,
       });
 
       loadNetworks();
