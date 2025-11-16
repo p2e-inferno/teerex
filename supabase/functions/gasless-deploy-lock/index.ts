@@ -238,7 +238,10 @@ serve(async (req) => {
 
     // 12. Add service wallet as lock manager
     const lock = new Contract(lockAddress, PublicLockABI, signer);
-    const addManagerTx = await lock.addLockManager(normalizedCreator);
+    // Explicitly pass nonce to prevent race condition with sequential transactions
+    const addManagerTx = await lock.addLockManager(normalizedCreator, {
+      nonce: receipt.nonce + 1
+    });
     await addManagerTx.wait();
 
     // 13. Log activity and gas cost in parallel

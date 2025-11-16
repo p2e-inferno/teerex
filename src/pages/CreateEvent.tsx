@@ -39,6 +39,9 @@ export interface EventFormData {
   category: string;
   imageUrl: string;
   chainId?: number;
+  // Ticket validity duration
+  ticketDuration: 'event' | '30' | '365' | 'unlimited' | 'custom';
+  customDurationDays?: number;
   // Visibility and access control
   isPublic: boolean;
   allowWaitlist: boolean;
@@ -74,6 +77,8 @@ const CreateEvent = () => {
     paymentMethod: 'free',
     category: '',
     imageUrl: '',
+    ticketDuration: 'event',
+    customDurationDays: undefined,
     isPublic: true,
     allowWaitlist: false,
     hasAllowList: false
@@ -135,6 +140,8 @@ const CreateEvent = () => {
             ngnPrice: draft.ngn_price || 0,
             category: draft.category,
             imageUrl: draft.image_url || '',
+            ticketDuration: (draft as any).ticket_duration || 'event',
+            customDurationDays: (draft as any).custom_duration_days,
             isPublic: (draft as any).is_public ?? true,
             allowWaitlist: (draft as any).allow_waitlist ?? false,
             hasAllowList: (draft as any).has_allow_list ?? false
@@ -164,6 +171,8 @@ const CreateEvent = () => {
             ngnPrice: event.ngn_price || 0,
             category: event.category,
             imageUrl: event.image_url || '',
+            ticketDuration: (event as any).ticket_duration || 'event',
+            customDurationDays: (event as any).custom_duration_days,
             isPublic: (event as any).is_public ?? true,
             allowWaitlist: (event as any).allow_waitlist ?? false,
             hasAllowList: (event as any).has_allow_list ?? false
@@ -247,6 +256,22 @@ const CreateEvent = () => {
     }
   };
 
+  const getExpirationDuration = (duration: string, customDays?: number): number => {
+    switch (duration) {
+      case '30':
+        return 30 * 24 * 60 * 60;      // 30 days in seconds
+      case '365':
+        return 365 * 24 * 60 * 60;    // 1 year in seconds
+      case 'unlimited':
+        return 999999999;              // ~31 years (effectively unlimited)
+      case 'custom':
+        return (customDays || 1) * 24 * 60 * 60; // Custom days in seconds
+      case 'event':
+      default:
+        return 86400;                  // 1 day (valid until event)
+    }
+  };
+
   const saveAsDraft = async () => {
     try {
       if (!user?.id) {
@@ -308,7 +333,7 @@ const CreateEvent = () => {
         symbol: `${formData.title.slice(0, 3).toUpperCase()}TIX`,
         keyPrice: formData.paymentMethod === 'crypto' ? formData.price.toString() : '0',
         maxNumberOfKeys: formData.capacity,
-        expirationDuration: 86400,
+        expirationDuration: getExpirationDuration(formData.ticketDuration, formData.customDurationDays),
         currency: formData.paymentMethod === 'crypto' ? formData.currency : 'FREE',
         price: formData.price,
         chainId: (formData as any).chainId as number
@@ -321,7 +346,7 @@ const CreateEvent = () => {
       // Try gasless deployment first, fallback to client-side if it fails
       const result: any = await deployLockWithGasless({
         name: formData.title,
-        expirationDuration: 86400,
+        expirationDuration: getExpirationDuration(formData.ticketDuration, formData.customDurationDays),
         currency: formData.paymentMethod === 'crypto' ? formData.currency : 'FREE',
         price: formData.paymentMethod === 'crypto' ? formData.price : (formData.paymentMethod === 'fiat' ? formData.ngnPrice : 0),
         maxNumberOfKeys: formData.capacity,
@@ -560,6 +585,8 @@ const CreateEvent = () => {
       paymentMethod: 'free',
       category: '',
       imageUrl: '',
+      ticketDuration: 'event',
+      customDurationDays: undefined,
       isPublic: true,
       allowWaitlist: false,
       hasAllowList: false

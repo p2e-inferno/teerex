@@ -68,6 +68,8 @@ export const saveDraft = async (formData: EventFormData, userId: string): Promis
       payment_methods: [formData.paymentMethod],
       category: formData.category,
       image_url: formData.imageUrl || null,
+      ticket_duration: formData.ticketDuration || 'event',
+      custom_duration_days: formData.customDurationDays,
       is_public: formData.isPublic,
       allow_waitlist: formData.allowWaitlist,
       has_allow_list: formData.hasAllowList
@@ -127,6 +129,8 @@ export const updateDraft = async (id: string, formData: EventFormData, userId: s
       payment_methods: [formData.paymentMethod],
       category: formData.category,
       image_url: formData.imageUrl || null,
+      ticket_duration: formData.ticketDuration || 'event',
+      custom_duration_days: formData.customDurationDays,
       updated_at: new Date().toISOString(),
       is_public: formData.isPublic,
       allow_waitlist: formData.allowWaitlist,

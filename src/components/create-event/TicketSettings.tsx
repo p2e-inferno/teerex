@@ -1,5 +1,5 @@
 
-import React, { useEffect, useMemo } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -61,6 +61,13 @@ export const TicketSettings: React.FC<TicketSettingsProps> = ({
     if (formData.paymentMethod === 'crypto') {
       if (!formData.price || formData.price <= 0) {
         alert('Please enter a valid price for crypto payments');
+        return;
+      }
+    }
+    // Validate custom duration
+    if (formData.ticketDuration === 'custom') {
+      if (!formData.customDurationDays || formData.customDurationDays <= 0) {
+        alert('Please enter a valid custom duration (at least 1 day)');
         return;
       }
     }
@@ -245,11 +252,20 @@ export const TicketSettings: React.FC<TicketSettingsProps> = ({
       {/* Ticket Configuration Settings */}
       <div className="space-y-4">
         <h3 className="text-lg font-medium text-gray-900">Ticket Configuration</h3>
-        
+
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div className="space-y-2">
             <Label>Ticket Duration</Label>
-            <Select defaultValue="event">
+            <Select
+              value={formData.ticketDuration}
+              onValueChange={(value) => {
+                updateFormData({
+                  ticketDuration: value as any,
+                  // Reset custom duration if switching away from custom
+                  customDurationDays: value === 'custom' ? formData.customDurationDays : undefined
+                });
+              }}
+            >
               <SelectTrigger>
                 <SelectValue />
               </SelectTrigger>
@@ -258,9 +274,25 @@ export const TicketSettings: React.FC<TicketSettingsProps> = ({
                 <SelectItem value="30">30 days</SelectItem>
                 <SelectItem value="365">1 year</SelectItem>
                 <SelectItem value="unlimited">Unlimited</SelectItem>
+                <SelectItem value="custom">Custom duration</SelectItem>
               </SelectContent>
             </Select>
           </div>
+
+          {formData.ticketDuration === 'custom' && (
+            <div className="space-y-2">
+              <Label htmlFor="custom-duration">Duration (days)</Label>
+              <Input
+                id="custom-duration"
+                type="number"
+                placeholder="Enter number of days"
+                value={formData.customDurationDays || ''}
+                onChange={(e) => updateFormData({ customDurationDays: parseInt(e.target.value) || 1 })}
+                min="1"
+                step="1"
+              />
+            </div>
+          )}
 
           <div className="space-y-2">
             <Label>Network</Label>

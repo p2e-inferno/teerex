@@ -125,6 +125,9 @@ export const savePublishedEvent = async (
       chain_id: (formData as any).chainId,
       service_manager_added: serviceManagerAdded,
       idempotency_hash: idempotencyHash, // Add the hash
+      // Ticket duration settings
+      ticket_duration: formData.ticketDuration || 'event',
+      custom_duration_days: formData.customDurationDays,
       // Visibility and access control
       is_public: formData.isPublic,
       allow_waitlist: formData.allowWaitlist,
