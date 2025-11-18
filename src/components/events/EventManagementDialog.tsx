@@ -28,8 +28,10 @@ import {
   UserCheck,
   Eye,
   Lock,
-  Info
+  Info,
+  Image
 } from 'lucide-react';
+import { ethers } from 'ethers';
 import { AllowListManager } from './AllowListManager';
 import { WaitlistManager } from './WaitlistManager';
 
@@ -60,6 +62,8 @@ export const EventManagementDialog: React.FC<EventManagementDialogProps> = ({
   const [waitlistManagerOpen, setWaitlistManagerOpen] = useState(false);
   const [localAllowWaitlist, setLocalAllowWaitlist] = useState(event.allow_waitlist);
   const [isUpdatingWaitlist, setIsUpdatingWaitlist] = useState(false);
+  const [isUpdatingMetadata, setIsUpdatingMetadata] = useState(false);
+  const [isLockManager, setIsLockManager] = useState(false);
 
   // Fetch service wallet address
   useEffect(() => {
@@ -104,6 +108,27 @@ export const EventManagementDialog: React.FC<EventManagementDialogProps> = ({
 
     checkManagerStatus();
   }, [serviceWalletAddress, event.lock_address, open]);
+
+  // Check if current user is a lock manager
+  useEffect(() => {
+    const checkUserLockManager = async () => {
+      if (!wallets[0] || !open) return;
+      
+      try {
+        const provider = await wallets[0].getEthereumProvider();
+        const ethersProvider = new ethers.BrowserProvider(provider);
+        const signer = await ethersProvider.getSigner();
+        const userAddress = await signer.getAddress();
+        
+        const isManager = await checkIfLockManager(event.lock_address, userAddress);
+        setIsLockManager(isManager);
+      } catch (error) {
+        console.error('Error checking user lock manager status:', error);
+      }
+    };
+
+    checkUserLockManager();
+  }, [wallets, event.lock_address, open]);
 
   const handleAddServiceManager = async () => {
     if (!wallets[0]) {
@@ -197,6 +222,80 @@ export const EventManagementDialog: React.FC<EventManagementDialogProps> = ({
       });
     } finally {
       setIsRemovingManager(false);
+    }
+  };
+
+  const handleUpdateMetadata = async () => {
+    if (!wallets[0]) {
+      toast({ 
+        title: 'No wallet', 
+        description: 'Please connect your wallet', 
+        variant: 'destructive' 
+      });
+      return;
+    }
+
+    setIsUpdatingMetadata(true);
+    try {
+      const { setLockMetadata, getBaseTokenURI, TEEREX_NFT_SYMBOL } = await import('@/utils/lockMetadata');
+      
+      const provider = await wallets[0].getEthereumProvider();
+      const ethersProvider = new ethers.BrowserProvider(provider);
+      const signer = await ethersProvider.getSigner();
+      
+      const baseTokenURI = getBaseTokenURI(event.lock_address);
+      
+      const result = await setLockMetadata(
+        event.lock_address,
+        event.title,
+        TEEREX_NFT_SYMBOL,
+        baseTokenURI,
+        signer
+      );
+      
+      if (result.success) {
+        const accessToken = await getAccessToken();
+        const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
+
+        const { data, error } = await supabase.functions.invoke('update-event', {
+          body: {
+            eventId: event.id,
+            formData: {
+              nft_metadata_set: true,
+              nft_base_uri: baseTokenURI
+            }
+          },
+          headers: {
+            Authorization: `Bearer ${anonKey}`,
+            'X-Privy-Authorization': `Bearer ${accessToken}`,
+          },
+        });
+
+        if (error) {
+          throw new Error(error.message);
+        }
+
+        if (data?.error) {
+          throw new Error(data.error);
+        }
+        
+        toast({ 
+          title: 'Success', 
+          description: 'NFT metadata updated successfully. Your event images will now appear on OpenSea and other marketplaces.' 
+        });
+        onEventUpdated();
+      } else {
+        throw new Error(result.error);
+      }
+    } catch (error: any) {
+      console.error('Error updating metadata:', error);
+      toast({ 
+        title: 'Failed to update metadata', 
+        description: error.message || 'An error occurred',
+        variant: 'destructive' 
+      });
+    } finally {
+      setIsUpdatingMetadata(false);
     }
   };
 
@@ -450,6 +549,45 @@ export const EventManagementDialog: React.FC<EventManagementDialogProps> = ({
                   </p>
                 )}
               </div>
+            </CardContent>
+          </Card>
+
+          {/* NFT Metadata */}
+          <Card>
+            <CardContent className="pt-6">
+              <div className="flex items-center justify-between">
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2">
+                    <Image className="w-4 h-4" />
+                    <span className="font-medium">NFT Metadata</span>
+                    <Badge variant={event.nft_metadata_set ? 'default' : 'secondary'}>
+                      {event.nft_metadata_set ? 'Set' : 'Not Set'}
+                    </Badge>
+                  </div>
+                  <p className="text-sm text-gray-600">
+                    Update NFT images and metadata for marketplaces like OpenSea
+                  </p>
+                </div>
+                <Button
+                  onClick={handleUpdateMetadata}
+                  disabled={isUpdatingMetadata || !isLockManager}
+                  size="sm"
+                >
+                  {isUpdatingMetadata ? (
+                    <>
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                      Updating...
+                    </>
+                  ) : (
+                    'Update Metadata'
+                  )}
+                </Button>
+              </div>
+              {!isLockManager && (
+                <p className="text-xs text-orange-600 mt-2">
+                  ⚠️ You must be a lock manager to update metadata
+                </p>
+              )}
             </CardContent>
           </Card>
 

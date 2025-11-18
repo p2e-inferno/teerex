@@ -40,8 +40,9 @@ export const EventInteractionsCard: React.FC<EventInteractionsCardProps> = ({
     );
   }
 
-  // Empty state for non-ticket holders
-  if (!hasTicket) {
+  // Empty state for non-ticket holders who are also not creators
+  // Event creators (lock managers) should always have access to post management
+  if (!hasTicket && !isCreator) {
     return (
       <Card className="border-0 shadow-sm">
         <CardContent className="py-8 text-center">

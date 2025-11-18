@@ -20,7 +20,7 @@ import {
   Plus,
 } from "lucide-react";
 import { PublishedEvent } from "@/utils/eventUtils";
-import { format } from "date-fns";
+import { formatEventDateRange } from "@/utils/dateUtils";
 import { ShareButton } from "@/components/interactions/ShareButton";
 import { RichTextDisplay } from "@/components/ui/rich-text/RichTextDisplay";
 import { stripHtml } from "@/utils/textUtils";
@@ -40,7 +40,7 @@ export const EventCreationSuccessModal: React.FC<EventCreationSuccessModalProps>
   onViewEvent,
   onCreateAnother,
 }) => {
-  const eventUrl = `${window.location.origin}/event/${event.id}`;
+  const eventUrl = `${window.location.origin}/event/${event.lock_address}`;
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
@@ -90,7 +90,13 @@ export const EventCreationSuccessModal: React.FC<EventCreationSuccessModalProps>
                     {event.date && (
                       <div className="flex items-center gap-2">
                         <Calendar className="w-4 h-4" />
-                        <span>{format(event.date, "EEEE, MMMM do, yyyy")}</span>
+                        <span>
+                          {formatEventDateRange({
+                            startDate: event.date,
+                            endDate: event.end_date,
+                            formatStyle: "long",
+                          })}
+                        </span>
                         <Clock className="w-4 h-4 ml-2" />
                         <span>{event.time}</span>
                       </div>

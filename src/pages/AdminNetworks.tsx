@@ -8,7 +8,6 @@ import { Switch } from '@/components/ui/switch';
 import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from '@/components/ui/dialog';
 import { toast } from '@/hooks/use-toast';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Loader2, Plus, Edit, Trash2, Network, CheckCircle, AlertTriangle, RefreshCw } from 'lucide-react';
 import { usePrivy } from '@privy-io/react-auth';
 import { clearPrivyConfigCache } from '@/lib/config/network-config';
@@ -45,7 +44,7 @@ interface NetworkFormData {
 }
 
 const AdminNetworks: React.FC = () => {
-  const { user } = usePrivy();
+  const { user, getAccessToken } = usePrivy();
   const [networks, setNetworks] = useState<NetworkConfig[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
@@ -68,13 +67,20 @@ const AdminNetworks: React.FC = () => {
   const loadNetworks = async () => {
     try {
       setIsLoading(true);
-      const { data, error } = await supabase
-        .from('network_configs')
-        .select('*')
-        .order('chain_id');
+      const token = await getAccessToken?.();
+      const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
+
+      const { data, error } = await supabase.functions.invoke('manage-network-config/get', {
+        headers: {
+          Authorization: `Bearer ${anonKey}`,
+          'X-Privy-Authorization': `Bearer ${token}`,
+        },
+      });
 
       if (error) throw error;
-      setNetworks(data || []);
+      if (!data.success) throw new Error(data.error);
+
+      setNetworks(data.networks || []);
     } catch (error) {
       console.error('Error loading networks:', error);
       toast({
@@ -96,25 +102,35 @@ const AdminNetworks: React.FC = () => {
     try {
       setIsSaving(true);
 
+      const token = await getAccessToken?.();
+      const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
+
+      const payload = {
+        chain_id: formData.chain_id,
+        chain_name: formData.chain_name,
+        usdc_token_address: formData.usdc_token_address || null,
+        unlock_factory_address: formData.unlock_factory_address || null,
+        native_currency_symbol: formData.native_currency_symbol,
+        native_currency_name: formData.native_currency_name,
+        native_currency_decimals: formData.native_currency_decimals,
+        rpc_url: formData.rpc_url || null,
+        block_explorer_url: formData.block_explorer_url || null,
+        is_mainnet: formData.is_mainnet,
+        is_active: formData.is_active,
+      };
+
       if (editingNetwork) {
         // Update existing network
-        const { error } = await supabase
-          .from('network_configs')
-          .update({
-            chain_name: formData.chain_name,
-            usdc_token_address: formData.usdc_token_address || null,
-            unlock_factory_address: formData.unlock_factory_address || null,
-            native_currency_symbol: formData.native_currency_symbol,
-            native_currency_name: formData.native_currency_name,
-            native_currency_decimals: formData.native_currency_decimals,
-            rpc_url: formData.rpc_url || null,
-            block_explorer_url: formData.block_explorer_url || null,
-            is_mainnet: formData.is_mainnet,
-            is_active: formData.is_active,
-          })
-          .eq('id', editingNetwork.id);
+        const { data, error } = await supabase.functions.invoke('manage-network-config/update', {
+          body: { id: editingNetwork.id, ...payload },
+          headers: {
+            Authorization: `Bearer ${anonKey}`,
+            'X-Privy-Authorization': `Bearer ${token}`,
+          },
+        });
 
         if (error) throw error;
+        if (!data.success) throw new Error(data.error);
 
         // Clear Privy config cache so users get updated network settings
         clearPrivyConfigCache();
@@ -125,23 +141,16 @@ const AdminNetworks: React.FC = () => {
         });
       } else {
         // Create new network
-        const { error } = await supabase
-          .from('network_configs')
-          .insert({
-            chain_id: formData.chain_id,
-            chain_name: formData.chain_name,
-            usdc_token_address: formData.usdc_token_address || null,
-            unlock_factory_address: formData.unlock_factory_address || null,
-            native_currency_symbol: formData.native_currency_symbol,
-            native_currency_name: formData.native_currency_name,
-            native_currency_decimals: formData.native_currency_decimals,
-            rpc_url: formData.rpc_url || null,
-            block_explorer_url: formData.block_explorer_url || null,
-            is_mainnet: formData.is_mainnet,
-            is_active: formData.is_active,
-          });
+        const { data, error } = await supabase.functions.invoke('manage-network-config/create', {
+          body: payload,
+          headers: {
+            Authorization: `Bearer ${anonKey}`,
+            'X-Privy-Authorization': `Bearer ${token}`,
+          },
+        });
 
         if (error) throw error;
+        if (!data.success) throw new Error(data.error);
 
         // Clear Privy config cache so users get updated network settings
         clearPrivyConfigCache();
@@ -192,12 +201,19 @@ const AdminNetworks: React.FC = () => {
     }
 
     try {
-      const { error } = await supabase
-        .from('network_configs')
-        .delete()
-        .eq('id', network.id);
+      const token = await getAccessToken?.();
+      const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
+
+      const { data, error } = await supabase.functions.invoke('manage-network-config/delete', {
+        body: { id: network.id },
+        headers: {
+          Authorization: `Bearer ${anonKey}`,
+          'X-Privy-Authorization': `Bearer ${token}`,
+        },
+      });
 
       if (error) throw error;
+      if (!data.success) throw new Error(data.error);
 
       // Clear Privy config cache so users get updated network settings
       clearPrivyConfigCache();
@@ -220,12 +236,32 @@ const AdminNetworks: React.FC = () => {
 
   const handleToggleActive = async (network: NetworkConfig) => {
     try {
-      const { error } = await supabase
-        .from('network_configs')
-        .update({ is_active: !network.is_active })
-        .eq('id', network.id);
+      const token = await getAccessToken?.();
+      const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
+
+      const { data, error } = await supabase.functions.invoke('manage-network-config/update', {
+        body: {
+          id: network.id,
+          chain_id: network.chain_id,
+          chain_name: network.chain_name,
+          usdc_token_address: network.usdc_token_address,
+          unlock_factory_address: network.unlock_factory_address,
+          native_currency_symbol: network.native_currency_symbol,
+          native_currency_name: network.native_currency_name,
+          native_currency_decimals: network.native_currency_decimals,
+          rpc_url: network.rpc_url,
+          block_explorer_url: network.block_explorer_url,
+          is_mainnet: network.is_mainnet,
+          is_active: !network.is_active,
+        },
+        headers: {
+          Authorization: `Bearer ${anonKey}`,
+          'X-Privy-Authorization': `Bearer ${token}`,
+        },
+      });
 
       if (error) throw error;
+      if (!data.success) throw new Error(data.error);
 
       // Clear Privy config cache so users get updated network settings
       clearPrivyConfigCache();

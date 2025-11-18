@@ -1,12 +1,12 @@
 
 import React, { useEffect, useState } from 'react';
-import { PrivyProvider as Privy, usePrivy } from '@privy-io/react-auth';
+import { PrivyProvider as Privy } from '@privy-io/react-auth';
 import { WagmiProvider } from 'wagmi';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { Card, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { AlertTriangle } from 'lucide-react';
 import { wagmiConfig } from '@/utils/wagmiConfig';
-import { getPrivyConfig } from '@/lib/config/network-config';
+import { getPrivyConfig, onCacheClear } from '@/lib/config/network-config';
 import { PrivySetupInstructions, SupabaseAuthSync } from '@/components/privy-config';
 
 interface PrivyProviderProps {
@@ -30,6 +30,7 @@ export const PrivyProvider: React.FC<PrivyProviderProps> = ({ children }) => {
         setIsLoading(true);
         const config = await getPrivyConfig();
         setPrivyConfig(config);
+        setError(null); // Clear any previous errors
       } catch (err) {
         console.error('Failed to load Privy configuration:', err);
         setError('Failed to load network configuration');
@@ -70,7 +71,17 @@ export const PrivyProvider: React.FC<PrivyProviderProps> = ({ children }) => {
       }
     }
 
+    // Load initial config
     loadPrivyConfig();
+
+    // Listen for cache clear events
+    const unsubscribe = onCacheClear(() => {
+      console.log('Cache clear event received, reloading Privy config...');
+      loadPrivyConfig();
+    });
+
+    // Cleanup listener on unmount
+    return unsubscribe;
   }, []);
 
   // Show loading state while config is being loaded

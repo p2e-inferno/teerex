@@ -11,6 +11,7 @@ export interface PublishedEvent {
   title: string;
   description: string;
   date: Date | null;
+  end_date: Date | null;
   time: string;
   location: string;
   event_type: 'physical' | 'virtual';
@@ -22,6 +23,8 @@ export interface PublishedEvent {
   paystack_public_key: string | null;
   category: string;
   image_url: string | null;
+  image_crop_x?: number;
+  image_crop_y?: number;
   lock_address: string;
   transaction_hash: string;
   chain_id: number;
@@ -37,6 +40,8 @@ export interface PublishedEvent {
   is_public: boolean;
   allow_waitlist: boolean;
   has_allow_list: boolean;
+  nft_metadata_set: boolean;
+  nft_base_uri: string | null;
 }
 
 export const savePublishedEvent = async (
@@ -105,6 +110,7 @@ export const savePublishedEvent = async (
       title: formData.title,
       description: formData.description,
       date: formData.date?.toISOString(),
+      end_date: formData.endDate?.toISOString() || null,
       time: formData.time,
       location: formData.location,
       event_type: formData.eventType,
@@ -120,6 +126,8 @@ export const savePublishedEvent = async (
       paystack_public_key: paystackPublicKey,
       category: formData.category,
       image_url: formData.imageUrl || null,
+      image_crop_x: formData.imageCropX,
+      image_crop_y: formData.imageCropY,
       lock_address: lockAddress,
       transaction_hash: transactionHash,
       chain_id: (formData as any).chainId,
@@ -132,6 +140,11 @@ export const savePublishedEvent = async (
       is_public: formData.isPublic,
       allow_waitlist: formData.allowWaitlist,
       has_allow_list: formData.hasAllowList,
+      // Transferability setting
+      transferable: formData.transferable ?? false,
+      // NFT metadata tracking
+      nft_metadata_set: true, // Metadata is set during deployment
+      nft_base_uri: `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/nft-metadata/${lockAddress}/`,
     };
 
     const { data, error } = await supabase
@@ -206,6 +219,7 @@ export const getPublishedEvents = async (): Promise<PublishedEvent[]> => {
     return (data || []).map((event: any) => ({
       ...event,
       date: event.date ? new Date(event.date) : null,
+      end_date: event.end_date ? new Date(event.end_date) : null,
       created_at: new Date(event.created_at),
       updated_at: new Date(event.updated_at),
       currency: event.currency as 'ETH' | 'USDC' | 'FREE',
@@ -244,6 +258,7 @@ export const getPublishedEventByLockAddress = async (
     return {
       ...event,
       date: event.date ? new Date(event.date) : null,
+      end_date: event.end_date ? new Date(event.end_date) : null,
       created_at: new Date(event.created_at),
       updated_at: new Date(event.updated_at),
       currency: event.currency as 'ETH' | 'USDC' | 'FREE',
@@ -289,6 +304,7 @@ export const getPublishedEventById = async (id: string): Promise<PublishedEvent 
     return {
       ...event,
       date: event.date ? new Date(event.date) : null,
+      end_date: event.end_date ? new Date(event.end_date) : null,
       created_at: new Date(event.created_at),
       updated_at: new Date(event.updated_at),
       currency: event.currency as 'ETH' | 'USDC' | 'FREE',
@@ -318,6 +334,7 @@ export const getUserEvents = async (userId: string): Promise<PublishedEvent[]> =
     return (data || []).map((event: any) => ({
       ...event,
       date: event.date ? new Date(event.date) : null,
+      end_date: event.end_date ? new Date(event.end_date) : null,
       created_at: new Date(event.created_at),
       updated_at: new Date(event.updated_at),
       currency: event.currency as 'ETH' | 'USDC' | 'FREE',

@@ -58,6 +58,7 @@ export const saveDraft = async (formData: EventFormData, userId: string): Promis
       title: formData.title,
       description: formData.description,
       date: formData.date?.toISOString(),
+      end_date: formData.endDate?.toISOString() || null,
       time: formData.time,
       location: formData.location,
       event_type: formData.eventType,
@@ -72,7 +73,8 @@ export const saveDraft = async (formData: EventFormData, userId: string): Promis
       custom_duration_days: formData.customDurationDays,
       is_public: formData.isPublic,
       allow_waitlist: formData.allowWaitlist,
-      has_allow_list: formData.hasAllowList
+      has_allow_list: formData.hasAllowList,
+      transferable: formData.transferable ?? false
     };
 
     // Try with chain_id if the column exists; fallback without if not
@@ -119,6 +121,7 @@ export const updateDraft = async (id: string, formData: EventFormData, userId: s
       title: formData.title,
       description: formData.description,
       date: formData.date?.toISOString(),
+      end_date: formData.endDate?.toISOString() || null,
       time: formData.time,
       location: formData.location,
       event_type: formData.eventType,
@@ -134,7 +137,8 @@ export const updateDraft = async (id: string, formData: EventFormData, userId: s
       updated_at: new Date().toISOString(),
       is_public: formData.isPublic,
       allow_waitlist: formData.allowWaitlist,
-      has_allow_list: formData.hasAllowList
+      has_allow_list: formData.hasAllowList,
+      transferable: formData.transferable ?? false
     };
 
     let error: any = null;
@@ -185,6 +189,7 @@ export const getDrafts = async (userId: string): Promise<EventDraft[]> => {
     return data.map((draft: any) => ({
       ...draft,
       date: draft.date ? new Date(draft.date) : null,
+      end_date: draft.end_date ? new Date(draft.end_date) : null,
       created_at: new Date(draft.created_at),
       updated_at: new Date(draft.updated_at),
       currency: draft.currency as 'ETH' | 'USDC' | 'FREE',
@@ -192,6 +197,8 @@ export const getDrafts = async (userId: string): Promise<EventDraft[]> => {
       payment_methods: draft.payment_methods || ['crypto'],
       paystack_public_key: draft.paystack_public_key,
       image_url: draft.image_url,
+      ticket_duration: draft.ticket_duration,
+      custom_duration_days: draft.custom_duration_days,
       chain_id: (draft as any).chain_id
     }));
   } catch (error) {
@@ -221,6 +228,7 @@ export const getDraft = async (id: string, userId: string): Promise<EventDraft |
     return {
       ...data,
       date: data.date ? new Date(data.date) : null,
+      end_date: data.end_date ? new Date(data.end_date) : null,
       created_at: new Date(data.created_at),
       updated_at: new Date(data.updated_at),
       currency: data.currency as 'ETH' | 'USDC' | 'FREE',
@@ -228,6 +236,8 @@ export const getDraft = async (id: string, userId: string): Promise<EventDraft |
       payment_methods: data.payment_methods || ['crypto'],
       paystack_public_key: data.paystack_public_key,
       image_url: data.image_url,
+      ticket_duration: data.ticket_duration,
+      custom_duration_days: data.custom_duration_days,
       chain_id: (data as any).chain_id
     };
   } catch (error) {
@@ -262,6 +272,7 @@ export const getPublishedEvent = async (id: string, userId: string): Promise<Pub
       ...data,
       user_id: data.creator_id,
       date: data.date ? new Date(data.date) : null,
+      end_date: data.end_date ? new Date(data.end_date) : null,
       created_at: new Date(data.created_at),
       updated_at: new Date(data.updated_at),
       currency: data.currency as 'ETH' | 'USDC' | 'FREE',

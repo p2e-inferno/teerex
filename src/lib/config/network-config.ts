@@ -71,10 +71,18 @@ export async function getActiveNetworks(): Promise<NetworkConfig[]> {
       .order('chain_id');
 
     if (error) throw error;
-    return data || [];
+
+    // If no active networks found, log warning
+    if (!data || data.length === 0) {
+      console.warn('No active networks in database, using fallbacks');
+      return [];
+    }
+
+    console.log(`Loaded ${data.length} active network(s) from database`);
+    return data;
   } catch (error) {
-    console.warn('Failed to fetch network configs from database, using fallbacks:', error);
-    return [];
+    console.error('Database error fetching network configs:', error);
+    return []; // Return empty to trigger fallback in buildPrivyChains
   }
 }
 
@@ -213,9 +221,24 @@ export async function getPrivyConfig(): Promise<any> {
   return config;
 }
 
+// Custom event for cache invalidation
+const CACHE_CLEAR_EVENT = 'teerex-network-cache-cleared';
+
 // Export function to manually clear cache (useful for admin updates)
 export function clearPrivyConfigCache(): void {
   localStorage.removeItem(CACHE_KEY);
   console.log('Privy config cache cleared');
+
+  // Dispatch custom event to notify listeners (e.g., PrivyProvider)
+  window.dispatchEvent(new CustomEvent(CACHE_CLEAR_EVENT));
+}
+
+// Subscribe to cache clear events
+export function onCacheClear(callback: () => void): () => void {
+  const handler = () => callback();
+  window.addEventListener(CACHE_CLEAR_EVENT, handler);
+
+  // Return unsubscribe function
+  return () => window.removeEventListener(CACHE_CLEAR_EVENT, handler);
 }
 

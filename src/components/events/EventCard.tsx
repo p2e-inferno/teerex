@@ -11,6 +11,7 @@ import { ShareButton } from '@/components/interactions/ShareButton';
 import { RichTextDisplay } from '@/components/ui/rich-text/RichTextDisplay';
 import { stripHtml } from '@/utils/textUtils';
 import { WaitlistDialog } from './WaitlistDialog';
+import { formatEventDateRange } from '@/utils/dateUtils';
 
 interface EventCardProps {
   event: PublishedEvent;
@@ -128,7 +129,11 @@ export const EventCard: React.FC<EventCardProps> = ({
                     });
                     setImgError(true);
                   }}
-                  className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-200"
+                  style={{
+                    objectFit: 'cover',
+                    objectPosition: `${event.image_crop_x || 50}% ${event.image_crop_y || 50}%`
+                  }}
+                  className="w-full h-full group-hover:scale-105 transition-transform duration-200"
                 />
               </div>
             </ImageModal>
@@ -144,7 +149,11 @@ export const EventCard: React.FC<EventCardProps> = ({
                   });
                     setImgError(true);
                 }}
-                className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-200"
+                style={{
+                  objectFit: 'cover',
+                  objectPosition: `${event.image_crop_x || 50}% ${event.image_crop_y || 50}%`
+                }}
+                className="w-full h-full group-hover:scale-105 transition-transform duration-200"
               />
             </div>
           )
@@ -180,7 +189,7 @@ export const EventCard: React.FC<EventCardProps> = ({
           {event.date && (
             <div className="flex items-center text-sm text-gray-600">
               <Calendar className="w-4 h-4 mr-2" />
-              <span>{format(event.date, 'MMM d, yyyy')}</span>
+              <span>{formatEventDateRange({ startDate: event.date, endDate: event.end_date })}</span>
               <Clock className="w-4 h-4 ml-4 mr-2" />
               <span>{event.time}</span>
             </div>

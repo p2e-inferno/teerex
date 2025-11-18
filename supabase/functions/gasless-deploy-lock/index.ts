@@ -273,6 +273,30 @@ serve(async (req) => {
 
     console.log(`Successfully added lock manager. Tx: ${addManagerReceipt.transactionHash}`);
 
+    // 12.5. Set transfer fee if non-transferable (soul-bound)
+    // 10000 basis points = 100% fee = prevents all transfers
+    if (!transferable) {
+      try {
+        const transferFeeTx = await lock.updateTransferFee(10000);
+        await transferFeeTx.wait();
+        console.log('Transfer fee set to 100% (soul-bound) for lock:', lockAddress);
+      } catch (error) {
+        console.warn('Failed to set transfer fee (non-critical):', error);
+        // Don't fail entire deployment - transfer fee can be set later by lock manager
+      }
+    }
+
+    // 12.6. Set NFT metadata for marketplace visibility (non-critical)
+    try {
+      const baseTokenURI = `${SUPABASE_URL}/functions/v1/nft-metadata/${lockAddress}/`;
+      const metadataTx = await lock.setLockMetadata(name, 'TEEREX', baseTokenURI);
+      await metadataTx.wait();
+      console.log('NFT metadata set successfully for lock:', lockAddress);
+    } catch (error) {
+      console.warn('Failed to set NFT metadata (non-critical):', error);
+      // Don't fail entire deployment - metadata can be set later by lock manager
+    }
+
     // 13. Log activity and gas cost in parallel
     await Promise.all([
       logActivity(supabase, privyUserId, 'lock_deploy', chain_id, null, {

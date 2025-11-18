@@ -20,6 +20,7 @@ import {
   fetchKeysSoldForEvents,
   computeHomeStats,
 } from "@/lib/home/homeData";
+import MetaTags from "@/components/MetaTags";
 
 const Index = () => {
   const { authenticated, ready } = usePrivy();
@@ -68,7 +69,13 @@ const Index = () => {
   }
 
   return (
-    <div className="min-h-screen bg-white">
+    <>
+      <MetaTags
+        title="TeeRex - Create & Discover Onchain Events"
+        description="Join the future of events with TeeRex. Create unforgettable experiences with blockchain-verified tickets, gasless transactions, and Web3-powered communities. Discover and attend events that matter."
+        url="/"
+      />
+      <div className="min-h-screen bg-white">
       {/* Hero Section - Luma-inspired clean layout */}
       <section className="pt-20 pb-16">
         <div className="container mx-auto px-6 max-w-6xl">
@@ -358,6 +365,7 @@ const Index = () => {
         </section>
       )}
     </div>
+    </>
   );
 };
 

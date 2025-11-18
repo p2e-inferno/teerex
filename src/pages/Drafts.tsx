@@ -120,7 +120,7 @@ const Drafts = () => {
         maxNumberOfKeys: draft.capacity,
         chain_id: chainId,
         maxKeysPerAddress: 1,
-        transferable: true,
+        transferable: draft.transferable ?? false,
         requiresApproval: false,
         creator_address: wallet.address?.toLowerCase(),
         // Fields for idempotency hash
@@ -166,6 +166,7 @@ const Drafts = () => {
           category: draft.category,
           imageUrl: draft.image_url || '',
           chainId: draft.chain_id ?? baseSepolia.id,
+          transferable: draft.transferable ?? false,
         } as any;
 
         // Save to published events

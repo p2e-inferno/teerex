@@ -8,6 +8,7 @@ import { Calendar, Clock, MapPin, Edit, Trash2, Upload, Loader2 } from 'lucide-r
 import { format } from 'date-fns';
 import { EventDraft } from '@/types/event';
 import { RichTextDisplay } from '@/components/ui/rich-text/RichTextDisplay';
+import { formatEventDateRange } from '@/utils/dateUtils';
 
 interface DraftCardProps {
   draft: EventDraft;
@@ -33,10 +34,14 @@ export const DraftCard: React.FC<DraftCardProps> = ({
     <Card className="border-0 shadow-sm">
       <div className="aspect-[2/1] relative">
         {draft.image_url ? (
-          <img 
-            src={draft.image_url} 
-            alt={draft.title} 
-            className="w-full h-full object-cover rounded-t-lg"
+          <img
+            src={draft.image_url}
+            alt={draft.title}
+            style={{
+              objectFit: 'cover',
+              objectPosition: `${draft.image_crop_x || 50}% ${draft.image_crop_y || 50}%`
+            }}
+            className="w-full h-full rounded-t-lg"
           />
         ) : (
           <div className="w-full h-full bg-gradient-to-br from-purple-500 to-pink-500 rounded-t-lg"></div>
@@ -57,7 +62,7 @@ export const DraftCard: React.FC<DraftCardProps> = ({
           {draft.date && (
             <div className="flex items-center gap-1">
               <Calendar className="w-4 h-4" />
-              <span>{format(draft.date, "MMM d, yyyy")}</span>
+              <span>{formatEventDateRange({ startDate: draft.date, endDate: draft.end_date })}</span>
             </div>
           )}
           {draft.time && (

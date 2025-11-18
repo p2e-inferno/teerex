@@ -51,3 +51,196 @@ The browser does not read `paystack_transactions` directly (Privy auth lacks Sup
 
 Any file under `supabase/functions/**` requires redeploy of the corresponding function. Redeploy both functions after changes to ensure the issuing flow works end-to-end.
 
+## Database Migrations
+
+### Migration Naming Convention
+- Format: `YYYYMMDDHHMMSS_description.sql`
+- Example: `20251117120000_fix_rls_performance_issues.sql`
+- Use descriptive names that clearly indicate what the migration does
+
+### Critical Migration Performance Rules
+
+When creating database migrations, you MUST follow these performance best practices to avoid degraded query performance at scale:
+
+#### 1. Always Wrap Auth Functions in RLS Policies
+
+**WRONG** ❌
+```sql
+CREATE POLICY "policy_name" ON table_name
+  USING (user_id = current_setting('request.jwt.claims', true)::json->>'sub');
+```
+
+**CORRECT** ✅
+```sql
+CREATE POLICY "policy_name" ON table_name
+  USING (user_id = (SELECT current_setting('request.jwt.claims', true)::json->>'sub'));
+```
+
+**Why**: Without the `(SELECT ...)` wrapper, the function is re-evaluated for EVERY row, causing severe performance degradation.
+
+**Apply to all:**
+- `current_setting('request.jwt.claims', true)::json->>'sub'`
+- `auth.uid()`
+- `auth.jwt()`
+- Any function call in RLS policy conditions
+
+#### 2. Index ALL Foreign Keys
+
+**WRONG** ❌
+```sql
+CREATE TABLE tickets (
+  id UUID PRIMARY KEY,
+  event_id UUID REFERENCES events(id) ON DELETE CASCADE
+  -- Missing index!
+);
+```
+
+**CORRECT** ✅
+```sql
+CREATE TABLE tickets (
+  id UUID PRIMARY KEY,
+  event_id UUID REFERENCES events(id) ON DELETE CASCADE
+);
+
+-- Immediately add index
+CREATE INDEX idx_tickets_event_id ON tickets(event_id);
+
+-- For nullable foreign keys, use partial index
+CREATE INDEX idx_tickets_payment_id
+  ON tickets(payment_id)
+  WHERE payment_id IS NOT NULL;
+```
+
+**Why**: Unindexed foreign keys cause full table scans during:
+- DELETE operations (CASCADE checks)
+- JOIN queries
+- Constraint validation
+
+#### 3. Avoid Overlapping Policies
+
+**WRONG** ❌ - Multiple policies for same role/action
+```sql
+CREATE POLICY "Public can view" ON table_name
+  FOR SELECT USING (true);
+
+CREATE POLICY "Creators can manage" ON table_name
+  FOR ALL USING (creator_id = ...);  -- FOR ALL includes SELECT!
+```
+
+**CORRECT** ✅ - Option 1: Break down FOR ALL
+```sql
+CREATE POLICY "Public can view" ON table_name
+  FOR SELECT USING (true);
+
+CREATE POLICY "Creators can update" ON table_name
+  FOR UPDATE USING (creator_id = (SELECT ...));
+
+CREATE POLICY "Creators can delete" ON table_name
+  FOR DELETE USING (creator_id = (SELECT ...));
+```
+
+**CORRECT** ✅ - Option 2: Consolidate into one policy
+```sql
+CREATE POLICY "View and manage" ON table_name
+  FOR ALL USING (
+    true OR creator_id = (SELECT current_setting('request.jwt.claims', true)::json->>'sub')
+  );
+```
+
+**Why**: Multiple permissive policies for the same action force Postgres to evaluate ALL of them, even when one would suffice.
+
+### Pre-Migration Checklist
+
+Before committing any migration file, verify:
+
+- [ ] All `CREATE TABLE` statements with foreign keys have corresponding indexes
+- [ ] All RLS policies wrap `current_setting()`/`auth.*()` with `(SELECT ...)`
+- [ ] No `FOR ALL` policies overlap with specific action policies (SELECT/INSERT/UPDATE/DELETE)
+- [ ] Nullable foreign key columns use partial indexes (`WHERE column IS NOT NULL`)
+- [ ] Complex RLS policies use `EXISTS` subqueries efficiently
+- [ ] Migration file follows naming convention: `YYYYMMDDHHMMSS_description.sql`
+
+### Post-Migration Verification
+
+After applying migrations to any environment:
+
+1. **Check Performance Advisor**
+   - Navigate to: Supabase Dashboard → Database → Performance
+   - Address all WARN-level issues immediately
+
+2. **Common warnings to fix:**
+   - `auth_rls_initplan` → Wrap auth functions with SELECT
+   - `multiple_permissive_policies` → Consolidate or separate by action
+   - `unindexed_foreign_keys` → Add missing indexes
+
+3. **Test queries**
+   - Verify RLS policies work as expected
+   - Check query performance with EXPLAIN ANALYZE
+   - Test CASCADE DELETE operations
+
+### Migration Templates
+
+**Template 1: New table with foreign keys and RLS**
+```sql
+-- Create table
+CREATE TABLE resource_table (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id TEXT NOT NULL,
+  event_id UUID NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+  created_at TIMESTAMPTZ DEFAULT now()
+);
+
+-- Index ALL foreign keys
+CREATE INDEX idx_resource_event_id ON resource_table(event_id);
+
+-- Enable RLS
+ALTER TABLE resource_table ENABLE ROW LEVEL SECURITY;
+
+-- Create policies with SELECT-wrapped auth functions
+CREATE POLICY "Public read" ON resource_table
+  FOR SELECT USING (true);
+
+CREATE POLICY "Users manage own" ON resource_table
+  FOR ALL USING (
+    user_id = (SELECT current_setting('request.jwt.claims', true)::json->>'sub')
+  );
+```
+
+**Template 2: Fixing existing RLS policies**
+```sql
+-- Drop old policy
+DROP POLICY IF EXISTS "Old policy name" ON table_name;
+
+-- Recreate with SELECT wrapper
+CREATE POLICY "New optimized policy" ON table_name
+  FOR UPDATE USING (
+    user_id = (SELECT current_setting('request.jwt.claims', true)::json->>'sub')
+  );
+```
+
+**Template 3: Adding missing foreign key indexes**
+```sql
+-- Add indexes for existing foreign keys
+CREATE INDEX IF NOT EXISTS idx_table_foreign_key
+  ON table_name(foreign_key_column)
+  WHERE foreign_key_column IS NOT NULL; -- for nullable FKs
+
+-- Add comment for documentation
+COMMENT ON INDEX idx_table_foreign_key
+  IS 'Performance index for foreign key. Improves CASCADE operations and JOINs.';
+```
+
+### Common Pitfalls to Avoid
+
+1. **Forgetting to index foreign keys** - Always add index immediately after table creation
+2. **Using bare auth functions** - Always wrap with `(SELECT ...)`
+3. **Using FOR ALL liberally** - Break into specific actions to avoid policy overlap
+4. **Not testing RLS** - Verify policies work as expected before deploying
+5. **Ignoring Performance Advisor** - Check dashboard after every migration
+
+### References
+
+- See `CLAUDE.md` → Database Performance Best Practices for detailed examples
+- Supabase RLS docs: https://supabase.com/docs/guides/database/postgres/row-level-security
+- Performance optimization: https://supabase.com/docs/guides/database/database-linter
+

@@ -174,6 +174,36 @@ const PublicLockABI = [
     "outputs": [{ "internalType": "uint256", "name": "", "type": "uint256" }],
     "stateMutability": "view",
     "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "transferFeeBasisPoints",
+    "outputs": [
+      { "internalType": "uint256", "name": "", "type": "uint256" }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      { "internalType": "uint256", "name": "_tokenId", "type": "uint256" },
+      { "internalType": "uint256", "name": "_time", "type": "uint256" }
+    ],
+    "name": "getTransferFee",
+    "outputs": [
+      { "internalType": "uint256", "name": "", "type": "uint256" }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      { "internalType": "uint256", "name": "_transferFeeBasisPoints", "type": "uint256" }
+    ],
+    "name": "updateTransferFee",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
   }
 ];
 
@@ -437,6 +467,58 @@ export const deployLock = async (config: LockConfig, wallet: any, chainId: numbe
       transactionHash: tx.hash,
       lockAddress: lockAddress
     });
+
+    // Configure transfer fee based on transferability setting
+    if (lockAddress && lockAddress !== 'Unknown' && ethers.isAddress(lockAddress)) {
+      const lockContract = new ethers.Contract(lockAddress, PublicLockABI, signer);
+      const isTransferable = config.transferable ?? false;
+      const desiredFeeBps = isTransferable ? 0 : 10000; // 0% for transferable, 100% for soul-bound
+
+      try {
+        const currentFee = await lockContract.transferFeeBasisPoints();
+        if (currentFee !== BigInt(desiredFeeBps)) {
+          const transferFeeTx = await lockContract.updateTransferFee(desiredFeeBps);
+          await transferFeeTx.wait();
+          console.log(`Transfer fee set to ${desiredFeeBps} bps for lock:`, lockAddress);
+        } else {
+          console.log('Transfer fee already at desired value:', desiredFeeBps);
+        }
+      } catch (error) {
+        console.warn('Failed to set transfer fee (non-critical):', error);
+        // Don't fail deployment - transfer fee can be set later by lock manager
+      }
+    } else {
+      console.warn('Skipping transfer fee configuration due to invalid lock address:', lockAddress);
+    }
+
+    // Set NFT metadata for marketplace visibility
+    if (!lockAddress || lockAddress === 'Unknown' || !ethers.isAddress(lockAddress)) {
+      console.warn('Skipping NFT metadata setup due to invalid lock address:', lockAddress);
+    } else {
+      try {
+        const { setLockMetadata, getBaseTokenURI, TEEREX_NFT_SYMBOL } = await import('./lockMetadata');
+        const baseTokenURI = getBaseTokenURI(lockAddress);
+        
+        console.log('Setting NFT metadata for lock:', lockAddress);
+        const metadataResult = await setLockMetadata(
+          lockAddress,
+          config.name,
+          TEEREX_NFT_SYMBOL,
+          baseTokenURI,
+          signer
+        );
+        
+        if (metadataResult.success) {
+          console.log('NFT metadata set successfully:', metadataResult.txHash);
+        } else {
+          console.warn('Failed to set NFT metadata:', metadataResult.error);
+          // Don't fail deployment - metadata can be set later by lock manager
+        }
+      } catch (error) {
+        console.warn('Error setting NFT metadata (non-critical):', error);
+        // Don't fail deployment - metadata can be set later by lock manager
+      }
+    }
 
     return {
       success: true,
@@ -734,5 +816,102 @@ export const getMaxKeysPerAddress = async (lockAddress: string, userAddress?: st
   } catch (error) {
     console.error(`Error fetching max keys per address for ${lockAddress}:`, error);
     return 1; // Default fallback
+  }
+};
+
+/**
+ * Reads transfer fee basis points and derives transferability.
+ * - 0 bps => transferable
+ * - 10000 bps => soul-bound (non-transferable)
+ * - Other values => transferable with a fee
+ */
+export const getTransferabilityStatus = async (
+  lockAddress: string,
+  chainId: number = baseSepolia.id
+): Promise<{ isTransferable: boolean; feeBasisPoints: number | null }> => {
+  try {
+    if (!lockAddress || lockAddress === 'Unknown' || !ethers.isAddress(lockAddress)) {
+      console.warn(`Invalid lock address for transferability check: ${lockAddress}`);
+      return { isTransferable: true, feeBasisPoints: null };
+    }
+
+    const provider = getReadOnlyProvider(chainId);
+    const lockContract = new ethers.Contract(lockAddress, PublicLockABI, provider);
+    const fee = await lockContract.transferFeeBasisPoints();
+    const feeBps = Number(fee);
+
+    // Only 10000 bps is treated as soul-bound for our UX.
+    const isTransferable = feeBps < 10000;
+
+    return { isTransferable, feeBasisPoints: feeBps };
+  } catch (error) {
+    console.error(`Error reading transfer fee basis points for ${lockAddress}:`, error);
+    // Fail open as transferable to avoid incorrectly labelling tickets as soul-bound
+    return { isTransferable: true, feeBasisPoints: null };
+  }
+};
+
+/**
+ * Updates lock transferability by setting the transfer fee on-chain.
+ * - isTransferable === true  => updateTransferFee(0)
+ * - isTransferable === false => updateTransferFee(10000)
+ */
+export const updateLockTransferability = async (
+  lockAddress: string,
+  chainId: number,
+  wallet: any,
+  isTransferable: boolean
+): Promise<{ success: boolean; transactionHash?: string; error?: string }> => {
+  try {
+    if (!lockAddress || lockAddress === 'Unknown' || !ethers.isAddress(lockAddress)) {
+      throw new Error('Invalid lock address.');
+    }
+
+    if (!wallet || !wallet.address) {
+      throw new Error('No wallet provided or not connected.');
+    }
+
+    if (!chainId) {
+      throw new Error('Missing chainId for transferability update.');
+    }
+
+    const provider = await wallet.getEthereumProvider();
+    await ensureCorrectNetwork(provider, chainId);
+    const ethersProvider = new ethers.BrowserProvider(provider);
+    const signer = await ethersProvider.getSigner();
+
+    const lockContract = new ethers.Contract(lockAddress, PublicLockABI, signer);
+    const desiredFeeBps = isTransferable ? 0 : 10000;
+
+    const currentFee = await lockContract.transferFeeBasisPoints();
+    if (currentFee === BigInt(desiredFeeBps)) {
+      console.log('Transfer fee already at desired value, skipping update.');
+      return { success: true };
+    }
+
+    const tx = await lockContract.updateTransferFee(desiredFeeBps);
+    console.log('Updating transfer fee transaction sent:', tx.hash);
+    const receipt = await tx.wait();
+
+    if (receipt.status !== 1) {
+      throw new Error('Transaction failed while updating transferability.');
+    }
+
+    return { success: true, transactionHash: tx.hash };
+  } catch (error) {
+    console.error('Error updating lock transferability:', error);
+
+    let errorMessage = 'Failed to update transferability.';
+    if (error instanceof Error) {
+      if (error.message.toLowerCase().includes('user rejected')) {
+        errorMessage = 'Transaction was cancelled. Please try again when ready.';
+      } else if (error.message.toLowerCase().includes('insufficient funds')) {
+        errorMessage = 'Insufficient funds to update transferability. Please add more ETH to your wallet.';
+      } else {
+        errorMessage = error.message;
+      }
+    }
+
+    return { success: false, error: errorMessage };
   }
 };

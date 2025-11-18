@@ -22,11 +22,13 @@ import {
   Linkedin,
 } from "lucide-react";
 import { getPublishedEventById, PublishedEvent } from "@/utils/eventUtils";
+import MetaTags from "@/components/MetaTags";
 import {
   getTotalKeys,
   getUserKeyBalance,
   getMaxKeysPerAddress,
   checkKeyOwnership,
+  getTransferabilityStatus,
 } from "@/utils/lockUtils";
 import { EventPurchaseDialog } from "@/components/events/EventPurchaseDialog";
 import { PaystackPaymentDialog } from "@/components/events/PaystackPaymentDialog";
@@ -49,6 +51,7 @@ import { useEventAttestationState } from "@/hooks/useEventAttestationState";
 import { getDisableMessage } from "@/utils/attestationMessages";
 import { getBatchAttestationAddress } from "@/lib/config/contract-config";
 import { format } from "date-fns";
+import { formatEventDateRange } from "@/utils/dateUtils";
 import { useEventTicketRealtime } from "@/hooks/useEventTicketRealtime";
 import {
   DropdownMenu,
@@ -74,6 +77,8 @@ const EventDetails = () => {
   const [userTicketCount, setUserTicketCount] = useState<number>(0);
   const [maxTicketsPerUser, setMaxTicketsPerUser] = useState<number>(1);
   const [isLoading, setIsLoading] = useState(true);
+  const [isTransferableOnChain, setIsTransferableOnChain] = useState<boolean | null>(null);
+  const [transferFeeBps, setTransferFeeBps] = useState<number | null>(null);
 
   // Real-time ticket count subscription
   const { ticketsSold: keysSold, isLoading: isLoadingTickets } = useEventTicketRealtime({
@@ -96,6 +101,31 @@ const EventDetails = () => {
   const [attendanceSchemaUid, setAttendanceSchemaUid] = useState<string | null>(
     null
   );
+  // On-chain transferability status
+  useEffect(() => {
+    const loadTransferability = async () => {
+      if (!event?.lock_address || !event?.chain_id) {
+        setIsTransferableOnChain(null);
+        setTransferFeeBps(null);
+        return;
+      }
+
+      try {
+        const { isTransferable, feeBasisPoints } = await getTransferabilityStatus(
+          event.lock_address,
+          event.chain_id
+        );
+        setIsTransferableOnChain(isTransferable);
+        setTransferFeeBps(feeBasisPoints);
+      } catch (e) {
+        console.error('Failed to load transferability status:', e);
+        setIsTransferableOnChain(null);
+        setTransferFeeBps(null);
+      }
+    };
+
+    loadTransferability();
+  }, [event?.lock_address, event?.chain_id]);
 
   useEffect(() => {
     const loadEvent = async () => {
@@ -612,13 +642,12 @@ const EventDetails = () => {
   const handleAddToCalendar = () => {
     if (!event || !event.date || !event.time) return;
 
-    // Parse the event time (assuming format like "7:00 PM" or "19:00")
+    // Parse the event time (supports formats like "7:00 PM" or "19:00")
     const parseEventTime = (timeString: string, eventDate: Date) => {
       const timeParts = timeString
         .trim()
         .match(/^(\d{1,2}):(\d{2})\s*(AM|PM)?$/i);
       if (!timeParts) {
-        // Fallback to current parsing if format doesn't match
         console.warn("Could not parse time format:", timeString);
         return eventDate;
       }
@@ -640,8 +669,15 @@ const EventDetails = () => {
     };
 
     const startDate = parseEventTime(event.time, new Date(event.date));
-    // Default to 2 hours duration if no specific duration is available
-    const endDate = new Date(startDate.getTime() + 2 * 60 * 60 * 1000);
+
+    let endDate: Date;
+    if (event.end_date) {
+      // Multi-day: end at the same time on the end date
+      endDate = parseEventTime(event.time, new Date(event.end_date));
+    } else {
+      // Single day: default to 2 hours duration
+      endDate = new Date(startDate.getTime() + 2 * 60 * 60 * 1000);
+    }
 
     const formatDate = (date: Date) => {
       return date.toISOString().replace(/[-:]/g, "").split(".")[0] + "Z";
@@ -757,7 +793,15 @@ const EventDetails = () => {
   });
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <>
+      <MetaTags
+        title={`${event.title} - TeeRex Event`}
+        description={event.description || `Join us for ${event.title} on TeeRex. ${event.location ? `Location: ${event.location}. ` : ''}${event.price ? `Price: ${event.price} ${event.currency}. ` : ''}Limited tickets available!`}
+        image={event.image_url}
+        url={window.location.href}
+        type="event"
+      />
+      <div className="min-h-screen bg-gray-50">
       {/* Header */}
       <div className="bg-white border-b">
         <div className="container mx-auto px-6 max-w-4xl py-4">
@@ -796,7 +840,11 @@ const EventDetails = () => {
                       src: (e.currentTarget as HTMLImageElement).src,
                     });
                   }}
-                  className="w-full h-full object-cover"
+                  style={{
+                    objectFit: 'cover',
+                    objectPosition: `${event.image_crop_x || 50}% ${event.image_crop_y || 50}%`
+                  }}
+                  className="w-full h-full"
                 />
               </div>
             )}
@@ -818,7 +866,7 @@ const EventDetails = () => {
                     {event.date && (
                       <div className="flex items-center space-x-1">
                         <Calendar className="w-4 h-4" />
-                        <span>{format(event.date, "EEEE, MMMM do, yyyy")}</span>
+                        <span>{formatEventDateRange({ startDate: event.date, endDate: event.end_date, formatStyle: 'long' })}</span>
                       </div>
                     )}
                     <div className="flex items-center space-x-1">
@@ -826,6 +874,21 @@ const EventDetails = () => {
                       <span>{event.time}</span>
                     </div>
                   </div>
+                  {isTransferableOnChain !== null && (
+                    <div className="mt-2">
+                      {isTransferableOnChain ? (
+                        <Badge variant="outline" className="text-xs text-green-700 border-green-200">
+                          {transferFeeBps && transferFeeBps > 0
+                            ? `Transferable (fee ${transferFeeBps / 100}% )`
+                            : 'Transferable'}
+                        </Badge>
+                      ) : (
+                        <Badge variant="outline" className="text-xs text-purple-700 border-purple-200">
+                          Soul-bound (non-transferable)
+                        </Badge>
+                      )}
+                    </div>
+                  )}
                 </div>
                 <div className="flex items-center space-x-2">
                   <TooltipProvider>
@@ -1112,7 +1175,7 @@ const EventDetails = () => {
                       <Calendar className="w-5 h-5 text-gray-400 mt-0.5" />
                       <div>
                         <div className="font-medium text-gray-900">
-                          {format(event.date, "EEEE, MMMM do, yyyy")}
+                          {formatEventDateRange({ startDate: event.date, endDate: event.end_date, formatStyle: 'long' })}
                         </div>
                         <div className="text-sm text-gray-600">
                           {event.time}
@@ -1239,6 +1302,7 @@ const EventDetails = () => {
         onClose={closeAllModals}
       />
     </div>
+    </>
   );
 };
 

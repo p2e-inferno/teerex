@@ -292,8 +292,169 @@ supabase/
 1. Create migration file: `supabase/migrations/YYYYMMDDHHMMSS_description.sql`
 2. Write SQL for schema changes
 3. Include RLS policies if adding new tables
-4. Test migration locally before deploying
-5. Never reset the database (per user's global instructions)
+4. **Follow database performance best practices** (see section below)
+5. Test migration locally before deploying
+6. Never reset the database (per user's global instructions)
+
+## Database Performance Best Practices
+
+When creating or modifying database migrations, follow these critical performance guidelines to avoid common pitfalls identified by Supabase Performance Advisor:
+
+### 1. RLS Policy Performance (auth_rls_initplan)
+
+**Problem**: Using `current_setting()` or `auth.uid()` directly in RLS policies causes them to be re-evaluated for EVERY row, leading to severe performance degradation at scale.
+
+**❌ BAD - Re-evaluates for each row:**
+```sql
+CREATE POLICY "Users can update own records"
+  ON table_name FOR UPDATE
+  USING (user_id = current_setting('request.jwt.claims', true)::json->>'sub');
+```
+
+**✅ GOOD - Evaluates once per query:**
+```sql
+CREATE POLICY "Users can update own records"
+  ON table_name FOR UPDATE
+  USING (user_id = (SELECT current_setting('request.jwt.claims', true)::json->>'sub'));
+```
+
+**Key Rule**: Always wrap `current_setting()`, `auth.uid()`, and `auth.jwt()` with `(SELECT ...)` in RLS policies.
+
+**Common patterns to fix:**
+- `current_setting('request.jwt.claims', true)::json->>'sub'` → `(SELECT current_setting('request.jwt.claims', true)::json->>'sub')`
+- `auth.uid()::text` → `(SELECT auth.uid()::text)`
+- `auth.jwt()->>'role'` → `(SELECT auth.jwt()->>'role')`
+
+### 2. Multiple Permissive Policies (multiple_permissive_policies)
+
+**Problem**: Having multiple permissive policies for the same role and action causes Postgres to evaluate ALL policies, even when one would suffice.
+
+**❌ BAD - Multiple overlapping policies:**
+```sql
+-- Policy 1: Public can view
+CREATE POLICY "Anyone can view" ON table_name
+  FOR SELECT USING (true);
+
+-- Policy 2: Creators can manage (includes SELECT)
+CREATE POLICY "Creators can manage" ON table_name
+  FOR ALL USING (creator_id = ...);
+```
+
+**✅ GOOD - Consolidate or use specific actions:**
+```sql
+-- Option 1: Single policy with OR condition
+CREATE POLICY "Public view or creator manage" ON table_name
+  FOR SELECT USING (true OR creator_id = ...);
+
+-- Option 2: Separate policies by specific action (not FOR ALL)
+CREATE POLICY "Public can view" ON table_name
+  FOR SELECT USING (true);
+
+CREATE POLICY "Creators can update" ON table_name
+  FOR UPDATE USING (creator_id = ...);
+
+CREATE POLICY "Creators can delete" ON table_name
+  FOR DELETE USING (creator_id = ...);
+```
+
+**Key Rule**: Avoid using `FOR ALL` when you have other policies for the same role. Break it into specific actions (INSERT, UPDATE, DELETE) to prevent overlap.
+
+### 3. Foreign Key Indexing (unindexed_foreign_keys)
+
+**Problem**: Foreign keys without indexes cause full table scans during:
+- DELETE operations on parent tables (CASCADE checks)
+- JOIN queries
+- Foreign key constraint validation
+
+**❌ BAD - Foreign key without index:**
+```sql
+CREATE TABLE child_table (
+  id UUID PRIMARY KEY,
+  parent_id UUID REFERENCES parent_table(id) ON DELETE CASCADE
+  -- No index on parent_id!
+);
+```
+
+**✅ GOOD - Always index foreign keys:**
+```sql
+CREATE TABLE child_table (
+  id UUID PRIMARY KEY,
+  parent_id UUID REFERENCES parent_table(id) ON DELETE CASCADE
+);
+
+-- Add index immediately after table creation
+CREATE INDEX idx_child_table_parent_id ON child_table(parent_id);
+
+-- For nullable foreign keys, use partial index
+CREATE INDEX idx_child_table_parent_id
+  ON child_table(parent_id)
+  WHERE parent_id IS NOT NULL;
+```
+
+**Key Rule**: EVERY foreign key column MUST have an index. Use partial indexes (`WHERE column IS NOT NULL`) for nullable foreign keys to save space.
+
+### 4. Migration Checklist for Performance
+
+Before finalizing any migration that creates or modifies tables with RLS:
+
+- [ ] All foreign key columns have indexes
+- [ ] All RLS policies wrap `current_setting()`/`auth.*()` with `(SELECT ...)`
+- [ ] No overlapping `FOR ALL` policies with specific action policies
+- [ ] Partial indexes used for nullable columns (`WHERE column IS NOT NULL`)
+- [ ] Complex policies use `EXISTS` subqueries efficiently
+- [ ] Indexes on columns frequently used in WHERE clauses or JOINs
+
+### 5. Testing for Performance Issues
+
+After applying migrations, check Supabase Performance Advisor:
+
+1. Navigate to: Supabase Dashboard → Database → Performance
+2. Look for warnings:
+   - `auth_rls_initplan` - Fix by wrapping auth functions with SELECT
+   - `multiple_permissive_policies` - Consolidate or separate by action
+   - `unindexed_foreign_keys` - Add missing indexes
+3. Address all WARN-level issues before deploying to production
+
+### 6. Common RLS Patterns
+
+**Pattern 1: User owns record**
+```sql
+CREATE POLICY "Users manage own records" ON table_name
+  FOR ALL USING (
+    user_id = (SELECT current_setting('request.jwt.claims', true)::json->>'sub')
+  );
+```
+
+**Pattern 2: Related record ownership (with EXISTS)**
+```sql
+CREATE POLICY "Event creators manage resources" ON resource_table
+  FOR ALL USING (
+    EXISTS (
+      SELECT 1 FROM events
+      WHERE events.id = resource_table.event_id
+      AND events.creator_id = (SELECT current_setting('request.jwt.claims', true)::json->>'sub')
+    )
+  );
+```
+
+**Pattern 3: Service role access**
+```sql
+CREATE POLICY "Service role full access" ON table_name
+  FOR ALL TO service_role
+  USING (true)
+  WITH CHECK (true);
+```
+
+**Pattern 4: Public read, authenticated write**
+```sql
+-- Separate policies, no overlap
+CREATE POLICY "Public read" ON table_name
+  FOR SELECT USING (true);
+
+CREATE POLICY "Authenticated insert" ON table_name
+  FOR INSERT TO authenticated
+  WITH CHECK (true);
+```
 
 ## Testing Considerations
 

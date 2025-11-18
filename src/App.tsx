@@ -1,4 +1,5 @@
 
+import { HelmetProvider } from 'react-helmet-async';
 import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -24,35 +25,37 @@ import NotFound from "./pages/NotFound";
 
 const App = () => {
   return (
-    <PrivyProvider>
-      <TooltipProvider>
-        <Toaster />
-        <Sonner />
-        <BrowserRouter>
-          <Layout>
-            <Routes>
-              <Route path="/" element={<Index />} />
-              <Route path="/explore" element={<Explore />} />
-              <Route path="/create" element={<CreateEvent />} />
-              <Route path="/events" element={<MyEvents />} />
-              <Route path="/my-events" element={<MyEvents />} />
-              <Route path="/my-tickets" element={<MyTickets />} />
-              <Route path="/attestations" element={<Attestations />} />
-              <Route path="/drafts" element={<Drafts />} />
-              <Route path="/admin" element={<AdminRoute><AdminDashboard /></AdminRoute>} />
-              <Route path="/admin/networks" element={<AdminRoute><AdminNetworks /></AdminRoute>} />
-              <Route path="/admin/schemas" element={<AdminRoute><Admin /></AdminRoute>} />
-              <Route path="/admin/events" element={<AdminRoute><AdminEvents /></AdminRoute>} />
-              <Route path="/admin/gasless" element={<AdminRoute><AdminGaslessConfig /></AdminRoute>} />
-              <Route path="/admin/gas-sponsorship" element={<AdminRoute><AdminGasSponsorship /></AdminRoute>} />
-              <Route path="/event/:id" element={<EventDetails />} />
-              {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
-              <Route path="*" element={<NotFound />} />
-            </Routes>
-          </Layout>
-        </BrowserRouter>
-      </TooltipProvider>
-    </PrivyProvider>
+    <HelmetProvider>
+      <PrivyProvider>
+        <TooltipProvider>
+          <Toaster />
+          <Sonner />
+          <BrowserRouter>
+            <Layout>
+              <Routes>
+                <Route path="/" element={<Index />} />
+                <Route path="/explore" element={<Explore />} />
+                <Route path="/create" element={<CreateEvent />} />
+                <Route path="/events" element={<MyEvents />} />
+                <Route path="/my-events" element={<MyEvents />} />
+                <Route path="/my-tickets" element={<MyTickets />} />
+                <Route path="/attestations" element={<Attestations />} />
+                <Route path="/drafts" element={<Drafts />} />
+                <Route path="/admin" element={<AdminRoute><AdminDashboard /></AdminRoute>} />
+                <Route path="/admin/networks" element={<AdminRoute><AdminNetworks /></AdminRoute>} />
+                <Route path="/admin/schemas" element={<AdminRoute><Admin /></AdminRoute>} />
+                <Route path="/admin/events" element={<AdminRoute><AdminEvents /></AdminRoute>} />
+                <Route path="/admin/gasless" element={<AdminRoute><AdminGaslessConfig /></AdminRoute>} />
+                <Route path="/admin/gas-sponsorship" element={<AdminRoute><AdminGasSponsorship /></AdminRoute>} />
+                <Route path="/event/:id" element={<EventDetails />} />
+                {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
+                <Route path="*" element={<NotFound />} />
+              </Routes>
+            </Layout>
+          </BrowserRouter>
+        </TooltipProvider>
+      </PrivyProvider>
+    </HelmetProvider>
   );
 };
 

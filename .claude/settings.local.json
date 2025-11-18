@@ -9,7 +9,8 @@
       "Bash(npm run build:*)",
       "WebSearch",
       "WebFetch(domain:supabase.com)",
-      "Bash(test:*)"
+      "Bash(test:*)",
+      "Bash(npm install:*)"
     ],
     "deny": [],
     "ask": []

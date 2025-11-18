@@ -12,7 +12,7 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { ChevronLeft, ChevronRight, ExternalLink } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
-import { deployLock, getBlockExplorerUrl } from '@/utils/lockUtils';
+import { deployLock, getBlockExplorerUrl, updateLockTransferability } from '@/utils/lockUtils';
 import { savePublishedEvent } from '@/utils/eventUtils';
 import { saveDraft, updateDraft, getDraft, deleteDraft, getPublishedEvent } from '@/utils/supabaseDraftStorage';
 import { supabase } from '@/integrations/supabase/client';
@@ -25,6 +25,7 @@ export interface EventFormData {
   title: string;
   description: string;
   date: Date | null;
+  endDate?: Date | null;
   time: string;
   location: string;
   eventType: 'physical' | 'virtual';
@@ -46,6 +47,8 @@ export interface EventFormData {
   isPublic: boolean;
   allowWaitlist: boolean;
   hasAllowList: boolean;
+  // Transferability setting
+  transferable?: boolean;
 }
 
 const CreateEvent = () => {
@@ -59,10 +62,12 @@ const CreateEvent = () => {
   
   const [currentStep, setCurrentStep] = useState(1);
   const [isCreating, setIsCreating] = useState(false);
+  const [isSavingDraft, setIsSavingDraft] = useState(false);
   const [currentDraftId, setCurrentDraftId] = useState<string | null>(draftId);
   const [editingEventId, setEditingEventId] = useState<string | null>(eventId);
   const [showSuccessModal, setShowSuccessModal] = useState(false);
   const [createdEvent, setCreatedEvent] = useState<any>(null);
+  const [editingMeta, setEditingMeta] = useState<{ lockAddress: string; chainId: number; initialTransferable: boolean } | null>(null);
   const [formData, setFormData] = useState<EventFormData>({
     title: '',
     description: '',
@@ -81,7 +86,8 @@ const CreateEvent = () => {
     customDurationDays: undefined,
     isPublic: true,
     allowWaitlist: false,
-    hasAllowList: false
+    hasAllowList: false,
+    transferable: false
   });
 
   // Gasless deployment fallback hook
@@ -117,6 +123,23 @@ const CreateEvent = () => {
     return true;
   };
 
+  const validateDates = () => {
+    if (!formData.date) {
+      return false;
+    }
+
+    if (formData.endDate && formData.endDate < formData.date) {
+      toast({
+        title: 'Invalid Date Range',
+        description: 'End date must be on or after start date',
+        variant: 'destructive',
+      });
+      return false;
+    }
+
+    return true;
+  };
+
 
   useEffect(() => {
     if (draftId && user?.id) {
@@ -127,6 +150,7 @@ const CreateEvent = () => {
             title: draft.title,
             description: draft.description,
             date: draft.date,
+            endDate: draft.end_date,
             time: draft.time,
             location: draft.location,
             eventType: (draft as any).event_type || 'physical',
@@ -140,11 +164,12 @@ const CreateEvent = () => {
             ngnPrice: draft.ngn_price || 0,
             category: draft.category,
             imageUrl: draft.image_url || '',
-            ticketDuration: (draft as any).ticket_duration || 'event',
-            customDurationDays: (draft as any).custom_duration_days,
+            ticketDuration: draft.ticket_duration || 'event',
+            customDurationDays: draft.custom_duration_days,
             isPublic: (draft as any).is_public ?? true,
             allowWaitlist: (draft as any).allow_waitlist ?? false,
-            hasAllowList: (draft as any).has_allow_list ?? false
+            hasAllowList: (draft as any).has_allow_list ?? false,
+            transferable: draft.transferable ?? false
           });
           setCurrentDraftId(draftId);
           setEditingEventId(null);
@@ -159,6 +184,7 @@ const CreateEvent = () => {
             title: event.title,
             description: event.description,
             date: event.date,
+            endDate: event.end_date,
             time: event.time,
             location: event.location,
             eventType: (event as any).event_type || 'physical',
@@ -171,14 +197,20 @@ const CreateEvent = () => {
             ngnPrice: event.ngn_price || 0,
             category: event.category,
             imageUrl: event.image_url || '',
-            ticketDuration: (event as any).ticket_duration || 'event',
-            customDurationDays: (event as any).custom_duration_days,
+            ticketDuration: event.ticket_duration || 'event',
+            customDurationDays: event.custom_duration_days,
             isPublic: (event as any).is_public ?? true,
             allowWaitlist: (event as any).allow_waitlist ?? false,
-            hasAllowList: (event as any).has_allow_list ?? false
+            hasAllowList: (event as any).has_allow_list ?? false,
+            transferable: (event as any).transferable ?? false
           });
           setEditingEventId(eventId);
           setCurrentDraftId(null);
+          setEditingMeta({
+            lockAddress: event.lock_address,
+            chainId: event.chain_id,
+            initialTransferable: (event as any).transferable ?? false,
+          });
         } else {
           toast({
             title: "Event not found",
@@ -273,37 +305,72 @@ const CreateEvent = () => {
   };
 
   const saveAsDraft = async () => {
+    setIsSavingDraft(true);
     try {
       if (!user?.id) {
         throw new Error('User not authenticated');
       }
 
+      console.log('Saving draft for user:', user.id);
+      console.log('Current draft ID:', currentDraftId);
+      console.log('Form data:', formData);
+
+      // Refresh access token to prevent expiration issues
+      try {
+        const accessToken = await getAccessToken();
+        if (!accessToken) {
+          throw new Error('Authentication session expired. Please refresh the page.');
+        }
+        console.log('Access token refreshed successfully');
+      } catch (tokenError) {
+        console.error('Error refreshing access token:', tokenError);
+        throw new Error('Authentication session expired. Please refresh the page and try again.');
+      }
+
       if (currentDraftId) {
+        console.log('Updating existing draft:', currentDraftId);
         await updateDraft(currentDraftId, formData, user.id);
         toast({
           title: "Draft Updated",
           description: "Your event draft has been updated successfully.",
         });
       } else {
+        console.log('Creating new draft');
         const newDraftId = await saveDraft(formData, user.id);
         if (newDraftId) {
           setCurrentDraftId(newDraftId);
+          console.log('Draft created successfully:', newDraftId);
           toast({
             title: "Draft Saved",
             description: "Your event has been saved as a draft.",
           });
         } else {
-          throw new Error('Failed to save draft');
+          throw new Error('Failed to save draft - no draft ID returned');
         }
       }
       navigate('/drafts');
     } catch (error) {
       console.error('Error saving draft:', error);
+
+      // Provide detailed error messages
+      let errorMessage = "There was an error saving your draft. Please try again.";
+      if (error instanceof Error) {
+        if (error.message.includes('Authentication') || error.message.includes('session')) {
+          errorMessage = error.message;
+        } else if (error.message.includes('network') || error.message.includes('fetch')) {
+          errorMessage = "Network error. Please check your connection and try again.";
+        } else {
+          errorMessage = `Failed to save draft: ${error.message}`;
+        }
+      }
+
       toast({
         title: "Error Saving Draft",
-        description: "There was an error saving your draft. Please try again.",
+        description: errorMessage,
         variant: "destructive"
       });
+    } finally {
+      setIsSavingDraft(false);
     }
   };
 
@@ -314,6 +381,10 @@ const CreateEvent = () => {
     try {
       // Validate required fields before proceeding
       if (!validateRequiredFields()) {
+        setIsCreating(false);
+        return;
+      }
+      if (!validateDates()) {
         setIsCreating(false);
         return;
       }
@@ -352,7 +423,7 @@ const CreateEvent = () => {
         maxNumberOfKeys: formData.capacity,
         chain_id: lockConfig.chainId,
         maxKeysPerAddress: 1,
-        transferable: true,
+        transferable: formData.transferable ?? false,
         requiresApproval: false,
         creator_address: wallet.address?.toLowerCase(),
         // Fields for idempotency hash
@@ -484,21 +555,47 @@ const CreateEvent = () => {
       }
 
       let errorMessage = 'There was an error creating your event. Please try again.';
+      let shouldAutoSaveDraft = false;
 
       if (error instanceof Error) {
         if (error.message.includes('User rejected')) {
-          errorMessage = 'Transaction was cancelled. Please try again when ready.';
+          errorMessage = 'Transaction was cancelled. Your work has been automatically saved as a draft.';
+          shouldAutoSaveDraft = true;
         } else if (error.message.includes('insufficient funds')) {
-          errorMessage = 'Insufficient funds to deploy the smart contract. Please add more ETH to your wallet.';
+          errorMessage = 'Insufficient funds to deploy the smart contract. Your work has been saved as a draft.';
+          shouldAutoSaveDraft = true;
         } else {
           errorMessage = error.message;
+          // Auto-save for any deployment error to prevent data loss
+          shouldAutoSaveDraft = true;
+        }
+      }
+
+      // Automatically save as draft on deployment failure
+      if (shouldAutoSaveDraft && user?.id) {
+        console.log('Auto-saving draft after deployment error');
+        try {
+          if (currentDraftId) {
+            await updateDraft(currentDraftId, formData, user.id);
+            console.log('Draft auto-updated successfully');
+          } else {
+            const newDraftId = await saveDraft(formData, user.id);
+            if (newDraftId) {
+              setCurrentDraftId(newDraftId);
+              console.log('Draft auto-saved successfully:', newDraftId);
+            }
+          }
+        } catch (draftError) {
+          console.error('Failed to auto-save draft:', draftError);
+          errorMessage += ' Unable to auto-save draft - please save manually.';
         }
       }
 
       toast({
         title: "Error Creating Event",
         description: errorMessage,
-        variant: "destructive"
+        variant: "destructive",
+        duration: 7000
       });
 
       setIsCreating(false);
@@ -517,6 +614,35 @@ const CreateEvent = () => {
         setIsCreating(false);
         return;
       }
+      if (!validateDates()) {
+        setIsCreating(false);
+        return;
+      }
+
+      // If transferability has changed, update it on-chain first
+      const hasEditingMeta = Boolean(editingMeta && editingMeta.lockAddress && editingMeta.chainId);
+      const nextTransferable = formData.transferable ?? false;
+      const transferabilityChanged =
+        hasEditingMeta && editingMeta!.initialTransferable !== nextTransferable;
+
+      if (transferabilityChanged) {
+        const wallet = wallets[0];
+        if (!wallet) {
+          throw new Error("Please connect a wallet to update transferability.");
+        }
+
+        const result = await updateLockTransferability(
+          editingMeta!.lockAddress,
+          editingMeta!.chainId,
+          wallet,
+          nextTransferable
+        );
+
+        if (!result.success) {
+          throw new Error(result.error || "Failed to update ticket transferability on-chain.");
+        }
+      }
+
       const accessToken = await getAccessToken();
       if (!accessToken) {
         throw new Error("Authentication token not available. Please log in again.");
@@ -589,7 +715,8 @@ const CreateEvent = () => {
       customDurationDays: undefined,
       isPublic: true,
       allowWaitlist: false,
-      hasAllowList: false
+      hasAllowList: false,
+      transferable: false
     });
     setCurrentStep(1);
     setCurrentDraftId(null);
@@ -621,7 +748,7 @@ const CreateEvent = () => {
         }
         return <TicketSettings {...commonProps} />;
       case 4:
-        return <EventPreview {...commonProps} onSaveAsDraft={editingEventId ? undefined : saveAsDraft} />;
+        return <EventPreview {...commonProps} onSaveAsDraft={editingEventId ? undefined : saveAsDraft} isSavingDraft={isSavingDraft} isPublishing={isCreating} />;
       default:
         return <EventBasicInfo {...commonProps} />;
     }
