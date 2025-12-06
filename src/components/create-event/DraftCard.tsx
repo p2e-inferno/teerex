@@ -32,7 +32,7 @@ export const DraftCard: React.FC<DraftCardProps> = ({
     : 'Network';
   return (
     <Card className="border-0 shadow-sm">
-      <div className="aspect-[2/1] relative">
+      <div className="aspect-square relative">
         {draft.image_url ? (
           <img
             src={draft.image_url}

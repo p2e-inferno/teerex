@@ -36,7 +36,7 @@ export const EventPreview: React.FC<EventPreviewProps> = ({
       {/* Event Preview Card */}
       <Card className="overflow-hidden border-0 shadow-lg">
         {/* Event Image */}
-        <div className="aspect-[2/1] relative">
+        <div className="aspect-square relative">
           {formData.imageUrl ? (
             <img
               src={formData.imageUrl}

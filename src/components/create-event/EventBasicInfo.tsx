@@ -317,13 +317,16 @@ export const EventBasicInfo: React.FC<EventBasicInfoProps> = ({
       {/* Event Image Upload */}
       <div className="space-y-2">
         <Label htmlFor="image">Event Image</Label>
+        <p className="text-sm text-gray-600">
+          Recommended: 1080x1080px (square format). This will be used as your event's NFT ticket image.
+        </p>
         {(displayImageUrl || formData.imageUrl) ? (
           <div className="space-y-2">
             <div className="relative">
               <img
                 src={displayImageUrl || formData.imageUrl}
                 alt="Event preview"
-                className="w-full h-48 rounded-lg border-2 border-gray-300 object-cover"
+                className="w-full aspect-square rounded-lg border-2 border-gray-300 object-cover"
               />
               <Button
                 variant="outline"
@@ -482,17 +485,6 @@ export const EventBasicInfo: React.FC<EventBasicInfoProps> = ({
         <p className="text-xs text-gray-500">
           Leave blank for single-day events. Select a later date for multi-day events.
         </p>
-      </div>
-
-      {/* Location */}
-      <div className="space-y-2">
-        <Label htmlFor="location">Location</Label>
-        <Input
-          id="location"
-          placeholder="Where is your event?"
-          value={formData.location}
-          onChange={(e) => updateFormData({ location: e.target.value })}
-        />
       </div>
 
       {/* Transferability Setting */}

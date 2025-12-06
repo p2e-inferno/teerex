@@ -118,7 +118,7 @@ export const EventCard: React.FC<EventCardProps> = ({
         {event.image_url && !imgError ? (
           isTicketView ? (
             <ImageModal src={imageSrc} alt={event.title}>
-              <div className="aspect-video rounded-t-lg overflow-hidden bg-gray-100 cursor-pointer">
+              <div className="aspect-square rounded-t-lg overflow-hidden bg-gray-100 cursor-pointer">
                 <img
                   src={imageSrc}
                   alt={event.title}
@@ -138,7 +138,7 @@ export const EventCard: React.FC<EventCardProps> = ({
               </div>
             </ImageModal>
           ) : (
-            <div className="aspect-video rounded-t-lg overflow-hidden bg-gray-100">
+            <div className="aspect-square rounded-t-lg overflow-hidden bg-gray-100">
               <img
                 src={imageSrc}
                 alt={event.title}
@@ -158,7 +158,7 @@ export const EventCard: React.FC<EventCardProps> = ({
             </div>
           )
         ) : (
-          <div className="aspect-video rounded-t-lg bg-gradient-to-br from-blue-100 to-purple-100 flex items-center justify-center">
+          <div className="aspect-square rounded-t-lg bg-gradient-to-br from-blue-100 to-purple-100 flex items-center justify-center">
             <Calendar className="w-12 h-12 text-gray-400" />
           </div>
         )}
@@ -187,30 +187,30 @@ export const EventCard: React.FC<EventCardProps> = ({
         
         <div className="space-y-3 mb-4">
           {(event.date || event.time || event.location) && (
-            <div className="flex flex-col gap-2 text-sm text-gray-600 sm:flex-row sm:items-center sm:gap-4">
+            <div className="flex flex-col gap-2 text-sm text-gray-600">
               {event.date && (
                 <div className="flex items-center">
-                  <Calendar className="w-4 h-4 mr-2" />
-                  <span>{formatEventDateRange({ startDate: event.date, endDate: event.end_date })}</span>
+                  <Calendar className="w-4 h-4 mr-2 flex-shrink-0" />
+                  <span className="whitespace-nowrap">{formatEventDateRange({ startDate: event.date, endDate: event.end_date })}</span>
                 </div>
               )}
               {(event.time || event.location) && (
                 <div className="flex flex-wrap items-center gap-4">
                   {event.time && (
                     <div className="flex items-center">
-                      <Clock className="w-4 h-4 mr-2" />
-                      <span>{event.time}</span>
+                      <Clock className="w-4 h-4 mr-2 flex-shrink-0" />
+                      <span className="whitespace-nowrap">{event.time}</span>
                     </div>
                   )}
-                  <div className="flex items-center">
+                  <div className="flex items-center min-w-0">
                     {event.event_type === 'virtual' ? (
                       <>
-                        <Globe className="w-4 h-4 mr-2" />
+                        <Globe className="w-4 h-4 mr-2 flex-shrink-0" />
                         <span className="truncate">Virtual Event</span>
                       </>
                     ) : (
                       <>
-                        <MapPin className="w-4 h-4 mr-2" />
+                        <MapPin className="w-4 h-4 mr-2 flex-shrink-0" />
                         <span className="truncate">{event.location || 'Metaverse'}</span>
                       </>
                     )}

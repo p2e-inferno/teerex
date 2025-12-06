@@ -19,7 +19,7 @@ interface ImageCropperProps {
 
 /**
  * ImageCropper component using react-easy-crop
- * Allows users to position their image within a 16:9 aspect ratio container
+ * Allows users to position their image within a square (1:1) aspect ratio container
  * Returns an actual cropped File object using canvas extraction
  */
 export const ImageCropper: React.FC<ImageCropperProps> = ({
@@ -28,7 +28,7 @@ export const ImageCropper: React.FC<ImageCropperProps> = ({
   onClose,
   onCropComplete,
   fileName = 'cropped-image.jpg',
-  aspectRatio = 16 / 9,
+  aspectRatio = 1, // Square (1:1) for NFT compatibility
 }) => {
   const { toast } = useToast();
   const [crop, setCrop] = useState({ x: 0, y: 0 });
@@ -149,7 +149,7 @@ export const ImageCropper: React.FC<ImageCropperProps> = ({
           </div>
 
           <p className="text-sm text-gray-500">
-            Tip: Drag the image to position it within the frame. The final image will be displayed in a 16:9 aspect ratio.
+            Tip: Drag the image to position it within the frame. The final image will be square (1:1) and used as your NFT ticket metadata.
           </p>
         </div>
 

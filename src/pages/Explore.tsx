@@ -167,7 +167,7 @@ const Explore = () => {
     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
       {Array.from({ length: 6 }).map((_, i) => (
         <Card key={i} className="border-0 shadow-sm">
-          <div className="aspect-video rounded-t-lg overflow-hidden">
+          <div className="aspect-square rounded-t-lg overflow-hidden">
             <Skeleton className="w-full h-full" />
           </div>
           <CardContent className="p-6 space-y-4">
@@ -325,7 +325,7 @@ const Explore = () => {
             ))}
             {isLoadingMore && Array.from({ length: 3 }).map((_, i) => (
               <Card key={`sk-${i}`} className="border-0 shadow-sm">
-                <div className="aspect-video rounded-t-lg overflow-hidden">
+                <div className="aspect-square rounded-t-lg overflow-hidden">
                   <Skeleton className="w-full h-full" />
                 </div>
                 <CardContent className="p-6 space-y-4">

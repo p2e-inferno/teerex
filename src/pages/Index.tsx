@@ -191,7 +191,7 @@ const Index = () => {
                     <div key={event.id} className="min-w-full">
                       <Link to={`/event/${event.lock_address}`} className="block group">
                         <Card className="overflow-hidden border-0 shadow-lg bg-white">
-                          <div className="aspect-[2/1] relative cursor-pointer">
+                          <div className="aspect-square relative cursor-pointer">
                             <img
                               src={event.image_url}
                               alt={event.title}
@@ -249,7 +249,7 @@ const Index = () => {
               </div>
             ) : (
               <Card className="overflow-hidden border-0 shadow-lg bg-white">
-                <div className="aspect-[2/1] relative">
+                <div className="aspect-square relative">
                   <div className="absolute inset-0 bg-gradient-to-br from-purple-500 to-pink-500" />
                   <div className="absolute inset-0 bg-black/30" />
                   <div className="absolute bottom-6 left-6 right-6 text-white">

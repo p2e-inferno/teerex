@@ -62,7 +62,7 @@ export const EventCreationSuccessModal: React.FC<EventCreationSuccessModalProps>
               <div className="space-y-4">
                 {/* Event Image */}
                 {event.image_url && (
-                  <div className="aspect-video rounded-lg overflow-hidden bg-gray-100">
+                  <div className="aspect-square rounded-lg overflow-hidden bg-gray-100">
                     <img
                       src={`${event.image_url}${
                         event.image_url.includes("?") ? "&" : "?"
