@@ -1,5 +1,6 @@
 import { PublishedEvent } from '@/utils/eventUtils';
 import { getTotalKeys } from '@/utils/lockUtils';
+import { supabase } from '@/integrations/supabase/client';
 
 export interface HomeStats {
   eventsCount: number;
@@ -8,15 +9,41 @@ export interface HomeStats {
   chainsCount: number;
 }
 
-// Selects featured event with the following fallback order:
-// 1) Nearest upcoming with image
-// 2) Most recent (by date) with image
-// 3) Nearest upcoming
-// 4) Most recent (by date)
-export function selectFeaturedEvent(events: PublishedEvent[]): PublishedEvent | null {
-  if (!events || events.length === 0) return null;
+/**
+ * Fetches total number of active tickets sold across the entire platform.
+ * Uses database query instead of on-chain calls for better performance.
+ * @returns Total count of active tickets
+ */
+export async function getTotalTicketsSold(): Promise<number> {
+  const { count, error } = await supabase
+    .from('tickets')
+    .select('*', { count: 'exact', head: true })
+    .eq('status', 'active');
+
+  if (error) {
+    console.error('Error fetching total tickets sold:', error);
+    return 0;
+  }
+
+  return count || 0;
+}
+
+/**
+ * Selects up to `limit` featured events for carousel display.
+ * Only returns events with images. Prioritizes upcoming events by soonest date,
+ * then falls back to most recent events.
+ *
+ * @param events All published events
+ * @param limit Maximum number of events to return (default: 3)
+ * @returns Array of featured events (0 to limit)
+ */
+export function selectFeaturedEvents(events: PublishedEvent[], limit = 3): PublishedEvent[] {
+  if (!events || events.length === 0) return [];
 
   const now = new Date();
+
+  // Helper functions
+  const hasImage = (e: PublishedEvent) => !!e.image_url;
   const isUpcoming = (e: PublishedEvent) => e.date && e.date >= now;
 
   const bySoonest = (a: PublishedEvent, b: PublishedEvent) => {
@@ -31,17 +58,31 @@ export function selectFeaturedEvent(events: PublishedEvent[]): PublishedEvent | 
     return db - da;
   };
 
-  const upcomingWithImage = events.filter(e => isUpcoming(e) && !!e.image_url).sort(bySoonest);
-  if (upcomingWithImage.length > 0) return upcomingWithImage[0];
+  // Filter: Only events with images
+  const withImages = events.filter(hasImage);
+  if (withImages.length === 0) return [];
 
-  const recentWithImage = events.filter(e => !!e.image_url).sort(byMostRecent);
-  if (recentWithImage.length > 0) return recentWithImage[0];
+  // Separate upcoming and past events
+  const upcoming = withImages.filter(isUpcoming).sort(bySoonest);
+  const past = withImages.filter(e => !isUpcoming(e)).sort(byMostRecent);
 
-  const upcoming = events.filter(e => isUpcoming(e)).sort(bySoonest);
-  if (upcoming.length > 0) return upcoming[0];
+  // Combine: upcoming first, then past events
+  const combined = [...upcoming, ...past];
 
-  const recent = [...events].sort(byMostRecent);
-  return recent[0] || null;
+  // Return up to limit
+  return combined.slice(0, limit);
+}
+
+/**
+ * Legacy function: Returns single featured event.
+ * Uses selectFeaturedEvents internally for consistency.
+ *
+ * @param events All published events
+ * @returns Single featured event or null
+ */
+export function selectFeaturedEvent(events: PublishedEvent[]): PublishedEvent | null {
+  const featured = selectFeaturedEvents(events, 1);
+  return featured.length > 0 ? featured[0] : null;
 }
 
 // Returns first `limit` upcoming events sorted by date ascending.
@@ -71,21 +112,23 @@ export async function fetchKeysSoldForEvents(events: PublishedEvent[]): Promise<
   return map;
 }
 
-// Computes homepage stats. ticketsSold is derived from the provided keysSoldById
-// to avoid excessive on-chain calls. For v1 this is typically the sum of
-// featured + upcoming keys.
+/**
+ * Computes homepage stats from published events and total ticket count.
+ * @param events All published events
+ * @param totalTickets Total number of active tickets sold platform-wide
+ * @returns Homepage statistics
+ */
 export function computeHomeStats(
   events: PublishedEvent[],
-  keysSoldById: Record<string, number>
+  totalTickets: number
 ): HomeStats {
   const eventsCount = events.length;
   const creatorIds = new Set(events.map(e => e.creator_id));
   const chains = new Set(events.map(e => e.chain_id));
-  const ticketsSold = Object.values(keysSoldById || {}).reduce((sum, n) => sum + (n || 0), 0);
 
   return {
     eventsCount,
-    ticketsSold,
+    ticketsSold: totalTickets,
     creatorCount: creatorIds.size,
     chainsCount: chains.size,
   };
