@@ -20,6 +20,7 @@ import AdminEvents from "./pages/AdminEvents";
 import AdminGaslessConfig from "./pages/AdminGaslessConfig";
 import AdminGasSponsorship from "./pages/AdminGasSponsorship";
 import AdminNetworks from "./pages/AdminNetworks";
+import AdminServiceAccount from "./pages/AdminServiceAccount";
 import AdminRoute from "./components/routes/AdminRoute";
 import NotFound from "./pages/NotFound";
 
@@ -47,6 +48,7 @@ const App = () => {
                 <Route path="/admin/events" element={<AdminRoute><AdminEvents /></AdminRoute>} />
                 <Route path="/admin/gasless" element={<AdminRoute><AdminGaslessConfig /></AdminRoute>} />
                 <Route path="/admin/gas-sponsorship" element={<AdminRoute><AdminGasSponsorship /></AdminRoute>} />
+                <Route path="/admin/service-account" element={<AdminRoute><AdminServiceAccount /></AdminRoute>} />
                 <Route path="/event/:id" element={<EventDetails />} />
                 {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
                 <Route path="*" element={<NotFound />} />

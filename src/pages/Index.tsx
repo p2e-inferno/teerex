@@ -433,8 +433,7 @@ const Index = () => {
               Ready to create your first event?
             </h2>
             <p className="text-lg text-gray-600 mb-8 max-w-2xl mx-auto">
-              Join thousands of event creators who trust TeeRex for their Web3
-              events
+              Join the new wave of event creators who trust TeeRex for their events
             </p>
             <Button
               size="lg"

@@ -11,6 +11,7 @@ import { EventFormData } from '@/pages/CreateEvent';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { useNetworkConfigs } from '@/hooks/useNetworkConfigs';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import { validateCryptoPrice, getPricePlaceholder, getPriceStep, MIN_USDC_PRICE, MIN_NATIVE_PRICE } from '@/utils/priceUtils';
 
 interface TicketSettingsProps {
   formData: EventFormData;
@@ -45,21 +46,6 @@ export const TicketSettings: React.FC<TicketSettingsProps> = ({
   // Validation state for real-time feedback
   const [priceError, setPriceError] = useState<string>('');
 
-  // Validate price based on currency (for real-time feedback only)
-  const validatePrice = (price: number, currency: string): string => {
-    if (!price || price <= 0) {
-      return 'Please enter a valid price';
-    }
-    if (currency === 'USDC' && price < 1) {
-      return 'Minimum price is $1 USDC';
-    }
-    if (currency !== 'USDC' && price < 0.0001) {
-      const nativeCurrency = getNetworkByChainId(currentChainId)?.native_currency_symbol || 'native currency';
-      return `Minimum price is 0.0001 ${nativeCurrency}`;
-    }
-    return '';
-  };
-
   useEffect(() => {
     // If USDC is selected but current network doesn't support it, switch to ETH
     if (formData.currency === 'USDC' && !currentNetworkHasUSDC) {
@@ -70,10 +56,11 @@ export const TicketSettings: React.FC<TicketSettingsProps> = ({
   // Re-validate price when currency changes
   useEffect(() => {
     if (formData.paymentMethod === 'crypto' && formData.price > 0) {
-      const error = validatePrice(formData.price, formData.currency);
+      const nativeCurrency = getNetworkByChainId(currentChainId)?.native_currency_symbol;
+      const { error } = validateCryptoPrice(formData.price, formData.currency, nativeCurrency);
       setPriceError(error);
     }
-  }, [formData.currency, formData.price, formData.paymentMethod, currentChainId]);
+  }, [formData.currency, formData.price, formData.paymentMethod, currentChainId, getNetworkByChainId]);
 
   useEffect(() => {
     if (!fiatEnabled && formData.paymentMethod === 'fiat') {
@@ -230,16 +217,16 @@ export const TicketSettings: React.FC<TicketSettingsProps> = ({
               <Label htmlFor="price">
                 Price
                 {formData.currency === 'USDC' && (
-                  <span className="text-xs text-gray-500 ml-2">(min: $1)</span>
+                  <span className="text-xs text-gray-500 ml-2">(min: ${MIN_USDC_PRICE})</span>
                 )}
                 {formData.currency !== 'USDC' && (
-                  <span className="text-xs text-gray-500 ml-2">(min: 0.0001 {getNetworkByChainId(currentChainId)?.native_currency_symbol || 'native'})</span>
+                  <span className="text-xs text-gray-500 ml-2">(min: {MIN_NATIVE_PRICE} {getNetworkByChainId(currentChainId)?.native_currency_symbol || 'native'})</span>
                 )}
               </Label>
               <Input
                 id="price"
                 type="number"
-                placeholder={formData.currency === 'USDC' ? '1.00' : '0.0001'}
+                placeholder={getPricePlaceholder(formData.currency)}
                 value={formData.price}
                 onChange={(e) => {
                   const newPrice = parseFloat(e.target.value) || 0;
@@ -249,11 +236,12 @@ export const TicketSettings: React.FC<TicketSettingsProps> = ({
                 }}
                 onBlur={() => {
                   // Validate on blur
-                  const error = validatePrice(formData.price || 0, formData.currency);
+                  const nativeCurrency = getNetworkByChainId(currentChainId)?.native_currency_symbol;
+                  const { error } = validateCryptoPrice(formData.price || 0, formData.currency, nativeCurrency);
                   setPriceError(error);
                 }}
-                min={formData.currency === 'USDC' ? '1' : '0.0001'}
-                step={formData.currency === 'USDC' ? '1' : '0.0001'}
+                min={formData.currency === 'USDC' ? MIN_USDC_PRICE.toString() : MIN_NATIVE_PRICE.toString()}
+                step={getPriceStep(formData.currency)}
                 className={priceError ? 'border-red-500' : ''}
               />
               {priceError && (

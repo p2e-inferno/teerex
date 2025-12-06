@@ -20,6 +20,7 @@ import { addLockManager } from '@/utils/lockUtils';
 import { EventCreationSuccessModal } from '@/components/events/EventCreationSuccessModal';
 import { WalletConnectionGate } from '@/components/WalletConnectionGate';
 import { useGaslessFallback } from '@/hooks/useGasless';
+import { isCryptoPriceValid } from '@/utils/priceUtils';
 
 export interface EventFormData {
   title: string;
@@ -164,7 +165,7 @@ const CreateEvent = () => {
             ngnPrice: draft.ngn_price || 0,
             category: draft.category,
             imageUrl: draft.image_url || '',
-            ticketDuration: draft.ticket_duration || 'event',
+            ticketDuration: (draft.ticket_duration as 'event' | '30' | '365' | 'unlimited' | 'custom') || 'event',
             customDurationDays: draft.custom_duration_days,
             isPublic: (draft as any).is_public ?? true,
             allowWaitlist: (draft as any).allow_waitlist ?? false,
@@ -197,7 +198,7 @@ const CreateEvent = () => {
             ngnPrice: event.ngn_price || 0,
             category: event.category,
             imageUrl: event.image_url || '',
-            ticketDuration: event.ticket_duration || 'event',
+            ticketDuration: (event.ticket_duration as 'event' | '30' | '365' | 'unlimited' | 'custom') || 'event',
             customDurationDays: event.custom_duration_days,
             isPublic: (event as any).is_public ?? true,
             allowWaitlist: (event as any).allow_waitlist ?? false,
@@ -207,7 +208,7 @@ const CreateEvent = () => {
           setEditingEventId(eventId);
           setCurrentDraftId(null);
           setEditingMeta({
-            lockAddress: event.lock_address,
+            lockAddress: (event as any).lockAddress || (event as any).lock_address,
             chainId: event.chain_id,
             initialTransferable: (event as any).transferable ?? false,
           });
@@ -273,18 +274,10 @@ const CreateEvent = () => {
         }
         // Validate ticket settings based on payment method for new events
         if (formData.paymentMethod === 'crypto') {
-          if (!formData.price || formData.price <= 0 || !formData.currency) {
+          if (!formData.currency) {
             return false;
           }
-          // USDC requires minimum $1
-          if (formData.currency === 'USDC' && formData.price < 1) {
-            return false;
-          }
-          // Native currency requires minimum 0.0001
-          if (formData.currency !== 'USDC' && formData.price < 0.0001) {
-            return false;
-          }
-          return true;
+          return isCryptoPriceValid(formData.price, formData.currency);
         }
         if (formData.paymentMethod === 'fiat') {
           const pk = (import.meta as any).env?.VITE_PAYSTACK_PUBLIC_KEY as string | undefined;
@@ -526,7 +519,7 @@ const CreateEvent = () => {
         const lockAddress = (error as any).lockAddress;
         const eventTitle = (error as any).eventTitle;
 
-        toast({
+        const { dismiss } = toast({
           title: "Event Already Exists",
           description: (
             <div className="space-y-2">
@@ -539,7 +532,7 @@ const CreateEvent = () => {
                 <Button
                   size="sm"
                   onClick={() => {
-                    toast.dismiss();
+                    dismiss();
                     navigate(`/event/${lockAddress}`);
                   }}
                 >
@@ -549,7 +542,7 @@ const CreateEvent = () => {
                   size="sm"
                   variant="outline"
                   onClick={() => {
-                    toast.dismiss();
+                    dismiss();
                     navigate('/my-events');
                   }}
                 >
