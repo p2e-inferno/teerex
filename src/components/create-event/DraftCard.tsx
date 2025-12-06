@@ -58,23 +58,27 @@ export const DraftCard: React.FC<DraftCardProps> = ({
 
       <CardHeader className="pb-3">
         <CardTitle className="text-lg">{draft.title}</CardTitle>
-        <div className="flex items-center gap-4 text-sm text-gray-600">
+        <div className="flex flex-col gap-2 text-sm text-gray-600 sm:flex-row sm:items-center sm:gap-4">
           {draft.date && (
             <div className="flex items-center gap-1">
               <Calendar className="w-4 h-4" />
               <span>{formatEventDateRange({ startDate: draft.date, endDate: draft.end_date })}</span>
             </div>
           )}
-          {draft.time && (
-            <div className="flex items-center gap-1">
-              <Clock className="w-4 h-4" />
-              <span>{draft.time}</span>
-            </div>
-          )}
-          {draft.location && (
-            <div className="flex items-center gap-1">
-              <MapPin className="w-4 h-4" />
-              <span className="truncate max-w-[100px]">{draft.location}</span>
+          {(draft.time || draft.location) && (
+            <div className="flex flex-wrap items-center gap-4">
+              {draft.time && (
+                <div className="flex items-center gap-1">
+                  <Clock className="w-4 h-4" />
+                  <span>{draft.time}</span>
+                </div>
+              )}
+              {draft.location && (
+                <div className="flex items-center gap-1">
+                  <MapPin className="w-4 h-4" />
+                  <span className="truncate max-w-[160px] sm:max-w-[120px]">{draft.location}</span>
+                </div>
+              )}
             </div>
           )}
         </div>

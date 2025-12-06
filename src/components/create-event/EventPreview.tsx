@@ -58,23 +58,27 @@ export const EventPreview: React.FC<EventPreviewProps> = ({
               </Badge>
             )}
             <h3 className="text-2xl font-bold mb-2">{formData.title || 'Event Title'}</h3>
-            <div className="flex items-center gap-4 text-white/90">
+            <div className="flex flex-col gap-2 text-white/90 sm:flex-row sm:items-center sm:gap-4">
               {formData.date && (
                 <div className="flex items-center gap-2">
                   <Calendar className="w-4 h-4" />
                   <span>{formatEventDateRange({ startDate: formData.date, endDate: formData.endDate })}</span>
                 </div>
               )}
-              {formData.time && (
-                <div className="flex items-center gap-2">
-                  <Clock className="w-4 h-4" />
-                  <span>{formData.time}</span>
-                </div>
-              )}
-              {formData.location && (
-                <div className="flex items-center gap-2">
-                  <MapPin className="w-4 h-4" />
-                  <span>{formData.location}</span>
+              {(formData.time || formData.location) && (
+                <div className="flex flex-wrap items-center gap-4">
+                  {formData.time && (
+                    <div className="flex items-center gap-2">
+                      <Clock className="w-4 h-4" />
+                      <span>{formData.time}</span>
+                    </div>
+                  )}
+                  {formData.location && (
+                    <div className="flex items-center gap-2">
+                      <MapPin className="w-4 h-4" />
+                      <span>{formData.location}</span>
+                    </div>
+                  )}
                 </div>
               )}
             </div>

@@ -496,43 +496,31 @@ export const EventBasicInfo: React.FC<EventBasicInfoProps> = ({
       </div>
 
       {/* Transferability Setting */}
-      <div className="space-y-2 p-4 border border-gray-200 rounded-lg bg-gray-50">
-        <div className="flex items-start justify-between gap-4">
-          <div className="flex-1 space-y-1">
-            <div className="flex items-center gap-2">
-              <Label htmlFor="transferable" className="text-base font-medium cursor-pointer">
-                Allow Ticket Transfers
-              </Label>
-              {formData.transferable && (
-                <Badge variant="secondary" className="text-xs">Transferable</Badge>
-              )}
-              {!formData.transferable && (
-                <Badge variant="outline" className="text-xs">Soul-bound</Badge>
-              )}
-            </div>
-            <p className="text-sm text-gray-600">
-              {formData.transferable
-                ? "Ticket holders can transfer or resell their tickets to others."
-                : "Tickets are soul-bound (non-transferable) and cannot be resold. Recommended for most events to prevent scalping."}
-            </p>
-          </div>
+      <div className="space-y-3 p-4 border border-gray-200 rounded-lg bg-gray-50">
+        <div className="flex items-center justify-between gap-3">
+          <Label htmlFor="transferable" className="text-base font-medium cursor-pointer">
+            Allow Ticket Transfers
+          </Label>
           <Switch
             id="transferable"
             checked={formData.transferable ?? false}
             onCheckedChange={(checked) => updateFormData({ transferable: checked })}
+            className="shrink-0"
           />
         </div>
-      </div>
-
-      {/* Continue Button */}
-      <div className="flex justify-end pt-4">
-        <Button
-          onClick={handleContinue}
-          disabled={!isValid || isUploading}
-          className="bg-purple-600 hover:bg-purple-700 text-white"
-        >
-          Continue
-        </Button>
+        <div className="flex flex-wrap items-center gap-2">
+          {formData.transferable && (
+            <Badge variant="secondary" className="text-xs">Transferable</Badge>
+          )}
+          {!formData.transferable && (
+            <Badge variant="outline" className="text-xs">Soul-bound</Badge>
+          )}
+        </div>
+        <p className="text-sm text-gray-600">
+          {formData.transferable
+            ? "Ticket holders can transfer or resell their tickets to others."
+            : "Tickets are soul-bound (non-transferable) and cannot be resold. Recommended for most events to prevent scalping."}
+        </p>
       </div>
 
       {/* Image Cropper Dialog */}

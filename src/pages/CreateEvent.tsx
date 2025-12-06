@@ -273,7 +273,18 @@ const CreateEvent = () => {
         }
         // Validate ticket settings based on payment method for new events
         if (formData.paymentMethod === 'crypto') {
-          return formData.price > 0 && !!formData.currency;
+          if (!formData.price || formData.price <= 0 || !formData.currency) {
+            return false;
+          }
+          // USDC requires minimum $1
+          if (formData.currency === 'USDC' && formData.price < 1) {
+            return false;
+          }
+          // Native currency requires minimum 0.0001
+          if (formData.currency !== 'USDC' && formData.price < 0.0001) {
+            return false;
+          }
+          return true;
         }
         if (formData.paymentMethod === 'fiat') {
           const pk = (import.meta as any).env?.VITE_PAYSTACK_PUBLIC_KEY as string | undefined;
@@ -777,28 +788,36 @@ const CreateEvent = () => {
 
         {/* Progress Steps */}
         <div className="mb-8">
-          <div className="flex items-center justify-between">
+          <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between md:gap-6">
             {steps.map((step, index) => (
-              <div key={step.number} className="flex items-center">
-                <div className={`
-                  w-10 h-10 rounded-full flex items-center justify-center text-sm font-medium
-                  ${currentStep >= step.number 
-                    ? 'bg-purple-600 text-white' 
-                    : 'bg-gray-200 text-gray-600'
-                  }
-                `}>
-                  {step.number}
-                </div>
-                <div className={`ml-3 ${currentStep === step.number ? 'text-purple-600' : 'text-gray-600'}`}>
-                  <div className="text-sm font-medium">{step.title}</div>
+              <React.Fragment key={step.number}>
+                <div className="flex items-center md:flex-1">
+                  <div className={`
+                    w-10 h-10 rounded-full flex items-center justify-center text-sm font-medium
+                    ${currentStep >= step.number 
+                      ? 'bg-purple-600 text-white' 
+                      : 'bg-gray-200 text-gray-600'
+                    }
+                  `}>
+                    {step.number}
+                  </div>
+                  <div className={`ml-3 text-sm font-medium ${currentStep === step.number ? 'text-purple-600' : 'text-gray-700'}`}>
+                    {step.title}
+                  </div>
                 </div>
                 {index < steps.length - 1 && (
                   <div className={`
-                    flex-1 h-0.5 mx-6
+                    hidden md:block flex-1 h-0.5 mx-6
                     ${currentStep > step.number ? 'bg-purple-600' : 'bg-gray-200'}
                   `} />
                 )}
-              </div>
+                {index < steps.length - 1 && (
+                  <div className={`
+                    md:hidden h-px w-full
+                    ${currentStep > step.number ? 'bg-purple-600' : 'bg-gray-200'}
+                  `} />
+                )}
+              </React.Fragment>
             ))}
           </div>
         </div>

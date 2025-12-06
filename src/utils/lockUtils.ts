@@ -1,8 +1,9 @@
 
 import { parseEther, parseUnits } from 'viem';
 import { base, baseSepolia } from 'wagmi/chains';
-import { getRpcUrl, getExplorerTxUrl, getTokenAddress, ZERO_ADDRESS, CHAINS } from '@/lib/config/network-config';
+import { getRpcUrl, getExplorerTxUrl, getTokenAddress, getTokenAddressAsync, ZERO_ADDRESS, CHAINS } from '@/lib/config/network-config';
 import { ethers } from 'ethers';
+import { supabase } from '@/integrations/supabase/client';
 
 interface LockConfig {
   name: string;
@@ -30,11 +31,52 @@ interface PurchaseResult {
   error?: string;
 }
 
-// Unlock Protocol factory contract addresses
-const UNLOCK_FACTORY_ADDRESSES = {
+// Unlock Protocol factory contract addresses (DEPRECATED - kept for fallback only)
+const UNLOCK_FACTORY_ADDRESSES_FALLBACK = {
   [base.id]: '0xd0b14797b9D08493392865647384974470202A78', // Base mainnet
   [baseSepolia.id]: '0x259813B665C8f6074391028ef782e27B65840d89' // Base Sepolia testnet
 } as const;
+
+/**
+ * Get Unlock factory address for a given chain ID from database
+ * Falls back to hardcoded addresses if database lookup fails
+ */
+async function getUnlockFactoryAddress(chainId: number): Promise<string> {
+  try {
+    const { data, error } = await supabase
+      .from('network_configs')
+      .select('unlock_factory_address')
+      .eq('chain_id', chainId)
+      .eq('is_active', true)
+      .maybeSingle();
+
+    if (error) {
+      console.warn(`Database error fetching factory address for chain ${chainId}:`, error);
+      throw error;
+    }
+
+    if (!data?.unlock_factory_address) {
+      // Try fallback
+      const fallbackAddress = UNLOCK_FACTORY_ADDRESSES_FALLBACK[chainId as keyof typeof UNLOCK_FACTORY_ADDRESSES_FALLBACK];
+      if (fallbackAddress) {
+        console.warn(`No factory address in database for chain ${chainId}, using fallback: ${fallbackAddress}`);
+        return fallbackAddress;
+      }
+      throw new Error(`No Unlock factory address configured for chain ID ${chainId}. Please contact administrator.`);
+    }
+
+    console.log(`Using Unlock factory address from database for chain ${chainId}: ${data.unlock_factory_address}`);
+    return data.unlock_factory_address;
+  } catch (error) {
+    // Try fallback on any error
+    const fallbackAddress = UNLOCK_FACTORY_ADDRESSES_FALLBACK[chainId as keyof typeof UNLOCK_FACTORY_ADDRESSES_FALLBACK];
+    if (fallbackAddress) {
+      console.warn(`Error fetching factory address for chain ${chainId}, using fallback: ${fallbackAddress}`);
+      return fallbackAddress;
+    }
+    throw new Error(`Failed to get Unlock factory address for chain ID ${chainId}: ${error instanceof Error ? error.message : 'Unknown error'}`);
+  }
+}
 
 // Unlock factory ABI (simplified)
 const UnlockABI = [
@@ -219,7 +261,14 @@ const decimalsCache: Record<string, number> = {};
 const getTokenInfo = async (chainId: number, symbol: string): Promise<{ address: string; decimals: number }> => {
   if (symbol === 'FREE') return { address: ZERO_ADDRESS, decimals: 18 };
   if (symbol === 'ETH') return { address: ZERO_ADDRESS, decimals: 18 };
-  const address = getTokenAddress(chainId, symbol as 'USDC');
+
+  // Use async function to get token address from database
+  const address = await getTokenAddressAsync(chainId, symbol as 'USDC');
+
+  if (!address) {
+    throw new Error(`${symbol} token address not configured for chain ID ${chainId}. Please contact administrator.`);
+  }
+
   if (decimalsCache[address]) return { address, decimals: decimalsCache[address] };
   const provider = new ethers.JsonRpcProvider(getRpcUrl(chainId));
   const token = new ethers.Contract(address, ERC20_ABI, provider);
@@ -362,7 +411,8 @@ export const deployLock = async (config: LockConfig, wallet: any, chainId: numbe
     const provider = await wallet.getEthereumProvider();
     await ensureCorrectNetwork(provider, chainId);
 
-    const factoryAddress = UNLOCK_FACTORY_ADDRESSES[chainId as keyof typeof UNLOCK_FACTORY_ADDRESSES];
+    // Get factory address from database
+    const factoryAddress = await getUnlockFactoryAddress(chainId);
     console.log('Using Unlock Factory Address:', factoryAddress);
 
     // Create ethers provider and signer

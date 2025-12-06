@@ -47,14 +47,60 @@ export function getExplorerTxUrl(chainId: number, txHash: string): string {
 }
 
 // Token address helpers (addresses only; decimals resolved at runtime)
+// DEPRECATED: Use getUsdcAddressAsync() instead for dynamic lookup
 export function getUsdcAddress(chainId: number): string {
+  // Fallback for backwards compatibility - only works for Base networks
   if (chainId === base.id) {
     return import.meta.env.VITE_USDC_ADDRESS_BASE_MAINNET || '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913';
   }
   if (chainId === baseSepolia.id) {
     return import.meta.env.VITE_USDC_ADDRESS_BASE_SEPOLIA || '0x036CbD53842c5426634e7929541eC2318f3dCF7e';
   }
-  throw new Error(`USDC not configured for chainId ${chainId}`);
+  throw new Error(`USDC not configured for chainId ${chainId}. Use getUsdcAddressAsync() instead.`);
+}
+
+/**
+ * Get USDC address for a chain from database
+ * Returns null if USDC is not configured for this chain
+ */
+export async function getUsdcAddressAsync(chainId: number): Promise<string | null> {
+  try {
+    const { data, error } = await supabase
+      .from('network_configs')
+      .select('usdc_token_address')
+      .eq('chain_id', chainId)
+      .eq('is_active', true)
+      .maybeSingle();
+
+    if (error) {
+      console.warn(`Database error fetching USDC address for chain ${chainId}:`, error);
+      // Try fallback for Base networks
+      if (chainId === base.id) {
+        return import.meta.env.VITE_USDC_ADDRESS_BASE_MAINNET || '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913';
+      }
+      if (chainId === baseSepolia.id) {
+        return import.meta.env.VITE_USDC_ADDRESS_BASE_SEPOLIA || '0x036CbD53842c5426634e7929541eC2318f3dCF7e';
+      }
+      return null;
+    }
+
+    return data?.usdc_token_address || null;
+  } catch (error) {
+    console.error(`Error fetching USDC address for chain ${chainId}:`, error);
+    // Try fallback for Base networks
+    if (chainId === base.id) {
+      return import.meta.env.VITE_USDC_ADDRESS_BASE_MAINNET || '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913';
+    }
+    if (chainId === baseSepolia.id) {
+      return import.meta.env.VITE_USDC_ADDRESS_BASE_SEPOLIA || '0x036CbD53842c5426634e7929541eC2318f3dCF7e';
+    }
+    return null;
+  }
+}
+
+export async function getTokenAddressAsync(chainId: number, symbol: 'ETH' | 'USDC'): Promise<string | null> {
+  if (symbol === 'ETH') return ZERO_ADDRESS;
+  return getUsdcAddressAsync(chainId);
 }
 
 export function getTokenAddress(chainId: number, symbol: 'ETH' | 'USDC'): string {

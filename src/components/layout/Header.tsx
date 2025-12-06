@@ -47,18 +47,6 @@ export const Header: React.FC = () => {
           <div className="flex items-center gap-3">
             {authenticated ? (
               <>
-                <Button 
-                  variant="outline" 
-                  size="sm" 
-                  className="border-gray-300 text-gray-700 hover:bg-gray-50 font-medium"
-                  asChild
-                >
-                  <Link to="/create">
-                    <Plus className="h-4 w-4 mr-2" />
-                    Create
-                  </Link>
-                </Button>
-                
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
                     <Button 
@@ -76,6 +64,12 @@ export const Header: React.FC = () => {
                       <Link to="/events" className="flex items-center cursor-pointer">
                         <Calendar className="h-4 w-4 mr-2" />
                         My Events
+                      </Link>
+                    </DropdownMenuItem>
+                    <DropdownMenuItem asChild>
+                      <Link to="/create" className="flex items-center cursor-pointer">
+                        <Plus className="h-4 w-4 mr-2" />
+                        Create Event
                       </Link>
                     </DropdownMenuItem>
                     <DropdownMenuItem asChild>

@@ -185,33 +185,40 @@ export const EventCard: React.FC<EventCardProps> = ({
           />
         </div>
         
-        <div className="space-y-2 mb-4">
-          {event.date && (
-            <div className="flex items-center text-sm text-gray-600">
-              <Calendar className="w-4 h-4 mr-2" />
-              <span>{formatEventDateRange({ startDate: event.date, endDate: event.end_date })}</span>
-              <Clock className="w-4 h-4 ml-4 mr-2" />
-              <span>{event.time}</span>
+        <div className="space-y-3 mb-4">
+          {(event.date || event.time || event.location) && (
+            <div className="flex flex-col gap-2 text-sm text-gray-600 sm:flex-row sm:items-center sm:gap-4">
+              {event.date && (
+                <div className="flex items-center">
+                  <Calendar className="w-4 h-4 mr-2" />
+                  <span>{formatEventDateRange({ startDate: event.date, endDate: event.end_date })}</span>
+                </div>
+              )}
+              {(event.time || event.location) && (
+                <div className="flex flex-wrap items-center gap-4">
+                  {event.time && (
+                    <div className="flex items-center">
+                      <Clock className="w-4 h-4 mr-2" />
+                      <span>{event.time}</span>
+                    </div>
+                  )}
+                  <div className="flex items-center">
+                    {event.event_type === 'virtual' ? (
+                      <>
+                        <Globe className="w-4 h-4 mr-2" />
+                        <span className="truncate">Virtual Event</span>
+                      </>
+                    ) : (
+                      <>
+                        <MapPin className="w-4 h-4 mr-2" />
+                        <span className="truncate">{event.location || 'Metaverse'}</span>
+                      </>
+                    )}
+                  </div>
+                </div>
+              )}
             </div>
           )}
-          
-          <div className="flex items-center text-sm text-gray-600">
-            {event.event_type === 'virtual' ? (
-              <>
-                <Globe className="w-4 h-4 mr-2" />
-                <span className="truncate">
-                  Virtual Event
-                </span>
-              </>
-            ) : (
-              <>
-                <MapPin className="w-4 h-4 mr-2" />
-                <span className="truncate">
-                  {event.location || 'Metaverse'}
-                </span>
-              </>
-            )}
-          </div>
           
           <div className="flex items-center justify-between text-sm">
             <div className="flex items-center text-gray-600">

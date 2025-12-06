@@ -86,23 +86,39 @@ export const EventCreationSuccessModal: React.FC<EventCreationSuccessModalProps>
                     </div>
                   </div>
 
-                  <div className="space-y-2 text-sm text-gray-600">
+                  <div className="space-y-3 text-sm text-gray-600">
                     {event.date && (
-                      <div className="flex items-center gap-2">
-                        <Calendar className="w-4 h-4" />
-                        <span>
-                          {formatEventDateRange({
-                            startDate: event.date,
-                            endDate: event.end_date,
-                            formatStyle: "long",
-                          })}
-                        </span>
-                        <Clock className="w-4 h-4 ml-2" />
-                        <span>{event.time}</span>
+                      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-4">
+                        <div className="flex items-center gap-2">
+                          <Calendar className="w-4 h-4" />
+                          <span>
+                            {formatEventDateRange({
+                              startDate: event.date,
+                              endDate: event.end_date,
+                              formatStyle: "long",
+                            })}
+                          </span>
+                        </div>
+                        {(event.time || event.location) && (
+                          <div className="flex flex-wrap items-center gap-4">
+                            {event.time && (
+                              <div className="flex items-center gap-2">
+                                <Clock className="w-4 h-4" />
+                                <span>{event.time}</span>
+                              </div>
+                            )}
+                            {event.location && (
+                              <div className="flex items-center gap-2">
+                                <MapPin className="w-4 h-4" />
+                                <span>{event.location}</span>
+                              </div>
+                            )}
+                          </div>
+                        )}
                       </div>
                     )}
 
-                    {event.location && (
+                    {!event.date && event.location && (
                       <div className="flex items-center gap-2">
                         <MapPin className="w-4 h-4" />
                         <span>{event.location}</span>

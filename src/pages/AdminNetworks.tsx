@@ -11,6 +11,7 @@ import { toast } from '@/hooks/use-toast';
 import { Loader2, Plus, Edit, Trash2, Network, CheckCircle, AlertTriangle, RefreshCw } from 'lucide-react';
 import { usePrivy } from '@privy-io/react-auth';
 import { clearPrivyConfigCache } from '@/lib/config/network-config';
+import { clearNetworkConfigsCache } from '@/hooks/useNetworkConfigs';
 
 interface NetworkConfig {
   id: string;
@@ -132,8 +133,9 @@ const AdminNetworks: React.FC = () => {
         if (error) throw error;
         if (!data.success) throw new Error(data.error);
 
-        // Clear Privy config cache so users get updated network settings
+        // Clear both Privy config cache and network configs cache
         clearPrivyConfigCache();
+        clearNetworkConfigsCache();
 
         toast({
           title: "Network Updated",
@@ -152,8 +154,9 @@ const AdminNetworks: React.FC = () => {
         if (error) throw error;
         if (!data.success) throw new Error(data.error);
 
-        // Clear Privy config cache so users get updated network settings
+        // Clear both Privy config cache and network configs cache
         clearPrivyConfigCache();
+        clearNetworkConfigsCache();
 
         toast({
           title: "Network Added",
@@ -215,8 +218,9 @@ const AdminNetworks: React.FC = () => {
       if (error) throw error;
       if (!data.success) throw new Error(data.error);
 
-      // Clear Privy config cache so users get updated network settings
+      // Clear both Privy config cache and network configs cache
       clearPrivyConfigCache();
+      clearNetworkConfigsCache();
 
       toast({
         title: "Network Deleted",
@@ -263,8 +267,9 @@ const AdminNetworks: React.FC = () => {
       if (error) throw error;
       if (!data.success) throw new Error(data.error);
 
-      // Clear Privy config cache so users get updated network settings
+      // Clear both Privy config cache and network configs cache
       clearPrivyConfigCache();
+      clearNetworkConfigsCache();
 
       toast({
         title: network.is_active ? "Network Deactivated" : "Network Activated",
