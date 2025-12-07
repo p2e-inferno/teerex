@@ -248,10 +248,12 @@ const AdminEvents: React.FC = () => {
           },
         });
 
-      if (grantError || grantData?.error) {
-        throw new Error(
-          grantError?.message || grantData?.error || "Failed to grant keys"
-        );
+      if (grantError) {
+        throw new Error(grantError?.message || "Failed to grant keys");
+      }
+
+      if (!grantData?.ok) {
+        throw new Error(grantData?.error || "Failed to grant keys");
       }
 
       toast({

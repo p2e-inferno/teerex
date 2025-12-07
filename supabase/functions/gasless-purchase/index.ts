@@ -9,6 +9,8 @@ import { logGasTransaction } from '../_shared/gas-tracking.ts';
 import { handleError } from '../_shared/error-handler.ts';
 import { RATE_LIMITS, EMAIL_REGEX, SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, SERVICE_PK } from '../_shared/constants.ts';
 import { validateChain } from '../_shared/network-helpers.ts';
+import { sendEmail, getTicketEmail } from '../_shared/email-utils.ts';
+import { formatEventDate } from '../_shared/date-utils.ts';
 
 /**
  * Checks if recipient already owns keys and validates against max limits
@@ -148,7 +150,7 @@ serve(async (req) => {
     // 6. Verify event exists and is FREE
     const { data: event } = await supabase
       .from('events')
-      .select('currency, lock_address, chain_id')
+      .select('currency, lock_address, chain_id, title, starts_at')
       .eq('id', event_id)
       .single();
 
@@ -318,6 +320,26 @@ serve(async (req) => {
     if (failures.length > 0) {
       console.error('Some DB operations failed after successful on-chain purchase:', failures);
       // Log failures but don't fail the request - ticket is already minted on-chain
+    }
+
+    // Send ticket confirmation email (non-blocking)
+    if (user_email && event.title) {
+      const eventTitle = event.title;
+      const eventDate = event.starts_at ? formatEventDate(event.starts_at) : 'TBA';
+      const explorerUrl = receipt.transactionHash && chain_id
+        ? `https://${chain_id === 8453 ? 'basescan.org' : 'sepolia.basescan.org'}/tx/${receipt.transactionHash}`
+        : undefined;
+
+      const emailContent = getTicketEmail(eventTitle, eventDate, receipt.transactionHash, chain_id, explorerUrl);
+
+      // Fire and forget - don't block response
+      sendEmail({
+        to: user_email,
+        ...emailContent,
+        tags: ['ticket-issued', 'gasless'],
+      }).catch(err => {
+        console.error('[GASLESS-PURCHASE] Failed to send ticket email:', err);
+      });
     }
 
     // 11. Return success

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   Dialog,
   DialogContent,
@@ -10,10 +10,15 @@ import {
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/use-toast';
 import { PublishedEvent } from '@/utils/eventUtils';
-import { Loader2, Mail, Users } from 'lucide-react';
+import { Loader2, Mail, Users, Filter, Link as LinkIcon, AlertCircle, CheckCircle2 } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { Card, CardContent } from '@/components/ui/card';
-import { useWaitlistCount } from '@/hooks/useWaitlistCount';
+import { Input } from '@/components/ui/input';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Badge } from '@/components/ui/badge';
+import { useMyEventsList } from '@/hooks/useMyEventsList';
+import { useEventWaitlist, WaitlistFilter, WaitlistEntry } from '@/hooks/useEventWaitlist';
+import { usePrivy } from '@privy-io/react-auth';
 
 interface WaitlistManagerProps {
   event: PublishedEvent | null;
@@ -21,47 +26,110 @@ interface WaitlistManagerProps {
   onClose: () => void;
 }
 
-interface WaitlistEntry {
-  id: string;
-  user_email: string;
-  wallet_address: string | null;
-  created_at: string;
-}
-
 export const WaitlistManager: React.FC<WaitlistManagerProps> = ({ event, isOpen, onClose }) => {
   const { toast } = useToast();
-  const [isLoading, setIsLoading] = useState(false);
-  const [waitlist, setWaitlist] = useState<WaitlistEntry[]>([]);
-  const { count } = useWaitlistCount(event?.id || null);
+  const { getAccessToken } = usePrivy();
+  const [filter, setFilter] = useState<WaitlistFilter>('all');
+  const [targetEventId, setTargetEventId] = useState<string>('');
+  const [targetUrl, setTargetUrl] = useState<string>('');
+  const [isSending, setIsSending] = useState(false);
+  const { events: myEvents } = useMyEventsList();
+  const {
+    entries: waitlist,
+    loading: waitlistLoading,
+    counts,
+    refresh: refreshWaitlist,
+    hasMore,
+    loadMore,
+  } = useEventWaitlist(event?.id || null, filter);
 
   useEffect(() => {
     if (isOpen && event) {
-      loadWaitlist();
+      refreshWaitlist();
+      // Default target URL if not set
+      if (!targetUrl) {
+        const origin = window.location?.origin || 'https://teerex.app';
+        setTargetUrl(`${origin}/event/${event.lock_address}`);
+      }
     }
-  }, [isOpen, event]);
+  }, [isOpen, event, refreshWaitlist, targetUrl]);
 
-  const loadWaitlist = async () => {
+  const selectedTarget = useMemo(
+    () => myEvents.find((e) => e.id === targetEventId),
+    [myEvents, targetEventId]
+  );
+
+  useEffect(() => {
+    if (selectedTarget) {
+      const origin = window.location?.origin || 'https://teerex.app';
+      setTargetUrl(`${origin}/event/${selectedTarget.lock_address}`);
+    }
+  }, [selectedTarget]);
+
+  const notifyWaitlist = async () => {
     if (!event) return;
-
-    setIsLoading(true);
-    try {
-      const { data, error } = await supabase
-        .from('event_waitlist')
-        .select('*')
-        .eq('event_id', event.id)
-        .order('created_at', { ascending: false });
-
-      if (error) throw error;
-      setWaitlist(data || []);
-    } catch (error) {
-      console.error('Error loading waitlist:', error);
+    if (!selectedTarget && !targetUrl) {
       toast({
-        title: 'Error',
-        description: 'Failed to load waitlist',
+        title: 'Target event required',
+        description: 'Select a target event or provide a target URL.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    setIsSending(true);
+    try {
+      let page = 1;
+      let totalNotified = 0;
+      let totalFailed = 0;
+      let hasMore = false;
+
+      const accessToken = await getAccessToken();
+      if (!accessToken) {
+        throw new Error('Authentication required to notify waitlist');
+      }
+
+      do {
+        const { data, error } = await supabase.functions.invoke('notify-waitlist', {
+          body: {
+            event_id: event.id,
+            page,
+            event_url: targetUrl,
+            target_title: selectedTarget?.title,
+            target_date: selectedTarget?.starts_at,
+          },
+          headers: {
+            ...(accessToken ? { 'X-Privy-Authorization': `Bearer ${accessToken}` } : {}),
+          },
+        });
+
+        if (error) throw error;
+        if (!data?.ok) {
+          throw new Error(data?.error || 'Failed to notify waitlist');
+        }
+
+        totalNotified += data.notified || 0;
+        totalFailed += data.failed || 0;
+        hasMore = !!data.has_more;
+        page = data.next_page || page + 1;
+      } while (hasMore);
+
+      toast({
+        title: 'Notifications sent',
+        description: `Notified ${totalNotified}. Failed ${totalFailed}.`,
+        variant: totalFailed > 0 ? 'destructive' : 'default',
+      });
+
+      refreshWaitlist();
+    } catch (err: any) {
+      console.error('Error notifying waitlist:', err);
+      toast({
+        title: 'Notify failed',
+        description: err?.message || 'Could not send notifications',
         variant: 'destructive',
       });
     } finally {
-      setIsLoading(false);
+      setIsSending(false);
     }
   };
 
@@ -83,29 +151,84 @@ export const WaitlistManager: React.FC<WaitlistManagerProps> = ({ event, isOpen,
             <CardContent className="py-4 flex items-center gap-3">
               <Users className="w-5 h-5 text-purple-600" />
               <div>
-                <p className="font-semibold text-lg">{count} {count === 1 ? 'person' : 'people'} waiting</p>
+                <p className="font-semibold text-lg">{counts.total} {counts.total === 1 ? 'person' : 'people'} waiting</p>
                 <p className="text-sm text-muted-foreground">
-                  {count === 0 ? 'No one on the waitlist yet' : 'Ready to be notified when tickets are available'}
+                  {counts.total === 0 ? 'No one on the waitlist yet' : 'Ready to be notified when tickets are available'}
                 </p>
               </div>
             </CardContent>
           </Card>
 
+          {/* Target Event Selection */}
+          <Card>
+            <CardContent className="py-4 space-y-3">
+              <div className="flex items-center gap-2">
+                <LinkIcon className="w-4 h-4 text-gray-500" />
+                <div>
+                  <p className="font-semibold text-sm">Target event</p>
+                  <p className="text-xs text-muted-foreground">Select where to send people for tickets</p>
+                </div>
+              </div>
+
+              <Select value={targetEventId} onValueChange={setTargetEventId}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select one of your events" />
+                </SelectTrigger>
+                <SelectContent>
+                  {myEvents.map((ev) => (
+                    <SelectItem key={ev.id} value={ev.id}>
+                      {ev.title} — {new Date(ev.starts_at || ev.date || ev.created_at).toLocaleDateString()}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+
+              <div className="space-y-1">
+                <p className="text-xs text-muted-foreground">Target event URL</p>
+                <Input
+                  value={targetUrl}
+                  onChange={(e) => setTargetUrl(e.target.value)}
+                  placeholder="https://app.tld/event/0x..."
+                />
+              </div>
+
+              {selectedTarget && (
+                <div className="text-xs text-muted-foreground space-y-1">
+                  <div>Title: {selectedTarget.title}</div>
+                  <div>Date: {selectedTarget.starts_at ? new Date(selectedTarget.starts_at).toLocaleString() : 'TBA'}</div>
+                  <div>Lock: {selectedTarget.lock_address}</div>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
           {/* Waitlist Entries */}
           <div className="space-y-2">
-            <div className="flex items-center justify-between">
+            <div className="flex items-center justify-between gap-2">
               <h3 className="font-medium">Waitlist Entries</h3>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={loadWaitlist}
-                disabled={isLoading}
-              >
-                Refresh
-              </Button>
+              <div className="flex items-center gap-2">
+                <Select value={filter} onValueChange={(val) => setFilter(val as WaitlistFilter)}>
+                  <SelectTrigger className="w-32">
+                    <SelectValue placeholder="Filter" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all"><Filter className="w-3 h-3 mr-1 inline" />All</SelectItem>
+                    <SelectItem value="unnotified">Unnotified</SelectItem>
+                    <SelectItem value="notified">Notified</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={refreshWaitlist}
+                  disabled={waitlistLoading}
+                >
+                  Refresh
+                </Button>
+              </div>
             </div>
 
-            {isLoading ? (
+            {waitlistLoading ? (
               <div className="flex justify-center py-8">
                 <Loader2 className="w-6 h-6 animate-spin" />
               </div>
@@ -134,27 +257,59 @@ export const WaitlistManager: React.FC<WaitlistManagerProps> = ({ event, isOpen,
                           <p className="text-xs text-muted-foreground mt-1">
                             Joined {new Date(entry.created_at).toLocaleDateString()}
                           </p>
+                          <div className="mt-1">
+                            {entry.notified ? (
+                              <Badge variant="secondary" className="gap-1">
+                                <CheckCircle2 className="w-3 h-3" /> Notified {entry.notified_at ? new Date(entry.notified_at).toLocaleDateString() : ''}
+                              </Badge>
+                            ) : (
+                              <Badge variant="outline" className="gap-1">
+                                <AlertCircle className="w-3 h-3" /> Pending
+                              </Badge>
+                            )}
+                          </div>
                         </div>
                       </div>
                     </CardContent>
                   </Card>
                 ))}
+                {hasMore && (
+                  <div className="flex justify-center py-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={loadMore}
+                      disabled={waitlistLoading}
+                    >
+                      {waitlistLoading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null}
+                      {waitlistLoading ? 'Loading...' : 'Load more'}
+                    </Button>
+                  </div>
+                )}
               </div>
             )}
           </div>
 
           {/* Info box */}
-          {count > 0 && (
-            <Card className="bg-blue-50 border-blue-200">
-              <CardContent className="py-3 text-sm text-blue-900">
-                <p className="font-medium mb-1">💡 Next Steps</p>
-                <p className="text-xs">
-                  When tickets become available, you can manually notify these users via email.
-                  Email notification feature coming soon!
-                </p>
-              </CardContent>
-            </Card>
-          )}
+          <Card className="bg-blue-50 border-blue-200">
+            <CardContent className="py-3 text-sm text-blue-900 space-y-1">
+              <p className="font-medium">Notify waitlist</p>
+              <p className="text-xs text-blue-900">
+                Select the target event or paste a URL, then notify in batches. Pending entries stay pending on failure and can be retried.
+              </p>
+              <div className="text-xs text-blue-900">
+                Unnotified: {counts.unnotified} · Notified: {counts.notified} · Total: {counts.total}
+              </div>
+              <Button
+                className="mt-2"
+                disabled={isSending || counts.unnotified === 0 || !targetUrl}
+                onClick={notifyWaitlist}
+              >
+                {isSending ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null}
+                {isSending ? 'Notifying...' : 'Notify waitlist'}
+              </Button>
+            </CardContent>
+          </Card>
         </div>
 
         <DialogFooter>

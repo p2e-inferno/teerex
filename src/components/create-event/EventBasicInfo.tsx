@@ -362,7 +362,7 @@ export const EventBasicInfo: React.FC<EventBasicInfoProps> = ({
             ) : (
               <>
                 <Upload className="w-8 h-8 text-gray-400 mx-auto mb-4" />
-                <p className="text-gray-600 mb-2">Upload an image for your event</p>
+                <p className="text-gray-600 mb-2">Upload an image for your event (max 5MB)</p>
                 <Button variant="outline" size="sm" type="button" disabled={isUploading}>
                   Choose File
                 </Button>

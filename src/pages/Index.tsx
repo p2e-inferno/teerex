@@ -176,7 +176,7 @@ const Index = () => {
           <GetStartedSteps />
 
           {/* Featured Event Carousel - Auto-cycling event showcase */}
-          <div className="max-w-4xl mx-auto">
+          <div className="max-w-xl mx-auto">
             {featured.length > 0 ? (
               <div
                 className="relative overflow-hidden"

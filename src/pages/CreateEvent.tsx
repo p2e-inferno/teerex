@@ -466,9 +466,23 @@ const CreateEvent = () => {
           try {
             // Get the service public key from the private key
             const { data: serviceData, error: serviceError } = await supabase.functions.invoke('get-service-address');
-            
-            if (serviceError || !serviceData?.address) {
-              console.error('Failed to get service address:', serviceError);
+
+            if (serviceError) {
+              console.error('Failed to get service address (network error):', serviceError);
+              toast({
+                title: "Warning",
+                description: "Event created but fiat payments may not work. Service manager not added.",
+                variant: "default"
+              });
+            } else if (!serviceData?.ok) {
+              console.error('Failed to get service address (application error):', serviceData?.error);
+              toast({
+                title: "Warning",
+                description: "Event created but fiat payments may not work. Service manager not added.",
+                variant: "default"
+              });
+            } else if (!serviceData.address) {
+              console.error('Service address not returned');
               toast({
                 title: "Warning",
                 description: "Event created but fiat payments may not work. Service manager not added.",
@@ -476,11 +490,11 @@ const CreateEvent = () => {
               });
             } else {
               const managerResult = await addLockManager(deploymentResult.lockAddress, serviceData.address, wallet);
-              
+
               if (!managerResult.success) {
                 console.error('Failed to add service manager:', managerResult.error);
                 toast({
-                  title: "Warning", 
+                  title: "Warning",
                   description: "Event created but fiat payments may not work. Service manager not added.",
                   variant: "default"
                 });

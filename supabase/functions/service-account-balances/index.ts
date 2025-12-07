@@ -41,7 +41,15 @@ serve(async (req) => {
     const wallet = new Wallet(SERVICE_PK);
     const warningThreshold = Number(Deno.env.get("SERVICE_BALANCE_WARN_ETH") || "0.05");
 
-    const balances = [];
+    const balances: Array<{
+      chain_id: any;
+      chain_name: any;
+      rpc_url: string;
+      block_explorer_url: any;
+      native_balance_eth: number | null;
+      warning: boolean;
+      error?: string;
+    }> = [];
     for (const net of networks || []) {
       const rpcUrl = net.rpc_url ||
         (net.chain_id === 8453 ? "https://mainnet.base.org" :

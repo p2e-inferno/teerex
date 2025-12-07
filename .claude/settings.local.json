@@ -10,9 +10,14 @@
       "WebSearch",
       "WebFetch(domain:supabase.com)",
       "Bash(test:*)",
-      "Bash(npm install:*)"
+      "Bash(npm install:*)",
+      "mcp__supabase__deploy_edge_function"
     ],
     "deny": [],
     "ask": []
-  }
+  },
+  "enableAllProjectMcpServers": true,
+  "enabledMcpjsonServers": [
+    "supabase"
+  ]
 }

@@ -12,6 +12,7 @@ export interface PublishedEvent {
   description: string;
   date: Date | null;
   end_date: Date | null;
+  starts_at?: string | null;
   time: string;
   location: string;
   event_type: 'physical' | 'virtual';
@@ -220,6 +221,7 @@ export const getPublishedEvents = async (): Promise<PublishedEvent[]> => {
       ...event,
       date: event.date ? new Date(event.date) : null,
       end_date: event.end_date ? new Date(event.end_date) : null,
+      starts_at: event.starts_at || null,
       created_at: new Date(event.created_at),
       updated_at: new Date(event.updated_at),
       currency: event.currency as 'ETH' | 'USDC' | 'FREE',
