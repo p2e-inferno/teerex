@@ -102,7 +102,7 @@ export const PostList: React.FC<PostListProps> = ({
   }
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4" id="posts">
       {displayPosts.map((post) => (
         <PostItem
           key={post.id}

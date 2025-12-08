@@ -12,6 +12,8 @@ declare const Deno: {
 };
 
 import { EMAIL_REGEX } from './constants.ts';
+import { stripHtml } from './html-utils.ts';
+import { stripHtml } from './html-utils.ts';
 
 /**
  * Normalize and validate an email address.
@@ -278,5 +280,41 @@ export function getWaitlistSpotOpenEmail(
     subject: `Action Required: Spot available for ${eventTitle}`,
     text: `Good news! A spot is now available for ${eventTitle} on ${eventDate}.\n\nGet your ticket now: ${eventUrl}\n\nThank you for using TeeRex!`,
     html: wrapHtmlContent(`Spot Available for ${eventTitle}`, bodyHtml),
+  };
+}
+
+/**
+ * Generate post notification email content
+ */
+export function getPostNotificationEmail(
+  eventTitle: string,
+  eventUrl: string,
+  postContent: string,
+  postedAt?: string,
+  posterName?: string
+) {
+  const preview = stripHtml(postContent || '').slice(0, 200);
+  const subtitle = postedAt
+    ? `New post on ${new Date(postedAt).toLocaleString()}`
+    : 'New post from the event team';
+  const poster = posterName ? ` by ${posterName}` : '';
+
+  const bodyHtml = `
+    <h1 style="margin: 0 0 12px; font-size: 22px; font-weight: 700; color: ${TEXT_COLOR};">New update for ${eventTitle}</h1>
+    <p style="margin: 0 0 16px; color: #4B5563; font-size: 15px;">${subtitle}${poster}</p>
+    <div style="background: #F9FAFB; border-radius: 8px; padding: 16px; color: ${TEXT_COLOR}; font-size: 14px; line-height: 22px;">
+      ${preview || 'A new post was published.'}${postContent && postContent.length > 200 ? '…' : ''}
+    </div>
+    <div style="margin-top: 24px; text-align: center;">
+      <a href="${eventUrl}" style="display: inline-block; padding: 12px 24px; background: ${BRAND_COLOR}; color: #fff; text-decoration: none; border-radius: 6px; font-weight: 600;">
+        View post
+      </a>
+    </div>
+  `;
+
+  return {
+    subject: `New update for ${eventTitle}`,
+    text: `A new post was published for ${eventTitle}. View it: ${eventUrl}`,
+    html: wrapHtmlContent(`New update for ${eventTitle}`, bodyHtml),
   };
 }
