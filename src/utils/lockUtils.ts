@@ -419,8 +419,8 @@ export const deployLock = async (config: LockConfig, wallet: any, chainId: numbe
     const ethersProvider = new ethers.BrowserProvider(provider);
     const signer = await ethersProvider.getSigner();
 
-    // Version must match the PublicLock version (using v14 as per successful transaction)
-    const version = 14;
+    // Version must match the PublicLock version (using v15 for updateTransferFee support)
+    const version = 15;
 
     // Create an instance of the Unlock factory contract
     const unlock = new ethers.Contract(factoryAddress, UnlockABI, signer);

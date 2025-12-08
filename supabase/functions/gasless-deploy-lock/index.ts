@@ -220,8 +220,8 @@ serve(async (req) => {
       name,
     ]);
 
-    // 10. Deploy lock via createUpgradeableLockAtVersion
-    const tx = await unlock.createUpgradeableLockAtVersion(initializeCalldata, 14);
+    // 10. Deploy lock via createUpgradeableLockAtVersion (using v15 for updateTransferFee support)
+    const tx = await unlock.createUpgradeableLockAtVersion(initializeCalldata, 15);
     const receipt = await tx.wait();
 
     // 11. Parse lock address from event logs
@@ -271,7 +271,7 @@ serve(async (req) => {
       `addLockManager for ${normalizedCreator}`
     );
 
-    console.log(`Successfully added lock manager. Tx: ${addManagerReceipt.transactionHash}`);
+    console.log(`Successfully added lock manager. Tx: ${addManagerReceipt.hash || addManagerReceipt.transactionHash}`);
 
     // 12.5. Set transfer fee if non-transferable (soul-bound)
     // 10000 basis points = 100% fee = prevents all transfers
