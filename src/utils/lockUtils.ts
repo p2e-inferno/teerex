@@ -791,7 +791,7 @@ export const getBlockExplorerUrl = async (txHash: string, chainId?: number): Pro
 
 // --- New Functions ---
 
-const getReadOnlyProvider = async (chainId: number = baseSepolia.id) => {
+const getReadOnlyProvider = async (chainId: number) => {
   const rpcUrl = await getRpcUrlForChain(chainId);
   return new ethers.JsonRpcProvider(rpcUrl);
 };
@@ -799,20 +799,34 @@ const getReadOnlyProvider = async (chainId: number = baseSepolia.id) => {
 /**
  * Gets the total number of keys that have been sold for a lock.
  */
-export const getTotalKeys = async (lockAddress: string, chainId: number = baseSepolia.id): Promise<number> => {
+export const getTotalKeys = async (lockAddress: string, chainId: number): Promise<number> => {
   try {
     // Validate lock address before proceeding
     if (!lockAddress || lockAddress === 'Unknown' || !ethers.isAddress(lockAddress)) {
       console.warn(`Invalid lock address: ${lockAddress}`);
       return 0;
     }
-    
+
+    // Validate chainId
+    if (!chainId || chainId === 0) {
+      console.error(`Invalid chainId: ${chainId} for lock ${lockAddress}`);
+      return 0;
+    }
+
     const provider = await getReadOnlyProvider(chainId);
     const lockContract = new ethers.Contract(lockAddress, PublicLockABI, provider);
+
+    // Check if contract exists at this address on this chain
+    const code = await provider.getCode(lockAddress);
+    if (code === '0x') {
+      console.error(`No contract found at ${lockAddress} on chain ${chainId}. The lock may have been deployed on a different chain.`);
+      return 0;
+    }
+
     const totalSupply = await lockContract.totalSupply();
     return Number(totalSupply);
   } catch (error) {
-    console.error(`Error fetching total keys for ${lockAddress}:`, error);
+    console.error(`Error fetching total keys for ${lockAddress} on chain ${chainId}:`, error);
     return 0; // Return 0 if there's an error so UI doesn't break
   }
 };
@@ -820,7 +834,7 @@ export const getTotalKeys = async (lockAddress: string, chainId: number = baseSe
 /**
  * Checks if a user has a valid, non-expired key for a specific lock.
  */
-export const checkKeyOwnership = async (lockAddress: string, userAddress: string, chainId: number = baseSepolia.id): Promise<boolean> => {
+export const checkKeyOwnership = async (lockAddress: string, userAddress: string, chainId: number): Promise<boolean> => {
   try {
     if (!ethers.isAddress(lockAddress) || !ethers.isAddress(userAddress)) {
       return false;
@@ -843,7 +857,7 @@ export const checkKeyOwnership = async (lockAddress: string, userAddress: string
 /**
  * Gets the number of keys (tickets) owned by a specific user for a lock.
  */
-export const getUserKeyBalance = async (lockAddress: string, userAddress: string, chainId: number = baseSepolia.id): Promise<number> => {
+export const getUserKeyBalance = async (lockAddress: string, userAddress: string, chainId: number): Promise<number> => {
   try {
     if (!ethers.isAddress(lockAddress) || !ethers.isAddress(userAddress)) {
       return 0;
@@ -859,7 +873,7 @@ export const getUserKeyBalance = async (lockAddress: string, userAddress: string
     const balance = await lockContract.balanceOf(userAddress);
     return Number(balance);
   } catch (error) {
-    console.error(`Error fetching user key balance for ${lockAddress}:`, error);
+    console.error(`Error fetching user key balance for ${lockAddress} on chain ${chainId}:`, error);
     return 0;
   }
 };
@@ -918,7 +932,7 @@ export const configureMaxKeysPerAddress = async (
 /**
  * Gets the maximum number of keys a user can own for this lock.
  */
-export const getMaxKeysPerAddress = async (lockAddress: string, userAddress?: string, chainId: number = baseSepolia.id): Promise<number> => {
+export const getMaxKeysPerAddress = async (lockAddress: string, userAddress: string | undefined, chainId: number): Promise<number> => {
   try {
     if (!lockAddress || lockAddress === 'Unknown' || !ethers.isAddress(lockAddress)) {
       return 1; // Default fallback
@@ -956,7 +970,7 @@ export const getMaxKeysPerAddress = async (lockAddress: string, userAddress?: st
  */
 export const getTransferabilityStatus = async (
   lockAddress: string,
-  chainId: number = baseSepolia.id
+  chainId: number
 ): Promise<{ isTransferable: boolean; feeBasisPoints: number | null }> => {
   try {
     if (!lockAddress || lockAddress === 'Unknown' || !ethers.isAddress(lockAddress)) {

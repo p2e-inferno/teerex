@@ -25,7 +25,6 @@ import { getPublishedEventById, PublishedEvent } from "@/utils/eventUtils";
 import MetaTags from "@/components/MetaTags";
 import {
   getTotalKeys,
-  getUserKeyBalance,
   getMaxKeysPerAddress,
   checkKeyOwnership,
   getTransferabilityStatus,
@@ -54,6 +53,7 @@ import { format } from "date-fns";
 import { formatEventDateRange } from "@/utils/dateUtils";
 import { useEventTicketRealtime } from "@/hooks/useEventTicketRealtime";
 import { useNetworkConfigs } from "@/hooks/useNetworkConfigs";
+import { useTicketBalance } from "@/hooks/useTicketBalance";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -387,24 +387,15 @@ const EventDetails = () => {
   };
 
   // Load user ticket data when authenticated
+  const { data: ticketBalance = 0 } = useTicketBalance({
+    lockAddress: event?.lock_address || '',
+    userAddress: wallet?.address || '',
+    chainId: event?.chain_id || 0,
+  });
+
   useEffect(() => {
-    const loadUserTicketData = async () => {
-      if (!authenticated || !wallet?.address || !event?.lock_address) return;
-
-      try {
-        const userBalance = await getUserKeyBalance(
-          event.lock_address,
-          wallet.address,
-          event.chain_id
-        );
-        setUserTicketCount(userBalance);
-      } catch (error) {
-        console.error("Error loading user ticket data:", error);
-      }
-    };
-
-    loadUserTicketData();
-  }, [authenticated, wallet?.address, event?.lock_address]);
+    setUserTicketCount(ticketBalance);
+  }, [ticketBalance]);
 
   // Compute if event has ended (same 2h duration assumption)
   useEffect(() => {
@@ -1242,6 +1233,7 @@ const EventDetails = () => {
               eventId={event.id}
               lockAddress={event.lock_address}
               creatorAddress={event.creator_id}
+              chainId={event.chain_id}
             />
 
             {/* Enhanced Attestation Card */}
