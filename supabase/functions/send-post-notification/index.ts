@@ -10,7 +10,7 @@ import { sendEmail, getPostNotificationEmail, normalizeEmail } from '../_shared/
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
-const APP_URL = Deno.env.get('VITE_APP_URL') || 'https://teerex.app';
+const APP_URL = Deno.env.get('VITE_TEEREX_DOMAIN') || 'https://teerex.live';
 const BATCH_SIZE = 50;
 const SEND_DELAY_MS = Number(Deno.env.get('POST_EMAIL_DELAY_MS') || '0');
 

@@ -57,7 +57,7 @@ serve(async (req) => {
     // Find Paystack transaction and related event
     const { data: tx, error: txError } = await supabase
       .from("paystack_transactions")
-      .select("*, events:events(id, title, starts_at, creator_id, lock_address, chain_id)")
+      .select("*, events:events(id, title, date, creator_id, lock_address, chain_id)")
       .eq("reference", transactionReference)
       .single();
     if (txError || !tx) return new Response(JSON.stringify({ error: "Transaction not found" }), { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 404 });
@@ -133,7 +133,7 @@ serve(async (req) => {
     const userEmail = normalizeEmail(tx.user_email);
     if (userEmail && event.title) {
       const eventTitle = event.title;
-      const eventDate = event.starts_at ? formatEventDate(event.starts_at) : 'TBA';
+      const eventDate = event.date ? formatEventDate(event.date) : 'TBA';
       const explorerUrl = receipt.transactionHash && event.chain_id
         ? `https://${event.chain_id === 8453 ? 'basescan.org' : 'sepolia.basescan.org'}/tx/${receipt.transactionHash}`
         : undefined;

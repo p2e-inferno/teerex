@@ -48,7 +48,7 @@ export const WaitlistManager: React.FC<WaitlistManagerProps> = ({ event, isOpen,
       refreshWaitlist();
       // Default target URL if not set
       if (!targetUrl) {
-        const origin = window.location?.origin || 'https://teerex.app';
+        const origin = window.location?.origin || 'https://teerex.live';
         setTargetUrl(`${origin}/event/${event.lock_address}`);
       }
     }
@@ -61,7 +61,7 @@ export const WaitlistManager: React.FC<WaitlistManagerProps> = ({ event, isOpen,
 
   useEffect(() => {
     if (selectedTarget) {
-      const origin = window.location?.origin || 'https://teerex.app';
+      const origin = window.location?.origin || 'https://teerex.live';
       setTargetUrl(`${origin}/event/${selectedTarget.lock_address}`);
     }
   }, [selectedTarget]);

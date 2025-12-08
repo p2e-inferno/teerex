@@ -80,7 +80,7 @@ serve(async (req) => {
     const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
     const { data: tx } = await supabase
       .from("paystack_transactions")
-      .select("reference, status, user_email, gateway_response, events:events(id, title, starts_at, lock_address, chain_id)")
+      .select("reference, status, user_email, gateway_response, events:events(id, title, date, lock_address, chain_id)")
       .eq("reference", reference)
       .maybeSingle();
 
@@ -185,7 +185,7 @@ serve(async (req) => {
     const userEmail = normalizeEmail((tx as any)?.user_email);
     if (granted && userEmail && txEvent?.title) {
       const eventTitle = txEvent.title;
-      const eventDate = txEvent.starts_at ? formatEventDate(txEvent.starts_at) : 'TBA';
+      const eventDate = txEvent.date ? formatEventDate(txEvent.date) : 'TBA';
       const explorerUrl = grantTxHash && chainId
         ? `https://${chainId === 8453 ? 'basescan.org' : 'sepolia.basescan.org'}/tx/${grantTxHash}`
         : undefined;

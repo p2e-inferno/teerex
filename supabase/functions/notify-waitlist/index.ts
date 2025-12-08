@@ -31,7 +31,7 @@ import PublicLockV15 from '../_shared/abi/PublicLockV15.json' assert { type: 'js
 
 const BATCH_SIZE = 50;
 const SEND_DELAY_MS = Number(Deno.env.get('WAITLIST_EMAIL_DELAY_MS') || '150');
-const DEFAULT_APP_URL = Deno.env.get('VITE_APP_URL') || 'https://teerex.app';
+const DEFAULT_APP_URL = Deno.env.get('VITE_TEEREX_DOMAIN') || 'https://teerex.live';
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -72,7 +72,7 @@ serve(async (req) => {
     // 3. Fetch event details
     const { data: event, error: eventError } = await supabase
       .from('events')
-      .select('id, title, starts_at, creator_id, lock_address, chain_id')
+      .select('id, title, date, creator_id, lock_address, chain_id')
       .eq('id', event_id)
       .single();
 
@@ -184,8 +184,8 @@ serve(async (req) => {
     const eventTitle = target_title || event.title;
     const eventDate = target_date
       ? formatEventDate(target_date)
-      : event.starts_at
-        ? formatEventDate(event.starts_at)
+      : event.date
+        ? formatEventDate(event.date)
         : 'TBA';
 
     // Use provided event_url or generate default

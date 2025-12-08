@@ -44,7 +44,7 @@ serve(async (req) => {
     // Query waitlist entries that haven't received confirmation
     let query = supabase
       .from('event_waitlist')
-      .select('id, event_id, user_email, events:events(title, starts_at)')
+      .select('id, event_id, user_email, events:events(title, date)')
       .eq('confirmation_sent', false)
       .limit(BATCH_SIZE);
 
@@ -80,7 +80,7 @@ serve(async (req) => {
         }
 
         const eventTitle = event.title;
-        const eventDate = event.starts_at ? formatEventDate(event.starts_at) : 'TBA';
+        const eventDate = event.date ? formatEventDate(event.date) : 'TBA';
         const emailContent = getWaitlistConfirmationEmail(eventTitle, eventDate);
 
         const result = await sendEmail({

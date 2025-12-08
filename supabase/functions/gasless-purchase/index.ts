@@ -152,7 +152,7 @@ serve(async (req) => {
     // 6. Verify event exists and is FREE
     const { data: event } = await supabase
       .from('events')
-      .select('currency, lock_address, chain_id, title, starts_at')
+      .select('currency, lock_address, chain_id, title, date')
       .eq('id', event_id)
       .single();
 
@@ -327,7 +327,7 @@ serve(async (req) => {
     // Send ticket confirmation email (non-blocking)
     if (normalizedUserEmail && event.title) {
       const eventTitle = event.title;
-      const eventDate = event.starts_at ? formatEventDate(event.starts_at) : 'TBA';
+      const eventDate = event.date ? formatEventDate(event.date) : 'TBA';
       const explorerUrl = receipt.transactionHash && chain_id
         ? `https://${chain_id === 8453 ? 'basescan.org' : 'sepolia.basescan.org'}/tx/${receipt.transactionHash}`
         : undefined;

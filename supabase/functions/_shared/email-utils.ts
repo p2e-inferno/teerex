@@ -12,7 +12,7 @@ declare const Deno: {
 };
 
 import { EMAIL_REGEX } from './constants.ts';
-import { stripHtml } from './html-utils.ts';
+import { stripHtml, truncateText } from './html-utils.ts';
 
 /**
  * Normalize and validate an email address.
@@ -292,28 +292,53 @@ export function getPostNotificationEmail(
   postedAt?: string,
   posterName?: string
 ) {
-  const preview = stripHtml(postContent || '').slice(0, 200);
-  const subtitle = postedAt
-    ? `New post on ${new Date(postedAt).toLocaleString()}`
-    : 'New post from the event team';
-  const poster = posterName ? ` by ${posterName}` : '';
+  // 1. Use the robust utilities
+  // Strip HTML first to get clean text, then smart-truncate
+  const cleanText = stripHtml(postContent || '');
+  const preview = truncateText(cleanText, 240); // 240 chars is a good email preview length
+  
+  // 2. Better Date Formatting
+  // Using a cleaner date format (Month Day, Year) if available
+  const dateStr = postedAt 
+    ? new Date(postedAt).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
+    : null;
+
+  const subtitle = posterName 
+    ? `Posted by <strong>${posterName}</strong>` 
+    : 'New update from the event team';
 
   const bodyHtml = `
-    <h1 style="margin: 0 0 12px; font-size: 22px; font-weight: 700; color: ${TEXT_COLOR};">New update for ${eventTitle}</h1>
-    <p style="margin: 0 0 16px; color: #4B5563; font-size: 15px;">${subtitle}${poster}</p>
-    <div style="background: #F9FAFB; border-radius: 8px; padding: 16px; color: ${TEXT_COLOR}; font-size: 14px; line-height: 22px;">
-      ${preview || 'A new post was published.'}${postContent && postContent.length > 200 ? '…' : ''}
+    <!-- Header Section (Centered) -->
+    <h1 style="margin: 0 0 16px; font-size: 24px; font-weight: 700; color: ${TEXT_COLOR}; text-align: center;">New Update 📢</h1>
+    <p style="margin: 0 0 8px; font-size: 16px; color: ${TEXT_COLOR}; text-align: center;">
+      There is a new post for <strong>${eventTitle}</strong>.
+    </p>
+    
+    <!-- Metadata (Date) -->
+    ${dateStr ? `<p style="margin: 0 0 24px; font-size: 14px; color: #9CA3AF; text-align: center;">${dateStr}</p>` : ''}
+
+    <!-- Content Preview Card -->
+    <div style="background-color: #F9FAFB; border-radius: 8px; padding: 24px; margin-bottom: 24px; text-align: left;">
+      <p style="margin: 0 0 12px; font-size: 12px; color: #6B7280; text-transform: uppercase; letter-spacing: 0.05em;">
+        ${subtitle}
+      </p>
+      <p style="margin: 0; font-size: 15px; line-height: 24px; color: ${TEXT_COLOR};">
+        "${preview || 'A new post was published.'}"
+      </p>
     </div>
-    <div style="margin-top: 24px; text-align: center;">
-      <a href="${eventUrl}" style="display: inline-block; padding: 12px 24px; background: ${BRAND_COLOR}; color: #fff; text-decoration: none; border-radius: 6px; font-weight: 600;">
-        View post
+
+    <!-- CTA Button (Centered) -->
+    <div style="text-align: center; margin: 32px 0;">
+      <a href="${eventUrl}" style="background-color: ${BRAND_COLOR}; color: #ffffff; padding: 14px 32px; text-decoration: none; border-radius: 6px; font-weight: 600; font-size: 16px; display: inline-block;">
+        Read Full Post
       </a>
     </div>
   `;
 
   return {
-    subject: `New update for ${eventTitle}`,
-    text: `A new post was published for ${eventTitle}. View it: ${eventUrl}`,
+    subject: `Update: ${eventTitle}`, // Slightly punchier subject
+    // Text version now includes the preview and the specific poster info
+    text: `New update for ${eventTitle}.\n\n"${preview}"\n\nRead more: ${eventUrl}`,
     html: wrapHtmlContent(`New update for ${eventTitle}`, bodyHtml),
   };
 }

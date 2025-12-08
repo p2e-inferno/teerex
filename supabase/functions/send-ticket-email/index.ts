@@ -82,7 +82,7 @@ serve(async (req) => {
     // Load event details for email content
     const { data: event } = await supabase
       .from('events')
-      .select('title, starts_at, chain_id')
+      .select('title, date, chain_id')
       .eq('id', event_id)
       .maybeSingle();
 
@@ -115,7 +115,7 @@ serve(async (req) => {
 
     const emailContent = getTicketEmail(
       event.title,
-      event.starts_at ? formatEventDate(event.starts_at) : 'TBA',
+      event.date ? formatEventDate(event.date) : 'TBA',
       txHash,
       chainId,
       explorerUrl,
