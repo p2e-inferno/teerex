@@ -85,7 +85,6 @@ export async function validateUserWallet(
  */
 export async function getUserWalletAddresses(privyUserId: string): Promise<string[]> {
   const PRIVY_APP_SECRET = Deno.env.get('PRIVY_APP_SECRET');
-  const PRIVY_APP_ID = Deno.env.get('VITE_PRIVY_APP_ID') || Deno.env.get('PRIVY_APP_ID') || '';
   if (!PRIVY_APP_SECRET) {
     throw new Error('Privy app secret not configured on server');
   }
