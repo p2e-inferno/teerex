@@ -3,12 +3,12 @@ import React from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { base, baseSepolia } from 'wagmi/chains';
 import { Calendar, Clock, MapPin, Edit, Trash2, Upload, Loader2 } from 'lucide-react';
 import { format } from 'date-fns';
 import { EventDraft } from '@/types/event';
 import { RichTextDisplay } from '@/components/ui/rich-text/RichTextDisplay';
 import { formatEventDateRange } from '@/utils/dateUtils';
+import { useNetworkConfigs } from '@/hooks/useNetworkConfigs';
 
 interface DraftCardProps {
   draft: EventDraft;
@@ -25,11 +25,9 @@ export const DraftCard: React.FC<DraftCardProps> = ({
   onPublish,
   isPublishing = false
 }) => {
-  const networkLabel = draft.chain_id === base.id
-    ? 'Base'
-    : draft.chain_id === baseSepolia.id
-    ? 'Base Sepolia'
-    : 'Network';
+  const { networks } = useNetworkConfigs();
+  const network = networks.find(n => n.chain_id === draft.chain_id);
+  const networkLabel = network?.chain_name || 'Network';
   return (
     <Card className="border-0 shadow-sm">
       <div className="aspect-square relative">

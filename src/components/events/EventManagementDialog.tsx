@@ -34,6 +34,8 @@ import {
 import { ethers } from 'ethers';
 import { AllowListManager } from './AllowListManager';
 import { WaitlistManager } from './WaitlistManager';
+import { useNetworkConfigs } from '@/hooks/useNetworkConfigs';
+import { base, baseSepolia } from 'wagmi/chains';
 
 interface EventManagementDialogProps {
   event: PublishedEvent;
@@ -64,6 +66,19 @@ export const EventManagementDialog: React.FC<EventManagementDialogProps> = ({
   const [isUpdatingWaitlist, setIsUpdatingWaitlist] = useState(false);
   const [isUpdatingMetadata, setIsUpdatingMetadata] = useState(false);
   const [isLockManager, setIsLockManager] = useState(false);
+  const { networks } = useNetworkConfigs();
+
+  const networkConfig = networks.find(n => n.chain_id === event.chain_id);
+  const networkLabel =
+    networkConfig?.chain_name ||
+    (event.chain_id === base.id ? 'Base' : event.chain_id === baseSepolia.id ? 'Base Sepolia' : 'Network');
+  const explorerBase =
+    networkConfig?.block_explorer_url ||
+    (event.chain_id === base.id
+      ? 'https://basescan.org'
+      : event.chain_id === baseSepolia.id
+      ? 'https://sepolia.basescan.org'
+      : undefined);
 
   // Fetch service wallet address
   useEffect(() => {
@@ -615,20 +630,24 @@ export const EventManagementDialog: React.FC<EventManagementDialogProps> = ({
 
                 <div className="flex items-center justify-between">
                   <span className="text-gray-600">Network:</span>
-                  <Badge variant="outline">Base Sepolia</Badge>
+                  <Badge variant="outline">{networkLabel}</Badge>
                 </div>
 
                 <div className="flex items-center justify-between">
                   <span className="text-gray-600">Transaction:</span>
-                  <a
-                    href={`https://sepolia.basescan.org/tx/${event.transaction_hash}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="flex items-center gap-1 text-blue-600 hover:text-blue-800"
-                  >
-                    <span className="text-xs">View</span>
-                    <ExternalLink className="w-3 h-3" />
-                  </a>
+                  {explorerBase ? (
+                    <a
+                      href={`${explorerBase.replace(/\/$/, '')}/tx/${event.transaction_hash}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex items-center gap-1 text-blue-600 hover:text-blue-800"
+                    >
+                      <span className="text-xs">View</span>
+                      <ExternalLink className="w-3 h-3" />
+                    </a>
+                  ) : (
+                    <span className="text-xs text-gray-500">No explorer configured</span>
+                  )}
                 </div>
               </div>
             </CardContent>

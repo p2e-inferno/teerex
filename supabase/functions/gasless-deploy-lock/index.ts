@@ -277,9 +277,32 @@ serve(async (req) => {
     // 10000 basis points = 100% fee = prevents all transfers
     if (!transferable) {
       try {
-        const transferFeeTx = await lock.updateTransferFee(10000);
-        await transferFeeTx.wait();
-        console.log('Transfer fee set to 100% (soul-bound) for lock:', lockAddress);
+        const transferFeeReceipt = await retryWithBackoff(
+          async () => {
+            const currentNonce = await signer.getNonce();
+            console.log(`Attempting updateTransferFee with nonce: ${currentNonce} for lock ${lockAddress}`);
+
+            const transferFeeTx = await lock.updateTransferFee(10000, {
+              nonce: currentNonce,
+            });
+
+            return await transferFeeTx.wait();
+          },
+          {
+            maxAttempts: RETRY_CONFIG.MAX_ATTEMPTS,
+            initialDelay: RETRY_CONFIG.INITIAL_DELAY,
+            backoffMultiplier: RETRY_CONFIG.BACKOFF_MULTIPLIER,
+            maxDelay: RETRY_CONFIG.MAX_DELAY,
+            shouldRetry: isRetryableTransactionError,
+          },
+          `updateTransferFee for lock ${lockAddress}`,
+        );
+
+        console.log(
+          `Transfer fee set to 100% (soul-bound) for lock: ${lockAddress}. Tx: ${
+            (transferFeeReceipt as any).hash ?? (transferFeeReceipt as any).transactionHash
+          }`,
+        );
       } catch (error) {
         console.warn('Failed to set transfer fee (non-critical):', error);
         // Don't fail entire deployment - transfer fee can be set later by lock manager
