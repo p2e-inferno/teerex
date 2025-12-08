@@ -7,6 +7,7 @@ type ServiceBalance = {
   chain_name: string;
   rpc_url: string | null;
   block_explorer_url: string | null;
+  native_currency_symbol: string;
   native_balance_eth: number | null;
   warning: boolean;
   error?: string;

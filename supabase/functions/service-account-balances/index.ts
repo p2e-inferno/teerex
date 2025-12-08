@@ -24,7 +24,7 @@ serve(async (req) => {
 
     let query = supabase
       .from("network_configs")
-      .select("chain_id, chain_name, rpc_url, block_explorer_url, is_active")
+      .select("chain_id, chain_name, rpc_url, block_explorer_url, native_currency_symbol, is_active")
       .eq("is_active", true)
       .order("chain_id", { ascending: true });
 
@@ -46,6 +46,7 @@ serve(async (req) => {
       chain_name: any;
       rpc_url: string;
       block_explorer_url: any;
+      native_currency_symbol: any;
       native_balance_eth: number | null;
       warning: boolean;
       error?: string;
@@ -68,6 +69,7 @@ serve(async (req) => {
         chain_name: net.chain_name,
         rpc_url: rpcUrl,
         block_explorer_url: net.block_explorer_url,
+        native_currency_symbol: net.native_currency_symbol,
         native_balance_eth: balanceEth,
         warning: balanceEth < warningThreshold,
       });
@@ -77,6 +79,7 @@ serve(async (req) => {
         chain_name: net.chain_name,
         rpc_url: rpcUrl,
         block_explorer_url: net.block_explorer_url,
+        native_currency_symbol: net.native_currency_symbol,
         native_balance_eth: null,
         warning: true,
         error: "rpc_error",

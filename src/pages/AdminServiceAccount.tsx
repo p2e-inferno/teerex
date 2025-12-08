@@ -133,7 +133,7 @@ const AdminServiceAccount: React.FC = () => {
         <TableCell>{b.rpc_url || '—'}</TableCell>
         <TableCell>{b.block_explorer_url ? <a className="text-primary hover:underline" href={b.block_explorer_url} target="_blank" rel="noreferrer">Explorer</a> : '—'}</TableCell>
         <TableCell>
-          {b.native_balance_eth === null ? 'Error' : `${b.native_balance_eth.toFixed(6)} ETH`}
+          {b.native_balance_eth === null ? 'Error' : `${b.native_balance_eth.toFixed(6)} ${b.native_currency_symbol}`}
         </TableCell>
         <TableCell>
           {b.warning ? <Badge variant="destructive">Low</Badge> : <Badge variant="secondary">OK</Badge>}
@@ -386,13 +386,17 @@ const AdminServiceAccount: React.FC = () => {
               {totals.length === 0 ? (
                 <div className="text-muted-foreground">No gas data yet.</div>
               ) : (
-                totals.map((t) => (
-                  <div key={t.chain_id} className="p-4 rounded-lg border bg-background/60">
-                    <div className="text-sm text-muted-foreground">Chain {t.chain_id}</div>
-                    <div className="text-xl font-bold">{t.gas_cost_eth.toFixed(6)} ETH</div>
-                    <div className="text-xs text-muted-foreground">{t.count} tx</div>
-                  </div>
-                ))
+                totals.map((t) => {
+                  const network = getNetworkByChainId(t.chain_id);
+                  const symbol = network?.native_currency_symbol || 'ETH';
+                  return (
+                    <div key={t.chain_id} className="p-4 rounded-lg border bg-background/60">
+                      <div className="text-sm text-muted-foreground">Chain {t.chain_id}</div>
+                      <div className="text-xl font-bold">{t.gas_cost_eth.toFixed(6)} {symbol}</div>
+                      <div className="text-xs text-muted-foreground">{t.count} tx</div>
+                    </div>
+                  );
+                })
               )}
             </div>
 
@@ -408,7 +412,7 @@ const AdminServiceAccount: React.FC = () => {
                       <TableRow>
                         <TableHead>Tx Hash</TableHead>
                         <TableHead>Chain</TableHead>
-                        <TableHead>Gas (ETH)</TableHead>
+                        <TableHead>Gas Cost</TableHead>
                         <TableHead>Status</TableHead>
                       </TableRow>
                     </TableHeader>
@@ -423,6 +427,8 @@ const AdminServiceAccount: React.FC = () => {
                         recent.map((r) => {
                           const explorer = explorerForChain[r.chain_id];
                           const href = explorer ? `${explorer}/tx/${r.transaction_hash}` : undefined;
+                          const network = getNetworkByChainId(r.chain_id);
+                          const symbol = network?.native_currency_symbol || 'ETH';
                           return (
                             <TableRow key={r.transaction_hash}>
                               <TableCell className="font-mono text-xs">
@@ -435,7 +441,7 @@ const AdminServiceAccount: React.FC = () => {
                                 )}
                               </TableCell>
                               <TableCell>{r.chain_id}</TableCell>
-                              <TableCell>{Number(r.gas_cost_eth || 0).toFixed(6)}</TableCell>
+                              <TableCell>{Number(r.gas_cost_eth || 0).toFixed(6)} {symbol}</TableCell>
                               <TableCell>
                                 <Badge variant={r.status === 'confirmed' ? 'default' : 'secondary'}>
                                   {r.status || 'unknown'}
