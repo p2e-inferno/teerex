@@ -222,8 +222,14 @@ serve(async (req) => {
       if ("date" in formData) {
         eventData.date = formData.date ? new Date(formData.date).toISOString() : null;
       }
+      if ("endDate" in formData) {
+        eventData.end_date = formData.endDate
+          ? new Date(formData.endDate).toISOString()
+          : null;
+      }
       if ("time" in formData) eventData.time = formData.time;
       if ("location" in formData) eventData.location = formData.location;
+      if ("eventType" in formData) eventData.event_type = formData.eventType;
       if ("category" in formData) eventData.category = formData.category;
       if ("imageUrl" in formData) {
         // Only touch image_url if imageUrl was provided explicitly
@@ -231,6 +237,15 @@ serve(async (req) => {
       }
       if ("service_manager_added" in formData) {
         eventData.service_manager_added = !!formData.service_manager_added;
+      }
+      if ("nft_metadata_set" in formData) {
+        eventData.nft_metadata_set = !!formData.nft_metadata_set;
+      }
+      if ("nft_base_uri" in formData) {
+        eventData.nft_base_uri = formData.nft_base_uri || null;
+      }
+      if ("transferable" in formData) {
+        eventData.transferable = !!formData.transferable;
       }
     }
 

@@ -152,6 +152,19 @@ serve(async (req) => {
       throw new Error(`Failed to create post: ${insertError.message}`);
     }
 
+    // Fire-and-forget notification - keep non-blocking
+    supabase.functions.invoke('send-post-notification', {
+      body: {
+        event_id: eventId,
+        post_id: newPost.id,
+      },
+      headers: {
+        'X-Privy-Authorization': authHeader,
+      },
+    }).catch((err) => {
+      console.error('[create-post] Failed to trigger post notification:', err?.message || err);
+    });
+
     return new Response(
       JSON.stringify({ ok: true, postId: newPost.id, post: newPost }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 200 }

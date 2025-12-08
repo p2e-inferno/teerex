@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Textarea } from '@/components/ui/textarea';
+import { RichTextEditor } from '@/components/ui/rich-text/RichTextEditor';
 import { Send, Loader2 } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
 
@@ -16,7 +16,7 @@ export const PostComposer: React.FC<PostComposerProps> = ({ createPost }) => {
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const handleSubmit = async () => {
-    const trimmedContent = content.trim();
+    const trimmedContent = content.replace(/<[^>]*>/g, '').trim(); // Strip HTML for validation
 
     if (!trimmedContent) {
       toast({
@@ -38,7 +38,7 @@ export const PostComposer: React.FC<PostComposerProps> = ({ createPost }) => {
 
     try {
       setIsSubmitting(true);
-      await createPost(trimmedContent);
+      await createPost(content); // Send HTML content
 
       // Clear form on success
       setContent('');
@@ -59,7 +59,8 @@ export const PostComposer: React.FC<PostComposerProps> = ({ createPost }) => {
     }
   };
 
-  const remainingChars = MAX_POST_LENGTH - content.length;
+  const plainTextLength = content.replace(/<[^>]*>/g, '').length;
+  const remainingChars = MAX_POST_LENGTH - plainTextLength;
   const isOverLimit = remainingChars < 0;
 
   return (
@@ -83,14 +84,11 @@ export const PostComposer: React.FC<PostComposerProps> = ({ createPost }) => {
             </span>
           </div>
 
-          <Textarea
-            id="post-content"
-            placeholder="Share updates, important info, or announcements with your attendees..."
+          <RichTextEditor
             value={content}
-            onChange={(e) => setContent(e.target.value)}
+            onChange={setContent}
+            placeholder="Share updates, important info, or announcements with your attendees..."
             disabled={isSubmitting}
-            className="min-h-[120px] resize-none"
-            maxLength={MAX_POST_LENGTH + 100} // Allow typing slightly over for visual feedback
           />
         </div>
 

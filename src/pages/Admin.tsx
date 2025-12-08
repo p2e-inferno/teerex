@@ -36,6 +36,16 @@ const Admin: React.FC = () => {
   const { user, authenticated, getAccessToken } = usePrivy();
   const { wallets } = useWallets();
   const wallet = wallets?.[0];
+  const ADMIN_LOCK_CHAIN_ID = Number(
+    (import.meta as any).env?.VITE_ADMIN_LOCK_CHAIN_ID ||
+    (import.meta as any).env?.ADMIN_LOCK_CHAIN_ID ||
+    (import.meta as any).env?.VITE_PRIMARY_CHAIN_ID
+  ) || 84532;
+  const CREATOR_LOCK_CHAIN_ID = Number(
+    (import.meta as any).env?.VITE_CREATOR_LOCK_CHAIN_ID ||
+    (import.meta as any).env?.CREATOR_LOCK_CHAIN_ID ||
+    (import.meta as any).env?.VITE_PRIMARY_CHAIN_ID
+  ) || 84532;
   const [schemas, setSchemas] = useState<AttestationSchema[]>([]);
   const [loading, setLoading] = useState(false);
   const [checkingSchemas, setCheckingSchemas] = useState(false);
@@ -190,7 +200,7 @@ const Admin: React.FC = () => {
     // Gating: Only admins (holders of ADMIN_LOCK_ADDRESS) can insert into DB
     const ADMIN_LOCK_ADDRESS = (import.meta as any).env?.VITE_ADMIN_LOCK_ADDRESS || (import.meta as any).env?.ADMIN_LOCK_ADDRESS;
     if (ADMIN_LOCK_ADDRESS && wallet?.address) {
-      const canInsert = await checkKeyOwnership(ADMIN_LOCK_ADDRESS, wallet.address);
+      const canInsert = await checkKeyOwnership(ADMIN_LOCK_ADDRESS, wallet.address, ADMIN_LOCK_CHAIN_ID);
       if (!canInsert) {
         toast({
           title: "Insufficient Access",
@@ -286,14 +296,14 @@ const Admin: React.FC = () => {
         canInsert = false;
         canRegisterOnChain = false;
         if (ADMIN_LOCK_ADDRESS) {
-          const adminOk = await checkKeyOwnership(ADMIN_LOCK_ADDRESS, wallet.address);
+          const adminOk = await checkKeyOwnership(ADMIN_LOCK_ADDRESS, wallet.address, ADMIN_LOCK_CHAIN_ID);
           if (adminOk) {
             canInsert = true;
             canRegisterOnChain = true;
           }
         }
         if (!canRegisterOnChain && CREATOR_LOCK_ADDRESS) {
-          const creatorOk = await checkKeyOwnership(CREATOR_LOCK_ADDRESS, wallet.address);
+          const creatorOk = await checkKeyOwnership(CREATOR_LOCK_ADDRESS, wallet.address, CREATOR_LOCK_CHAIN_ID);
           if (creatorOk) {
             canRegisterOnChain = true;
           }
@@ -378,14 +388,14 @@ const Admin: React.FC = () => {
         canInsert = false;
         canRegisterOnChain = false;
         if (ADMIN_LOCK_ADDRESS) {
-          const adminOk = await checkKeyOwnership(ADMIN_LOCK_ADDRESS, wallet.address);
+          const adminOk = await checkKeyOwnership(ADMIN_LOCK_ADDRESS, wallet.address, ADMIN_LOCK_CHAIN_ID);
           if (adminOk) {
             canInsert = true;
             canRegisterOnChain = true;
           }
         }
         if (!canRegisterOnChain && CREATOR_LOCK_ADDRESS) {
-          const creatorOk = await checkKeyOwnership(CREATOR_LOCK_ADDRESS, wallet.address);
+          const creatorOk = await checkKeyOwnership(CREATOR_LOCK_ADDRESS, wallet.address, CREATOR_LOCK_CHAIN_ID);
           if (creatorOk) {
             canRegisterOnChain = true;
           }

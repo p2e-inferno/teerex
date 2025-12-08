@@ -4,9 +4,14 @@ import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { ImageModal } from '@/components/ui/image-modal';
-import { Calendar, Clock, MapPin, Users } from 'lucide-react';
+import { Calendar, Clock, MapPin, Users, Globe, ExternalLink } from 'lucide-react';
 import { PublishedEvent } from '@/utils/eventUtils';
 import { format } from 'date-fns';
+import { ShareButton } from '@/components/interactions/ShareButton';
+import { RichTextDisplay } from '@/components/ui/rich-text/RichTextDisplay';
+import { stripHtml } from '@/utils/textUtils';
+import { WaitlistDialog } from './WaitlistDialog';
+import { formatEventDateRange } from '@/utils/dateUtils';
 
 interface EventCardProps {
   event: PublishedEvent;
@@ -16,20 +21,27 @@ interface EventCardProps {
   keysSold?: number;
   actionType?: string;
   showActions?: boolean;
+  showShareButton?: boolean;
   isTicketView?: boolean;
+  authenticated?: boolean;
+  onConnectWallet?: () => void;
 }
 
 export const EventCard: React.FC<EventCardProps> = ({
-  event, 
-  onViewDetails, 
+  event,
+  onViewDetails,
   onEdit,
   onManage,
   keysSold = 0,
   actionType,
   showActions = true,
-  isTicketView = false
+  showShareButton = false,
+  isTicketView = false,
+  authenticated = false,
+  onConnectWallet
 }) => {
   const [imgError, setImgError] = useState(false);
+  const [waitlistDialogOpen, setWaitlistDialogOpen] = useState(false);
   const imageSrc = useMemo(() => {
     if (!event.image_url) return '';
     const ts = (event as any).updated_at instanceof Date
@@ -41,19 +53,19 @@ export const EventCard: React.FC<EventCardProps> = ({
   const navigate = useNavigate();
   const spotsLeft = event.capacity - keysSold;
   const isSoldOut = spotsLeft <= 0;
-  
+
   // Check if event has expired
   const isEventExpired = event.date && new Date(event.date) < new Date();
 
   const handleCardClick = () => {
     if (!isTicketView) {
-      navigate(`/event/${event.id}`);
+      navigate(`/event/${event.lock_address}`);
     }
   };
 
   const handleTitleClick = (e: React.MouseEvent) => {
     e.stopPropagation();
-    navigate(`/event/${event.id}`);
+    navigate(`/event/${event.lock_address}`);
   };
 
   const handleViewDetailsClick = (e: React.MouseEvent) => {
@@ -65,12 +77,29 @@ export const EventCard: React.FC<EventCardProps> = ({
   const handleEditClick = (e: React.MouseEvent) => { e.stopPropagation(); onEdit?.(event); };
   const handleManageClick = (e: React.MouseEvent) => { e.stopPropagation(); onManage?.(event); };
 
+  const handleButtonClick = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!authenticated) {
+      onConnectWallet?.();
+      return;
+    }
+    // If sold out and waitlist enabled, open waitlist dialog
+    if (isSoldOut && event.allow_waitlist) {
+      setWaitlistDialogOpen(true);
+      return;
+    }
+    // Normal ticket purchase flow for authenticated users
+    onViewDetails?.(event);
+  };
+
   // Determine button text based on context
   const getButtonText = () => {
+    if (!authenticated) return 'Connect Wallet';
     if (isTicketView) return 'View Ticket';
     if (actionType === 'edit') return 'Edit';
     if (actionType === 'manage') return 'Manage';
     if (isEventExpired) return 'Event Ended';
+    if (isSoldOut && event.allow_waitlist) return 'Join Waitlist';
     if (isSoldOut) return 'Sold Out';
     return 'Get Ticket';
   };
@@ -89,7 +118,7 @@ export const EventCard: React.FC<EventCardProps> = ({
         {event.image_url && !imgError ? (
           isTicketView ? (
             <ImageModal src={imageSrc} alt={event.title}>
-              <div className="aspect-video rounded-t-lg overflow-hidden bg-gray-100 cursor-pointer">
+              <div className="aspect-square rounded-t-lg overflow-hidden bg-gray-100 cursor-pointer">
                 <img
                   src={imageSrc}
                   alt={event.title}
@@ -100,12 +129,16 @@ export const EventCard: React.FC<EventCardProps> = ({
                     });
                     setImgError(true);
                   }}
-                  className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-200"
+                  style={{
+                    objectFit: 'cover',
+                    objectPosition: `${event.image_crop_x || 50}% ${event.image_crop_y || 50}%`
+                  }}
+                  className="w-full h-full group-hover:scale-105 transition-transform duration-200"
                 />
               </div>
             </ImageModal>
           ) : (
-            <div className="aspect-video rounded-t-lg overflow-hidden bg-gray-100">
+            <div className="aspect-square rounded-t-lg overflow-hidden bg-gray-100">
               <img
                 src={imageSrc}
                 alt={event.title}
@@ -116,12 +149,16 @@ export const EventCard: React.FC<EventCardProps> = ({
                   });
                     setImgError(true);
                 }}
-                className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-200"
+                style={{
+                  objectFit: 'cover',
+                  objectPosition: `${event.image_crop_x || 50}% ${event.image_crop_y || 50}%`
+                }}
+                className="w-full h-full group-hover:scale-105 transition-transform duration-200"
               />
             </div>
           )
         ) : (
-          <div className="aspect-video rounded-t-lg bg-gradient-to-br from-blue-100 to-purple-100 flex items-center justify-center">
+          <div className="aspect-square rounded-t-lg bg-gradient-to-br from-blue-100 to-purple-100 flex items-center justify-center">
             <Calendar className="w-12 h-12 text-gray-400" />
           </div>
         )}
@@ -141,24 +178,47 @@ export const EventCard: React.FC<EventCardProps> = ({
           {event.title}
         </h3>
         
-        <p className="text-gray-600 text-sm mb-4 line-clamp-2">
-          {event.description}
-        </p>
+        <div className="text-gray-600 text-sm mb-4">
+          <RichTextDisplay
+            content={event.description}
+            className="prose-sm prose-gray max-w-none line-clamp-2 prose-card"
+          />
+        </div>
         
-        <div className="space-y-2 mb-4">
-          {event.date && (
-            <div className="flex items-center text-sm text-gray-600">
-              <Calendar className="w-4 h-4 mr-2" />
-              <span>{format(event.date, 'MMM d, yyyy')}</span>
-              <Clock className="w-4 h-4 ml-4 mr-2" />
-              <span>{event.time}</span>
+        <div className="space-y-3 mb-4">
+          {(event.date || event.time || event.location) && (
+            <div className="flex flex-col gap-2 text-sm text-gray-600">
+              {event.date && (
+                <div className="flex items-center">
+                  <Calendar className="w-4 h-4 mr-2 flex-shrink-0" />
+                  <span className="whitespace-nowrap">{formatEventDateRange({ startDate: event.date, endDate: event.end_date })}</span>
+                </div>
+              )}
+              {(event.time || event.location) && (
+                <div className="flex flex-wrap items-center gap-4">
+                  {event.time && (
+                    <div className="flex items-center">
+                      <Clock className="w-4 h-4 mr-2 flex-shrink-0" />
+                      <span className="whitespace-nowrap">{event.time}</span>
+                    </div>
+                  )}
+                  <div className="flex items-center min-w-0">
+                    {event.event_type === 'virtual' ? (
+                      <>
+                        <Globe className="w-4 h-4 mr-2 flex-shrink-0" />
+                        <span className="truncate">Virtual Event</span>
+                      </>
+                    ) : (
+                      <>
+                        <MapPin className="w-4 h-4 mr-2 flex-shrink-0" />
+                        <span className="truncate">{event.location || 'Metaverse'}</span>
+                      </>
+                    )}
+                  </div>
+                </div>
+              )}
             </div>
           )}
-          
-          <div className="flex items-center text-sm text-gray-600">
-            <MapPin className="w-4 h-4 mr-2" />
-            <span className="truncate">{event.location}</span>
-          </div>
           
           <div className="flex items-center justify-between text-sm">
             <div className="flex items-center text-gray-600">
@@ -189,29 +249,45 @@ export const EventCard: React.FC<EventCardProps> = ({
             ) : event.currency === 'FREE' ? 'Free' : `${event.price} ${event.currency}`}
           </div>
           {showActions && (
-            (onEdit || onManage) ? (
-              <div className="flex items-center gap-2">
-                {onEdit && (
-                  <Button size="sm" onClick={handleEditClick} className="bg-blue-600 hover:bg-blue-700">Edit</Button>
-                )}
-                {onManage && (
-                  <Button size="sm" variant="outline" onClick={handleManageClick}>Manage</Button>
-                )}
-              </div>
-            ) : (
-              <Button 
-                size="sm" 
-                onClick={handleViewDetailsClick}
-                disabled={isEventExpired || isSoldOut}
-                variant={getButtonVariant()}
-                className={actionType === 'manage' ? '' : "bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"}
-              >
-                {getButtonText()}
-              </Button>
-            )
+            <div className="flex items-center gap-2">
+              {(onEdit || onManage) ? (
+                <>
+                  {onEdit && (
+                    <Button size="sm" onClick={handleEditClick} className="bg-blue-600 hover:bg-blue-700">Edit</Button>
+                  )}
+                  {onManage && (
+                    <Button size="sm" variant="outline" onClick={handleManageClick}>Manage</Button>
+                  )}
+                </>
+              ) : (
+                <Button
+                  size="sm"
+                  onClick={handleButtonClick}
+                  disabled={isEventExpired || (isSoldOut && !event.allow_waitlist) || (!authenticated && !onConnectWallet)}
+                  variant={getButtonVariant()}
+                  className={!authenticated ? "bg-purple-600 hover:bg-purple-700" : actionType === 'manage' ? '' : "bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"}
+                >
+                  {getButtonText()}
+                </Button>
+              )}
+              {showShareButton && (
+                <ShareButton
+                  url={`${window.location.origin}/event/${event.lock_address}`}
+                  title={event.title}
+                  description={stripHtml(event.description)}
+                />
+              )}
+            </div>
           )}
         </div>
       </CardContent>
+
+      {/* Waitlist Dialog */}
+      <WaitlistDialog
+        event={event}
+        isOpen={waitlistDialogOpen}
+        onClose={() => setWaitlistDialogOpen(false)}
+      />
     </Card>
   );
 };

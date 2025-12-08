@@ -3,6 +3,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { EventFormData } from '@/pages/CreateEvent';
 import { checkKeyOwnership } from './lockUtils';
 import { baseSepolia } from 'wagmi/chains';
+import { createEventHash } from './eventIdempotency';
 
 export interface PublishedEvent {
   id: string;
@@ -10,8 +11,11 @@ export interface PublishedEvent {
   title: string;
   description: string;
   date: Date | null;
+  end_date: Date | null;
+  starts_at?: string | null;
   time: string;
   location: string;
+  event_type: 'physical' | 'virtual';
   capacity: number;
   price: number;
   currency: 'ETH' | 'USDC' | 'FREE';
@@ -20,6 +24,8 @@ export interface PublishedEvent {
   paystack_public_key: string | null;
   category: string;
   image_url: string | null;
+  image_crop_x?: number;
+  image_crop_y?: number;
   lock_address: string;
   transaction_hash: string;
   chain_id: number;
@@ -32,15 +38,20 @@ export interface PublishedEvent {
   transferable: boolean;
   requires_approval: boolean;
   service_manager_added: boolean;
+  is_public: boolean;
+  allow_waitlist: boolean;
+  has_allow_list: boolean;
+  nft_metadata_set: boolean;
+  nft_base_uri: string | null;
 }
 
 export const savePublishedEvent = async (
-  formData: EventFormData, 
-  lockAddress: string, 
-  transactionHash: string, 
+  formData: EventFormData,
+  lockAddress: string,
+  transactionHash: string,
   creatorId: string,
   serviceManagerAdded: boolean = false
-): Promise<void> => {
+): Promise<PublishedEvent> => {
   try {
     // Map payment method to persisted fields
     const isCrypto = formData.paymentMethod === 'crypto';
@@ -57,13 +68,53 @@ export const savePublishedEvent = async (
       paystackPublicKey = pk;
     }
 
+    // Generate idempotency hash from event properties
+    const idempotencyHash = await createEventHash({
+      creator_id: creatorId,
+      title: formData.title,
+      date: formData.date?.toISOString() || null,
+      time: formData.time,
+      location: formData.location,
+      capacity: formData.capacity,
+      price: isCrypto ? formData.price : (isFiat ? formData.ngnPrice : 0),
+      currency: isCrypto ? formData.currency : (isFiat ? 'NGN' : 'FREE'),
+      paymentMethod: formData.paymentMethod,
+    });
+
+    // Check if event with this hash already exists
+    const { data: existingEvent, error: checkError } = await supabase
+      .from('events')
+      .select('*')
+      .eq('creator_id', creatorId)
+      .eq('idempotency_hash', idempotencyHash)
+      .maybeSingle();
+
+    if (checkError && checkError.code !== 'PGRST116') { // PGRST116 = no rows found
+      console.error('Error checking for existing event:', checkError);
+      throw checkError;
+    }
+
+    if (existingEvent) {
+      console.log('Duplicate event detected:', idempotencyHash, 'Event ID:', existingEvent.id);
+
+      // Throw custom error that frontend can catch and handle gracefully
+      const error = new Error('DUPLICATE_EVENT') as any;
+      error.eventId = existingEvent.id;
+      error.eventTitle = existingEvent.title;
+      error.lockAddress = existingEvent.lock_address;
+      throw error;
+    }
+
+    // Prepare event data with hash
     const eventData = {
       creator_id: creatorId,
       title: formData.title,
       description: formData.description,
       date: formData.date?.toISOString(),
+      end_date: formData.endDate?.toISOString() || null,
       time: formData.time,
       location: formData.location,
+      event_type: formData.eventType,
       capacity: formData.capacity,
       // For crypto use the crypto price; otherwise 0
       price: isCrypto ? formData.price : 0,
@@ -76,22 +127,78 @@ export const savePublishedEvent = async (
       paystack_public_key: paystackPublicKey,
       category: formData.category,
       image_url: formData.imageUrl || null,
+      image_crop_x: formData.imageCropX,
+      image_crop_y: formData.imageCropY,
       lock_address: lockAddress,
       transaction_hash: transactionHash,
       chain_id: (formData as any).chainId,
-      service_manager_added: serviceManagerAdded
+      service_manager_added: serviceManagerAdded,
+      idempotency_hash: idempotencyHash, // Add the hash
+      // Ticket duration settings
+      ticket_duration: formData.ticketDuration || 'event',
+      custom_duration_days: formData.customDurationDays,
+      // Visibility and access control
+      is_public: formData.isPublic,
+      allow_waitlist: formData.allowWaitlist,
+      has_allow_list: formData.hasAllowList,
+      // Transferability setting
+      transferable: formData.transferable ?? false,
+      // NFT metadata tracking
+      nft_metadata_set: true, // Metadata is set during deployment
+      nft_base_uri: `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/nft-metadata/${lockAddress}/`,
     };
 
-    const { error } = await supabase
+    const { data, error } = await supabase
       .from('events')
-      .insert(eventData);
+      .insert(eventData)
+      .select()
+      .single();
 
     if (error) {
+      // Handle unique constraint violation gracefully (race condition)
+      if (error.code === '23505' && error.message.includes('events_creator_idempotency_unique')) {
+        console.log('Race condition detected during event creation, fetching existing event');
+        // Another request created the same event between our check and insert
+        // Fetch and return that event
+        const { data: raceEvent } = await supabase
+          .from('events')
+          .select('*')
+          .eq('creator_id', creatorId)
+          .eq('idempotency_hash', idempotencyHash)
+          .single();
+
+        if (raceEvent) {
+          console.log('Duplicate detected in race condition:', raceEvent.id);
+
+          // Throw custom error for duplicate event
+          const error = new Error('DUPLICATE_EVENT') as any;
+          error.eventId = raceEvent.id;
+          error.eventTitle = raceEvent.title;
+          error.lockAddress = raceEvent.lock_address;
+          throw error;
+        }
+      }
       console.error('Error saving published event:', error);
       throw error;
     }
 
-    console.log('Event successfully saved to database');
+    if (!data) {
+      throw new Error('Failed to retrieve created event data');
+    }
+
+    console.log('Event successfully saved to database:', data.id);
+
+    // Map the database response to PublishedEvent type
+    return {
+      ...data,
+      date: data.date ? new Date(data.date) : null,
+      created_at: new Date(data.created_at),
+      updated_at: new Date(data.updated_at),
+      currency: data.currency as 'ETH' | 'USDC' | 'FREE',
+      ngn_price: data.ngn_price || 0,
+      payment_methods: data.payment_methods || [formData.paymentMethod],
+      paystack_public_key: data.paystack_public_key
+    } as PublishedEvent;
   } catch (error) {
     console.error('Error saving published event:', error);
     throw error;
@@ -113,6 +220,8 @@ export const getPublishedEvents = async (): Promise<PublishedEvent[]> => {
     return (data || []).map((event: any) => ({
       ...event,
       date: event.date ? new Date(event.date) : null,
+      end_date: event.end_date ? new Date(event.end_date) : null,
+      starts_at: event.starts_at || null,
       created_at: new Date(event.created_at),
       updated_at: new Date(event.updated_at),
       currency: event.currency as 'ETH' | 'USDC' | 'FREE',
@@ -126,8 +235,62 @@ export const getPublishedEvents = async (): Promise<PublishedEvent[]> => {
   }
 };
 
+/**
+ * Fetches an event by its lock address (case-insensitive)
+ * This enables Web3-native URLs like /event/0x1234...abcd
+ */
+export const getPublishedEventByLockAddress = async (
+  lockAddress: string
+): Promise<PublishedEvent | null> => {
+  try {
+    const normalizedAddress = lockAddress.toLowerCase();
+
+    const { data, error } = await supabase
+      .from('events')
+      .select('*')
+      .ilike('lock_address', normalizedAddress)
+      .maybeSingle();
+
+    if (error || !data) {
+      console.error('Error fetching event by lock address:', error);
+      return null;
+    }
+
+    const event = data as any;
+    return {
+      ...event,
+      date: event.date ? new Date(event.date) : null,
+      end_date: event.end_date ? new Date(event.end_date) : null,
+      created_at: new Date(event.created_at),
+      updated_at: new Date(event.updated_at),
+      currency: event.currency as 'ETH' | 'USDC' | 'FREE',
+      ngn_price: event.ngn_price || 0,
+      payment_methods: event.payment_methods || ['crypto'],
+      paystack_public_key: event.paystack_public_key
+    } as PublishedEvent;
+  } catch (error) {
+    console.error('Error fetching event by lock address:', error);
+    return null;
+  }
+};
+
+/**
+ * Fetches an event by ID (supports both UUID and lock address formats)
+ * - If id matches Ethereum address format (0x + 40 hex chars), lookup by lock_address
+ * - Otherwise, lookup by UUID
+ * This provides backwards compatibility while enabling Web3-native URLs
+ */
 export const getPublishedEventById = async (id: string): Promise<PublishedEvent | null> => {
   try {
+    // Check if id is an Ethereum address (0x + 40 hex chars)
+    const isAddress = /^0x[a-fA-F0-9]{40}$/.test(id);
+
+    if (isAddress) {
+      // Use lock_address lookup
+      return await getPublishedEventByLockAddress(id);
+    }
+
+    // Otherwise, treat as UUID
     const { data, error } = await supabase
       .from('events')
       .select('*')
@@ -143,6 +306,7 @@ export const getPublishedEventById = async (id: string): Promise<PublishedEvent 
     return {
       ...event,
       date: event.date ? new Date(event.date) : null,
+      end_date: event.end_date ? new Date(event.end_date) : null,
       created_at: new Date(event.created_at),
       updated_at: new Date(event.updated_at),
       currency: event.currency as 'ETH' | 'USDC' | 'FREE',
@@ -172,6 +336,7 @@ export const getUserEvents = async (userId: string): Promise<PublishedEvent[]> =
     return (data || []).map((event: any) => ({
       ...event,
       date: event.date ? new Date(event.date) : null,
+      end_date: event.end_date ? new Date(event.end_date) : null,
       created_at: new Date(event.created_at),
       updated_at: new Date(event.updated_at),
       currency: event.currency as 'ETH' | 'USDC' | 'FREE',

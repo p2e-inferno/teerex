@@ -3,6 +3,8 @@ import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { Contract, JsonRpcProvider, Wallet } from "https://esm.sh/ethers@6.14.4";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.50.0";
 import PublicLockV15 from "../_shared/abi/PublicLockV15.json" assert { type: "json" };
+import { sendEmail, getTicketEmail, normalizeEmail } from "../_shared/email-utils.ts";
+import { formatEventDate } from "../_shared/date-utils.ts";
 
 function json(data: any, status = 200) {
   return new Response(JSON.stringify(data), {
@@ -78,7 +80,7 @@ serve(async (req) => {
     const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
     const { data: tx } = await supabase
       .from("paystack_transactions")
-      .select("reference, status, gateway_response, events:events(id, lock_address, chain_id)")
+      .select("reference, status, user_email, gateway_response, events:events(id, title, date, lock_address, chain_id)")
       .eq("reference", reference)
       .maybeSingle();
 
@@ -178,6 +180,28 @@ serve(async (req) => {
       .eq('reference', reference);
 
     console.log(" [WEBHOOK] Webhook processed successfully");
+
+    // Send ticket confirmation email (non-blocking)
+    const userEmail = normalizeEmail((tx as any)?.user_email);
+    if (granted && userEmail && txEvent?.title) {
+      const eventTitle = txEvent.title;
+      const eventDate = txEvent.date ? formatEventDate(txEvent.date) : 'TBA';
+      const explorerUrl = grantTxHash && chainId
+        ? `https://${chainId === 8453 ? 'basescan.org' : 'sepolia.basescan.org'}/tx/${grantTxHash}`
+        : undefined;
+
+      const emailContent = getTicketEmail(eventTitle, eventDate, grantTxHash, chainId, explorerUrl);
+
+      // Fire and forget - don't block webhook response
+      sendEmail({
+        to: userEmail,
+        ...emailContent,
+        tags: ['ticket-issued', 'paystack'],
+      }).catch(err => {
+        console.error('[WEBHOOK] Failed to send ticket email:', err);
+      });
+    }
+
     return json({ ok: true, granted, reference: verificationLog.reference, txHash: grantTxHash });
   } catch (err) {
     console.error(" [KEY GRANT] Payment was successful but key granting failed");

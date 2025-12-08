@@ -9,6 +9,7 @@ import { EventCard } from '@/components/events/EventCard';
 import { EventManagementDialog } from '@/components/events/EventManagementDialog';
 import { getUserEvents, PublishedEvent } from '@/utils/eventUtils';
 import { useToast } from '@/hooks/use-toast';
+import { WalletConnectionGate } from '@/components/WalletConnectionGate';
 
 const MyEvents = () => {
   const { authenticated, user } = usePrivy();
@@ -73,6 +74,16 @@ const MyEvents = () => {
           </div>
         </div>
       </div>
+    );
+  }
+
+  if (!authenticated) {
+    return (
+      <WalletConnectionGate
+        title="Connect Your Wallet to View Events"
+        description="You need to connect your wallet to view and manage your events"
+        fullPage={true}
+      />
     );
   }
 
@@ -195,9 +206,7 @@ const MyEvents = () => {
               {events.map((event) => {
                 console.log('Rendering event card for:', event.id, 'with image_url:', event.image_url);
                 const needsAttention = hasIncompleteSetup(event);
-                  if (!authenticated) {
-    return <Navigate to="/" replace />;
-  }return (
+                return (
                   <div key={event.id} className="relative">
                     {needsAttention && (
                       <Badge 
@@ -212,6 +221,7 @@ const MyEvents = () => {
                       event={event}
                       onEdit={handleEditEvent}
                       onManage={handleManageEvent}
+                      showShareButton={true}
                     />
                   </div>
                 );

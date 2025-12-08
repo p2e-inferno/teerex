@@ -3,6 +3,7 @@ import React from 'react';
 import { Card, CardContent } from '@/components/ui/card';
 import { EventFormData } from '@/pages/CreateEvent';
 import { DollarSign, Ticket, Globe } from 'lucide-react';
+import { useNetworkConfigs } from '@/hooks/useNetworkConfigs';
  
 
 interface TicketSettingsDisplayProps {
@@ -10,6 +11,10 @@ interface TicketSettingsDisplayProps {
 }
 
 export const TicketSettingsDisplay: React.FC<TicketSettingsDisplayProps> = ({ formData }) => {
+  const { networks } = useNetworkConfigs();
+  const network = formData.chainId ? networks.find(n => n.chain_id === formData.chainId) : undefined;
+  const networkLabel = network?.chain_name || (formData.chainId === 8453 ? 'Base' : formData.chainId === 84532 ? 'Base Sepolia' : 'Network');
+
   return (
     <div className="space-y-6">
       <h2 className="text-2xl font-semibold text-gray-900 mb-2">Ticket & Contract Details</h2>
@@ -47,7 +52,7 @@ export const TicketSettingsDisplay: React.FC<TicketSettingsDisplayProps> = ({ fo
             </div>
             <div>
               <p className="text-sm font-medium text-gray-500">Network</p>
-              <p className="text-lg font-semibold text-gray-900">Base Sepolia</p>
+              <p className="text-lg font-semibold text-gray-900">{networkLabel}</p>
             </div>
           </div>
         </CardContent>

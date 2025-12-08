@@ -1,8 +1,9 @@
 
 import { parseEther, parseUnits } from 'viem';
 import { base, baseSepolia } from 'wagmi/chains';
-import { getRpcUrl, getExplorerTxUrl, getTokenAddress, ZERO_ADDRESS, CHAINS } from '@/lib/config/network-config';
+import { getRpcUrl, getExplorerTxUrl, getTokenAddress, getTokenAddressAsync, ZERO_ADDRESS, getNetworkConfigByChainId } from '@/lib/config/network-config';
 import { ethers } from 'ethers';
+import { supabase } from '@/integrations/supabase/client';
 
 interface LockConfig {
   name: string;
@@ -30,11 +31,52 @@ interface PurchaseResult {
   error?: string;
 }
 
-// Unlock Protocol factory contract addresses
-const UNLOCK_FACTORY_ADDRESSES = {
+// Unlock Protocol factory contract addresses (DEPRECATED - kept for fallback only)
+const UNLOCK_FACTORY_ADDRESSES_FALLBACK = {
   [base.id]: '0xd0b14797b9D08493392865647384974470202A78', // Base mainnet
   [baseSepolia.id]: '0x259813B665C8f6074391028ef782e27B65840d89' // Base Sepolia testnet
 } as const;
+
+/**
+ * Get Unlock factory address for a given chain ID from database
+ * Falls back to hardcoded addresses if database lookup fails
+ */
+async function getUnlockFactoryAddress(chainId: number): Promise<string> {
+  try {
+    const { data, error } = await supabase
+      .from('network_configs')
+      .select('unlock_factory_address')
+      .eq('chain_id', chainId)
+      .eq('is_active', true)
+      .maybeSingle();
+
+    if (error) {
+      console.warn(`Database error fetching factory address for chain ${chainId}:`, error);
+      throw error;
+    }
+
+    if (!data?.unlock_factory_address) {
+      // Try fallback
+      const fallbackAddress = UNLOCK_FACTORY_ADDRESSES_FALLBACK[chainId as keyof typeof UNLOCK_FACTORY_ADDRESSES_FALLBACK];
+      if (fallbackAddress) {
+        console.warn(`No factory address in database for chain ${chainId}, using fallback: ${fallbackAddress}`);
+        return fallbackAddress;
+      }
+      throw new Error(`No Unlock factory address configured for chain ID ${chainId}. Please contact administrator.`);
+    }
+
+    console.log(`Using Unlock factory address from database for chain ${chainId}: ${data.unlock_factory_address}`);
+    return data.unlock_factory_address;
+  } catch (error) {
+    // Try fallback on any error
+    const fallbackAddress = UNLOCK_FACTORY_ADDRESSES_FALLBACK[chainId as keyof typeof UNLOCK_FACTORY_ADDRESSES_FALLBACK];
+    if (fallbackAddress) {
+      console.warn(`Error fetching factory address for chain ${chainId}, using fallback: ${fallbackAddress}`);
+      return fallbackAddress;
+    }
+    throw new Error(`Failed to get Unlock factory address for chain ID ${chainId}: ${error instanceof Error ? error.message : 'Unknown error'}`);
+  }
+}
 
 // Unlock factory ABI (simplified)
 const UnlockABI = [
@@ -174,6 +216,49 @@ const PublicLockABI = [
     "outputs": [{ "internalType": "uint256", "name": "", "type": "uint256" }],
     "stateMutability": "view",
     "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "transferFeeBasisPoints",
+    "outputs": [
+      { "internalType": "uint256", "name": "", "type": "uint256" }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      { "internalType": "uint256", "name": "_tokenId", "type": "uint256" },
+      { "internalType": "uint256", "name": "_time", "type": "uint256" }
+    ],
+    "name": "getTransferFee",
+    "outputs": [
+      { "internalType": "uint256", "name": "", "type": "uint256" }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      { "internalType": "uint256", "name": "_transferFeeBasisPoints", "type": "uint256" }
+    ],
+    "name": "updateTransferFee",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "account",
+        "type": "address"
+      }
+    ],
+    "name": "setOwner",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
   }
 ];
 
@@ -186,12 +271,41 @@ const ERC20_ABI = [
 
 const decimalsCache: Record<string, number> = {};
 
+async function getRpcUrlForChain(chainId: number): Promise<string> {
+  const networkConfig = await getNetworkConfigByChainId(chainId);
+  let rpcUrl = networkConfig?.rpc_url;
+
+  // Fallback to wagmi static RPCs for legacy Base chains if DB config is missing
+  if (!rpcUrl) {
+    try {
+      rpcUrl = getRpcUrl(chainId);
+    } catch {
+      rpcUrl = undefined;
+    }
+  }
+
+  if (!rpcUrl) {
+    throw new Error(`No RPC URL configured for chain ID ${chainId}`);
+  }
+
+  return rpcUrl;
+}
+
 const getTokenInfo = async (chainId: number, symbol: string): Promise<{ address: string; decimals: number }> => {
   if (symbol === 'FREE') return { address: ZERO_ADDRESS, decimals: 18 };
   if (symbol === 'ETH') return { address: ZERO_ADDRESS, decimals: 18 };
-  const address = getTokenAddress(chainId, symbol as 'USDC');
+
+  // Use async function to get token address from database
+  const address = await getTokenAddressAsync(chainId, symbol as 'USDC');
+
+  if (!address) {
+    throw new Error(`${symbol} token address not configured for chain ID ${chainId}. Please contact administrator.`);
+  }
+
   if (decimalsCache[address]) return { address, decimals: decimalsCache[address] };
-  const provider = new ethers.JsonRpcProvider(getRpcUrl(chainId));
+
+  const rpcUrl = await getRpcUrlForChain(chainId);
+  const provider = new ethers.JsonRpcProvider(rpcUrl);
   const token = new ethers.Contract(address, ERC20_ABI, provider);
   const dec = Number(await token.decimals());
   decimalsCache[address] = dec;
@@ -199,21 +313,47 @@ const getTokenInfo = async (chainId: number, symbol: string): Promise<{ address:
 };
 
 const ensureCorrectNetwork = async (rawProvider: any, chainId: number) => {
-  const chain = CHAINS[chainId as keyof typeof CHAINS];
-  if (!chain) throw new Error(`Unsupported chainId ${chainId}`);
+  // Fetch network config from database (with 60s in-memory cache)
+  const networkConfig = await getNetworkConfigByChainId(chainId);
+
+  if (!networkConfig) {
+    throw new Error(`Unsupported or inactive chainId ${chainId}`);
+  }
+
+  // Build chain object from database config
+  const chain = {
+    name: networkConfig.chain_name,
+    nativeCurrency: {
+      name: networkConfig.native_currency_name || 'Ether',
+      symbol: networkConfig.native_currency_symbol,
+      decimals: networkConfig.native_currency_decimals || 18,
+    },
+    rpcUrls: {
+      default: { http: networkConfig.rpc_url ? [networkConfig.rpc_url] : [] }
+    },
+    blockExplorers: networkConfig.block_explorer_url ? {
+      default: { url: networkConfig.block_explorer_url }
+    } : undefined,
+  };
+
   const targetChainIdHex = `0x${chainId.toString(16)}`;
+
   try {
-    await rawProvider.request({ method: 'wallet_switchEthereumChain', params: [{ chainId: targetChainIdHex }] });
+    await rawProvider.request({
+      method: 'wallet_switchEthereumChain',
+      params: [{ chainId: targetChainIdHex }]
+    });
   } catch (switchError: any) {
     if (switchError?.code === 4902) {
+      // Chain not added to wallet, add it
       await rawProvider.request({
         method: 'wallet_addEthereumChain',
         params: [{
           chainId: targetChainIdHex,
           chainName: chain.name,
           nativeCurrency: chain.nativeCurrency,
-          rpcUrls: chain.rpcUrls?.default?.http || [getRpcUrl(chainId)],
-          blockExplorerUrls: [chain.blockExplorers?.default?.url].filter(Boolean),
+          rpcUrls: chain.rpcUrls.default.http,
+          blockExplorerUrls: chain.blockExplorers?.default?.url ? [chain.blockExplorers.default.url] : [],
         }],
       });
     } else {
@@ -227,7 +367,8 @@ const ensureCorrectNetwork = async (rawProvider: any, chainId: number) => {
  */
 export const checkIfLockManager = async (
   lockAddress: string,
-  managerAddress: string
+  managerAddress: string,
+  chainId?: number
 ): Promise<boolean> => {
   try {
     if (!lockAddress || !ethers.isAddress(lockAddress)) {
@@ -238,8 +379,24 @@ export const checkIfLockManager = async (
       throw new Error('Invalid manager address.');
     }
 
-    // Use a public RPC provider for read-only operations
-    const rpcUrl = 'https://sepolia.base.org';
+    let rpcUrl: string | undefined;
+    if (chainId !== undefined) {
+      const networkConfig = await getNetworkConfigByChainId(chainId);
+      rpcUrl = networkConfig?.rpc_url;
+      if (!rpcUrl) {
+        try {
+          rpcUrl = getRpcUrl(chainId);
+        } catch {
+          rpcUrl = undefined;
+        }
+      }
+    }
+
+    if (!rpcUrl) {
+      console.warn('No RPC URL available to check lock manager status');
+      return false;
+    }
+
     const provider = new ethers.JsonRpcProvider(rpcUrl);
     
     const lockContract = new ethers.Contract(lockAddress, PublicLockABI, provider);
@@ -332,14 +489,15 @@ export const deployLock = async (config: LockConfig, wallet: any, chainId: numbe
     const provider = await wallet.getEthereumProvider();
     await ensureCorrectNetwork(provider, chainId);
 
-    const factoryAddress = UNLOCK_FACTORY_ADDRESSES[chainId as keyof typeof UNLOCK_FACTORY_ADDRESSES];
+    // Get factory address from database
+    const factoryAddress = await getUnlockFactoryAddress(chainId);
     console.log('Using Unlock Factory Address:', factoryAddress);
 
     // Create ethers provider and signer
     const ethersProvider = new ethers.BrowserProvider(provider);
     const signer = await ethersProvider.getSigner();
 
-    // Version must match the PublicLock version (using v14 as per successful transaction)
+    // Version must match the PublicLock version (using v15 for updateTransferFee support)
     const version = 14;
 
     // Create an instance of the Unlock factory contract
@@ -437,6 +595,58 @@ export const deployLock = async (config: LockConfig, wallet: any, chainId: numbe
       transactionHash: tx.hash,
       lockAddress: lockAddress
     });
+
+    // Configure transfer fee based on transferability setting
+    if (lockAddress && lockAddress !== 'Unknown' && ethers.isAddress(lockAddress)) {
+      const lockContract = new ethers.Contract(lockAddress, PublicLockABI, signer);
+      const isTransferable = config.transferable ?? false;
+      const desiredFeeBps = isTransferable ? 0 : 10000; // 0% for transferable, 100% for soul-bound
+
+      try {
+        const currentFee = await lockContract.transferFeeBasisPoints();
+        if (currentFee !== BigInt(desiredFeeBps)) {
+          const transferFeeTx = await lockContract.updateTransferFee(desiredFeeBps);
+          await transferFeeTx.wait();
+          console.log(`Transfer fee set to ${desiredFeeBps} bps for lock:`, lockAddress);
+        } else {
+          console.log('Transfer fee already at desired value:', desiredFeeBps);
+        }
+      } catch (error) {
+        console.warn('Failed to set transfer fee (non-critical):', error);
+        // Don't fail deployment - transfer fee can be set later by lock manager
+      }
+    } else {
+      console.warn('Skipping transfer fee configuration due to invalid lock address:', lockAddress);
+    }
+
+    // Set NFT metadata for marketplace visibility
+    if (!lockAddress || lockAddress === 'Unknown' || !ethers.isAddress(lockAddress)) {
+      console.warn('Skipping NFT metadata setup due to invalid lock address:', lockAddress);
+    } else {
+      try {
+        const { setLockMetadata, getBaseTokenURI, TEEREX_NFT_SYMBOL } = await import('./lockMetadata');
+        const baseTokenURI = getBaseTokenURI(lockAddress);
+        
+        console.log('Setting NFT metadata for lock:', lockAddress);
+        const metadataResult = await setLockMetadata(
+          lockAddress,
+          config.name,
+          TEEREX_NFT_SYMBOL,
+          baseTokenURI,
+          signer
+        );
+        
+        if (metadataResult.success) {
+          console.log('NFT metadata set successfully:', metadataResult.txHash);
+        } else {
+          console.warn('Failed to set NFT metadata:', metadataResult.error);
+          // Don't fail deployment - metadata can be set later by lock manager
+        }
+      } catch (error) {
+        console.warn('Error setting NFT metadata (non-critical):', error);
+        // Don't fail deployment - metadata can be set later by lock manager
+      }
+    }
 
     return {
       success: true,
@@ -574,34 +784,49 @@ export const purchaseKey = async (
 };
 
 
-export const getBlockExplorerUrl = (txHash: string, chainId?: number): string => {
-  if (chainId) return getExplorerTxUrl(chainId, txHash);
-  return getExplorerTxUrl(baseSepolia.id, txHash);
+export const getBlockExplorerUrl = async (txHash: string, chainId?: number): Promise<string> => {
+  const targetChainId = chainId ?? baseSepolia.id;
+  return getExplorerTxUrl(targetChainId, txHash);
 };
 
 // --- New Functions ---
 
-const getReadOnlyProvider = (chainId: number = baseSepolia.id) => {
-  return new ethers.JsonRpcProvider(getRpcUrl(chainId));
+const getReadOnlyProvider = async (chainId: number) => {
+  const rpcUrl = await getRpcUrlForChain(chainId);
+  return new ethers.JsonRpcProvider(rpcUrl);
 };
 
 /**
  * Gets the total number of keys that have been sold for a lock.
  */
-export const getTotalKeys = async (lockAddress: string, chainId: number = baseSepolia.id): Promise<number> => {
+export const getTotalKeys = async (lockAddress: string, chainId: number): Promise<number> => {
   try {
     // Validate lock address before proceeding
     if (!lockAddress || lockAddress === 'Unknown' || !ethers.isAddress(lockAddress)) {
       console.warn(`Invalid lock address: ${lockAddress}`);
       return 0;
     }
-    
-    const provider = getReadOnlyProvider(chainId);
+
+    // Validate chainId
+    if (!chainId || chainId === 0) {
+      console.error(`Invalid chainId: ${chainId} for lock ${lockAddress}`);
+      return 0;
+    }
+
+    const provider = await getReadOnlyProvider(chainId);
     const lockContract = new ethers.Contract(lockAddress, PublicLockABI, provider);
+
+    // Check if contract exists at this address on this chain
+    const code = await provider.getCode(lockAddress);
+    if (code === '0x') {
+      console.error(`No contract found at ${lockAddress} on chain ${chainId}. The lock may have been deployed on a different chain.`);
+      return 0;
+    }
+
     const totalSupply = await lockContract.totalSupply();
     return Number(totalSupply);
   } catch (error) {
-    console.error(`Error fetching total keys for ${lockAddress}:`, error);
+    console.error(`Error fetching total keys for ${lockAddress} on chain ${chainId}:`, error);
     return 0; // Return 0 if there's an error so UI doesn't break
   }
 };
@@ -609,7 +834,7 @@ export const getTotalKeys = async (lockAddress: string, chainId: number = baseSe
 /**
  * Checks if a user has a valid, non-expired key for a specific lock.
  */
-export const checkKeyOwnership = async (lockAddress: string, userAddress: string, chainId: number = baseSepolia.id): Promise<boolean> => {
+export const checkKeyOwnership = async (lockAddress: string, userAddress: string, chainId: number): Promise<boolean> => {
   try {
     if (!ethers.isAddress(lockAddress) || !ethers.isAddress(userAddress)) {
       return false;
@@ -620,7 +845,7 @@ export const checkKeyOwnership = async (lockAddress: string, userAddress: string
       return false;
     }
     
-    const provider = getReadOnlyProvider(chainId);
+    const provider = await getReadOnlyProvider(chainId);
     const lockContract = new ethers.Contract(lockAddress, PublicLockABI, provider);
     return await lockContract.getHasValidKey(userAddress);
   } catch (error) {
@@ -632,7 +857,7 @@ export const checkKeyOwnership = async (lockAddress: string, userAddress: string
 /**
  * Gets the number of keys (tickets) owned by a specific user for a lock.
  */
-export const getUserKeyBalance = async (lockAddress: string, userAddress: string, chainId: number = baseSepolia.id): Promise<number> => {
+export const getUserKeyBalance = async (lockAddress: string, userAddress: string, chainId: number): Promise<number> => {
   try {
     if (!ethers.isAddress(lockAddress) || !ethers.isAddress(userAddress)) {
       return 0;
@@ -643,12 +868,12 @@ export const getUserKeyBalance = async (lockAddress: string, userAddress: string
       return 0;
     }
     
-    const provider = getReadOnlyProvider(chainId);
+    const provider = await getReadOnlyProvider(chainId);
     const lockContract = new ethers.Contract(lockAddress, PublicLockABI, provider);
     const balance = await lockContract.balanceOf(userAddress);
     return Number(balance);
   } catch (error) {
-    console.error(`Error fetching user key balance for ${lockAddress}:`, error);
+    console.error(`Error fetching user key balance for ${lockAddress} on chain ${chainId}:`, error);
     return 0;
   }
 };
@@ -707,13 +932,13 @@ export const configureMaxKeysPerAddress = async (
 /**
  * Gets the maximum number of keys a user can own for this lock.
  */
-export const getMaxKeysPerAddress = async (lockAddress: string, userAddress?: string, chainId: number = baseSepolia.id): Promise<number> => {
+export const getMaxKeysPerAddress = async (lockAddress: string, userAddress: string | undefined, chainId: number): Promise<number> => {
   try {
     if (!lockAddress || lockAddress === 'Unknown' || !ethers.isAddress(lockAddress)) {
       return 1; // Default fallback
     }
     
-    const provider = getReadOnlyProvider(chainId);
+    const provider = await getReadOnlyProvider(chainId);
     const lockContract = new ethers.Contract(lockAddress, PublicLockABI, provider);
     
     // Try user-specific limit first, then global limit
@@ -734,5 +959,102 @@ export const getMaxKeysPerAddress = async (lockAddress: string, userAddress?: st
   } catch (error) {
     console.error(`Error fetching max keys per address for ${lockAddress}:`, error);
     return 1; // Default fallback
+  }
+};
+
+/**
+ * Reads transfer fee basis points and derives transferability.
+ * - 0 bps => transferable
+ * - 10000 bps => soul-bound (non-transferable)
+ * - Other values => transferable with a fee
+ */
+export const getTransferabilityStatus = async (
+  lockAddress: string,
+  chainId: number
+): Promise<{ isTransferable: boolean; feeBasisPoints: number | null }> => {
+  try {
+    if (!lockAddress || lockAddress === 'Unknown' || !ethers.isAddress(lockAddress)) {
+      console.warn(`Invalid lock address for transferability check: ${lockAddress}`);
+      return { isTransferable: true, feeBasisPoints: null };
+    }
+
+    const provider = await getReadOnlyProvider(chainId);
+    const lockContract = new ethers.Contract(lockAddress, PublicLockABI, provider);
+    const fee = await lockContract.transferFeeBasisPoints();
+    const feeBps = Number(fee);
+
+    // Only 10000 bps is treated as soul-bound for our UX.
+    const isTransferable = feeBps < 10000;
+
+    return { isTransferable, feeBasisPoints: feeBps };
+  } catch (error) {
+    console.error(`Error reading transfer fee basis points for ${lockAddress}:`, error);
+    // Fail open as transferable to avoid incorrectly labelling tickets as soul-bound
+    return { isTransferable: true, feeBasisPoints: null };
+  }
+};
+
+/**
+ * Updates lock transferability by setting the transfer fee on-chain.
+ * - isTransferable === true  => updateTransferFee(0)
+ * - isTransferable === false => updateTransferFee(10000)
+ */
+export const updateLockTransferability = async (
+  lockAddress: string,
+  chainId: number,
+  wallet: any,
+  isTransferable: boolean
+): Promise<{ success: boolean; transactionHash?: string; error?: string }> => {
+  try {
+    if (!lockAddress || lockAddress === 'Unknown' || !ethers.isAddress(lockAddress)) {
+      throw new Error('Invalid lock address.');
+    }
+
+    if (!wallet || !wallet.address) {
+      throw new Error('No wallet provided or not connected.');
+    }
+
+    if (!chainId) {
+      throw new Error('Missing chainId for transferability update.');
+    }
+
+    const provider = await wallet.getEthereumProvider();
+    await ensureCorrectNetwork(provider, chainId);
+    const ethersProvider = new ethers.BrowserProvider(provider);
+    const signer = await ethersProvider.getSigner();
+
+    const lockContract = new ethers.Contract(lockAddress, PublicLockABI, signer);
+    const desiredFeeBps = isTransferable ? 0 : 10000;
+
+    const currentFee = await lockContract.transferFeeBasisPoints();
+    if (currentFee === BigInt(desiredFeeBps)) {
+      console.log('Transfer fee already at desired value, skipping update.');
+      return { success: true };
+    }
+
+    const tx = await lockContract.updateTransferFee(desiredFeeBps);
+    console.log('Updating transfer fee transaction sent:', tx.hash);
+    const receipt = await tx.wait();
+
+    if (receipt.status !== 1) {
+      throw new Error('Transaction failed while updating transferability.');
+    }
+
+    return { success: true, transactionHash: tx.hash };
+  } catch (error) {
+    console.error('Error updating lock transferability:', error);
+
+    let errorMessage = 'Failed to update transferability.';
+    if (error instanceof Error) {
+      if (error.message.toLowerCase().includes('user rejected')) {
+        errorMessage = 'Transaction was cancelled. Please try again when ready.';
+      } else if (error.message.toLowerCase().includes('insufficient funds')) {
+        errorMessage = 'Insufficient funds to update transferability. Please add more ETH to your wallet.';
+      } else {
+        errorMessage = error.message;
+      }
+    }
+
+    return { success: false, error: errorMessage };
   }
 };

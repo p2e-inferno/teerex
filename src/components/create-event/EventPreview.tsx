@@ -3,22 +3,28 @@ import React from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Calendar, Clock, MapPin, Users, Ticket, Save } from 'lucide-react';
+import { Calendar, Clock, MapPin, Users, Ticket, Save, Loader2 } from 'lucide-react';
 import { format } from 'date-fns';
 import { EventFormData } from '@/pages/CreateEvent';
+import { RichTextDisplay } from '@/components/ui/rich-text/RichTextDisplay';
+import { formatEventDateRange } from '@/utils/dateUtils';
 
 interface EventPreviewProps {
   formData: EventFormData;
   updateFormData: (updates: Partial<EventFormData>) => void;
   onNext: () => void;
   onSaveAsDraft?: () => void;
+  isSavingDraft?: boolean;
+  isPublishing?: boolean;
 }
 
 export const EventPreview: React.FC<EventPreviewProps> = ({
   formData,
   updateFormData,
   onNext,
-  onSaveAsDraft
+  onSaveAsDraft,
+  isSavingDraft = false,
+  isPublishing = false
 }) => {
   return (
     <div className="space-y-6">
@@ -30,12 +36,16 @@ export const EventPreview: React.FC<EventPreviewProps> = ({
       {/* Event Preview Card */}
       <Card className="overflow-hidden border-0 shadow-lg">
         {/* Event Image */}
-        <div className="aspect-[2/1] relative">
+        <div className="aspect-square relative">
           {formData.imageUrl ? (
-            <img 
-              src={formData.imageUrl} 
-              alt={formData.title || 'Event preview'} 
-              className="w-full h-full object-cover"
+            <img
+              src={formData.imageUrl}
+              alt={formData.title || 'Event preview'}
+              style={{
+                objectFit: 'cover',
+                objectPosition: `${formData.imageCropX || 50}% ${formData.imageCropY || 50}%`
+              }}
+              className="w-full h-full"
             />
           ) : (
             <div className="w-full h-full bg-gradient-to-br from-purple-500 to-pink-500"></div>
@@ -48,23 +58,27 @@ export const EventPreview: React.FC<EventPreviewProps> = ({
               </Badge>
             )}
             <h3 className="text-2xl font-bold mb-2">{formData.title || 'Event Title'}</h3>
-            <div className="flex items-center gap-4 text-white/90">
+            <div className="flex flex-col gap-2 text-white/90 sm:flex-row sm:items-center sm:gap-4">
               {formData.date && (
                 <div className="flex items-center gap-2">
                   <Calendar className="w-4 h-4" />
-                  <span>{format(formData.date, "MMM d, yyyy")}</span>
+                  <span>{formatEventDateRange({ startDate: formData.date, endDate: formData.endDate })}</span>
                 </div>
               )}
-              {formData.time && (
-                <div className="flex items-center gap-2">
-                  <Clock className="w-4 h-4" />
-                  <span>{formData.time}</span>
-                </div>
-              )}
-              {formData.location && (
-                <div className="flex items-center gap-2">
-                  <MapPin className="w-4 h-4" />
-                  <span>{formData.location}</span>
+              {(formData.time || formData.location) && (
+                <div className="flex flex-wrap items-center gap-4">
+                  {formData.time && (
+                    <div className="flex items-center gap-2">
+                      <Clock className="w-4 h-4" />
+                      <span>{formData.time}</span>
+                    </div>
+                  )}
+                  {formData.location && (
+                    <div className="flex items-center gap-2">
+                      <MapPin className="w-4 h-4" />
+                      <span>{formData.location}</span>
+                    </div>
+                  )}
                 </div>
               )}
             </div>
@@ -76,9 +90,12 @@ export const EventPreview: React.FC<EventPreviewProps> = ({
             {/* Description */}
             <div>
               <h4 className="font-medium text-gray-900 mb-2">About this event</h4>
-              <p className="text-gray-600 leading-relaxed">
-                {formData.description || 'Event description will appear here...'}
-              </p>
+              <div className="text-gray-600">
+                <RichTextDisplay
+                  content={formData.description || ''}
+                  className="prose prose-sm leading-relaxed"
+                />
+              </div>
             </div>
 
             {/* Event Details */}
@@ -134,13 +151,18 @@ export const EventPreview: React.FC<EventPreviewProps> = ({
                 <p>✓ Continue editing later</p>
                 <p>✓ Publish when ready</p>
               </div>
-              <Button 
+              <Button
                 onClick={onSaveAsDraft}
                 variant="outline"
                 className="w-full border-orange-300 text-orange-700 hover:bg-orange-100"
+                disabled={isSavingDraft || isPublishing}
               >
-                <Save className="w-4 h-4 mr-2" />
-                Save as Draft
+                {isSavingDraft ? (
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                ) : (
+                  <Save className="w-4 h-4 mr-2" />
+                )}
+                {isSavingDraft ? 'Saving...' : 'Save as Draft'}
               </Button>
             </CardContent>
           </Card>

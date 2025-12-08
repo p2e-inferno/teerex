@@ -4,24 +4,26 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { MessageSquare, ChevronRight, Plus } from 'lucide-react';
 import { useEventPosts } from '../hooks/useEventPosts';
-import { useTicketVerification } from '../hooks/useTicketVerification';
 import { useCreatorPermissions } from '../hooks/useCreatorPermissions';
 import { EventInteractionsDialog } from './EventInteractionsDialog';
+import { useTicketVerification } from '../hooks/useTicketVerification';
 
 interface EventInteractionsCardProps {
   eventId: string;
   lockAddress: string;
   creatorAddress: string;
+  chainId: number;
 }
 
 export const EventInteractionsCard: React.FC<EventInteractionsCardProps> = ({
   eventId,
   lockAddress,
   creatorAddress,
+  chainId,
 }) => {
   const [dialogOpen, setDialogOpen] = useState(false);
   const { posts, isLoading, createPost, deletePost, pinPost, toggleComments } = useEventPosts(eventId);
-  const { hasTicket, isChecking } = useTicketVerification(lockAddress);
+  const { hasTicket, isChecking } = useTicketVerification(lockAddress, chainId);
   const { isCreator } = useCreatorPermissions(creatorAddress);
 
   // Calculate totals
@@ -40,8 +42,9 @@ export const EventInteractionsCard: React.FC<EventInteractionsCardProps> = ({
     );
   }
 
-  // Empty state for non-ticket holders
-  if (!hasTicket) {
+  // Empty state for non-ticket holders who are also not creators
+  // Event creators (lock managers) should always have access to post management
+  if (!hasTicket && !isCreator) {
     return (
       <Card className="border-0 shadow-sm">
         <CardContent className="py-8 text-center">

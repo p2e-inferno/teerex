@@ -5,6 +5,8 @@ import PublicLockV15 from "../_shared/abi/PublicLockV15.json" assert { type: "js
 import { corsHeaders, buildPreflightHeaders } from "../_shared/cors.ts";
 import { createRemoteJWKSet, jwtVerify, importSPKI } from "https://deno.land/x/jose@v4.14.4/index.ts";
 import { getUserWalletAddresses } from "../_shared/privy.ts";
+import { sendEmail, getTicketEmail, normalizeEmail } from "../_shared/email-utils.ts";
+import { formatEventDate } from "../_shared/date-utils.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -55,7 +57,7 @@ serve(async (req) => {
     // Find Paystack transaction and related event
     const { data: tx, error: txError } = await supabase
       .from("paystack_transactions")
-      .select("*, events:events(id, creator_id, lock_address, chain_id)")
+      .select("*, events:events(id, title, date, creator_id, lock_address, chain_id)")
       .eq("reference", transactionReference)
       .single();
     if (txError || !tx) return new Response(JSON.stringify({ error: "Transaction not found" }), { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 404 });
@@ -116,6 +118,38 @@ serve(async (req) => {
     const txSend = await lock.grantKeys(recipients, expirations, keyManagers);
     const receipt = await txSend.wait();
     if (receipt.status !== 1) throw new Error("Grant key transaction failed");
+
+    // Store ticket record with email from paystack transaction
+    await supabase.from('tickets').insert({
+      event_id: event.id,
+      owner_wallet: recipient.toLowerCase(),
+      payment_transaction_id: tx.id,
+      grant_tx_hash: receipt.transactionHash,
+      status: 'active',
+      user_email: tx.user_email || null, // Copy email from paystack_transactions
+    });
+
+    // Send ticket confirmation email (non-blocking)
+    const userEmail = normalizeEmail(tx.user_email);
+    if (userEmail && event.title) {
+      const eventTitle = event.title;
+      const eventDate = event.date ? formatEventDate(event.date) : 'TBA';
+      const explorerUrl = receipt.transactionHash && event.chain_id
+        ? `https://${event.chain_id === 8453 ? 'basescan.org' : 'sepolia.basescan.org'}/tx/${receipt.transactionHash}`
+        : undefined;
+
+      const emailContent = getTicketEmail(eventTitle, eventDate, receipt.transactionHash, event.chain_id, explorerUrl);
+
+      // Fire and forget - don't block response
+      sendEmail({
+        to: userEmail,
+        ...emailContent,
+        tags: ['ticket-issued', 'paystack-manual'],
+      }).catch(err => {
+        console.error('[GRANT-KEYS] Failed to send ticket email:', err);
+      });
+    }
+
     return new Response(JSON.stringify({ success: true, txHash: txSend.hash || receipt.transactionHash }), { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 200 });
   } catch (e: any) {
     return new Response(JSON.stringify({ error: e?.message || "Internal error" }), { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 400 });

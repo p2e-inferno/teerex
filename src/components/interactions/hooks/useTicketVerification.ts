@@ -7,7 +7,7 @@ import type { UseTicketVerificationReturn } from '../types';
  * Hook to verify if the current user has a valid ticket for an event
  * Uses Unlock Protocol to check key ownership
  */
-export const useTicketVerification = (lockAddress: string): UseTicketVerificationReturn => {
+export const useTicketVerification = (lockAddress: string, chainId: number): UseTicketVerificationReturn => {
   const { authenticated } = usePrivy();
   const { wallets } = useWallets();
   const wallet = wallets?.[0];
@@ -24,14 +24,14 @@ export const useTicketVerification = (lockAddress: string): UseTicketVerificatio
       setTicketCount(0);
 
       // Early return if not authenticated or no wallet
-      if (!authenticated || !wallet?.address || !lockAddress) {
+      if (!authenticated || !wallet?.address || !lockAddress || !chainId) {
         setIsChecking(false);
         return;
       }
 
       try {
         // Check key balance via Unlock Protocol
-        const balance = await getUserKeyBalance(lockAddress, wallet.address);
+        const balance = await getUserKeyBalance(lockAddress, wallet.address, chainId);
 
         setTicketCount(balance);
         setHasTicket(balance > 0);
@@ -45,7 +45,7 @@ export const useTicketVerification = (lockAddress: string): UseTicketVerificatio
     };
 
     checkTicket();
-  }, [authenticated, wallet?.address, lockAddress]);
+  }, [authenticated, wallet?.address, lockAddress, chainId]);
 
   return {
     hasTicket,

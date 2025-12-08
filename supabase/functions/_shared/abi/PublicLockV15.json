@@ -1,27 +1,178 @@
 [
   {
     "inputs": [
-      { "internalType": "address[]", "name": "recipients", "type": "address[]" },
-      { "internalType": "uint256[]", "name": "expirationTimestamps", "type": "uint256[]" },
-      { "internalType": "address[]", "name": "keyManagers", "type": "address[]" }
+      { "internalType": "address", "name": "_lockCreator", "type": "address" },
+      { "internalType": "uint256", "name": "_expirationDuration", "type": "uint256" },
+      { "internalType": "address", "name": "_tokenAddress", "type": "address" },
+      { "internalType": "uint256", "name": "_keyPrice", "type": "uint256" },
+      { "internalType": "uint256", "name": "_maxNumberOfKeys", "type": "uint256" },
+      { "internalType": "string", "name": "_lockName", "type": "string" }
     ],
-    "name": "grantKeys",
-    "outputs": [
-      { "internalType": "uint256[]", "name": "tokenIds", "type": "uint256[]" }
-    ],
+    "name": "initialize",
+    "outputs": [],
     "stateMutability": "nonpayable",
     "type": "function"
   },
   {
     "inputs": [
-      { "internalType": "address", "name": "_keyOwner", "type": "address" }
+      { "internalType": "uint256[]", "name": "_values", "type": "uint256[]" },
+      { "internalType": "address[]", "name": "_recipients", "type": "address[]" },
+      { "internalType": "address[]", "name": "_referrers", "type": "address[]" },
+      { "internalType": "address[]", "name": "_keyManagers", "type": "address[]" },
+      { "internalType": "bytes[]", "name": "_data", "type": "bytes[]" }
     ],
+    "name": "purchase",
+    "outputs": [{ "internalType": "uint256[]", "name": "tokenIds", "type": "uint256[]" }],
+    "stateMutability": "payable",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "keyPrice",
+    "outputs": [{ "internalType": "uint256", "name": "", "type": "uint256" }],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "totalSupply",
+    "outputs": [{ "internalType": "uint256", "name": "", "type": "uint256" }],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [{ "internalType": "address", "name": "_keyOwner", "type": "address" }],
     "name": "getHasValidKey",
+    "outputs": [{ "internalType": "bool", "name": "isValid", "type": "bool" }],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [{ "internalType": "address", "name": "_account", "type": "address" }],
+    "name": "isLockManager",
+    "outputs": [{ "internalType": "bool", "name": "", "type": "bool" }],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [{ "internalType": "address", "name": "_account", "type": "address" }],
+    "name": "addLockManager",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "renounceLockManager",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "account",
+        "type": "address"
+      }
+    ],
+    "name": "setOwner",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      { "internalType": "uint256[]", "name": "_expirationTimestamps", "type": "uint256[]" },
+      { "internalType": "address[]", "name": "_recipients", "type": "address[]" },
+      { "internalType": "address[]", "name": "_keyManagers", "type": "address[]" }
+    ],
+    "name": "grantKeys",
+    "outputs": [{ "internalType": "uint256[]", "name": "tokenIds", "type": "uint256[]" }],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [{ "internalType": "address", "name": "owner", "type": "address" }],
+    "name": "balanceOf",
+    "outputs": [{ "internalType": "uint256", "name": "", "type": "uint256" }],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [{ "internalType": "uint256", "name": "tokenId", "type": "uint256" }],
+    "name": "ownerOf",
+    "outputs": [{ "internalType": "address", "name": "", "type": "address" }],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      { "internalType": "address", "name": "_user", "type": "address" },
+      { "internalType": "uint256", "name": "_amount", "type": "uint256" }
+    ],
+    "name": "setMaxKeysPerAddress",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "maxKeysPerAddress",
+    "outputs": [{ "internalType": "uint256", "name": "", "type": "uint256" }],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      { "internalType": "string", "name": "_lockName", "type": "string" },
+      { "internalType": "string", "name": "_lockSymbol", "type": "string" },
+      { "internalType": "string", "name": "_baseTokenURI", "type": "string" }
+    ],
+    "name": "setLockMetadata",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      { "internalType": "uint256", "name": "_tokenId", "type": "uint256" }
+    ],
+    "name": "tokenURI",
     "outputs": [
-      { "internalType": "bool", "name": "", "type": "bool" }
+      { "internalType": "string", "name": "", "type": "string" }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      { "internalType": "uint256", "name": "_transferFeeBasisPoints", "type": "uint256" }
+    ],
+    "name": "updateTransferFee",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "transferFeeBasisPoints",
+    "outputs": [
+      { "internalType": "uint256", "name": "", "type": "uint256" }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      { "internalType": "uint256", "name": "_tokenId", "type": "uint256" },
+      { "internalType": "uint256", "name": "_time", "type": "uint256" }
+    ],
+    "name": "getTransferFee",
+    "outputs": [
+      { "internalType": "uint256", "name": "", "type": "uint256" }
     ],
     "stateMutability": "view",
     "type": "function"
   }
 ]
-

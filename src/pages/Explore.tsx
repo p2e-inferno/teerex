@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { usePrivy } from '@privy-io/react-auth';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -16,9 +17,11 @@ import { PaystackPaymentDialog } from '@/components/events/PaystackPaymentDialog
 import { TicketProcessingDialog } from '@/components/events/TicketProcessingDialog';
 import { PaymentMethodDialog } from '@/components/events/PaymentMethodDialog';
 import { fetchEventsPage, fetchKeysForPage, ExploreFilters } from '@/lib/explore/exploreData';
+import { useMultiEventTicketRealtime } from '@/hooks/useMultiEventTicketRealtime';
 
 const Explore = () => {
   const PAGE_SIZE = 12;
+  const { authenticated, login } = usePrivy();
   const [events, setEvents] = useState<PublishedEvent[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [debouncedQuery, setDebouncedQuery] = useState('');
@@ -30,8 +33,10 @@ const Explore = () => {
   const [selectedEvent, setSelectedEvent] = useState<PublishedEvent | null>(null);
   const [activeModal, setActiveModal] = useState<'none' | 'payment-method' | 'crypto-purchase' | 'paystack-payment' | 'ticket-processing'>('none');
   const [paymentData, setPaymentData] = useState<any>(null);
-  const [keysSoldMap, setKeysSoldMap] = useState<Record<string, number>>({});
   const loadMoreRef = useRef<HTMLDivElement | null>(null);
+
+  // Real-time ticket counts for all displayed events
+  const { keysSoldMap, refreshAllTicketCounts } = useMultiEventTicketRealtime(events);
 
   const [filters, setFilters] = useState<ExploreFilters>({ sortBy: 'date-desc', isFree: null });
   const [filtersOpen, setFiltersOpen] = useState(false);
@@ -43,7 +48,6 @@ const Explore = () => {
     setPage(1);
     setHasMore(true);
     setEvents([]);
-    setKeysSoldMap({});
     try {
       const result = await fetchEventsPage(1, PAGE_SIZE, {
         ...filters,
@@ -53,8 +57,7 @@ const Explore = () => {
       });
       setEvents(result.events);
       setHasMore(result.hasMore);
-      const keys = await fetchKeysForPage(result.events);
-      setKeysSoldMap(keys);
+      // Ticket counts will be fetched by useMultiEventTicketRealtime hook
     } catch (error) {
       console.error('Error loading events:', error);
       toast({
@@ -90,8 +93,7 @@ const Explore = () => {
       setEvents(prev => [...prev, ...result.events]);
       setPage(nextPage);
       setHasMore(result.hasMore);
-      const keys = await fetchKeysForPage(result.events);
-      setKeysSoldMap(prev => ({ ...prev, ...keys }));
+      // Ticket counts will be fetched by useMultiEventTicketRealtime hook
     } catch (error) {
       console.error('Error loading more events:', error);
     } finally {
@@ -158,15 +160,14 @@ const Explore = () => {
   const closeAllModals = () => {
     setActiveModal('none');
     setSelectedEvent(null);
-    // Refresh event data to show updated spot count
-    loadFirstPage();
+    // No manual refresh needed - real-time subscription will update ticket counts
   };
 
   const renderSkeleton = () => (
     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
       {Array.from({ length: 6 }).map((_, i) => (
         <Card key={i} className="border-0 shadow-sm">
-          <div className="aspect-video rounded-t-lg overflow-hidden">
+          <div className="aspect-square rounded-t-lg overflow-hidden">
             <Skeleton className="w-full h-full" />
           </div>
           <CardContent className="p-6 space-y-4">
@@ -189,7 +190,7 @@ const Explore = () => {
         {/* Header */}
         <div className="mb-8">
           <h1 className="text-3xl font-bold text-gray-900 mb-2">Explore Events</h1>
-          <p className="text-gray-600">Discover amazing Web3 events with blockchain-verified tickets</p>
+          <p className="text-gray-600">Discover amazing events with blockchain-verified tickets</p>
         </div>
 
         {/* Search and Filters */}
@@ -318,11 +319,13 @@ const Explore = () => {
                 event={event}
                 onViewDetails={handleEventDetails}
                 keysSold={keysSoldMap[event.id]}
+                authenticated={authenticated}
+                onConnectWallet={login}
               />
             ))}
             {isLoadingMore && Array.from({ length: 3 }).map((_, i) => (
               <Card key={`sk-${i}`} className="border-0 shadow-sm">
-                <div className="aspect-video rounded-t-lg overflow-hidden">
+                <div className="aspect-square rounded-t-lg overflow-hidden">
                   <Skeleton className="w-full h-full" />
                 </div>
                 <CardContent className="p-6 space-y-4">

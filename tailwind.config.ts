@@ -18,6 +18,59 @@ export default {
 			}
 		},
 		extend: {
+			typography: {
+				DEFAULT: {
+					css: {
+						'code::before': { content: 'none' },
+						'code::after': { content: 'none' },
+						'blockquote p:first-of-type::before': { content: 'none' },
+						'blockquote p:last-of-type::after': { content: 'none' },
+						'code': {
+							backgroundColor: 'hsl(var(--muted))',
+							padding: '0.125rem 0.25rem',
+							borderRadius: '0.25rem',
+							fontSize: '0.875em'
+						},
+						'pre': {
+							backgroundColor: 'hsl(var(--muted))',
+							padding: '1rem',
+							borderRadius: '0.5rem',
+							overflow: 'auto'
+						},
+						'pre code': {
+							backgroundColor: 'transparent',
+							padding: '0',
+							borderRadius: '0'
+						},
+						'h1,h2,h3,h4,h5,h6': {
+							color: 'hsl(var(--foreground))',
+							fontWeight: '600'
+						},
+						'strong': {
+							fontWeight: '600'
+						},
+						'a': {
+							color: 'hsl(var(--primary))',
+							textDecoration: 'underline',
+							fontWeight: '500'
+						},
+						'a:hover': {
+							color: 'hsl(var(--primary))',
+							opacity: '0.8'
+						},
+						'ul': {
+							paddingLeft: '1.5rem'
+						},
+						'ol': {
+							paddingLeft: '1.5rem'
+						},
+						'li': {
+							marginTop: '0.25rem',
+							marginBottom: '0.25rem'
+						}
+					}
+				}
+			},
 			colors: {
 				border: 'hsl(var(--border))',
 				input: 'hsl(var(--input))',
@@ -92,5 +145,5 @@ export default {
 			}
 		}
 	},
-	plugins: [require("tailwindcss-animate")],
+	plugins: [require("tailwindcss-animate"), require("@tailwindcss/typography")],
 } satisfies Config;

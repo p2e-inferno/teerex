@@ -8,12 +8,13 @@ import {
   Calendar,
   Clock,
   MapPin,
+  Globe,
+  ExternalLink,
   Users,
   Share2,
   Heart,
   ArrowLeft,
   Ticket,
-  ExternalLink,
   CalendarPlus,
   Copy,
   Facebook,
@@ -21,16 +22,18 @@ import {
   Linkedin,
 } from "lucide-react";
 import { getPublishedEventById, PublishedEvent } from "@/utils/eventUtils";
+import MetaTags from "@/components/MetaTags";
 import {
   getTotalKeys,
-  getUserKeyBalance,
   getMaxKeysPerAddress,
   checkKeyOwnership,
+  getTransferabilityStatus,
 } from "@/utils/lockUtils";
 import { EventPurchaseDialog } from "@/components/events/EventPurchaseDialog";
 import { PaystackPaymentDialog } from "@/components/events/PaystackPaymentDialog";
 import { TicketProcessingDialog } from "@/components/events/TicketProcessingDialog";
 import { PaymentMethodDialog } from "@/components/events/PaymentMethodDialog";
+import { WaitlistDialog } from "@/components/events/WaitlistDialog";
 // import { AttestationButton } from "@/components/attestations/AttestationButton";
 import { useAttestations } from "@/hooks/useAttestations";
 import { useTeeRexDelegatedAttestation } from "@/hooks/useTeeRexDelegatedAttestation";
@@ -47,6 +50,10 @@ import { useEventAttestationState } from "@/hooks/useEventAttestationState";
 import { getDisableMessage } from "@/utils/attestationMessages";
 import { getBatchAttestationAddress } from "@/lib/config/contract-config";
 import { format } from "date-fns";
+import { formatEventDateRange } from "@/utils/dateUtils";
+import { useEventTicketRealtime } from "@/hooks/useEventTicketRealtime";
+import { useNetworkConfigs } from "@/hooks/useNetworkConfigs";
+import { useTicketBalance } from "@/hooks/useTicketBalance";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -54,23 +61,34 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { RichTextDisplay } from "@/components/ui/rich-text/RichTextDisplay";
 
 const EventDetails = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const { toast } = useToast();
-  const { authenticated, getAccessToken } = usePrivy();
+  const { authenticated, getAccessToken, login } = usePrivy();
   const { wallets } = useWallets();
   const wallet = wallets[0];
   const { revokeEventAttestation } = useAttestations();
   const { signTeeRexAttestation } = useTeeRexDelegatedAttestation();
   const { encodeEventLikeData, encodeEventAttendanceData } = useAttestationEncoding();
+  const { networks } = useNetworkConfigs();
 
   const [event, setEvent] = useState<PublishedEvent | null>(null);
-  const [keysSold, setKeysSold] = useState<number>(0);
   const [userTicketCount, setUserTicketCount] = useState<number>(0);
   const [maxTicketsPerUser, setMaxTicketsPerUser] = useState<number>(1);
   const [isLoading, setIsLoading] = useState(true);
+  const [isTransferableOnChain, setIsTransferableOnChain] = useState<boolean | null>(null);
+  const [transferFeeBps, setTransferFeeBps] = useState<number | null>(null);
+
+  // Real-time ticket count subscription
+  const { ticketsSold: keysSold, isLoading: isLoadingTickets } = useEventTicketRealtime({
+    eventId: event?.id || '',
+    lockAddress: event?.lock_address || '',
+    chainId: event?.chain_id || baseSepolia.id,
+    enabled: !!event, // Only enable when event is loaded
+  });
   // Modal state management - only one modal can be open at a time
   const [activeModal, setActiveModal] = useState<
     | "none"
@@ -78,12 +96,38 @@ const EventDetails = () => {
     | "crypto-purchase"
     | "paystack-payment"
     | "ticket-processing"
+    | "waitlist"
   >("none");
   const [paymentData, setPaymentData] = useState<any>(null);
   const [isLiked, setIsLiked] = useState(false);
   const [attendanceSchemaUid, setAttendanceSchemaUid] = useState<string | null>(
     null
   );
+  // On-chain transferability status
+  useEffect(() => {
+    const loadTransferability = async () => {
+      if (!event?.lock_address || !event?.chain_id) {
+        setIsTransferableOnChain(null);
+        setTransferFeeBps(null);
+        return;
+      }
+
+      try {
+        const { isTransferable, feeBasisPoints } = await getTransferabilityStatus(
+          event.lock_address,
+          event.chain_id
+        );
+        setIsTransferableOnChain(isTransferable);
+        setTransferFeeBps(feeBasisPoints);
+      } catch (e) {
+        console.error('Failed to load transferability status:', e);
+        setIsTransferableOnChain(null);
+        setTransferFeeBps(null);
+      }
+    };
+
+    loadTransferability();
+  }, [event?.lock_address, event?.chain_id]);
 
   useEffect(() => {
     const loadEvent = async () => {
@@ -104,10 +148,6 @@ const EventDetails = () => {
         }
 
         setEvent(foundEvent);
-
-        // Get tickets sold
-        const sold = await getTotalKeys(foundEvent.lock_address, foundEvent.chain_id);
-        setKeysSold(sold);
 
         // Get max tickets per user for this event
         const maxKeys = await getMaxKeysPerAddress(foundEvent.lock_address, undefined, foundEvent.chain_id);
@@ -149,13 +189,14 @@ const EventDetails = () => {
   const [eventHasEnded, setEventHasEnded] = useState(false);
   const [attendanceSchemaRevocable, setAttendanceSchemaRevocable] = useState<boolean | null>(null);
 
-  const networkLabel = event?.chain_id === base.id ? 'Base' : event?.chain_id === baseSepolia.id ? 'Base Sepolia' : '';
-  const explorerUrl = event
-    ? (event.chain_id === base.id
-        ? `https://basescan.org/address/${event.lock_address}`
-        : event.chain_id === baseSepolia.id
-        ? `https://sepolia.basescan.org/address/${event.lock_address}`
-        : `https://etherscan.io/address/${event.lock_address}`)
+  const networkConfig = event ? networks.find(n => n.chain_id === event.chain_id) : undefined;
+  const networkLabel = networkConfig?.chain_name
+    || (event?.chain_id === base.id ? 'Base' : event?.chain_id === baseSepolia.id ? 'Base Sepolia' : '');
+  const explorerBase =
+    networkConfig?.block_explorer_url
+    || (event?.chain_id === base.id ? 'https://basescan.org' : event?.chain_id === baseSepolia.id ? 'https://sepolia.basescan.org' : undefined);
+  const explorerUrl = event && explorerBase
+    ? `${explorerBase.replace(/\/$/, '')}/address/${event.lock_address}`
     : '#';
 
   const isValidSchemaUid = (uid?: string | null) => !!uid && uid.startsWith('0x') && uid.length === 66 && /^0x[0-9a-f]{64}$/i.test(uid);
@@ -346,24 +387,15 @@ const EventDetails = () => {
   };
 
   // Load user ticket data when authenticated
+  const { data: ticketBalance = 0 } = useTicketBalance({
+    lockAddress: event?.lock_address || '',
+    userAddress: wallet?.address || '',
+    chainId: event?.chain_id || 0,
+  });
+
   useEffect(() => {
-    const loadUserTicketData = async () => {
-      if (!authenticated || !wallet?.address || !event?.lock_address) return;
-
-      try {
-        const userBalance = await getUserKeyBalance(
-          event.lock_address,
-          wallet.address,
-          event.chain_id
-        );
-        setUserTicketCount(userBalance);
-      } catch (error) {
-        console.error("Error loading user ticket data:", error);
-      }
-    };
-
-    loadUserTicketData();
-  }, [authenticated, wallet?.address, event?.lock_address]);
+    setUserTicketCount(ticketBalance);
+  }, [ticketBalance]);
 
   // Compute if event has ended (same 2h duration assumption)
   useEffect(() => {
@@ -545,7 +577,10 @@ const EventDetails = () => {
   }, [event]);
 
   const handleShare = (platform?: string) => {
-    const url = window.location.href;
+    // Use lock_address for Web3-native shareable URLs
+    const url = event?.lock_address
+      ? `${window.location.origin}/event/${event.lock_address}`
+      : window.location.href;
     const title = event?.title || "";
     const description = event?.description || "";
 
@@ -601,13 +636,12 @@ const EventDetails = () => {
   const handleAddToCalendar = () => {
     if (!event || !event.date || !event.time) return;
 
-    // Parse the event time (assuming format like "7:00 PM" or "19:00")
+    // Parse the event time (supports formats like "7:00 PM" or "19:00")
     const parseEventTime = (timeString: string, eventDate: Date) => {
       const timeParts = timeString
         .trim()
         .match(/^(\d{1,2}):(\d{2})\s*(AM|PM)?$/i);
       if (!timeParts) {
-        // Fallback to current parsing if format doesn't match
         console.warn("Could not parse time format:", timeString);
         return eventDate;
       }
@@ -629,8 +663,15 @@ const EventDetails = () => {
     };
 
     const startDate = parseEventTime(event.time, new Date(event.date));
-    // Default to 2 hours duration if no specific duration is available
-    const endDate = new Date(startDate.getTime() + 2 * 60 * 60 * 1000);
+
+    let endDate: Date;
+    if (event.end_date) {
+      // Multi-day: end at the same time on the end date
+      endDate = parseEventTime(event.time, new Date(event.end_date));
+    } else {
+      // Single day: default to 2 hours duration
+      endDate = new Date(startDate.getTime() + 2 * 60 * 60 * 1000);
+    }
 
     const formatDate = (date: Date) => {
       return date.toISOString().replace(/[-:]/g, "").split(".")[0] + "Z";
@@ -658,6 +699,12 @@ const EventDetails = () => {
   const handleGetTicket = () => {
     console.log("=== HANDLE GET TICKET CALLED ===");
     if (!event) return;
+
+    // Check if user is authenticated
+    if (!authenticated) {
+      login(); // Trigger wallet connection
+      return;
+    }
 
     console.log("Event data:", event);
     console.log("Payment methods:", event.payment_methods);
@@ -740,7 +787,15 @@ const EventDetails = () => {
   });
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <>
+      <MetaTags
+        title={`${event.title} - TeeRex Event`}
+        description={event.description || `Join us for ${event.title} on TeeRex. ${event.location ? `Location: ${event.location}. ` : ''}${event.price ? `Price: ${event.price} ${event.currency}. ` : ''}Limited tickets available!`}
+        image={event.image_url}
+        url={window.location.href}
+        type="event"
+      />
+      <div className="min-h-screen bg-gray-50">
       {/* Header */}
       <div className="bg-white border-b">
         <div className="container mx-auto px-6 max-w-4xl py-4">
@@ -761,7 +816,7 @@ const EventDetails = () => {
           <div className="lg:col-span-2 space-y-6">
             {/* Event Image */}
             {event.image_url && (
-              <div className="aspect-video rounded-lg overflow-hidden bg-gray-100">
+              <div className="aspect-square rounded-lg overflow-hidden bg-gray-100">
                 <img
                   src={`${event.image_url}${
                     event.image_url.includes("?") ? "&" : "?"
@@ -779,7 +834,11 @@ const EventDetails = () => {
                       src: (e.currentTarget as HTMLImageElement).src,
                     });
                   }}
-                  className="w-full h-full object-cover"
+                  style={{
+                    objectFit: 'cover',
+                    objectPosition: `${event.image_crop_x || 50}% ${event.image_crop_y || 50}%`
+                  }}
+                  className="w-full h-full"
                 />
               </div>
             )}
@@ -801,7 +860,7 @@ const EventDetails = () => {
                     {event.date && (
                       <div className="flex items-center space-x-1">
                         <Calendar className="w-4 h-4" />
-                        <span>{format(event.date, "EEEE, MMMM do, yyyy")}</span>
+                        <span>{formatEventDateRange({ startDate: event.date, endDate: event.end_date, formatStyle: 'long' })}</span>
                       </div>
                     )}
                     <div className="flex items-center space-x-1">
@@ -809,6 +868,21 @@ const EventDetails = () => {
                       <span>{event.time}</span>
                     </div>
                   </div>
+                  {isTransferableOnChain !== null && (
+                    <div className="mt-2">
+                      {isTransferableOnChain ? (
+                        <Badge variant="outline" className="text-xs text-green-700 border-green-200">
+                          {transferFeeBps && transferFeeBps > 0
+                            ? `Transferable (fee ${transferFeeBps / 100}% )`
+                            : 'Transferable'}
+                        </Badge>
+                      ) : (
+                        <Badge variant="outline" className="text-xs text-purple-700 border-purple-200">
+                          Soul-bound (non-transferable)
+                        </Badge>
+                      )}
+                    </div>
+                  )}
                 </div>
                 <div className="flex items-center space-x-2">
                   <TooltipProvider>
@@ -869,8 +943,25 @@ const EventDetails = () => {
 
               {event.location && (
                 <div className="flex items-center space-x-1 text-gray-600 mb-6">
-                  <MapPin className="w-4 h-4" />
-                  <span>{event.location}</span>
+                  {event.event_type === 'virtual' ? (
+                    <>
+                      <Globe className="w-4 h-4" />
+                      <a
+                        href={event.location}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-blue-600 hover:text-blue-800 underline flex items-center gap-1"
+                      >
+                        Virtual Event Link
+                        <ExternalLink className="w-3 h-3" />
+                      </a>
+                    </>
+                  ) : (
+                    <>
+                      <MapPin className="w-4 h-4" />
+                      <span>{event.location}</span>
+                    </>
+                  )}
                 </div>
               )}
 
@@ -881,11 +972,7 @@ const EventDetails = () => {
                 <h2 className="text-xl font-semibold text-gray-900 mb-4">
                   About this event
                 </h2>
-                <div className="prose prose-gray max-w-none">
-                  <p className="text-gray-700 whitespace-pre-wrap">
-                    {event.description}
-                  </p>
-                </div>
+                <RichTextDisplay content={event.description} />
               </div>
             </div>
 
@@ -1031,26 +1118,37 @@ const EventDetails = () => {
                     )}
                   </div>
                 ) : (
-                  <Button
-                    className="w-full"
-                    onClick={handleGetTicket}
-                    disabled={
-                      isSoldOut ||
-                      (!authenticated &&
-                        userTicketCount >= maxTicketsPerUser) ||
-                      (event.date && new Date(event.date) < new Date())
-                    }
-                  >
-                    {isSoldOut
-                      ? "Sold Out"
-                      : event.date && new Date(event.date) < new Date()
-                      ? "Event has ended"
-                      : !authenticated
-                      ? "Connect Wallet to Get Ticket"
-                      : userTicketCount >= maxTicketsPerUser
-                      ? "Ticket Limit Reached"
-                      : "Get Ticket"}
-                  </Button>
+                  <>
+                    <Button
+                      className="w-full"
+                      onClick={handleGetTicket}
+                      disabled={
+                        isSoldOut ||
+                        (event.date && new Date(event.date) < new Date()) ||
+                        (authenticated && userTicketCount >= maxTicketsPerUser)
+                      }
+                    >
+                      {isSoldOut
+                        ? "Sold Out"
+                        : event.date && new Date(event.date) < new Date()
+                        ? "Event has ended"
+                        : !authenticated
+                        ? "Connect Wallet to Get Ticket"
+                        : userTicketCount >= maxTicketsPerUser
+                        ? "Ticket Limit Reached"
+                        : "Get Ticket"}
+                    </Button>
+                    {/* Waitlist button when event is sold out */}
+                    {isSoldOut && event.allow_waitlist && (
+                      <Button
+                        variant="outline"
+                        className="w-full"
+                        onClick={() => setActiveModal("waitlist")}
+                      >
+                        Join Waitlist
+                      </Button>
+                    )}
+                  </>
                 )}
 
                 <div className="text-xs text-gray-500 text-center">
@@ -1071,7 +1169,7 @@ const EventDetails = () => {
                       <Calendar className="w-5 h-5 text-gray-400 mt-0.5" />
                       <div>
                         <div className="font-medium text-gray-900">
-                          {format(event.date, "EEEE, MMMM do, yyyy")}
+                          {formatEventDateRange({ startDate: event.date, endDate: event.end_date, formatStyle: 'long' })}
                         </div>
                         <div className="text-sm text-gray-600">
                           {event.time}
@@ -1135,6 +1233,7 @@ const EventDetails = () => {
               eventId={event.id}
               lockAddress={event.lock_address}
               creatorAddress={event.creator_id}
+              chainId={event.chain_id}
             />
 
             {/* Enhanced Attestation Card */}
@@ -1190,7 +1289,15 @@ const EventDetails = () => {
         onClose={closeAllModals}
         paymentData={paymentData}
       />
+
+      {/* Waitlist Dialog */}
+      <WaitlistDialog
+        event={event}
+        isOpen={activeModal === "waitlist"}
+        onClose={closeAllModals}
+      />
     </div>
+    </>
   );
 };
 

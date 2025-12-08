@@ -110,8 +110,10 @@ export const PaystackPaymentDialog: React.FC<PaystackPaymentDialogProps> = ({
           },
         }
       );
-      if (error || data?.error) {
-        console.warn("[PAYSTACK INIT] Failed to create transaction record", error?.message || data?.error);
+      if (error) {
+        console.warn("[PAYSTACK INIT] Failed to create transaction record", error?.message);
+      } else if (data && !data.ok) {
+        console.warn("[PAYSTACK INIT] Failed to create transaction record", data?.error);
       }
     } catch (e: any) {
       console.warn("[PAYSTACK INIT] Error ensuring transaction record", e?.message || e);
