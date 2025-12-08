@@ -13,7 +13,6 @@ declare const Deno: {
 
 import { EMAIL_REGEX } from './constants.ts';
 import { stripHtml } from './html-utils.ts';
-import { stripHtml } from './html-utils.ts';
 
 /**
  * Normalize and validate an email address.
