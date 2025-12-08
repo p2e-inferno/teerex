@@ -15,6 +15,7 @@ import { useToast } from '@/hooks/use-toast';
 import { PublishedEvent } from '@/utils/eventUtils';
 import { Loader2, CheckCircle } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
+import { normalizeEmail } from '@/utils/emailUtils';
 
 interface WaitlistDialogProps {
   event: PublishedEvent | null;
@@ -32,8 +33,8 @@ export const WaitlistDialog: React.FC<WaitlistDialogProps> = ({ event, isOpen, o
   const handleJoinWaitlist = async () => {
     if (!event) return;
 
-    // Validate email
-    if (!email || !email.includes('@')) {
+    const normalizedEmail = normalizeEmail(email);
+    if (!normalizedEmail) {
       toast({
         title: 'Email required',
         description: 'Please enter a valid email address',
@@ -50,7 +51,7 @@ export const WaitlistDialog: React.FC<WaitlistDialogProps> = ({ event, isOpen, o
         .from('event_waitlist')
         .insert({
           event_id: event.id,
-          user_email: email,
+          user_email: normalizedEmail,
           wallet_address: walletAddress,
         });
 
@@ -62,20 +63,47 @@ export const WaitlistDialog: React.FC<WaitlistDialogProps> = ({ event, isOpen, o
             description: "You're already on the waitlist for this event!",
             variant: 'default',
           });
+
+          // Lightweight check: only trigger confirmation if not already sent
+          void (async () => {
+            try {
+              const { data } = await supabase
+                .from('event_waitlist')
+                .select('confirmation_sent')
+                .eq('event_id', event.id)
+                .eq('user_email', normalizedEmail)
+                .maybeSingle();
+
+              if (data && data.confirmation_sent === false) {
+                await supabase.functions.invoke('send-waitlist-confirmations', {
+                  body: { event_id: event.id },
+                });
+              }
+            } catch (err) {
+              console.warn('[WAITLIST] Failed to trigger confirmation email on duplicate:', err?.message || err);
+            }
+          })();
         } else {
           throw error;
         }
-      } else {
-        setIsSuccess(true);
+        } else {
+          setIsSuccess(true);
+          toast({
+            title: 'Joined waitlist!',
+            description: "We'll notify you when tickets become available.",
+          });
+
+          // Fire-and-forget confirmation email via Edge Function
+          void supabase.functions.invoke('send-waitlist-confirmations', {
+            body: { event_id: event.id },
+          }).catch((err) => {
+            console.warn('[WAITLIST] Failed to trigger confirmation email:', err?.message || err);
+          });
+        }
+      } catch (error) {
+        console.error('Error joining waitlist:', error);
         toast({
-          title: 'Joined waitlist!',
-          description: "We'll notify you when tickets become available.",
-        });
-      }
-    } catch (error) {
-      console.error('Error joining waitlist:', error);
-      toast({
-        title: 'Error',
+          title: 'Error',
         description: 'Failed to join waitlist. Please try again.',
         variant: 'destructive',
       });

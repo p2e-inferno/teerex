@@ -21,6 +21,9 @@ project_id = "nclavsvzjzegqvkjezyz"
 [functions.admin-get-transactions]
   verify_jwt = true
 
+[functions.send-ticket-email]
+  verify_jwt = true
+
 [functions.nft-metadata]
   # Public endpoint - NFT marketplaces and wallets need unauthenticated access
   verify_jwt = false

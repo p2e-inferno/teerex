@@ -7,9 +7,9 @@ import { verifyPrivyToken, validateUserWallet } from '../_shared/privy.ts';
 import { checkRateLimit, logActivity } from '../_shared/rate-limit.ts';
 import { logGasTransaction } from '../_shared/gas-tracking.ts';
 import { handleError } from '../_shared/error-handler.ts';
-import { RATE_LIMITS, EMAIL_REGEX, SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, SERVICE_PK } from '../_shared/constants.ts';
+import { RATE_LIMITS, SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, SERVICE_PK } from '../_shared/constants.ts';
 import { validateChain } from '../_shared/network-helpers.ts';
-import { sendEmail, getTicketEmail } from '../_shared/email-utils.ts';
+import { sendEmail, getTicketEmail, normalizeEmail } from '../_shared/email-utils.ts';
 import { formatEventDate } from '../_shared/date-utils.ts';
 
 /**
@@ -114,6 +114,8 @@ serve(async (req) => {
     const body = await req.json();
     const { event_id, lock_address, chain_id, recipient, user_email } = body;
 
+    const normalizedUserEmail = normalizeEmail(user_email);
+
     // 3. Validate recipient wallet
     const normalizedRecipient = await validateUserWallet(
       privyUserId,
@@ -122,7 +124,7 @@ serve(async (req) => {
     );
 
     // 4. Validate email if provided
-    if (user_email && !EMAIL_REGEX.test(user_email)) {
+    if (user_email && !normalizedUserEmail) {
       return new Response(
         JSON.stringify({ ok: false, error: 'invalid_email_format' }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 200 }
@@ -215,7 +217,7 @@ serve(async (req) => {
         supabase,
         event_id,
         normalizedRecipient,
-        user_email
+        normalizedUserEmail
       );
 
       // Check if they've reached their limit
@@ -275,7 +277,7 @@ serve(async (req) => {
             supabase,
             event_id,
             normalizedRecipient,
-            user_email
+            normalizedUserEmail
           );
 
           return new Response(
@@ -311,7 +313,7 @@ serve(async (req) => {
         owner_wallet: normalizedRecipient,
         grant_tx_hash: receipt.transactionHash,
         status: 'active',
-        user_email: user_email || null,
+        user_email: normalizedUserEmail || null,
       }),
     ]);
 
@@ -323,7 +325,7 @@ serve(async (req) => {
     }
 
     // Send ticket confirmation email (non-blocking)
-    if (user_email && event.title) {
+    if (normalizedUserEmail && event.title) {
       const eventTitle = event.title;
       const eventDate = event.starts_at ? formatEventDate(event.starts_at) : 'TBA';
       const explorerUrl = receipt.transactionHash && chain_id
@@ -334,7 +336,7 @@ serve(async (req) => {
 
       // Fire and forget - don't block response
       sendEmail({
-        to: user_email,
+        to: normalizedUserEmail,
         ...emailContent,
         tags: ['ticket-issued', 'gasless'],
       }).catch(err => {

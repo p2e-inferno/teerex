@@ -1,6 +1,7 @@
 import { corsHeaders, buildPreflightHeaders } from '../_shared/cors.ts';
 import { validateChain } from '../_shared/network-helpers.ts';
 import { formatEventDate } from '../_shared/date-utils.ts';
+import { stripHtml } from '../_shared/html-utils.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { ethers } from 'https://esm.sh/ethers@6.14.4';
 import PublicLockABI from '../_shared/abi/PublicLockV15.json' assert { type: 'json' };
@@ -115,7 +116,7 @@ Deno.serve(async (req) => {
     // Generate OpenSea-compatible metadata
     const metadata = {
       name: `${event.title} - Ticket #${tokenId}`,
-      description: event.description || `Ticket for ${event.title}`,
+      description: stripHtml(event.description) || `Ticket for ${event.title}`,
       image: event.image_url || '',
       external_url: `${APP_BASE_URL}/event/${lockAddress}`,
       attributes: [

@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import { useWallets } from '@privy-io/react-auth';
+import { usePrivy, useWallets } from '@privy-io/react-auth';
 import {
   Dialog,
   DialogContent,
@@ -20,6 +20,7 @@ import { format } from 'date-fns';
 import { supabase } from '@/integrations/supabase/client';
 import { useGaslessFallback } from '@/hooks/useGasless';
 import { toast as sonnerToast } from 'sonner';
+import { normalizeEmail } from '@/utils/emailUtils';
 
 interface EventPurchaseDialogProps {
   event: PublishedEvent | null;
@@ -29,6 +30,7 @@ interface EventPurchaseDialogProps {
 
 export const EventPurchaseDialog: React.FC<EventPurchaseDialogProps> = ({ event, isOpen, onClose }) => {
   const { wallets } = useWallets();
+  const { getAccessToken } = usePrivy();
   const { toast } = useToast();
   const [isPurchasing, setIsPurchasing] = useState(false);
   const [email, setEmail] = useState('');
@@ -113,6 +115,25 @@ export const EventPurchaseDialog: React.FC<EventPurchaseDialogProps> = ({ event,
             </div>
           ),
         });
+
+        // Fire-and-forget ticket email via Edge Function
+        void (async () => {
+          try {
+            const accessToken = await getAccessToken?.();
+            await supabase.functions.invoke('send-ticket-email', {
+              body: {
+                event_id: event.id,
+                user_email: userEmail,
+                wallet_address: wallet.address.toLowerCase(),
+                txn_hash: result.transactionHash,
+                chain_id: event.chain_id,
+              },
+              headers: accessToken ? { 'X-Privy-Authorization': `Bearer ${accessToken}` } : undefined,
+            });
+          } catch (err) {
+            console.warn('[TICKET EMAIL] Failed to send ticket email:', err?.message || err);
+          }
+        })();
         onClose();
         return { success: true };
       } else {
@@ -132,8 +153,8 @@ export const EventPurchaseDialog: React.FC<EventPurchaseDialogProps> = ({ event,
 
   // Unified purchase handler for ALL currencies
   const handlePurchase = async () => {
-    // Validate email before purchase
-    if (!email || !email.includes('@')) {
+    const normalizedEmail = normalizeEmail(email);
+    if (!normalizedEmail) {
       toast({
         title: 'Email required',
         description: 'Please enter a valid email address',
@@ -180,9 +201,9 @@ export const EventPurchaseDialog: React.FC<EventPurchaseDialogProps> = ({ event,
           lock_address: event.lock_address,
           chain_id: event.chain_id,
           recipient: wallets[0]?.address?.toLowerCase(),
-          user_email: email,
+          user_email: normalizedEmail,
         };
-        const result: any = await purchaseFreeTicketWithGasless(gaslessArgs, email);
+        const result: any = await purchaseFreeTicketWithGasless(gaslessArgs, normalizedEmail);
 
         if (result.ok) {
           // Check if already claimed (idempotent response)
@@ -257,7 +278,7 @@ export const EventPurchaseDialog: React.FC<EventPurchaseDialogProps> = ({ event,
     }
 
     // ETH/USDC tickets: client-side purchase with email storage
-    await handleClientSidePurchase(email);
+    await handleClientSidePurchase(normalizedEmail);
   };
 
   // Helper to convert error codes to user-friendly messages

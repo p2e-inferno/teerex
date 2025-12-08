@@ -3,7 +3,7 @@ import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { Contract, JsonRpcProvider, Wallet } from "https://esm.sh/ethers@6.14.4";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.50.0";
 import PublicLockV15 from "../_shared/abi/PublicLockV15.json" assert { type: "json" };
-import { sendEmail, getTicketEmail } from "../_shared/email-utils.ts";
+import { sendEmail, getTicketEmail, normalizeEmail } from "../_shared/email-utils.ts";
 import { formatEventDate } from "../_shared/date-utils.ts";
 
 function json(data: any, status = 200) {
@@ -182,7 +182,7 @@ serve(async (req) => {
     console.log(" [WEBHOOK] Webhook processed successfully");
 
     // Send ticket confirmation email (non-blocking)
-    const userEmail = (tx as any)?.user_email;
+    const userEmail = normalizeEmail((tx as any)?.user_email);
     if (granted && userEmail && txEvent?.title) {
       const eventTitle = txEvent.title;
       const eventDate = txEvent.starts_at ? formatEventDate(txEvent.starts_at) : 'TBA';

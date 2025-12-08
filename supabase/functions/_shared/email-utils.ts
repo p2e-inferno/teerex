@@ -13,6 +13,18 @@ declare const Deno: {
 
 import { EMAIL_REGEX } from './constants.ts';
 
+/**
+ * Normalize and validate an email address.
+ * Returns lowercased/trimmed email or null if invalid/empty.
+ */
+export function normalizeEmail(email: string | null | undefined): string | null {
+  if (!email) return null;
+  const trimmed = email.trim();
+  if (!trimmed) return null;
+  const lowered = trimmed.toLowerCase();
+  return EMAIL_REGEX.test(lowered) ? lowered : null;
+}
+
 export interface EmailOptions {
   to: string;
   subject: string;

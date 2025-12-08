@@ -2,6 +2,7 @@
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.50.0";
 import { corsHeaders, buildPreflightHeaders } from "../_shared/cors.ts";
+import { normalizeEmail } from "../_shared/email-utils.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -40,9 +41,14 @@ serve(async (req) => {
       return new Response(JSON.stringify({ error: 'Event not found' }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 404 });
     }
 
+    const normalizedEmail = normalizeEmail(email);
+    if (!normalizedEmail) {
+      return new Response(JSON.stringify({ error: 'Invalid email' }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 400 });
+    }
+
     const insertPayload: any = {
       event_id: eventId,
-      user_email: email,
+      user_email: normalizedEmail,
       reference,
       currency: 'NGN',
       status: 'pending',
@@ -53,7 +59,7 @@ serve(async (req) => {
           custom_fields: [
             { display_name: 'Wallet Address', variable_name: 'user_wallet_address', value: walletAddress },
             { display_name: 'Event ID', variable_name: 'event_id', value: eventId },
-            { display_name: 'User Email', variable_name: 'user_email', value: email },
+            { display_name: 'User Email', variable_name: 'user_email', value: normalizedEmail },
           ],
         },
       },
@@ -72,4 +78,3 @@ serve(async (req) => {
     return new Response(JSON.stringify({ error: e?.message || 'Internal error' }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 200 });
   }
 });
-

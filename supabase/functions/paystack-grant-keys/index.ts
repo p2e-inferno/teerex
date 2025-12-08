@@ -5,7 +5,7 @@ import PublicLockV15 from "../_shared/abi/PublicLockV15.json" assert { type: "js
 import { corsHeaders, buildPreflightHeaders } from "../_shared/cors.ts";
 import { createRemoteJWKSet, jwtVerify, importSPKI } from "https://deno.land/x/jose@v4.14.4/index.ts";
 import { getUserWalletAddresses } from "../_shared/privy.ts";
-import { sendEmail, getTicketEmail } from "../_shared/email-utils.ts";
+import { sendEmail, getTicketEmail, normalizeEmail } from "../_shared/email-utils.ts";
 import { formatEventDate } from "../_shared/date-utils.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
@@ -130,7 +130,7 @@ serve(async (req) => {
     });
 
     // Send ticket confirmation email (non-blocking)
-    const userEmail = tx.user_email;
+    const userEmail = normalizeEmail(tx.user_email);
     if (userEmail && event.title) {
       const eventTitle = event.title;
       const eventDate = event.starts_at ? formatEventDate(event.starts_at) : 'TBA';
