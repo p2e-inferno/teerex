@@ -16,7 +16,7 @@ export function handleError(
       : errorMsg.toLowerCase().includes('invalid') || errorMsg.toLowerCase().includes('required') ? 400
       : 500;
 
-  console.error(`Gasless error [user: ${privyUserId || 'unknown'}]:`, e);
+  console.error(`Edge function error [user: ${privyUserId || 'unknown'}]:`, e);
   return new Response(
     JSON.stringify({ ok: false, error: errorMsg }),
     {

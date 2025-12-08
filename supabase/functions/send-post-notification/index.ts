@@ -37,6 +37,8 @@ serve(async (req) => {
     const body = await req.json().catch(() => ({}));
     const { event_id, post_id, event_url, poster_name } = body || {};
 
+    console.log('[send-post-notification] Received request:', { event_id, post_id, event_url, poster_name });
+
     if (!event_id || !post_id) {
       return new Response(JSON.stringify({ ok: false, error: 'event_id and post_id are required' }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -49,11 +51,15 @@ serve(async (req) => {
 
     const supabaseAdmin = supabase;
 
+    console.log('[send-post-notification] Querying events table for event_id:', event_id);
     const { data: event, error: evErr } = await supabaseAdmin
       .from('events')
       .select('id, title, starts_at, lock_address, chain_id, creator_id')
       .eq('id', event_id)
       .maybeSingle();
+
+    console.log('[send-post-notification] Event query result:', { event, error: evErr?.message });
+
     if (evErr || !event) throw new Error('event_not_found');
 
     let authorized = event.creator_id === privyUserId;
