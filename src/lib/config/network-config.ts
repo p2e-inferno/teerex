@@ -13,7 +13,10 @@ export interface NetworkConfig {
   chain_id: number;
   chain_name: string;
   usdc_token_address: string | null;
+  unlock_factory_address: string | null;
   native_currency_symbol: string;
+  native_currency_name: string | null;
+  native_currency_decimals: number | null;
   rpc_url: string | null;
   block_explorer_url: string | null;
   is_mainnet: boolean;
@@ -22,39 +25,225 @@ export interface NetworkConfig {
   updated_at: string;
 }
 
+function isValidNetworkConfig(data: any): data is NetworkConfig {
+  return (
+    data &&
+    typeof data.id === 'string' &&
+    typeof data.chain_id === 'number' &&
+    typeof data.chain_name === 'string' &&
+    typeof data.native_currency_symbol === 'string' &&
+    typeof data.is_active === 'boolean' &&
+    typeof data.is_mainnet === 'boolean' &&
+    (data.usdc_token_address === null || typeof data.usdc_token_address === 'string') &&
+    (data.unlock_factory_address === null || typeof data.unlock_factory_address === 'string') &&
+    (data.native_currency_name === null || typeof data.native_currency_name === 'string') &&
+    (data.native_currency_decimals === null || typeof data.native_currency_decimals === 'number') &&
+    (data.rpc_url === null || typeof data.rpc_url === 'string') &&
+    (data.block_explorer_url === null || typeof data.block_explorer_url === 'string') &&
+    (data.created_at === undefined || typeof data.created_at === 'string') &&
+    (data.updated_at === undefined || typeof data.updated_at === 'string')
+  );
+}
+
 // Fallback networks for when database is unavailable
 const FALLBACK_NETWORKS = [baseSepolia, base];
 
 export const ZERO_ADDRESS = '0x0000000000000000000000000000000000000000';
 
+// ============================================================================
+// LIGHTWEIGHT IN-MEMORY CACHE (for non-React code)
+// ============================================================================
+
+interface CacheEntry<T> {
+  data: T;
+  timestamp: number;
+}
+
+const MEMORY_CACHE_TTL = 60 * 1000; // 60 seconds (shorter than React Query)
+let networksCache: CacheEntry<NetworkConfig[]> | null = null;
+const chainConfigCache = new Map<number, CacheEntry<NetworkConfig | null>>();
+
+/**
+ * Clear all in-memory caches
+ */
+export function clearNetworkMemoryCache(): void {
+  networksCache = null;
+  chainConfigCache.clear();
+  console.log('[network-config] Memory cache cleared');
+}
+
+// ============================================================================
+// CORE FETCH FUNCTIONS (work in any context)
+// ============================================================================
+
+/**
+ * Fetch all active network configs from database
+ * Uses simple in-memory cache (60s TTL) for non-React contexts
+ *
+ * @param skipCache - Bypass cache and fetch fresh
+ */
+export async function fetchNetworkConfigs(skipCache = false): Promise<NetworkConfig[]> {
+  // Check memory cache
+  if (!skipCache && networksCache && Date.now() - networksCache.timestamp < MEMORY_CACHE_TTL) {
+    console.log('[network-config] Using memory cache (all networks)');
+    return networksCache.data;
+  }
+
+  // Fetch from database
+  console.log('[network-config] Fetching fresh network configs from database');
+  const { data, error } = await supabase
+    .from('network_configs')
+    .select('*')
+    .eq('is_active', true)
+    .order('chain_id');
+
+  if (error) {
+    console.error('[network-config] Database error:', error);
+    throw new Error(`Failed to fetch network configs: ${error.message}`);
+  }
+
+  const networks = (data || []).filter(config => {
+    const isValid = isValidNetworkConfig(config);
+    if (!isValid) {
+      console.error('[network-config] Invalid network config from database:', config);
+    }
+    return isValid;
+  });
+
+  // Update cache
+  networksCache = { data: networks, timestamp: Date.now() };
+
+  return networks;
+}
+
+/**
+ * Fetch network config by chain ID from database
+ * Uses simple in-memory cache (60s TTL) for non-React contexts
+ *
+ * @param chainId - Chain ID to fetch
+ * @param skipCache - Bypass cache and fetch fresh
+ */
+export async function fetchNetworkConfigByChainId(
+  chainId: number,
+  skipCache = false
+): Promise<NetworkConfig | null> {
+  // Check memory cache
+  const cached = chainConfigCache.get(chainId);
+  if (!skipCache && cached && Date.now() - cached.timestamp < MEMORY_CACHE_TTL) {
+    console.log(`[network-config] Using memory cache (chain ${chainId})`);
+    return cached.data;
+  }
+
+  // Fetch from database
+  console.log(`[network-config] Fetching network config for chain ${chainId}`);
+  const { data, error } = await supabase
+    .from('network_configs')
+    .select('*')
+    .eq('chain_id', chainId)
+    .eq('is_active', true)
+    .maybeSingle();
+
+  if (error) {
+    console.error(`[network-config] Database error for chain ${chainId}:`, error);
+    throw new Error(`Failed to fetch network config for chain ${chainId}: ${error.message}`);
+  }
+
+  if (data && !isValidNetworkConfig(data)) {
+    console.error(`[network-config] Invalid network config for chain ${chainId}:`, data);
+    chainConfigCache.set(chainId, { data: null, timestamp: Date.now() });
+    return null;
+  }
+
+  // Update cache
+  chainConfigCache.set(chainId, { data, timestamp: Date.now() });
+
+  return data;
+}
+
+// ============================================================================
+// PUBLIC API (for non-React contexts like lockUtils.ts)
+// ============================================================================
+
+/**
+ * Get all active network configs
+ * For use in non-React contexts (uses lightweight 60s memory cache)
+ */
+export async function getNetworkConfigs(): Promise<NetworkConfig[]> {
+  return fetchNetworkConfigs();
+}
+
+/**
+ * Get network config by chain ID
+ * For use in non-React contexts (uses lightweight 60s memory cache)
+ */
+export async function getNetworkConfigByChainId(chainId: number): Promise<NetworkConfig | null> {
+  return fetchNetworkConfigByChainId(chainId);
+}
+
+// ============================================================================
+// REACT QUERY INTEGRATION (for React components)
+// ============================================================================
+
+export const networkQueryKeys = {
+  all: ['network-configs'] as const,
+  byChainId: (chainId: number) => ['network-configs', chainId] as const,
+};
+
+// ============================================================================
+// BACKWARDS COMPATIBILITY & DEPRECATED FUNCTIONS
+// ============================================================================
+
+/** @deprecated Use getNetworkConfigByChainId instead for dynamic DB lookup */
 export function getRpcUrl(chainId: number): string {
   const chain = CHAINS[chainId as SupportedChainId];
   if (!chain) throw new Error(`Unsupported chainId ${chainId}`);
-  
+
   const urls = chain.rpcUrls?.default?.http;
   if (!urls) {
     throw new Error(`No RPC URL for chainId ${chainId}`);
   }
-  
+
   return urls[0];
 }
 
-export function getExplorerTxUrl(chainId: number, txHash: string): string {
+/** @deprecated Prefer getNetworkConfigByChainId + block_explorer_url; falls back to wagmi chains */
+export async function getExplorerTxUrl(chainId: number, txHash: string): Promise<string> {
+  try {
+    const networkConfig = await getNetworkConfigByChainId(chainId);
+    if (networkConfig?.block_explorer_url) {
+      const baseUrl = networkConfig.block_explorer_url.replace(/\/$/, '');
+      return `${baseUrl}/tx/${txHash}`;
+    }
+  } catch (error) {
+    console.warn(`[network-config] Failed to resolve explorer for chain ${chainId}:`, error);
+  }
+
   const chain = CHAINS[chainId as SupportedChainId];
-  if (!chain || !chain.blockExplorers?.default?.url) return txHash;
-  const baseUrl = chain.blockExplorers.default.url.replace(/\/$/, '');
-  return `${baseUrl}/tx/${txHash}`;
+  if (chain?.blockExplorers?.default?.url) {
+    const baseUrl = chain.blockExplorers.default.url.replace(/\/$/, '');
+    return `${baseUrl}/tx/${txHash}`;
+  }
+
+  return txHash;
+}
+
+function getBaseUsdcFallback(chainId: number): string | null {
+  if (chainId === base.id) {
+    return import.meta.env.VITE_USDC_ADDRESS_BASE_MAINNET || '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913';
+  }
+  if (chainId === baseSepolia.id) {
+    return import.meta.env.VITE_USDC_ADDRESS_BASE_SEPOLIA || '0x036CbD53842c5426634e7929541eC2318f3dCF7e';
+  }
+  return null;
 }
 
 // Token address helpers (addresses only; decimals resolved at runtime)
 // DEPRECATED: Use getUsdcAddressAsync() instead for dynamic lookup
 export function getUsdcAddress(chainId: number): string {
   // Fallback for backwards compatibility - only works for Base networks
-  if (chainId === base.id) {
-    return import.meta.env.VITE_USDC_ADDRESS_BASE_MAINNET || '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913';
-  }
-  if (chainId === baseSepolia.id) {
-    return import.meta.env.VITE_USDC_ADDRESS_BASE_SEPOLIA || '0x036CbD53842c5426634e7929541eC2318f3dCF7e';
+  const fallback = getBaseUsdcFallback(chainId);
+  if (fallback) {
+    return fallback;
   }
   throw new Error(`USDC not configured for chainId ${chainId}. Use getUsdcAddressAsync() instead.`);
 }
@@ -65,36 +254,16 @@ export function getUsdcAddress(chainId: number): string {
  */
 export async function getUsdcAddressAsync(chainId: number): Promise<string | null> {
   try {
-    const { data, error } = await supabase
-      .from('network_configs')
-      .select('usdc_token_address')
-      .eq('chain_id', chainId)
-      .eq('is_active', true)
-      .maybeSingle();
+    const networkConfig = await getNetworkConfigByChainId(chainId);
 
-    if (error) {
-      console.warn(`Database error fetching USDC address for chain ${chainId}:`, error);
-      // Try fallback for Base networks
-      if (chainId === base.id) {
-        return import.meta.env.VITE_USDC_ADDRESS_BASE_MAINNET || '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913';
-      }
-      if (chainId === baseSepolia.id) {
-        return import.meta.env.VITE_USDC_ADDRESS_BASE_SEPOLIA || '0x036CbD53842c5426634e7929541eC2318f3dCF7e';
-      }
-      return null;
+    if (!networkConfig) {
+      return getBaseUsdcFallback(chainId);
     }
 
-    return data?.usdc_token_address || null;
+    return networkConfig.usdc_token_address || null;
   } catch (error) {
     console.error(`Error fetching USDC address for chain ${chainId}:`, error);
-    // Try fallback for Base networks
-    if (chainId === base.id) {
-      return import.meta.env.VITE_USDC_ADDRESS_BASE_MAINNET || '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913';
-    }
-    if (chainId === baseSepolia.id) {
-      return import.meta.env.VITE_USDC_ADDRESS_BASE_SEPOLIA || '0x036CbD53842c5426634e7929541eC2318f3dCF7e';
-    }
-    return null;
+    return getBaseUsdcFallback(chainId);
   }
 }
 
@@ -108,24 +277,13 @@ export function getTokenAddress(chainId: number, symbol: 'ETH' | 'USDC'): string
   return getUsdcAddress(chainId);
 }
 
+/**
+ * Get all active networks (uses new cached fetch function)
+ * @deprecated Use getNetworkConfigs() or fetchNetworkConfigs() instead
+ */
 export async function getActiveNetworks(): Promise<NetworkConfig[]> {
   try {
-    const { data, error } = await supabase
-      .from('network_configs')
-      .select('*')
-      .eq('is_active', true)
-      .order('chain_id');
-
-    if (error) throw error;
-
-    // If no active networks found, log warning
-    if (!data || data.length === 0) {
-      console.warn('No active networks in database, using fallbacks');
-      return [];
-    }
-
-    console.log(`Loaded ${data.length} active network(s) from database`);
-    return data;
+    return await fetchNetworkConfigs();
   } catch (error) {
     console.error('Database error fetching network configs:', error);
     return []; // Return empty to trigger fallback in buildPrivyChains
@@ -170,8 +328,8 @@ export function buildPrivyChains(networkConfigs: NetworkConfig[]): any[] {
     name: config.chain_name,
     network: config.chain_name.toLowerCase().replace(/\s+/g, '-'),
     nativeCurrency: {
-      decimals: 18, // Default until migration is applied
-      name: config.native_currency_symbol === 'POL' ? 'Polygon Ecosystem Token' : 'Ethereum',
+      decimals: config.native_currency_decimals ?? 18,
+      name: config.native_currency_name || (config.native_currency_symbol === 'POL' ? 'Polygon' : 'Ethereum'),
       symbol: config.native_currency_symbol,
     },
     rpcUrls: {
@@ -279,6 +437,11 @@ export function clearPrivyConfigCache(): void {
   window.dispatchEvent(new CustomEvent(CACHE_CLEAR_EVENT));
 }
 
+export function clearAllNetworkCaches(): void {
+  clearNetworkMemoryCache();
+  clearPrivyConfigCache();
+}
+
 // Subscribe to cache clear events
 export function onCacheClear(callback: () => void): () => void {
   const handler = () => callback();
@@ -287,4 +450,3 @@ export function onCacheClear(callback: () => void): () => void {
   // Return unsubscribe function
   return () => window.removeEventListener(CACHE_CLEAR_EVENT, handler);
 }
-

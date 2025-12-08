@@ -53,6 +53,7 @@ import { getBatchAttestationAddress } from "@/lib/config/contract-config";
 import { format } from "date-fns";
 import { formatEventDateRange } from "@/utils/dateUtils";
 import { useEventTicketRealtime } from "@/hooks/useEventTicketRealtime";
+import { useNetworkConfigs } from "@/hooks/useNetworkConfigs";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -72,6 +73,7 @@ const EventDetails = () => {
   const { revokeEventAttestation } = useAttestations();
   const { signTeeRexAttestation } = useTeeRexDelegatedAttestation();
   const { encodeEventLikeData, encodeEventAttendanceData } = useAttestationEncoding();
+  const { networks } = useNetworkConfigs();
 
   const [event, setEvent] = useState<PublishedEvent | null>(null);
   const [userTicketCount, setUserTicketCount] = useState<number>(0);
@@ -187,13 +189,14 @@ const EventDetails = () => {
   const [eventHasEnded, setEventHasEnded] = useState(false);
   const [attendanceSchemaRevocable, setAttendanceSchemaRevocable] = useState<boolean | null>(null);
 
-  const networkLabel = event?.chain_id === base.id ? 'Base' : event?.chain_id === baseSepolia.id ? 'Base Sepolia' : '';
-  const explorerUrl = event
-    ? (event.chain_id === base.id
-        ? `https://basescan.org/address/${event.lock_address}`
-        : event.chain_id === baseSepolia.id
-        ? `https://sepolia.basescan.org/address/${event.lock_address}`
-        : `https://etherscan.io/address/${event.lock_address}`)
+  const networkConfig = event ? networks.find(n => n.chain_id === event.chain_id) : undefined;
+  const networkLabel = networkConfig?.chain_name
+    || (event?.chain_id === base.id ? 'Base' : event?.chain_id === baseSepolia.id ? 'Base Sepolia' : '');
+  const explorerBase =
+    networkConfig?.block_explorer_url
+    || (event?.chain_id === base.id ? 'https://basescan.org' : event?.chain_id === baseSepolia.id ? 'https://sepolia.basescan.org' : undefined);
+  const explorerUrl = event && explorerBase
+    ? `${explorerBase.replace(/\/$/, '')}/address/${event.lock_address}`
     : '#';
 
   const isValidSchemaUid = (uid?: string | null) => !!uid && uid.startsWith('0x') && uid.length === 66 && /^0x[0-9a-f]{64}$/i.test(uid);

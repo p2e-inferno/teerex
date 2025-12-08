@@ -12,7 +12,7 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { ChevronLeft, ChevronRight, ExternalLink } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
-import { deployLock, getBlockExplorerUrl, updateLockTransferability } from '@/utils/lockUtils';
+import { deployLock, updateLockTransferability } from '@/utils/lockUtils';
 import { savePublishedEvent } from '@/utils/eventUtils';
 import { saveDraft, updateDraft, getDraft, deleteDraft, getPublishedEvent } from '@/utils/supabaseDraftStorage';
 import { supabase } from '@/integrations/supabase/client';
@@ -149,6 +149,8 @@ const CreateEvent = () => {
         if (draft) {
           setFormData({
             title: draft.title,
+            // Preserve the network selected when the draft was saved
+            chainId: (draft as any).chain_id,
             description: draft.description,
             date: draft.date,
             endDate: draft.end_date,

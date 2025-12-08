@@ -221,7 +221,7 @@ serve(async (req) => {
     ]);
 
     // 10. Deploy lock via createUpgradeableLockAtVersion (using v15 for updateTransferFee support)
-    const tx = await unlock.createUpgradeableLockAtVersion(initializeCalldata, 15);
+    const tx = await unlock.createUpgradeableLockAtVersion(initializeCalldata, 14);
     const receipt = await tx.wait();
 
     // 11. Parse lock address from event logs

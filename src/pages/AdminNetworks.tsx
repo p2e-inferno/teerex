@@ -10,7 +10,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, Di
 import { toast } from '@/hooks/use-toast';
 import { Loader2, Plus, Edit, Trash2, Network, CheckCircle, AlertTriangle, RefreshCw } from 'lucide-react';
 import { usePrivy } from '@privy-io/react-auth';
-import { clearPrivyConfigCache } from '@/lib/config/network-config';
+import { clearAllNetworkCaches } from '@/lib/config/network-config';
 import { clearNetworkConfigsCache } from '@/hooks/useNetworkConfigs';
 
 interface NetworkConfig {
@@ -133,8 +133,8 @@ const AdminNetworks: React.FC = () => {
         if (error) throw error;
         if (!data.success) throw new Error(data.error);
 
-        // Clear both Privy config cache and network configs cache
-        clearPrivyConfigCache();
+        // Clear caches across contexts (memory, Privy, React Query)
+        clearAllNetworkCaches();
         clearNetworkConfigsCache();
 
         toast({
@@ -154,8 +154,8 @@ const AdminNetworks: React.FC = () => {
         if (error) throw error;
         if (!data.success) throw new Error(data.error);
 
-        // Clear both Privy config cache and network configs cache
-        clearPrivyConfigCache();
+        // Clear caches across contexts (memory, Privy, React Query)
+        clearAllNetworkCaches();
         clearNetworkConfigsCache();
 
         toast({
@@ -218,8 +218,8 @@ const AdminNetworks: React.FC = () => {
       if (error) throw error;
       if (!data.success) throw new Error(data.error);
 
-      // Clear both Privy config cache and network configs cache
-      clearPrivyConfigCache();
+      // Clear caches across contexts (memory, Privy, React Query)
+      clearAllNetworkCaches();
       clearNetworkConfigsCache();
 
       toast({
@@ -267,8 +267,8 @@ const AdminNetworks: React.FC = () => {
       if (error) throw error;
       if (!data.success) throw new Error(data.error);
 
-      // Clear both Privy config cache and network configs cache
-      clearPrivyConfigCache();
+      // Clear caches across contexts (memory, Privy, React Query)
+      clearAllNetworkCaches();
       clearNetworkConfigsCache();
 
       toast({

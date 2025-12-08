@@ -172,7 +172,7 @@ const Drafts = () => {
         // Save to published events
         await savePublishedEvent(formData, deploymentResult.lockAddress, deploymentResult.transactionHash, user.id);
 
-        const explorerUrl = getBlockExplorerUrl(deploymentResult.transactionHash, baseSepolia.id);
+        const explorerUrl = await getBlockExplorerUrl(deploymentResult.transactionHash, draft.chain_id ?? baseSepolia.id);
         
         toast({
           title: "Event Published Successfully!",

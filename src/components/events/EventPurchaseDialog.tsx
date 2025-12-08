@@ -103,7 +103,7 @@ export const EventPurchaseDialog: React.FC<EventPurchaseDialogProps> = ({ event,
           // Don't fail the purchase - ticket is already on-chain
         }
 
-        const explorerUrl = getBlockExplorerUrl(result.transactionHash, event.chain_id);
+        const explorerUrl = await getBlockExplorerUrl(result.transactionHash, event.chain_id);
         toast({
           title: 'Purchase Successful!',
           description: (
@@ -209,7 +209,7 @@ export const EventPurchaseDialog: React.FC<EventPurchaseDialogProps> = ({ event,
           // Check if already claimed (idempotent response)
           if (result.already_claimed) {
             const explorerUrl = result.purchase_tx_hash
-              ? getBlockExplorerUrl(result.purchase_tx_hash, event.chain_id)
+              ? await getBlockExplorerUrl(result.purchase_tx_hash, event.chain_id)
               : null;
 
             toast({
@@ -235,7 +235,7 @@ export const EventPurchaseDialog: React.FC<EventPurchaseDialogProps> = ({ event,
 
           // Normal gasless purchase succeeded
           const explorerUrl = result.purchase_tx_hash
-            ? getBlockExplorerUrl(result.purchase_tx_hash, event.chain_id)
+            ? await getBlockExplorerUrl(result.purchase_tx_hash, event.chain_id)
             : null;
 
           toast({

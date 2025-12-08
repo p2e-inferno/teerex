@@ -5,7 +5,7 @@ import { WagmiProvider } from 'wagmi';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { Card, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { AlertTriangle } from 'lucide-react';
-import { wagmiConfig } from '@/utils/wagmiConfig';
+import { wagmiConfig as fallbackWagmiConfig, buildWagmiConfig } from '@/utils/wagmiConfig';
 import { getPrivyConfig, onCacheClear } from '@/lib/config/network-config';
 import { PrivySetupInstructions, SupabaseAuthSync } from '@/components/privy-config';
 
@@ -18,6 +18,7 @@ const queryClient = new QueryClient();
 
 export const PrivyProvider: React.FC<PrivyProviderProps> = ({ children }) => {
   const [privyConfig, setPrivyConfig] = useState<any>(null);
+  const [wagmiConfig, setWagmiConfig] = useState(fallbackWagmiConfig);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -74,14 +75,30 @@ export const PrivyProvider: React.FC<PrivyProviderProps> = ({ children }) => {
     // Load initial config
     loadPrivyConfig();
 
+    // Load wagmi config dynamically from network configs
+    let mounted = true;
+    const loadWagmi = () =>
+      buildWagmiConfig()
+        .then(cfg => {
+          if (mounted) setWagmiConfig(cfg);
+        })
+        .catch(err => {
+          console.warn('Failed to build wagmi config dynamically, using fallback:', err);
+        });
+    loadWagmi();
+
     // Listen for cache clear events
     const unsubscribe = onCacheClear(() => {
       console.log('Cache clear event received, reloading Privy config...');
       loadPrivyConfig();
+      loadWagmi();
     });
 
     // Cleanup listener on unmount
-    return unsubscribe;
+    return () => {
+      mounted = false;
+      unsubscribe();
+    };
   }, []);
 
   // Show loading state while config is being loaded

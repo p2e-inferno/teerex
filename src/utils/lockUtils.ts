@@ -1,7 +1,7 @@
 
 import { parseEther, parseUnits } from 'viem';
 import { base, baseSepolia } from 'wagmi/chains';
-import { getRpcUrl, getExplorerTxUrl, getTokenAddress, getTokenAddressAsync, ZERO_ADDRESS, CHAINS } from '@/lib/config/network-config';
+import { getRpcUrl, getExplorerTxUrl, getTokenAddress, getTokenAddressAsync, ZERO_ADDRESS, getNetworkConfigByChainId } from '@/lib/config/network-config';
 import { ethers } from 'ethers';
 import { supabase } from '@/integrations/supabase/client';
 
@@ -258,6 +258,26 @@ const ERC20_ABI = [
 
 const decimalsCache: Record<string, number> = {};
 
+async function getRpcUrlForChain(chainId: number): Promise<string> {
+  const networkConfig = await getNetworkConfigByChainId(chainId);
+  let rpcUrl = networkConfig?.rpc_url;
+
+  // Fallback to wagmi static RPCs for legacy Base chains if DB config is missing
+  if (!rpcUrl) {
+    try {
+      rpcUrl = getRpcUrl(chainId);
+    } catch {
+      rpcUrl = undefined;
+    }
+  }
+
+  if (!rpcUrl) {
+    throw new Error(`No RPC URL configured for chain ID ${chainId}`);
+  }
+
+  return rpcUrl;
+}
+
 const getTokenInfo = async (chainId: number, symbol: string): Promise<{ address: string; decimals: number }> => {
   if (symbol === 'FREE') return { address: ZERO_ADDRESS, decimals: 18 };
   if (symbol === 'ETH') return { address: ZERO_ADDRESS, decimals: 18 };
@@ -270,7 +290,9 @@ const getTokenInfo = async (chainId: number, symbol: string): Promise<{ address:
   }
 
   if (decimalsCache[address]) return { address, decimals: decimalsCache[address] };
-  const provider = new ethers.JsonRpcProvider(getRpcUrl(chainId));
+
+  const rpcUrl = await getRpcUrlForChain(chainId);
+  const provider = new ethers.JsonRpcProvider(rpcUrl);
   const token = new ethers.Contract(address, ERC20_ABI, provider);
   const dec = Number(await token.decimals());
   decimalsCache[address] = dec;
@@ -278,21 +300,47 @@ const getTokenInfo = async (chainId: number, symbol: string): Promise<{ address:
 };
 
 const ensureCorrectNetwork = async (rawProvider: any, chainId: number) => {
-  const chain = CHAINS[chainId as keyof typeof CHAINS];
-  if (!chain) throw new Error(`Unsupported chainId ${chainId}`);
+  // Fetch network config from database (with 60s in-memory cache)
+  const networkConfig = await getNetworkConfigByChainId(chainId);
+
+  if (!networkConfig) {
+    throw new Error(`Unsupported or inactive chainId ${chainId}`);
+  }
+
+  // Build chain object from database config
+  const chain = {
+    name: networkConfig.chain_name,
+    nativeCurrency: {
+      name: networkConfig.native_currency_name || 'Ether',
+      symbol: networkConfig.native_currency_symbol,
+      decimals: networkConfig.native_currency_decimals || 18,
+    },
+    rpcUrls: {
+      default: { http: networkConfig.rpc_url ? [networkConfig.rpc_url] : [] }
+    },
+    blockExplorers: networkConfig.block_explorer_url ? {
+      default: { url: networkConfig.block_explorer_url }
+    } : undefined,
+  };
+
   const targetChainIdHex = `0x${chainId.toString(16)}`;
+
   try {
-    await rawProvider.request({ method: 'wallet_switchEthereumChain', params: [{ chainId: targetChainIdHex }] });
+    await rawProvider.request({
+      method: 'wallet_switchEthereumChain',
+      params: [{ chainId: targetChainIdHex }]
+    });
   } catch (switchError: any) {
     if (switchError?.code === 4902) {
+      // Chain not added to wallet, add it
       await rawProvider.request({
         method: 'wallet_addEthereumChain',
         params: [{
           chainId: targetChainIdHex,
           chainName: chain.name,
           nativeCurrency: chain.nativeCurrency,
-          rpcUrls: chain.rpcUrls?.default?.http || [getRpcUrl(chainId)],
-          blockExplorerUrls: [chain.blockExplorers?.default?.url].filter(Boolean),
+          rpcUrls: chain.rpcUrls.default.http,
+          blockExplorerUrls: chain.blockExplorers?.default?.url ? [chain.blockExplorers.default.url] : [],
         }],
       });
     } else {
@@ -420,7 +468,7 @@ export const deployLock = async (config: LockConfig, wallet: any, chainId: numbe
     const signer = await ethersProvider.getSigner();
 
     // Version must match the PublicLock version (using v15 for updateTransferFee support)
-    const version = 15;
+    const version = 14;
 
     // Create an instance of the Unlock factory contract
     const unlock = new ethers.Contract(factoryAddress, UnlockABI, signer);
@@ -706,15 +754,16 @@ export const purchaseKey = async (
 };
 
 
-export const getBlockExplorerUrl = (txHash: string, chainId?: number): string => {
-  if (chainId) return getExplorerTxUrl(chainId, txHash);
-  return getExplorerTxUrl(baseSepolia.id, txHash);
+export const getBlockExplorerUrl = async (txHash: string, chainId?: number): Promise<string> => {
+  const targetChainId = chainId ?? baseSepolia.id;
+  return getExplorerTxUrl(targetChainId, txHash);
 };
 
 // --- New Functions ---
 
-const getReadOnlyProvider = (chainId: number = baseSepolia.id) => {
-  return new ethers.JsonRpcProvider(getRpcUrl(chainId));
+const getReadOnlyProvider = async (chainId: number = baseSepolia.id) => {
+  const rpcUrl = await getRpcUrlForChain(chainId);
+  return new ethers.JsonRpcProvider(rpcUrl);
 };
 
 /**
@@ -728,7 +777,7 @@ export const getTotalKeys = async (lockAddress: string, chainId: number = baseSe
       return 0;
     }
     
-    const provider = getReadOnlyProvider(chainId);
+    const provider = await getReadOnlyProvider(chainId);
     const lockContract = new ethers.Contract(lockAddress, PublicLockABI, provider);
     const totalSupply = await lockContract.totalSupply();
     return Number(totalSupply);
@@ -752,7 +801,7 @@ export const checkKeyOwnership = async (lockAddress: string, userAddress: string
       return false;
     }
     
-    const provider = getReadOnlyProvider(chainId);
+    const provider = await getReadOnlyProvider(chainId);
     const lockContract = new ethers.Contract(lockAddress, PublicLockABI, provider);
     return await lockContract.getHasValidKey(userAddress);
   } catch (error) {
@@ -775,7 +824,7 @@ export const getUserKeyBalance = async (lockAddress: string, userAddress: string
       return 0;
     }
     
-    const provider = getReadOnlyProvider(chainId);
+    const provider = await getReadOnlyProvider(chainId);
     const lockContract = new ethers.Contract(lockAddress, PublicLockABI, provider);
     const balance = await lockContract.balanceOf(userAddress);
     return Number(balance);
@@ -845,7 +894,7 @@ export const getMaxKeysPerAddress = async (lockAddress: string, userAddress?: st
       return 1; // Default fallback
     }
     
-    const provider = getReadOnlyProvider(chainId);
+    const provider = await getReadOnlyProvider(chainId);
     const lockContract = new ethers.Contract(lockAddress, PublicLockABI, provider);
     
     // Try user-specific limit first, then global limit
@@ -885,7 +934,7 @@ export const getTransferabilityStatus = async (
       return { isTransferable: true, feeBasisPoints: null };
     }
 
-    const provider = getReadOnlyProvider(chainId);
+    const provider = await getReadOnlyProvider(chainId);
     const lockContract = new ethers.Contract(lockAddress, PublicLockABI, provider);
     const fee = await lockContract.transferFeeBasisPoints();
     const feeBps = Number(fee);
