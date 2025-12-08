@@ -220,7 +220,7 @@ serve(async (req) => {
       name,
     ]);
 
-    // 10. Deploy lock via createUpgradeableLockAtVersion (using v15 for updateTransferFee support)
+    // 10. Deploy lock via createUpgradeableLockAtVersion
     const tx = await unlock.createUpgradeableLockAtVersion(initializeCalldata, 14);
     const receipt = await tx.wait();
 
@@ -312,12 +312,68 @@ serve(async (req) => {
     // 12.6. Set NFT metadata for marketplace visibility (non-critical)
     try {
       const baseTokenURI = `${SUPABASE_URL}/functions/v1/nft-metadata/${lockAddress}/`;
-      const metadataTx = await lock.setLockMetadata(name, 'TEEREX', baseTokenURI);
-      await metadataTx.wait();
-      console.log('NFT metadata set successfully for lock:', lockAddress);
+      const metadataReceipt = await retryWithBackoff(
+        async () => {
+          const currentNonce = await signer.getNonce();
+          console.log(`Attempting setLockMetadata with nonce: ${currentNonce} for lock ${lockAddress}`);
+
+          const metadataTx = await lock.setLockMetadata(name, 'TEEREX', baseTokenURI, {
+            nonce: currentNonce,
+          });
+
+          return await metadataTx.wait();
+        },
+        {
+          maxAttempts: RETRY_CONFIG.MAX_ATTEMPTS,
+          initialDelay: RETRY_CONFIG.INITIAL_DELAY,
+          backoffMultiplier: RETRY_CONFIG.BACKOFF_MULTIPLIER,
+          maxDelay: RETRY_CONFIG.MAX_DELAY,
+          shouldRetry: isRetryableTransactionError,
+        },
+        `setLockMetadata for lock ${lockAddress}`,
+      );
+
+      console.log(
+        `NFT metadata set successfully for lock: ${lockAddress}. Tx: ${
+          (metadataReceipt as any).hash ?? (metadataReceipt as any).transactionHash
+        }`,
+      );
     } catch (error) {
       console.warn('Failed to set NFT metadata (non-critical):', error);
       // Don't fail entire deployment - metadata can be set later by lock manager
+    }
+
+    // 12.7. Set lock owner to creator (non-critical)
+    try {
+      const setOwnerReceipt = await retryWithBackoff(
+        async () => {
+          const currentNonce = await signer.getNonce();
+          console.log(`Attempting setOwner with nonce: ${currentNonce} for lock ${lockAddress}`);
+
+          const setOwnerTx = await lock.setOwner(normalizedCreator, {
+            nonce: currentNonce,
+          });
+
+          return await setOwnerTx.wait();
+        },
+        {
+          maxAttempts: RETRY_CONFIG.MAX_ATTEMPTS,
+          initialDelay: RETRY_CONFIG.INITIAL_DELAY,
+          backoffMultiplier: RETRY_CONFIG.BACKOFF_MULTIPLIER,
+          maxDelay: RETRY_CONFIG.MAX_DELAY,
+          shouldRetry: isRetryableTransactionError,
+        },
+        `setOwner for lock ${lockAddress}`,
+      );
+
+      console.log(
+        `Lock owner set to creator ${normalizedCreator} for lock: ${lockAddress}. Tx: ${
+          (setOwnerReceipt as any).hash ?? (setOwnerReceipt as any).transactionHash
+        }`,
+      );
+    } catch (error) {
+      console.warn('Failed to set lock owner (non-critical):', error);
+      // Don't fail entire deployment - owner can be updated later
     }
 
     // 13. Log activity and gas cost in parallel

@@ -107,7 +107,7 @@ export const EventManagementDialog: React.FC<EventManagementDialogProps> = ({
       
       setIsCheckingStatus(true);
       try {
-        const isManager = await checkIfLockManager(event.lock_address, serviceWalletAddress);
+        const isManager = await checkIfLockManager(event.lock_address, serviceWalletAddress, event.chain_id);
         setIsServiceManager(isManager);
         
         // If on-chain status doesn't match database, update local state
@@ -135,7 +135,7 @@ export const EventManagementDialog: React.FC<EventManagementDialogProps> = ({
         const signer = await ethersProvider.getSigner();
         const userAddress = await signer.getAddress();
         
-        const isManager = await checkIfLockManager(event.lock_address, userAddress);
+        const isManager = await checkIfLockManager(event.lock_address, userAddress, event.chain_id);
         setIsLockManager(isManager);
       } catch (error) {
         console.error('Error checking user lock manager status:', error);

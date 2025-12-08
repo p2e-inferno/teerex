@@ -246,6 +246,19 @@ const PublicLockABI = [
     "outputs": [],
     "stateMutability": "nonpayable",
     "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "account",
+        "type": "address"
+      }
+    ],
+    "name": "setOwner",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
   }
 ];
 
@@ -354,7 +367,8 @@ const ensureCorrectNetwork = async (rawProvider: any, chainId: number) => {
  */
 export const checkIfLockManager = async (
   lockAddress: string,
-  managerAddress: string
+  managerAddress: string,
+  chainId?: number
 ): Promise<boolean> => {
   try {
     if (!lockAddress || !ethers.isAddress(lockAddress)) {
@@ -365,8 +379,24 @@ export const checkIfLockManager = async (
       throw new Error('Invalid manager address.');
     }
 
-    // Use a public RPC provider for read-only operations
-    const rpcUrl = 'https://sepolia.base.org';
+    let rpcUrl: string | undefined;
+    if (chainId !== undefined) {
+      const networkConfig = await getNetworkConfigByChainId(chainId);
+      rpcUrl = networkConfig?.rpc_url;
+      if (!rpcUrl) {
+        try {
+          rpcUrl = getRpcUrl(chainId);
+        } catch {
+          rpcUrl = undefined;
+        }
+      }
+    }
+
+    if (!rpcUrl) {
+      console.warn('No RPC URL available to check lock manager status');
+      return false;
+    }
+
     const provider = new ethers.JsonRpcProvider(rpcUrl);
     
     const lockContract = new ethers.Contract(lockAddress, PublicLockABI, provider);
