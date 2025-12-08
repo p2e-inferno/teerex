@@ -54,7 +54,7 @@ serve(async (req) => {
     console.log('[send-post-notification] Querying events table for event_id:', event_id);
     const { data: event, error: evErr } = await supabaseAdmin
       .from('events')
-      .select('id, title, starts_at, lock_address, chain_id, creator_id')
+      .select('id, title, date, lock_address, chain_id, creator_id')
       .eq('id', event_id)
       .maybeSingle();
 
