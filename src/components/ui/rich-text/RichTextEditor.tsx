@@ -49,6 +49,7 @@ export const RichTextEditor: React.FC<RichTextEditorProps> = ({
   const [linkPopoverPosition, setLinkPopoverPosition] = useState({ x: 0, y: 0 });
   const [currentLinkUrl, setCurrentLinkUrl] = useState('');
   const [currentLinkText, setCurrentLinkText] = useState('');
+  const [, setForceUpdate] = useState(0);
 
   const { toast } = useToast();
 
@@ -94,6 +95,10 @@ export const RichTextEditor: React.FC<RichTextEditorProps> = ({
         onChange(sanitized);
       }
     },
+    onTransaction: () => {
+      // Force re-render on every transaction (including stored marks changes)
+      setForceUpdate(prev => prev + 1);
+    },
     editorProps: {
       attributes: {
         class: `prose prose-gray max-w-none focus:outline-none min-h-[120px] p-4 rounded-md border border-gray-300 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 leading-relaxed ${
@@ -129,6 +134,22 @@ export const RichTextEditor: React.FC<RichTextEditorProps> = ({
       editor.commands.setContent(value);
     }
   }, [editor, value]);
+
+  // Helper to check if a mark/node is active OR stored for next character
+  const isMarkActive = (type: string, attrs?: object) => {
+    if (!editor) return false;
+
+    // Check if already active in selection
+    if (editor.isActive(type, attrs)) return true;
+
+    // Check stored marks (for next character to be typed)
+    const { storedMarks } = editor.state;
+    if (storedMarks) {
+      return storedMarks.some(mark => mark.type.name === type);
+    }
+
+    return false;
+  };
 
   const togglePreview = () => {
     setIsPreviewMode(!isPreviewMode);
@@ -247,8 +268,9 @@ export const RichTextEditor: React.FC<RichTextEditorProps> = ({
           type="button"
           variant="ghost"
           size="sm"
+          onMouseDown={(e) => e.preventDefault()}
           onClick={() => editor.chain().focus().toggleBold().run()}
-          className={`h-8 w-8 p-0 ${editor.isActive('bold') ? 'bg-blue-100 text-blue-700' : ''}`}
+          className={`h-8 w-8 p-0 ${isMarkActive('bold') ? 'bg-blue-100 text-blue-700' : ''}`}
           disabled={disabled}
         >
           <Bold className="h-4 w-4" />
@@ -258,8 +280,9 @@ export const RichTextEditor: React.FC<RichTextEditorProps> = ({
           type="button"
           variant="ghost"
           size="sm"
+          onMouseDown={(e) => e.preventDefault()}
           onClick={() => editor.chain().focus().toggleItalic().run()}
-          className={`h-8 w-8 p-0 ${editor.isActive('italic') ? 'bg-blue-100 text-blue-700' : ''}`}
+          className={`h-8 w-8 p-0 ${isMarkActive('italic') ? 'bg-blue-100 text-blue-700' : ''}`}
           disabled={disabled}
         >
           <Italic className="h-4 w-4" />
@@ -269,8 +292,9 @@ export const RichTextEditor: React.FC<RichTextEditorProps> = ({
           type="button"
           variant="ghost"
           size="sm"
+          onMouseDown={(e) => e.preventDefault()}
           onClick={() => editor.chain().focus().toggleStrike().run()}
-          className={`h-8 w-8 p-0 ${editor.isActive('strike') ? 'bg-blue-100 text-blue-700' : ''}`}
+          className={`h-8 w-8 p-0 ${isMarkActive('strike') ? 'bg-blue-100 text-blue-700' : ''}`}
           disabled={disabled}
         >
           <Strikethrough className="h-4 w-4" />
@@ -280,8 +304,9 @@ export const RichTextEditor: React.FC<RichTextEditorProps> = ({
           type="button"
           variant="ghost"
           size="sm"
+          onMouseDown={(e) => e.preventDefault()}
           onClick={() => editor.chain().focus().toggleCode().run()}
-          className={`h-8 w-8 p-0 ${editor.isActive('code') ? 'bg-blue-100 text-blue-700' : ''}`}
+          className={`h-8 w-8 p-0 ${isMarkActive('code') ? 'bg-blue-100 text-blue-700' : ''}`}
           disabled={disabled}
         >
           <Code className="h-4 w-4" />
@@ -293,8 +318,9 @@ export const RichTextEditor: React.FC<RichTextEditorProps> = ({
           type="button"
           variant="ghost"
           size="sm"
+          onMouseDown={(e) => e.preventDefault()}
           onClick={() => editor.chain().focus().toggleHeading({ level: 2 }).run()}
-          className={`h-8 w-8 p-0 ${editor.isActive('heading', { level: 2 }) ? 'bg-blue-100 text-blue-700' : ''}`}
+          className={`h-8 w-8 p-0 ${isMarkActive('heading', { level: 2 }) ? 'bg-blue-100 text-blue-700' : ''}`}
           disabled={disabled}
         >
           <Heading2 className="h-4 w-4" />
@@ -304,8 +330,9 @@ export const RichTextEditor: React.FC<RichTextEditorProps> = ({
           type="button"
           variant="ghost"
           size="sm"
+          onMouseDown={(e) => e.preventDefault()}
           onClick={() => editor.chain().focus().toggleBulletList().run()}
-          className={`h-8 w-8 p-0 ${editor.isActive('bulletList') ? 'bg-blue-100 text-blue-700' : ''}`}
+          className={`h-8 w-8 p-0 ${isMarkActive('bulletList') ? 'bg-blue-100 text-blue-700' : ''}`}
           disabled={disabled}
         >
           <List className="h-4 w-4" />
@@ -315,8 +342,9 @@ export const RichTextEditor: React.FC<RichTextEditorProps> = ({
           type="button"
           variant="ghost"
           size="sm"
+          onMouseDown={(e) => e.preventDefault()}
           onClick={() => editor.chain().focus().toggleOrderedList().run()}
-          className={`h-8 w-8 p-0 ${editor.isActive('orderedList') ? 'bg-blue-100 text-blue-700' : ''}`}
+          className={`h-8 w-8 p-0 ${isMarkActive('orderedList') ? 'bg-blue-100 text-blue-700' : ''}`}
           disabled={disabled}
         >
           <ListOrdered className="h-4 w-4" />
@@ -326,8 +354,9 @@ export const RichTextEditor: React.FC<RichTextEditorProps> = ({
           type="button"
           variant="ghost"
           size="sm"
+          onMouseDown={(e) => e.preventDefault()}
           onClick={() => editor.chain().focus().toggleBlockquote().run()}
-          className={`h-8 w-8 p-0 ${editor.isActive('blockquote') ? 'bg-blue-100 text-blue-700' : ''}`}
+          className={`h-8 w-8 p-0 ${isMarkActive('blockquote') ? 'bg-blue-100 text-blue-700' : ''}`}
           disabled={disabled}
         >
           <Quote className="h-4 w-4" />
@@ -337,8 +366,9 @@ export const RichTextEditor: React.FC<RichTextEditorProps> = ({
           type="button"
           variant="ghost"
           size="sm"
+          onMouseDown={(e) => e.preventDefault()}
           onClick={addLink}
-          className={`h-8 w-8 p-0 ${editor.isActive('link') ? 'bg-blue-100 text-blue-700' : ''}`}
+          className={`h-8 w-8 p-0 ${isMarkActive('link') ? 'bg-blue-100 text-blue-700' : ''}`}
           disabled={disabled}
         >
           <LinkIcon className="h-4 w-4" />
@@ -350,6 +380,7 @@ export const RichTextEditor: React.FC<RichTextEditorProps> = ({
           type="button"
           variant="ghost"
           size="sm"
+          onMouseDown={(e) => e.preventDefault()}
           onClick={() => editor.chain().focus().undo().run()}
           disabled={!editor.can().undo() || disabled}
           className="h-8 w-8 p-0"
@@ -361,6 +392,7 @@ export const RichTextEditor: React.FC<RichTextEditorProps> = ({
           type="button"
           variant="ghost"
           size="sm"
+          onMouseDown={(e) => e.preventDefault()}
           onClick={() => editor.chain().focus().redo().run()}
           disabled={!editor.can().redo() || disabled}
           className="h-8 w-8 p-0"
@@ -374,6 +406,7 @@ export const RichTextEditor: React.FC<RichTextEditorProps> = ({
           type="button"
           variant="ghost"
           size="sm"
+          onMouseDown={(e) => e.preventDefault()}
           onClick={togglePreview}
           className={`h-8 w-8 p-0 ${isPreviewMode ? 'bg-blue-100 text-blue-700' : ''}`}
           disabled={disabled}
