@@ -247,6 +247,9 @@ serve(async (req) => {
       if ("transferable" in formData) {
         eventData.transferable = !!formData.transferable;
       }
+      if ("allow_waitlist" in formData) {
+        eventData.allow_waitlist = !!formData.allow_waitlist;
+      }
     }
 
     console.log("Updating event with data:", eventData);

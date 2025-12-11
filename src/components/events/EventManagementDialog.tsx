@@ -128,13 +128,13 @@ export const EventManagementDialog: React.FC<EventManagementDialogProps> = ({
   useEffect(() => {
     const checkUserLockManager = async () => {
       if (!wallets[0] || !open) return;
-      
+
       try {
         const provider = await wallets[0].getEthereumProvider();
         const ethersProvider = new ethers.BrowserProvider(provider);
         const signer = await ethersProvider.getSigner();
         const userAddress = await signer.getAddress();
-        
+
         const isManager = await checkIfLockManager(event.lock_address, userAddress, event.chain_id);
         setIsLockManager(isManager);
       } catch (error) {
@@ -144,6 +144,11 @@ export const EventManagementDialog: React.FC<EventManagementDialogProps> = ({
 
     checkUserLockManager();
   }, [wallets, event.lock_address, open]);
+
+  // Sync local state with prop changes
+  useEffect(() => {
+    setLocalAllowWaitlist(event.allow_waitlist);
+  }, [event.allow_waitlist]);
 
   const handleAddServiceManager = async () => {
     if (!wallets[0]) {
