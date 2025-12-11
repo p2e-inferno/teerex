@@ -11,12 +11,16 @@ export default defineConfig(({ mode }) => ({
   },
   plugins: [
     react(),
-    mode === 'development' &&
-    componentTagger(),
+    mode === "development" && componentTagger(),
   ].filter(Boolean),
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),
     },
   },
+  esbuild: mode === "production"
+    ? {
+        pure: ["console.log", "console.info", "console.debug"],
+      }
+    : undefined,
 }));

@@ -169,6 +169,64 @@ export type Database = {
           requires_approval?: boolean
         }
       }
+      event_allow_list: {
+        Row: {
+          id: string
+          event_id: string
+          wallet_address: string
+          added_by: string | null
+          created_at: string
+          user_email: string | null
+        }
+        Insert: {
+          id?: string
+          event_id: string
+          wallet_address: string
+          added_by?: string | null
+          created_at?: string
+          user_email?: string | null
+        }
+        Update: {
+          id?: string
+          event_id?: string
+          wallet_address?: string
+          added_by?: string | null
+          created_at?: string
+          user_email?: string | null
+        }
+      }
+      event_allow_list_requests: {
+        Row: {
+          id: string
+          event_id: string
+          user_email: string
+          wallet_address: string
+          status: string
+          created_at: string
+          processed_at: string | null
+          processed_by: string | null
+        }
+        Insert: {
+          id?: string
+          event_id: string
+          user_email: string
+          wallet_address: string
+          status?: string
+          created_at?: string
+          processed_at?: string | null
+          processed_by?: string | null
+        }
+        Update: {
+          id?: string
+          event_id?: string
+          user_email?: string
+          wallet_address?: string
+          status?: string
+          created_at?: string
+          processed_at?: string | null
+          processed_by?: string | null
+        }
+      }
     }
   }
 }
