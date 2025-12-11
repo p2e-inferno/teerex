@@ -5,6 +5,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.50.0";
 import PublicLockV15 from "../_shared/abi/PublicLockV15.json" assert { type: "json" };
 import { sendEmail, getTicketEmail, normalizeEmail } from "../_shared/email-utils.ts";
 import { formatEventDate } from "../_shared/date-utils.ts";
+import { validateChain } from "../_shared/network-helpers.ts";
 
 function json(data: any, status = 200) {
   return new Response(JSON.stringify(data), {
@@ -108,21 +109,16 @@ serve(async (req) => {
       Math.floor(Date.now() / 1000) + 60 * 60 * 24 * 30,
     );
 
-    // Determine RPC URL: DB first, fallback to chain map, then env
+    // Determine RPC URL from network config
     let rpcUrl: string | undefined;
     const chainId = txEvent?.chain_id;
     if (typeof chainId === 'number') {
-      const { data: net } = await supabase
-        .from("network_configs")
-        .select("rpc_url")
-        .eq("chain_id", chainId)
-        .maybeSingle();
-      rpcUrl = net?.rpc_url as string | undefined;
-      if (!rpcUrl) {
-        rpcUrl = ({ 8453: "https://mainnet.base.org", 84532: "https://sepolia.base.org", 1: "https://eth.llamarpc.com", 11155111: "https://ethereum-sepolia-rpc.publicnode.com", 137: "https://polygon.llamarpc.com" } as Record<number, string>)[chainId];
+      const networkConfig = await validateChain(supabase, chainId);
+      if (!networkConfig?.rpc_url) {
+        throw new Error(`RPC URL not configured for chain ${chainId}`);
       }
+      rpcUrl = networkConfig.rpc_url;
     }
-    rpcUrl = rpcUrl ?? (Deno.env.get("PRIMARY_RPC_URL") as string | undefined);
     const serviceWalletPrivateKey: string | undefined = (Deno.env.get("UNLOCK_SERVICE_PRIVATE_KEY") ?? Deno.env.get("SERVICE_WALLET_PRIVATE_KEY") ?? Deno.env.get("SERVICE_PK")) as string | undefined;
 
     if (!rpcUrl) throw new Error("Missing RPC_URL");

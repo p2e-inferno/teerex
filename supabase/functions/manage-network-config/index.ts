@@ -5,6 +5,7 @@ import { corsHeaders, buildPreflightHeaders } from "../_shared/cors.ts";
 import { verifyPrivyToken, getUserWalletAddresses } from "../_shared/privy.ts";
 import { isAnyUserWalletIsLockManagerParallel } from "../_shared/unlock.ts";
 import { SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY } from "../_shared/constants.ts";
+import { validateChain } from "../_shared/network-helpers.ts";
 
 interface NetworkConfigInput {
   chain_id: number;
@@ -36,20 +37,13 @@ async function verifyAdminAccess(privyUserId: string): Promise<void> {
   const primaryChainIdStr = Deno.env.get("VITE_PRIMARY_CHAIN_ID");
   const primaryChainId = primaryChainIdStr ? Number(primaryChainIdStr) : 84532;
 
-  // Get RPC URL from network configs or fallback
+  // Get RPC URL from network configs
   const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
-  const { data: net } = await supabase
-    .from("network_configs")
-    .select("rpc_url")
-    .eq("chain_id", primaryChainId)
-    .maybeSingle();
-
-  const rpcUrl = net?.rpc_url ||
-    (primaryChainId === 8453 ? "https://mainnet.base.org" : "https://sepolia.base.org");
-
-  if (!rpcUrl) {
-    throw new Error("Missing RPC URL for admin verification");
+  const networkConfig = await validateChain(supabase, primaryChainId);
+  if (!networkConfig?.rpc_url) {
+    throw new Error("Network RPC not configured");
   }
+  const rpcUrl = networkConfig.rpc_url;
 
   // Check if any user wallet is admin (parallel)
   const { anyIsManager } = await isAnyUserWalletIsLockManagerParallel(

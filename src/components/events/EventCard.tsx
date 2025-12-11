@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { ImageModal } from '@/components/ui/image-modal';
 import { Calendar, Clock, MapPin, Users, Globe, ExternalLink } from 'lucide-react';
-import { PublishedEvent } from '@/utils/eventUtils';
+import type { PublishedEvent } from '@/types/event';
 import { format } from 'date-fns';
 import { ShareButton } from '@/components/interactions/ShareButton';
 import { RichTextDisplay } from '@/components/ui/rich-text/RichTextDisplay';
@@ -165,10 +165,15 @@ export const EventCard: React.FC<EventCardProps> = ({
       </CardHeader>
       
       <CardContent className="p-6">
-        <div className="mb-3">
+        <div className="mb-3 flex items-center gap-2 flex-wrap">
           <Badge variant="secondary" className="text-xs">
             {event.category}
           </Badge>
+          {((event as any).isAllowList ?? event.has_allow_list) && (
+            <Badge variant="outline" className="text-xs border-blue-200 text-blue-700">
+              Allow List
+            </Badge>
+          )}
         </div>
         
         <h3 

@@ -7,7 +7,8 @@ import { Badge } from '@/components/ui/badge';
 import { Plus, Calendar, TrendingUp, Users, DollarSign, AlertTriangle } from 'lucide-react';
 import { EventCard } from '@/components/events/EventCard';
 import { EventManagementDialog } from '@/components/events/EventManagementDialog';
-import { getUserEvents, PublishedEvent } from '@/utils/eventUtils';
+import { getUserEvents } from '@/utils/eventUtils';
+import type { PublishedEvent } from '@/types/event';
 import { useToast } from '@/hooks/use-toast';
 import { WalletConnectionGate } from '@/components/WalletConnectionGate';
 
@@ -245,6 +246,5 @@ const MyEvents = () => {
 };
 
 export default MyEvents;
-
 
 

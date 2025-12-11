@@ -12,7 +12,7 @@ import { Badge } from '@/components/ui/badge';
 import { Card, CardContent } from '@/components/ui/card';
 import { Switch } from '@/components/ui/switch';
 import { useToast } from '@/hooks/use-toast';
-import { PublishedEvent } from '@/utils/eventUtils';
+import type { PublishedEvent } from '@/types/event';
 import { checkIfLockManager, addLockManager } from '@/utils/lockUtils';
 import { supabase } from '@/integrations/supabase/client';
 import {

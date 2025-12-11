@@ -1,5 +1,5 @@
 import { supabase } from '@/integrations/supabase/client';
-import { EventDraft, PublishedEvent } from '@/types/event';
+import { EventDraft, PublishedDraftEvent } from '@/types/event';
 import { EventFormData } from '@/pages/CreateEvent';
 
 export const uploadEventImage = async (file: File, userId: string): Promise<string | null> => {
@@ -246,7 +246,7 @@ export const getDraft = async (id: string, userId: string): Promise<EventDraft |
   }
 };
 
-export const getPublishedEvent = async (id: string, userId: string): Promise<PublishedEvent | null> => {
+export const getPublishedEvent = async (id: string, userId: string): Promise<PublishedDraftEvent | null> => {
   try {
     if (!userId) {
       return null;

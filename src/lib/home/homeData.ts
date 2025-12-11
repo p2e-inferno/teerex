@@ -1,4 +1,4 @@
-import { PublishedEvent } from '@/utils/eventUtils';
+import type { PublishedEvent } from '@/types/event';
 import { getTotalKeys } from '@/utils/lockUtils';
 import { supabase } from '@/integrations/supabase/client';
 

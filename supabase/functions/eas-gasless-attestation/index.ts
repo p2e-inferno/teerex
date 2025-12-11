@@ -10,6 +10,7 @@ import {
   jwtVerify,
   importSPKI,
 } from "https://deno.land/x/jose@v4.14.4/index.ts";
+import { validateChain } from "../_shared/network-helpers.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -182,7 +183,11 @@ serve(async (req) => {
     }
 
     // 4) Execute gasless attestation via service wallet using EAS SDK
-    const rpcUrl = Deno.env.get('PRIMARY_RPC_URL') ?? (chainId === 8453 ? 'https://mainnet.base.org' : 'https://sepolia.base.org');
+    const networkConfig = await validateChain(supabase, chainId);
+    if (!networkConfig?.rpc_url) {
+      throw new Error('Chain not supported or RPC URL not configured');
+    }
+    const rpcUrl = networkConfig.rpc_url;
     const provider = new JsonRpcProvider(rpcUrl);
     const signer = new Wallet(SERVICE_PK!, provider);
 

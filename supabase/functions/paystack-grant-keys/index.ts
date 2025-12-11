@@ -7,6 +7,7 @@ import { createRemoteJWKSet, jwtVerify, importSPKI } from "https://deno.land/x/j
 import { getUserWalletAddresses } from "../_shared/privy.ts";
 import { sendEmail, getTicketEmail, normalizeEmail } from "../_shared/email-utils.ts";
 import { formatEventDate } from "../_shared/date-utils.ts";
+import { validateChain } from "../_shared/network-helpers.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -69,14 +70,16 @@ serve(async (req) => {
     const status = tx.status || tx.gateway_response?.status;
     if (status !== "success") return new Response(JSON.stringify({ error: "Payment not successful for this reference" }), { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 400 });
 
+    // Validate network config early and cache for reuse
+    const networkConfig = await validateChain(supabase, event.chain_id);
+    if (!networkConfig?.rpc_url) throw new Error("Network RPC not configured");
+
     // Authorization: event creator OR on-chain lock manager
     let authorized = event.creator_id === privyUserId;
     if (!authorized) {
       const userWallets = await getUserWalletAddresses(privyUserId);
       if (userWallets && userWallets.length > 0) {
-        const { data: net, error: netErr } = await supabase.from("network_configs").select("rpc_url").eq("chain_id", event.chain_id).single();
-        if (netErr || !net?.rpc_url) throw new Error("Network RPC not configured");
-        const provider = new ethers.JsonRpcProvider(net.rpc_url);
+        const provider = new ethers.JsonRpcProvider(networkConfig.rpc_url);
         const lock = new ethers.Contract(event.lock_address, PublicLockV15 as any, provider);
         for (const addr of userWallets) {
           const isManager = await lock.isLockManager(addr);
@@ -93,12 +96,8 @@ serve(async (req) => {
     const recipient = userAddressField?.value;
     if (!recipient) throw new Error("User wallet address not found in transaction metadata");
 
-    // RPC URL
-    const { data: netCfg, error: netCfgErr } = await supabase.from("network_configs").select("rpc_url").eq("chain_id", event.chain_id).single();
-    if (netCfgErr || !netCfg?.rpc_url) throw new Error("RPC URL not configured for chain");
-
     // Service wallet
-    const provider = new ethers.JsonRpcProvider(netCfg.rpc_url);
+    const provider = new ethers.JsonRpcProvider(networkConfig.rpc_url);
     const wallet = new ethers.Wallet(UNLOCK_SERVICE_PRIVATE_KEY, provider);
     const lock = new ethers.Contract(event.lock_address, PublicLockV15 as any, wallet);
     const isServiceManager = await lock.isLockManager(wallet.address);

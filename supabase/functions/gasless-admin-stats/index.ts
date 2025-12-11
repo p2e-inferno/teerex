@@ -5,6 +5,7 @@ import { corsHeaders, buildPreflightHeaders } from '../_shared/cors.ts';
 import { verifyPrivyToken, getUserWalletAddresses } from '../_shared/privy.ts';
 import { handleError } from '../_shared/error-handler.ts';
 import { SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY } from '../_shared/constants.ts';
+import { validateChain } from '../_shared/network-helpers.ts';
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
@@ -32,19 +33,14 @@ serve(async (req) => {
 
     // Get primary chain RPC
     const primaryChainId = Deno.env.get("VITE_PRIMARY_CHAIN_ID") ? Number(Deno.env.get("VITE_PRIMARY_CHAIN_ID")) : 84532;
-    const { data: net } = await supabase
-      .from('network_configs')
-      .select('rpc_url')
-      .eq('chain_id', primaryChainId)
-      .maybeSingle();
-
-    const rpcUrl = net?.rpc_url || (primaryChainId === 8453 ? 'https://mainnet.base.org' : 'https://sepolia.base.org');
-    if (!rpcUrl) {
+    const networkConfig = await validateChain(supabase, primaryChainId);
+    if (!networkConfig?.rpc_url) {
       return new Response(
         JSON.stringify({ ok: false, error: 'network_rpc_not_configured' }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 200 }
       );
     }
+    const rpcUrl = networkConfig.rpc_url;
 
     // Check if user is admin lock manager
     const userWallets = await getUserWalletAddresses(privyUserId);

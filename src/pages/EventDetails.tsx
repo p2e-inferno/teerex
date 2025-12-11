@@ -21,7 +21,8 @@ import {
   Twitter,
   Linkedin,
 } from "lucide-react";
-import { getPublishedEventById, PublishedEvent } from "@/utils/eventUtils";
+import { getPublishedEventById } from "@/utils/eventUtils";
+import type { PublishedEvent } from "@/types/event";
 import MetaTags from "@/components/MetaTags";
 import {
   getTotalKeys,

@@ -7,6 +7,7 @@ import { handleError } from '../_shared/error-handler.ts';
 import { getUserWalletAddresses, verifyPrivyToken } from '../_shared/privy.ts';
 import { isAnyUserWalletIsLockManagerParallel } from '../_shared/unlock.ts';
 import { sendEmail, getPostNotificationEmail, normalizeEmail } from '../_shared/email-utils.ts';
+import { validateChain } from '../_shared/network-helpers.ts';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
@@ -64,25 +65,25 @@ serve(async (req) => {
 
     let authorized = event.creator_id === privyUserId;
     if (!authorized) {
-      const { data: net } = await supabaseAdmin
-        .from('network_configs')
-        .select('rpc_url')
-        .eq('chain_id', event.chain_id)
-        .maybeSingle();
+      // Validate chain and get network configuration
+      const networkConfig = await validateChain(supabaseAdmin, event.chain_id);
+      if (!networkConfig) {
+        console.error('[send-post-notification] Chain not supported:', event.chain_id);
+        return new Response(
+          JSON.stringify({ ok: false, error: 'chain_not_supported' }),
+          { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 200 }
+        );
+      }
 
-      const rpcUrl =
-        net?.rpc_url ||
-        ({
-          8453: 'https://mainnet.base.org',
-          84532: 'https://sepolia.base.org',
-          1: 'https://eth.llamarpc.com',
-          11155111: 'https://ethereum-sepolia-rpc.publicnode.com',
-          137: 'https://polygon.llamarpc.com',
-          80002: 'https://rpc-amoy.polygon.technology',
-        } as Record<number, string>)[event.chain_id] ||
-        Deno.env.get('PRIMARY_RPC_URL');
+      if (!networkConfig.rpc_url) {
+        console.error('[send-post-notification] RPC URL not configured for chain:', event.chain_id);
+        return new Response(
+          JSON.stringify({ ok: false, error: 'rpc_not_configured' }),
+          { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 200 }
+        );
+      }
 
-      if (!rpcUrl) throw new Error('rpc_url_missing');
+      const rpcUrl = networkConfig.rpc_url;
 
       const { anyIsManager } = await isAnyUserWalletIsLockManagerParallel(
         event.lock_address,

@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import { usePrivy } from '@privy-io/react-auth';
-import { getUserEvents, PublishedEvent } from '@/utils/eventUtils';
+import { getUserEvents } from '@/utils/eventUtils';
+import type { PublishedEvent } from '@/types/event';
 
 type UseMyEventsListState = {
   events: PublishedEvent[];

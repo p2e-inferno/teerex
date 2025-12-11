@@ -11,6 +11,7 @@ import {
   importSPKI,
 } from "https://deno.land/x/jose@v4.14.4/index.ts";
 import PublicLockV15 from "../_shared/abi/PublicLockV15.json" assert { type: "json" };
+import { validateChain } from "../_shared/network-helpers.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -162,11 +163,9 @@ serve(async (req) => {
     if (eventId && lockAddress) {
       const { data: ev } = await supabase.from('events').select('lock_address, chain_id, title').eq('id', eventId).maybeSingle();
       if ((ev?.lock_address || lockAddress) && (ev?.chain_id || chainId)) {
-        let rpcUrl: string | undefined;
-        const { data: net } = await supabase.from('network_configs').select('rpc_url').eq('chain_id', ev?.chain_id || chainId).maybeSingle();
-        rpcUrl = net?.rpc_url as string | undefined;
-        if (!rpcUrl) rpcUrl = ({ 8453: 'https://mainnet.base.org', 84532: 'https://sepolia.base.org' } as Record<number, string>)[ev?.chain_id || chainId] || Deno.env.get('PRIMARY_RPC_URL') || undefined;
-        if (!rpcUrl) throw new Error('Missing RPC URL');
+        const networkConfig = await validateChain(supabase, ev?.chain_id || chainId);
+        if (!networkConfig?.rpc_url) throw new Error('Missing RPC URL for event chain');
+        const rpcUrl = networkConfig.rpc_url;
         const userWallets = await getUserWalletAddresses(privyUserId);
         const { anyHasKey } = await isAnyUserWalletHasValidKeyParallel(lockAddress || ev!.lock_address, userWallets, rpcUrl);
         if (!anyHasKey) throw new Error('User does not hold a valid ticket for this event');
@@ -174,7 +173,12 @@ serve(async (req) => {
     }
 
     // 5) Execute single attestation via service wallet using TeeRex proxy's attestByDelegation
-    const rpcUrl = Deno.env.get('PRIMARY_RPC_URL') ?? (chainId === 8453 ? 'https://mainnet.base.org' : 'https://sepolia.base.org');
+    // Get network config for main attestation
+    const networkConfig = await validateChain(supabase, chainId);
+    if (!networkConfig?.rpc_url) {
+      throw new Error('Chain not supported or RPC URL not configured');
+    }
+    const rpcUrl = networkConfig.rpc_url;
     const provider = new JsonRpcProvider(rpcUrl);
     const signer = new Wallet(SERVICE_PK!, provider);
 

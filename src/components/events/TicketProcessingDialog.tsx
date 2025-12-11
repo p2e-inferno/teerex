@@ -9,7 +9,7 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
-import { PublishedEvent } from "@/utils/eventUtils";
+import type { PublishedEvent } from "@/types/event";
 import { supabase } from "@/integrations/supabase/client";
 import { AlertCircle, CheckCircle, ExternalLink, Loader2 } from "lucide-react";
 import { format } from "date-fns";
@@ -315,4 +315,3 @@ export const TicketProcessingDialog: React.FC<TicketProcessingDialogProps> = ({
 };
 
 export default TicketProcessingDialog;
-

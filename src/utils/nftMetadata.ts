@@ -1,4 +1,4 @@
-import { PublishedEvent } from './eventUtils';
+import type { PublishedEvent } from '@/types/event';
 
 /**
  * Standard NFT metadata structure following OpenSea standards

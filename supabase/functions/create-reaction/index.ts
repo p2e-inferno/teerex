@@ -9,6 +9,7 @@ import {
   jwtVerify,
   importSPKI,
 } from "https://deno.land/x/jose@v4.14.4/index.ts";
+import { validateChain } from "../_shared/network-helpers.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -110,37 +111,21 @@ serve(async (req) => {
       throw new Error("No wallet addresses found for user");
     }
 
-    // 5. Get RPC URL
-    let rpcUrl: string | undefined;
-    const { data: net } = await supabase
-      .from("network_configs")
-      .select("rpc_url")
-      .eq("chain_id", event.chain_id)
-      .maybeSingle();
-
-    rpcUrl = net?.rpc_url as string | undefined;
-    if (!rpcUrl) {
-      // Fallback to hardcoded RPC URLs
-      rpcUrl = ({
-        8453: "https://mainnet.base.org",
-        84532: "https://sepolia.base.org",
-        1: "https://eth.llamarpc.com",
-        11155111: "https://ethereum-sepolia-rpc.publicnode.com",
-        137: "https://polygon.llamarpc.com",
-        80002: "https://rpc-amoy.polygon.technology",
-      } as Record<number, string>)[event.chain_id] ||
-        Deno.env.get("PRIMARY_RPC_URL") ||
-        undefined;
+    // 5. Validate chain and get network configuration
+    const networkConfig = await validateChain(supabase, event.chain_id);
+    if (!networkConfig) {
+      throw new Error("Chain not supported or not active");
     }
-    if (!rpcUrl) {
-      throw new Error("Missing RPC URL for chain");
+
+    if (!networkConfig.rpc_url) {
+      throw new Error("Network not fully configured (missing RPC URL)");
     }
 
     // 6. Authorization: ONLY key holders (ticket holders) can react
     const { anyHasKey, holder } = await isAnyUserWalletHasValidKeyParallel(
       event.lock_address,
       userWallets,
-      rpcUrl
+      networkConfig.rpc_url
     );
 
     if (!anyHasKey) {

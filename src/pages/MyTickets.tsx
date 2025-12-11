@@ -2,7 +2,8 @@
 import React, { useState, useEffect } from 'react';
 import { useWallets, usePrivy } from '@privy-io/react-auth';
 import { useToast } from '@/hooks/use-toast';
-import { getEventsWithUserTickets, PublishedEvent } from '@/utils/eventUtils';
+import { getEventsWithUserTickets } from '@/utils/eventUtils';
+import type { PublishedEvent } from '@/types/event';
 import { EventCard } from '@/components/events/EventCard';
 import { Loader2, Ticket, User } from 'lucide-react';
 import { Button } from '@/components/ui/button';

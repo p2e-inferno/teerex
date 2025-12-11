@@ -10,7 +10,7 @@ import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Search, Filter, Calendar } from 'lucide-react';
 import { EventCard } from '@/components/events/EventCard';
-import { PublishedEvent } from '@/utils/eventUtils';
+import type { PublishedEvent } from '@/types/event';
 import { useToast } from '@/hooks/use-toast';
 import { EventPurchaseDialog } from '@/components/events/EventPurchaseDialog';
 import { PaystackPaymentDialog } from '@/components/events/PaystackPaymentDialog';

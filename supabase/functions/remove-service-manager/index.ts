@@ -7,6 +7,7 @@ import {
   jwtVerify,
   importSPKI,
 } from "https://deno.land/x/jose@v4.14.4/index.ts";
+import { validateChain } from "../_shared/network-helpers.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -149,9 +150,30 @@ serve(async (req) => {
     const serviceWallet = new ethers.Wallet(UNLOCK_SERVICE_PRIVATE_KEY);
     console.log("Service wallet address:", serviceWallet.address);
 
-    // Connect to Base Sepolia
-    const rpcUrl = "https://sepolia.base.org";
-    const provider = new ethers.JsonRpcProvider(rpcUrl);
+    // Validate chain and get network configuration
+    const networkConfig = await validateChain(supabaseAdmin, event.chain_id);
+    if (!networkConfig) {
+      return new Response(
+        JSON.stringify({ success: false, error: "Chain not supported or not active" }),
+        {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+          status: 400,
+        }
+      );
+    }
+
+    if (!networkConfig.rpc_url) {
+      return new Response(
+        JSON.stringify({ success: false, error: "Network not fully configured (missing RPC URL)" }),
+        {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+          status: 500,
+        }
+      );
+    }
+
+    // Connect using DB-driven RPC URL
+    const provider = new ethers.JsonRpcProvider(networkConfig.rpc_url);
     const connectedWallet = serviceWallet.connect(provider);
 
     // Create lock contract instance

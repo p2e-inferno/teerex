@@ -8,6 +8,7 @@ import {
 } from "https://deno.land/x/jose@v4.14.4/index.ts";
 import { ethers } from "https://esm.sh/ethers@6.14.4";
 import { getUserWalletAddresses } from "../_shared/privy.ts";
+import { validateChain } from "../_shared/network-helpers.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -23,28 +24,6 @@ const PublicLockABI = [
     type: "function",
   },
 ];
-
-// RPC endpoints for different networks
-const getRpcUrl = (chainId: number): string => {
-  switch (chainId) {
-    case 8453: // Base mainnet
-      return "https://mainnet.base.org";
-    case 84532: // Base Sepolia testnet
-      return "https://sepolia.base.org";
-    case 1: // Ethereum mainnet
-      return "https://eth.llamarpc.com";
-    case 11155111: // Ethereum Sepolia
-      return "https://ethereum-sepolia-rpc.publicnode.com";
-    case 137: // Polygon mainnet
-      return "https://polygon.llamarpc.com";
-    case 80002: // Polygon Amoy testnet
-      return "https://rpc-amoy.polygon.technology";
-    default:
-      // Default to Base Sepolia if unknown chain
-      console.warn(`Unknown chain ID: ${chainId}, defaulting to Base Sepolia`);
-      return "https://sepolia.base.org";
-  }
-};
 
 serve(async (req) => {
   if (req.method === "OPTIONS") {
@@ -172,9 +151,30 @@ serve(async (req) => {
     const lockAddress = event.lock_address;
     const chainId = event.chain_id;
 
-    // 5. On-chain authorization: Check if any of the user's wallets is a lock manager
-    const rpcUrl = getRpcUrl(chainId);
-    const provider = new ethers.JsonRpcProvider(rpcUrl);
+    // 5. Validate chain and get network configuration
+    const networkConfig = await validateChain(serviceRoleClient, chainId);
+    if (!networkConfig) {
+      return new Response(
+        JSON.stringify({ error: "Chain not supported or not active" }),
+        {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+          status: 400,
+        }
+      );
+    }
+
+    if (!networkConfig.rpc_url) {
+      return new Response(
+        JSON.stringify({ error: "Network not fully configured (missing RPC URL)" }),
+        {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+          status: 500,
+        }
+      );
+    }
+
+    // 6. On-chain authorization: Check if any of the user's wallets is a lock manager
+    const provider = new ethers.JsonRpcProvider(networkConfig.rpc_url);
     const lockContract = new ethers.Contract(
       lockAddress,
       PublicLockABI,
@@ -211,7 +211,7 @@ serve(async (req) => {
       );
     }
 
-    // 6. If authorized, prepare and perform a partial update only for provided fields
+    // 7. If authorized, prepare and perform a partial update only for provided fields
     const eventData: Record<string, any> = {
       updated_at: new Date().toISOString(),
     };

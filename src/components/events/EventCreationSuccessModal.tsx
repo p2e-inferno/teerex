@@ -19,7 +19,7 @@ import {
   CheckCircle2,
   Plus,
 } from "lucide-react";
-import { PublishedEvent } from "@/utils/eventUtils";
+import type { PublishedEvent } from "@/types/event";
 import { formatEventDateRange } from "@/utils/dateUtils";
 import { ShareButton } from "@/components/interactions/ShareButton";
 import { RichTextDisplay } from "@/components/ui/rich-text/RichTextDisplay";
