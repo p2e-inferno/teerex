@@ -36,6 +36,7 @@ import { AllowListManager } from './AllowListManager';
 import { WaitlistManager } from './WaitlistManager';
 import { useNetworkConfigs } from '@/hooks/useNetworkConfigs';
 import { base, baseSepolia } from 'wagmi/chains';
+import { getDivviBrowserProvider } from '@/lib/wallet/provider';
 
 interface EventManagementDialogProps {
   event: PublishedEvent;
@@ -130,8 +131,7 @@ export const EventManagementDialog: React.FC<EventManagementDialogProps> = ({
       if (!wallets[0] || !open) return;
 
       try {
-        const provider = await wallets[0].getEthereumProvider();
-        const ethersProvider = new ethers.BrowserProvider(provider);
+        const ethersProvider = await getDivviBrowserProvider(wallets[0]);
         const signer = await ethersProvider.getSigner();
         const userAddress = await signer.getAddress();
 
@@ -259,8 +259,7 @@ export const EventManagementDialog: React.FC<EventManagementDialogProps> = ({
     try {
       const { setLockMetadata, getBaseTokenURI, TEEREX_NFT_SYMBOL } = await import('@/utils/lockMetadata');
       
-      const provider = await wallets[0].getEthereumProvider();
-      const ethersProvider = new ethers.BrowserProvider(provider);
+      const ethersProvider = await getDivviBrowserProvider(wallets[0]);
       const signer = await ethersProvider.getSigner();
       
       const baseTokenURI = getBaseTokenURI(event.lock_address);

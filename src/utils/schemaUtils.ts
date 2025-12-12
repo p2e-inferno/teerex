@@ -1,5 +1,6 @@
 import { ethers } from 'ethers';
 import { supabase } from '@/integrations/supabase/client';
+import { getDivviBrowserProvider } from '@/lib/wallet/provider';
 
 // Schema Registry Contract on Base Sepolia
 const SCHEMA_REGISTRY_ADDRESS = '0x4200000000000000000000000000000000000020';
@@ -46,9 +47,7 @@ export const registerSchema = async (params: RegisterSchemaParams): Promise<Sche
       throw new Error('Wallet not connected');
     }
 
-    // Get Ethereum provider
-    const provider = await wallet.getEthereumProvider();
-    const ethersProvider = new ethers.BrowserProvider(provider);
+    const ethersProvider = await getDivviBrowserProvider(wallet);
     const signer = await ethersProvider.getSigner();
 
     // Create Schema Registry contract instance
@@ -247,9 +246,7 @@ export const checkSchemaExists = async (schemaDefinition: string, wallet: any): 
       return { exists: false };
     }
 
-    // Get Ethereum provider
-    const provider = await wallet.getEthereumProvider();
-    const ethersProvider = new ethers.BrowserProvider(provider);
+    const ethersProvider = await getDivviBrowserProvider(wallet);
 
     // Create a contract instance to call the registry
     const schemaRegistryContract = new ethers.Contract(SCHEMA_REGISTRY_ADDRESS, [

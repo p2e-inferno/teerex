@@ -11,6 +11,7 @@ import {
 } from "https://deno.land/x/jose@v4.14.4/index.ts";
 import BatchAttABI from "../_shared/abi/BatchAttestation.json" assert { type: "json" };
 import { validateChain } from "../_shared/network-helpers.ts";
+import { appendDivviTagToCalldataAsync, submitDivviReferralBestEffort } from "../_shared/divvi.ts";
 
 function json(data: any, status = 200) {
   return new Response(JSON.stringify(data), {
@@ -177,15 +178,19 @@ serve(async (req) => {
     const deadline = BigInt(firstDeadline);
     const revocable = Boolean(false);
 
-    const send = async () => (contract as any).createBatchAttestationsByDelegation(
-      ev.lock_address,
-      delegations[0].schema_uid,
-      attestations,
-      signatures,
-      attester,
-      deadline,
-      revocable
-    );
+    const send = async () => {
+      const calldata = contract.interface.encodeFunctionData('createBatchAttestationsByDelegation', [
+        ev.lock_address,
+        delegations[0].schema_uid,
+        attestations,
+        signatures,
+        attester,
+        deadline,
+        revocable,
+      ]);
+      const tagged = await appendDivviTagToCalldataAsync({ data: calldata, user: signer.address as `0x${string}` });
+      return await signer.sendTransaction({ to: contractAddress!, data: tagged });
+    };
 
     if (sse) {
       let id = 0;
@@ -198,6 +203,7 @@ serve(async (req) => {
             controller.enqueue(sseEvent(++id, 'submitted', { txHash: tx.hash }));
             const receipt = await tx.wait();
             controller.enqueue(sseEvent(++id, 'confirmed', { blockNumber: receipt?.blockNumber, txHash: tx.hash }));
+            if (tx?.hash) await submitDivviReferralBestEffort({ txHash: tx.hash, chainId });
 
             const uids: string[] = [];
             try {
@@ -245,6 +251,7 @@ serve(async (req) => {
 
     const tx = await send();
     const receipt = await tx.wait();
+    if (tx?.hash) await submitDivviReferralBestEffort({ txHash: tx.hash, chainId });
 
     const { error: updErr } = await supabase
       .from('attestation_delegations')

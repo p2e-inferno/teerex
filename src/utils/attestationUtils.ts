@@ -2,6 +2,7 @@
 import { ethers } from 'ethers';
 import { EAS, SchemaEncoder } from '@ethereum-attestation-service/eas-sdk';
 import { supabase } from '@/integrations/supabase/client';
+import { getDivviBrowserProvider } from '@/lib/wallet/provider';
 
 // EAS Contract addresses on Base Sepolia
 const EAS_CONTRACT_ADDRESS = '0x4200000000000000000000000000000000000021'; // Base Sepolia EAS
@@ -249,9 +250,7 @@ export const createAttestation = async (params: CreateAttestationParams): Promis
       throw new Error('Schema not found');
     }
 
-    // Get Ethereum provider
-    const provider = await wallet.getEthereumProvider();
-    const ethersProvider = new ethers.BrowserProvider(provider);
+    const ethersProvider = await getDivviBrowserProvider(wallet);
     const signer = await ethersProvider.getSigner();
 
     // Initialize EAS with the Base Sepolia contract address
@@ -461,8 +460,7 @@ export const revokeAttestation = async (
       throw new Error('Invalid attestation UID. Please reload and try again.');
     }
 
-    const provider = await wallet.getEthereumProvider();
-    const ethersProvider = new ethers.BrowserProvider(provider);
+    const ethersProvider = await getDivviBrowserProvider(wallet);
     const signer = await ethersProvider.getSigner();
 
     const easAddress = (chainId && EAS_ADDRESS_BY_CHAIN[chainId]) ? EAS_ADDRESS_BY_CHAIN[chainId] : EAS_CONTRACT_ADDRESS;
