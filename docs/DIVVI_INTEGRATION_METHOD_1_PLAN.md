@@ -250,6 +250,12 @@ Divvi tag takes a single `user` address.
 
 - **Browser wallet transactions**: use `tx.from` (the user address making the transaction).
 - **Server-side (Supabase Edge Functions) transactions**: use the **service wallet address** (the actual transaction sender) as `user`.
+
+## Wagmi/Viem (Optional)
+- TeeRex currently uses the Privy + ethers path for client writes.
+- If wagmi/viem writes are added in the future, use `sendDivviTransaction` (`src/lib/divvi/viem.ts`) and pass the already-known connected wallet address as `account`.
+- Do **not** wrap the wagmi/viem EIP-1193 provider with `wrapEip1193ProviderWithDivvi` if using `sendDivviTransaction` (avoid double-tagging/double-submit).
+
   - This means gasless/fiat activity will attribute to the service wallet as the “user” in Divvi, but still credits your `consumer` identifier.
 
 ## Edge Functions (server-side tx tagging + submit)

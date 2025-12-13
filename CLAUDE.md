@@ -34,11 +34,13 @@ npm run preview          # Preview production build
 ## Environment Configuration
 
 Required environment variables (see `DEVELOPMENT_SETUP.md`):
+- `VITE_DIVVI_CONSUMER_ADDRESS` - Divvi consumer identifier (client)
 - `VITE_SUPABASE_URL` - Supabase project URL
 - `VITE_SUPABASE_ANON_KEY` - Supabase anon key (safe for client)
 - `VITE_PRIVY_APP_ID` - Privy app ID for authentication
 
 Server-side only (Edge Functions):
+- `DIVVI_CONSUMER_ADDRESS` - Divvi consumer identifier (edge functions)
 - `SUPABASE_SERVICE_ROLE_KEY` - For edge functions (sensitive)
 - `PAYSTACK_SECRET_KEY` - Payment processing (sensitive)
 - `UNLOCK_SERVICE_PRIVATE_KEY` - Smart contract interactions (sensitive)
@@ -62,6 +64,12 @@ Server-side only (Edge Functions):
    - Fiat: Paystack payment → webhook → server grants keys via `grantKeys()`
 
 ### Smart Contract Integration
+
+### Divvi Referral Tracking
+- Client writes (Privy + ethers): automatic via `getDivviBrowserProvider` / EIP-1193 wrapper.
+- Wagmi/viem (optional): use `sendDivviTransaction` (`src/lib/divvi/viem.ts`) and pass the connected wallet address as `account`. Do not combine with provider-level wrapping.
+- Edge Function writes: explicit tagging via `supabase/functions/_shared/divvi.ts`.
+
 - **Unlock Protocol**: NFT-based ticketing (locks = events, keys = tickets)
 - **EAS (Ethereum Attestation Service)**: On-chain attestations for:
   - Event attendance (after event ends)

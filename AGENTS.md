@@ -40,8 +40,23 @@ Set these in the Supabase dashboard → Functions → Secrets:
 - `SUPABASE_URL`
 - `SUPABASE_SERVICE_ROLE_KEY`
 - `UNLOCK_SERVICE_PRIVATE_KEY`
+- `DIVVI_CONSUMER_ADDRESS` (Divvi identifier for referral tracking in Edge Functions)
 - Optionally `RPC_URL` if not using `network_configs` or chain fallbacks
 - Privy secrets if required by other functions
+
+## Divvi Referral Tracking (Client + Edge)
+
+Divvi attribution is implemented for:
+- **Client (Privy + ethers)**: automatic via the EIP-1193 wrapper inside `getDivviBrowserProvider` (`src/lib/wallet/provider.ts`).
+- **Edge Functions**: explicit tagging + best-effort submit via `supabase/functions/_shared/divvi.ts`.
+
+### Wagmi/Viem (Optional)
+
+The app currently uses the Privy + ethers path for client writes.
+
+If wagmi/viem write paths are added later, use the explicit helper `sendDivviTransaction` (`src/lib/divvi/viem.ts`) and pass the already-known connected wallet address as `account`.
+
+Do **not** combine wagmi provider-level wrapping (`wrapEip1193ProviderWithDivvi`) with `sendDivviTransaction` to avoid double-tagging and double-submit.
 
 ## RLS and Client Polling
 
@@ -243,4 +258,3 @@ COMMENT ON INDEX idx_table_foreign_key
 - See `CLAUDE.md` → Database Performance Best Practices for detailed examples
 - Supabase RLS docs: https://supabase.com/docs/guides/database/postgres/row-level-security
 - Performance optimization: https://supabase.com/docs/guides/database/database-linter
-
