@@ -301,13 +301,6 @@ export const EventBasicInfo: React.FC<EventBasicInfoProps> = ({
     fileInputRef.current?.click();
   };
 
-  const handleContinue = () => {
-    if (isValid) {
-      console.log('Basic info is valid, proceeding to next step');
-      onNext();
-    }
-  };
-
   return (
     <div className="space-y-6">
       <div>

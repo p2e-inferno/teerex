@@ -17,7 +17,7 @@ import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
 import { useMyEventsList } from '@/hooks/useMyEventsList';
-import { useEventWaitlist, WaitlistFilter, WaitlistEntry } from '@/hooks/useEventWaitlist';
+import { useEventWaitlist, WaitlistFilter } from '@/hooks/useEventWaitlist';
 import { usePrivy } from '@privy-io/react-auth';
 
 interface WaitlistManagerProps {

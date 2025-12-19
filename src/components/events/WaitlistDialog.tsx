@@ -80,7 +80,7 @@ export const WaitlistDialog: React.FC<WaitlistDialogProps> = ({ event, isOpen, o
                 });
               }
             } catch (err) {
-              console.warn('[WAITLIST] Failed to trigger confirmation email on duplicate:', err?.message || err);
+              console.warn('[WAITLIST] Failed to trigger confirmation email on duplicate:', err instanceof Error ? err.message : String(err));
             }
           })();
         } else {

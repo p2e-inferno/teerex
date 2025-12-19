@@ -30,8 +30,6 @@ interface EventInteractionsDialogProps {
 export const EventInteractionsDialog: React.FC<EventInteractionsDialogProps> = ({
   open,
   onOpenChange,
-  eventId,
-  lockAddress,
   creatorAddress,
   posts,
   isLoading,

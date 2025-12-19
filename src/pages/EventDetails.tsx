@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -25,9 +25,7 @@ import { getPublishedEventById } from "@/utils/eventUtils";
 import type { PublishedEvent } from "@/types/event";
 import MetaTags from "@/components/MetaTags";
 import {
-  getTotalKeys,
   getMaxKeysPerAddress,
-  checkKeyOwnership,
   getTransferabilityStatus,
 } from "@/utils/lockUtils";
 import { EventPurchaseDialog } from "@/components/events/EventPurchaseDialog";
@@ -36,9 +34,6 @@ import { TicketProcessingDialog } from "@/components/events/TicketProcessingDial
 import { PaymentMethodDialog } from "@/components/events/PaymentMethodDialog";
 import { WaitlistDialog } from "@/components/events/WaitlistDialog";
 // import { AttestationButton } from "@/components/attestations/AttestationButton";
-import { useAttestations } from "@/hooks/useAttestations";
-import { useTeeRexDelegatedAttestation } from "@/hooks/useTeeRexDelegatedAttestation";
-import { useAttestationEncoding } from "@/hooks/useAttestationEncoding";
 import { supabase } from "@/integrations/supabase/client";
 import { base, baseSepolia } from "wagmi/chains";
 import { EventAttestationCard } from "@/components/attestations/EventAttestationCard";
@@ -50,7 +45,9 @@ import { getAttestationSchemas, isValidAttestationUid, isAttestationRevocableOnC
 import { useEventAttestationState } from "@/hooks/useEventAttestationState";
 import { getDisableMessage } from "@/utils/attestationMessages";
 import { getBatchAttestationAddress } from "@/lib/config/contract-config";
-import { format } from "date-fns";
+import { useAttestations } from "@/hooks/useAttestations";
+import { useTeeRexDelegatedAttestation } from "@/hooks/useTeeRexDelegatedAttestation";
+import { useAttestationEncoding } from "@/hooks/useAttestationEncoding";
 import { formatEventDateRange } from "@/utils/dateUtils";
 import { useEventTicketRealtime } from "@/hooks/useEventTicketRealtime";
 import { useNetworkConfigs } from "@/hooks/useNetworkConfigs";
@@ -73,7 +70,7 @@ const EventDetails = () => {
   const wallet = wallets[0];
   const { revokeEventAttestation } = useAttestations();
   const { signTeeRexAttestation } = useTeeRexDelegatedAttestation();
-  const { encodeEventLikeData, encodeEventAttendanceData } = useAttestationEncoding();
+  const { encodeEventAttendanceData, encodeEventLikeData } = useAttestationEncoding();
   const { networks } = useNetworkConfigs();
 
   const [event, setEvent] = useState<PublishedEvent | null>(null);
@@ -84,7 +81,7 @@ const EventDetails = () => {
   const [transferFeeBps, setTransferFeeBps] = useState<number | null>(null);
 
   // Real-time ticket count subscription
-  const { ticketsSold: keysSold, isLoading: isLoadingTickets } = useEventTicketRealtime({
+  const { ticketsSold: keysSold } = useEventTicketRealtime({
     eventId: event?.id || '',
     lockAddress: event?.lock_address || '',
     chainId: event?.chain_id || baseSepolia.id,
@@ -100,7 +97,6 @@ const EventDetails = () => {
     | "waitlist"
   >("none");
   const [paymentData, setPaymentData] = useState<any>(null);
-  const [isLiked, setIsLiked] = useState(false);
   const [attendanceSchemaUid, setAttendanceSchemaUid] = useState<string | null>(
     null
   );
@@ -792,7 +788,7 @@ const EventDetails = () => {
       <MetaTags
         title={`${event.title} - TeeRex Event`}
         description={event.description || `Join us for ${event.title} on TeeRex. ${event.location ? `Location: ${event.location}. ` : ''}${event.price ? `Price: ${event.price} ${event.currency}. ` : ''}Limited tickets available!`}
-        image={event.image_url}
+        image={event.image_url || undefined}
         url={window.location.href}
         type="event"
       />
@@ -1300,31 +1296,6 @@ const EventDetails = () => {
     </div>
     </>
   );
-};
-
-// Temporary debug function - can be called from browser console
-(window as any).grantKeysManually = async () => {
-  const supabase = (await import("@/integrations/supabase/client")).supabase;
-  try {
-    const { data, error } = await supabase.functions.invoke(
-      "paystack-grant-keys",
-      {
-        body: {
-          transactionReference:
-            "TeeRex-d7928d4b-02f0-47b5-b9f0-dcff259b086a-1751938091432",
-        },
-      }
-    );
-
-    if (error) {
-      console.error("Error:", error);
-      return;
-    }
-
-    console.log("Success:", data);
-  } catch (err) {
-    console.error("Failed:", err);
-  }
 };
 
 export default EventDetails;

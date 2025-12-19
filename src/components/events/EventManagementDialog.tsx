@@ -31,7 +31,6 @@ import {
   Info,
   Image
 } from 'lucide-react';
-import { ethers } from 'ethers';
 import { AllowListManager } from './AllowListManager';
 import { WaitlistManager } from './WaitlistManager';
 import { useNetworkConfigs } from '@/hooks/useNetworkConfigs';

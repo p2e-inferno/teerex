@@ -12,7 +12,6 @@ import {
   AlertTriangle,
   ThumbsUp,
   ThumbsDown,
-  CheckCircle,
   Clock,
   Award
 } from 'lucide-react';

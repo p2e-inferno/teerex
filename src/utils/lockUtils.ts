@@ -1,7 +1,7 @@
 
 import { parseEther, parseUnits } from 'viem';
 import { base, baseSepolia } from 'wagmi/chains';
-import { getRpcUrl, getExplorerTxUrl, getTokenAddress, getTokenAddressAsync, ZERO_ADDRESS, getNetworkConfigByChainId } from '@/lib/config/network-config';
+import { getRpcUrl, getExplorerTxUrl, getTokenAddressAsync, ZERO_ADDRESS, getNetworkConfigByChainId } from '@/lib/config/network-config';
 import { ethers } from 'ethers';
 import { supabase } from '@/integrations/supabase/client';
 import { getDivviBrowserProvider, getDivviEip1193Provider } from '@/lib/wallet/provider';
@@ -380,10 +380,10 @@ export const checkIfLockManager = async (
       throw new Error('Invalid manager address.');
     }
 
-    let rpcUrl: string | undefined;
+    let rpcUrl: string | undefined = undefined;
     if (chainId !== undefined) {
       const networkConfig = await getNetworkConfigByChainId(chainId);
-      rpcUrl = networkConfig?.rpc_url;
+      rpcUrl = networkConfig?.rpc_url || undefined;
       if (!rpcUrl) {
         try {
           rpcUrl = getRpcUrl(chainId);

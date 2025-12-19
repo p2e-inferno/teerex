@@ -212,7 +212,7 @@ const Drafts = () => {
         const lockAddress = (error as any).lockAddress;
         const eventTitle = (error as any).eventTitle;
 
-        toast({
+        const toastInstance = toast({
           title: "Event Already Exists",
           description: (
             <div className="space-y-2">
@@ -225,7 +225,7 @@ const Drafts = () => {
                 <Button
                   size="sm"
                   onClick={() => {
-                    toast.dismiss();
+                    toastInstance.dismiss();
                     navigate(`/event/${lockAddress}`);
                   }}
                 >
@@ -235,7 +235,7 @@ const Drafts = () => {
                   size="sm"
                   variant="outline"
                   onClick={() => {
-                    toast.dismiss();
+                    toastInstance.dismiss();
                     navigate('/my-events');
                   }}
                 >

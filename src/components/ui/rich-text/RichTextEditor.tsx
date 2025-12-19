@@ -106,7 +106,7 @@ export const RichTextEditor: React.FC<RichTextEditorProps> = ({
         }`,
         placeholder
       },
-      handleClick: (view, pos, event) => {
+      handleClick: (_view, _pos, event) => {
         // Handle link clicks to show popover
         const target = event.target as HTMLElement;
         const linkElement = target.closest('a');
@@ -117,7 +117,7 @@ export const RichTextEditor: React.FC<RichTextEditorProps> = ({
         }
         return false;
       },
-      handleKeyDown: (view, event) => {
+      handleKeyDown: (_view, event) => {
         // Allow Shift+Enter for line breaks, Enter for new paragraphs
         if (event.key === 'Enter' && !event.shiftKey) {
           // Normal Enter - create new paragraph with controlled spacing

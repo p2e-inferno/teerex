@@ -10,7 +10,7 @@ import { TicketSettingsDisplay } from '@/components/create-event/TicketSettingsD
 import { EventPreview } from '@/components/create-event/EventPreview';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
-import { ChevronLeft, ChevronRight, ExternalLink } from 'lucide-react';
+import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { deployLock, updateLockTransferability } from '@/utils/lockUtils';
 import { savePublishedEvent } from '@/utils/eventUtils';
@@ -40,6 +40,8 @@ export interface EventFormData {
   paymentMethod: 'free' | 'crypto' | 'fiat';
   category: string;
   imageUrl: string;
+  imageCropX?: number;
+  imageCropY?: number;
   chainId?: number;
   // Ticket validity duration
   ticketDuration: 'event' | '30' | '365' | 'unlimited' | 'custom';
@@ -754,7 +756,7 @@ const CreateEvent = () => {
       formData,
       updateFormData,
       onNext: nextStep,
-      editingEventId
+      editingEventId: editingEventId || undefined
     };
 
     switch (currentStep) {

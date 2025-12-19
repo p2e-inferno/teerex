@@ -1,6 +1,6 @@
-﻿import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { usePrivy } from '@privy-io/react-auth';
-import { useNavigate, Navigate } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -59,11 +59,7 @@ const MyEvents = () => {
     return event.payment_methods?.includes('fiat') && !event.service_manager_added;
   };
 
-  // Calculate stats
-  const totalEvents = events.length;
-  const totalCapacity = events.reduce((sum, event) => sum + event.capacity, 0);
-  const freeEvents = events.filter(event => event.currency === 'FREE').length;
-  const paidEvents = events.filter(event => event.currency !== 'FREE').length;
+  // Calculate stats (unused but preserved for future use)
 
   if (isLoading) {
     return (

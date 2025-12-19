@@ -4,12 +4,8 @@ import {
 } from "@divvi/referral-sdk";
 import { waitForReceipt, type Eip1193Provider } from "./receipt";
 
-type ReferralTagFn = (args: {
-  user: `0x${string}`;
-  consumer: `0x${string}`;
-}) => string;
-
-type SubmitReferralFn = (args: { txHash: string; chainId: number }) => Promise<any>;
+type ReferralTagFn = typeof sdkGetReferralTag;
+type SubmitReferralFn = typeof sdkSubmitReferral;
 
 export type DivviWrapOptions = {
   consumer: `0x${string}`;
@@ -23,7 +19,7 @@ export type DivviWrapOptions = {
 const WRAPPED_PROVIDERS = new WeakMap<Eip1193Provider, Eip1193Provider>();
 
 const strip0x = (hex: string) => (hex.startsWith("0x") ? hex.slice(2) : hex);
-const isHex = (hex: unknown) =>
+const isHex = (hex: unknown): hex is `0x${string}` =>
   typeof hex === "string" && /^0x[0-9a-fA-F]*$/.test(hex);
 const isEvenHexLength = (hex: string) => strip0x(hex).length % 2 === 0;
 
@@ -35,7 +31,7 @@ export function wrapEip1193ProviderWithDivvi(
   if (existing) return existing;
 
   const getReferralTag = opts.getReferralTag ?? sdkGetReferralTag;
-  const submitReferral = opts.submitReferral ?? sdkSubmitReferral;
+  const submitReferral: SubmitReferralFn = opts.submitReferral ?? sdkSubmitReferral;
   const defaultIsWriteTx = (tx: any) => Boolean(tx?.to);
 
   const wrapped: Eip1193Provider = {
@@ -85,7 +81,7 @@ export function wrapEip1193ProviderWithDivvi(
         }
       }
 
-      const txHash: string = await provider.request({ method, params: [tx] });
+      const txHash = (await provider.request({ method, params: [tx] })) as string;
 
       void (async () => {
         try {
@@ -98,6 +94,7 @@ export function wrapEip1193ProviderWithDivvi(
           }
 
           if (!effectiveChainId || !Number.isFinite(effectiveChainId)) return;
+          if (!isHex(txHash) || txHash === "0x") return;
           await waitForReceipt(provider, txHash);
           await submitReferral({ txHash, chainId: effectiveChainId });
         } catch (e) {
@@ -112,4 +109,3 @@ export function wrapEip1193ProviderWithDivvi(
   WRAPPED_PROVIDERS.set(provider, wrapped);
   return wrapped;
 }
-

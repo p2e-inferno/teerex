@@ -9,9 +9,8 @@ interface PostHeaderProps {
   isCreator: boolean;
 }
 
-export const PostHeader: React.FC<PostHeaderProps> = ({ post, isCreator }) => {
+export const PostHeader: React.FC<PostHeaderProps> = ({ post }) => {
   const timeAgo = formatDistanceToNow(new Date(post.created_at), { addSuffix: true });
-  const shortAddress = `${post.creator_address.slice(0, 6)}...${post.creator_address.slice(-4)}`;
 
   return (
     <div className="flex items-start justify-between">

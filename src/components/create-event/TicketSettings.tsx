@@ -68,44 +68,6 @@ export const TicketSettings: React.FC<TicketSettingsProps> = ({
     }
   }, [fiatEnabled, formData.paymentMethod, updateFormData]);
 
-  const handleContinue = () => {
-    if (!fiatEnabled && formData.paymentMethod === 'fiat') {
-      alert('Fiat checkout is temporarily unavailable.');
-      return;
-    }
-    if (formData.paymentMethod === 'fiat') {
-      const pk = (import.meta as any).env?.VITE_PAYSTACK_PUBLIC_KEY as string | undefined;
-      if (!pk) {
-        alert('PAYSTACK public key not configured. Please set VITE_PAYSTACK_PUBLIC_KEY.');
-        return;
-      }
-      if (!formData.ngnPrice || formData.ngnPrice <= 0) {
-        alert('Please enter a valid NGN price for fiat payments');
-        return;
-      }
-    }
-    if (formData.paymentMethod === 'crypto') {
-      if (!formData.price || formData.price <= 0) {
-        alert('Please enter a valid price for crypto payments');
-        return;
-      }
-      // USDC requires minimum $1 due to token decimals and practical considerations
-      if (formData.currency === 'USDC' && formData.price < 1) {
-        alert('USDC payments require a minimum price of $1');
-        return;
-      }
-    }
-    // Validate custom duration
-    if (formData.ticketDuration === 'custom') {
-      if (!formData.customDurationDays || formData.customDurationDays <= 0) {
-        alert('Please enter a valid custom duration (at least 1 day)');
-        return;
-      }
-    }
-    console.log('Ticket settings completed, proceeding to next step');
-    onNext();
-  };
-
   return (
     <div className="space-y-6">
       <div>
