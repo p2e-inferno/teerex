@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useEditor, EditorContent } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import Link from '@tiptap/extension-link';
@@ -50,8 +50,24 @@ export const RichTextEditor: React.FC<RichTextEditorProps> = ({
   const [currentLinkUrl, setCurrentLinkUrl] = useState('');
   const [currentLinkText, setCurrentLinkText] = useState('');
   const [, setForceUpdate] = useState(0);
+  const lastEmittedValueRef = useRef<string>(value);
+  const rafUpdateRef = useRef<number | null>(null);
 
   const { toast } = useToast();
+
+  const sanitizeHtml = (html: string) => DOMPurify.sanitize(html, {
+    ALLOWED_TAGS: [
+      'p', 'br', 'strong', 'em', 'u', 's', 'code', 'pre',
+      'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
+      'ul', 'ol', 'li',
+      'blockquote', 'a',
+      'span'
+    ],
+    ALLOWED_ATTR: [
+      'href', 'target', 'rel',
+      'class', 'style'
+    ]
+  });
 
   const editor = useEditor({
     extensions: [
@@ -78,26 +94,29 @@ export const RichTextEditor: React.FC<RichTextEditorProps> = ({
     onUpdate: ({ editor }) => {
       if (!disabled) {
         const html = editor.getHTML();
-        // Sanitize HTML content
-        const sanitized = DOMPurify.sanitize(html, {
-          ALLOWED_TAGS: [
-            'p', 'br', 'strong', 'em', 'u', 's', 'code', 'pre',
-            'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
-            'ul', 'ol', 'li',
-            'blockquote', 'a',
-            'span'
-          ],
-          ALLOWED_ATTR: [
-            'href', 'target', 'rel',
-            'class', 'style'
-          ]
-        });
+        lastEmittedValueRef.current = html;
+        onChange(html);
+      }
+    },
+    onBlur: ({ editor }) => {
+      if (disabled) return;
+      if (isLinkDialogOpen) return;
+      const html = editor.getHTML();
+      const sanitized = sanitizeHtml(html);
+      if (sanitized !== html) {
+        editor.commands.setContent(sanitized, { emitUpdate: false });
+        lastEmittedValueRef.current = sanitized;
         onChange(sanitized);
       }
     },
     onTransaction: () => {
-      // Force re-render on every transaction (including stored marks changes)
-      setForceUpdate(prev => prev + 1);
+      if (rafUpdateRef.current !== null) {
+        return;
+      }
+      rafUpdateRef.current = window.requestAnimationFrame(() => {
+        setForceUpdate(prev => prev + 1);
+        rafUpdateRef.current = null;
+      });
     },
     editorProps: {
       attributes: {
@@ -105,6 +124,18 @@ export const RichTextEditor: React.FC<RichTextEditorProps> = ({
           disabled ? 'bg-gray-50 cursor-not-allowed' : 'bg-white'
         }`,
         placeholder
+      },
+      handlePaste: (_view, event) => {
+        if (disabled) return false;
+        if (!editor) return false;
+        const clipboardEvent = event as ClipboardEvent;
+        const html = clipboardEvent.clipboardData?.getData('text/html');
+        if (!html) return false;
+        const sanitized = sanitizeHtml(html);
+        if (!sanitized.trim()) return false;
+        clipboardEvent.preventDefault();
+        editor.chain().focus().insertContent(sanitized).run();
+        return true;
       },
       handleClick: (_view, _pos, event) => {
         // Handle link clicks to show popover
@@ -130,10 +161,22 @@ export const RichTextEditor: React.FC<RichTextEditorProps> = ({
 
   // Sync editor content when value prop changes
   useEffect(() => {
-    if (editor && value !== editor.getHTML()) {
-      editor.commands.setContent(value);
+    if (!editor) return;
+    if (value === lastEmittedValueRef.current) return;
+    if (value !== editor.getHTML()) {
+      editor.commands.setContent(value, { emitUpdate: false });
+      lastEmittedValueRef.current = value;
     }
   }, [editor, value]);
+
+  useEffect(() => {
+    return () => {
+      if (rafUpdateRef.current !== null) {
+        window.cancelAnimationFrame(rafUpdateRef.current);
+        rafUpdateRef.current = null;
+      }
+    };
+  }, []);
 
   // Helper to check if a mark/node is active OR stored for next character
   const isMarkActive = (type: string, attrs?: object) => {
@@ -263,14 +306,14 @@ export const RichTextEditor: React.FC<RichTextEditorProps> = ({
   return (
     <div className={`space-y-2 ${className}`}>
       {/* Toolbar */}
-      <div className="flex flex-wrap items-center gap-1 p-2 bg-gray-50 rounded-t-md border border-gray-300 border-b-0">
+      <div className="flex flex-nowrap sm:flex-wrap items-center gap-1 p-2 bg-gray-50 rounded-t-md border border-gray-300 border-b-0 overflow-x-auto">
         <Button
           type="button"
           variant="ghost"
           size="sm"
           onMouseDown={(e) => e.preventDefault()}
           onClick={() => editor.chain().focus().toggleBold().run()}
-          className={`h-8 w-8 p-0 ${isMarkActive('bold') ? 'bg-blue-100 text-blue-700' : ''}`}
+          className={`h-10 w-10 p-0 sm:h-8 sm:w-8 ${isMarkActive('bold') ? 'bg-blue-100 text-blue-700' : ''}`}
           disabled={disabled}
         >
           <Bold className="h-4 w-4" />
@@ -282,7 +325,7 @@ export const RichTextEditor: React.FC<RichTextEditorProps> = ({
           size="sm"
           onMouseDown={(e) => e.preventDefault()}
           onClick={() => editor.chain().focus().toggleItalic().run()}
-          className={`h-8 w-8 p-0 ${isMarkActive('italic') ? 'bg-blue-100 text-blue-700' : ''}`}
+          className={`h-10 w-10 p-0 sm:h-8 sm:w-8 ${isMarkActive('italic') ? 'bg-blue-100 text-blue-700' : ''}`}
           disabled={disabled}
         >
           <Italic className="h-4 w-4" />
@@ -294,7 +337,7 @@ export const RichTextEditor: React.FC<RichTextEditorProps> = ({
           size="sm"
           onMouseDown={(e) => e.preventDefault()}
           onClick={() => editor.chain().focus().toggleStrike().run()}
-          className={`h-8 w-8 p-0 ${isMarkActive('strike') ? 'bg-blue-100 text-blue-700' : ''}`}
+          className={`h-10 w-10 p-0 sm:h-8 sm:w-8 ${isMarkActive('strike') ? 'bg-blue-100 text-blue-700' : ''}`}
           disabled={disabled}
         >
           <Strikethrough className="h-4 w-4" />
@@ -306,7 +349,7 @@ export const RichTextEditor: React.FC<RichTextEditorProps> = ({
           size="sm"
           onMouseDown={(e) => e.preventDefault()}
           onClick={() => editor.chain().focus().toggleCode().run()}
-          className={`h-8 w-8 p-0 ${isMarkActive('code') ? 'bg-blue-100 text-blue-700' : ''}`}
+          className={`h-10 w-10 p-0 sm:h-8 sm:w-8 ${isMarkActive('code') ? 'bg-blue-100 text-blue-700' : ''}`}
           disabled={disabled}
         >
           <Code className="h-4 w-4" />
@@ -320,7 +363,7 @@ export const RichTextEditor: React.FC<RichTextEditorProps> = ({
           size="sm"
           onMouseDown={(e) => e.preventDefault()}
           onClick={() => editor.chain().focus().toggleHeading({ level: 2 }).run()}
-          className={`h-8 w-8 p-0 ${isMarkActive('heading', { level: 2 }) ? 'bg-blue-100 text-blue-700' : ''}`}
+          className={`h-10 w-10 p-0 sm:h-8 sm:w-8 ${isMarkActive('heading', { level: 2 }) ? 'bg-blue-100 text-blue-700' : ''}`}
           disabled={disabled}
         >
           <Heading2 className="h-4 w-4" />
@@ -332,7 +375,7 @@ export const RichTextEditor: React.FC<RichTextEditorProps> = ({
           size="sm"
           onMouseDown={(e) => e.preventDefault()}
           onClick={() => editor.chain().focus().toggleBulletList().run()}
-          className={`h-8 w-8 p-0 ${isMarkActive('bulletList') ? 'bg-blue-100 text-blue-700' : ''}`}
+          className={`h-10 w-10 p-0 sm:h-8 sm:w-8 ${isMarkActive('bulletList') ? 'bg-blue-100 text-blue-700' : ''}`}
           disabled={disabled}
         >
           <List className="h-4 w-4" />
@@ -344,7 +387,7 @@ export const RichTextEditor: React.FC<RichTextEditorProps> = ({
           size="sm"
           onMouseDown={(e) => e.preventDefault()}
           onClick={() => editor.chain().focus().toggleOrderedList().run()}
-          className={`h-8 w-8 p-0 ${isMarkActive('orderedList') ? 'bg-blue-100 text-blue-700' : ''}`}
+          className={`h-10 w-10 p-0 sm:h-8 sm:w-8 ${isMarkActive('orderedList') ? 'bg-blue-100 text-blue-700' : ''}`}
           disabled={disabled}
         >
           <ListOrdered className="h-4 w-4" />
@@ -356,7 +399,7 @@ export const RichTextEditor: React.FC<RichTextEditorProps> = ({
           size="sm"
           onMouseDown={(e) => e.preventDefault()}
           onClick={() => editor.chain().focus().toggleBlockquote().run()}
-          className={`h-8 w-8 p-0 ${isMarkActive('blockquote') ? 'bg-blue-100 text-blue-700' : ''}`}
+          className={`h-10 w-10 p-0 sm:h-8 sm:w-8 ${isMarkActive('blockquote') ? 'bg-blue-100 text-blue-700' : ''}`}
           disabled={disabled}
         >
           <Quote className="h-4 w-4" />
@@ -368,7 +411,7 @@ export const RichTextEditor: React.FC<RichTextEditorProps> = ({
           size="sm"
           onMouseDown={(e) => e.preventDefault()}
           onClick={addLink}
-          className={`h-8 w-8 p-0 ${isMarkActive('link') ? 'bg-blue-100 text-blue-700' : ''}`}
+          className={`h-10 w-10 p-0 sm:h-8 sm:w-8 ${isMarkActive('link') ? 'bg-blue-100 text-blue-700' : ''}`}
           disabled={disabled}
         >
           <LinkIcon className="h-4 w-4" />
@@ -383,7 +426,7 @@ export const RichTextEditor: React.FC<RichTextEditorProps> = ({
           onMouseDown={(e) => e.preventDefault()}
           onClick={() => editor.chain().focus().undo().run()}
           disabled={!editor.can().undo() || disabled}
-          className="h-8 w-8 p-0"
+          className="h-10 w-10 p-0 sm:h-8 sm:w-8"
         >
           <Undo className="h-4 w-4" />
         </Button>
@@ -395,7 +438,7 @@ export const RichTextEditor: React.FC<RichTextEditorProps> = ({
           onMouseDown={(e) => e.preventDefault()}
           onClick={() => editor.chain().focus().redo().run()}
           disabled={!editor.can().redo() || disabled}
-          className="h-8 w-8 p-0"
+          className="h-10 w-10 p-0 sm:h-8 sm:w-8"
         >
           <Redo className="h-4 w-4" />
         </Button>
@@ -408,7 +451,7 @@ export const RichTextEditor: React.FC<RichTextEditorProps> = ({
           size="sm"
           onMouseDown={(e) => e.preventDefault()}
           onClick={togglePreview}
-          className={`h-8 w-8 p-0 ${isPreviewMode ? 'bg-blue-100 text-blue-700' : ''}`}
+          className={`h-10 w-10 p-0 sm:h-8 sm:w-8 ${isPreviewMode ? 'bg-blue-100 text-blue-700' : ''}`}
           disabled={disabled}
           title={isPreviewMode ? 'Switch to Edit Mode' : 'Preview Formatted Content'}
         >
@@ -417,9 +460,21 @@ export const RichTextEditor: React.FC<RichTextEditorProps> = ({
       </div>
 
       {/* Editor/Preview Content */}
-      <div className="min-h-[120px] rounded-b-md border border-t-0 border-gray-300 overflow-hidden">
+      <div className="min-h-[120px] rounded-b-md border border-t-0 border-gray-300 overflow-visible">
+        <div
+          className={`flex items-center justify-between gap-2 px-3 py-2 text-xs border-b border-gray-200 ${
+            isPreviewMode ? 'bg-gray-50 text-gray-600' : 'bg-blue-50 text-blue-700'
+          }`}
+        >
+          <span className="font-medium">
+            {isPreviewMode ? 'Preview mode' : 'Edit mode'}
+          </span>
+          <span className="text-muted-foreground">
+            {isPreviewMode ? 'Tap the pencil to edit' : 'Tap the eye to preview'}
+          </span>
+        </div>
         {isPreviewMode ? (
-          <div className="p-4 bg-white min-h-[120px]">
+          <div className="p-4 bg-gray-50 min-h-[120px]">
             <RichTextDisplay content={editor.getHTML()} />
           </div>
         ) : (

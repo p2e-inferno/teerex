@@ -168,6 +168,8 @@ export interface UseTicketVerificationReturn {
   hasTicket: boolean;
   isChecking: boolean;
   ticketCount: number;
+  error: Error | null;
+  refetch: () => void;
 }
 
 export interface UseCreatorPermissionsReturn {

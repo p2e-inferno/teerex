@@ -11,7 +11,8 @@
       "WebFetch(domain:supabase.com)",
       "Bash(test:*)",
       "Bash(npm install:*)",
-      "mcp__supabase__deploy_edge_function"
+      "mcp__supabase__deploy_edge_function",
+      "Bash(supabase functions deploy:*)"
     ],
     "deny": [],
     "ask": []

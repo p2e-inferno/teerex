@@ -57,10 +57,13 @@ export async function appendDivviTagToCalldataAsync(args: {
     user: args.user,
     consumer: consumer as `0x${string}`,
   });
-  if (!isHex(tag) || tag === '0x') return args.data;
-  if (strip0x(tag).length % 2 !== 0) return args.data;
 
-  return (args.data as string) + strip0x(tag);
+  // SDK may return tag with or without 0x prefix - handle both
+  const tagHex = strip0x(tag);
+  if (!tagHex || tagHex.length % 2 !== 0) return args.data;
+  if (!/^[0-9a-fA-F]+$/.test(tagHex)) return args.data;
+
+  return (args.data as string) + tagHex;
 }
 
 export async function submitDivviReferralBestEffort(args: { txHash: string; chainId: number }) {

@@ -972,17 +972,81 @@ const EventDetails = () => {
                 <RichTextDisplay content={event.description} />
               </div>
             </div>
-
-            {/* Attendees List */}
-            <AttendeesList
-              eventId={event.id}
-              eventTitle={event.title}
-              attendanceSchemaUid={attendanceSchemaUid || undefined}
-            />
           </div>
 
           {/* Sidebar */}
           <div className="space-y-6">
+            {/* Event Details Card */}
+            <Card className="border-0 shadow-sm">
+              <CardHeader className="pb-4">
+                <h3 className="font-semibold text-gray-900">Event details</h3>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="space-y-3">
+                  {event.date && (
+                    <div className="flex items-start space-x-3">
+                      <Calendar className="w-5 h-5 text-gray-400 mt-0.5" />
+                      <div>
+                        <div className="font-medium text-gray-900">
+                          {formatEventDateRange({ startDate: event.date, endDate: event.end_date, formatStyle: 'long' })}
+                        </div>
+                        <div className="text-sm text-gray-600">
+                          {event.time}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {event.location && (
+                    <div className="flex items-start space-x-3">
+                      <MapPin className="w-5 h-5 text-gray-400 mt-0.5" />
+                      <div>
+                        <div className="font-medium text-gray-900">Location</div>
+                        <div className="text-sm text-gray-600">
+                          {event.location}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="flex items-start space-x-3">
+                    <Users className="w-5 h-5 text-gray-400 mt-0.5" />
+                    <div>
+                      <div className="font-medium text-gray-900">Capacity</div>
+                      <div className="text-sm text-gray-600">
+                        {event.capacity} attendees
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <Separator />
+
+                <div className="space-y-2">
+                  <div className="text-xs text-gray-500 uppercase tracking-wider">
+                    Blockchain Info
+                  </div>
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="text-gray-600">Contract</span>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-auto p-0 text-blue-600"
+                      asChild
+                    >
+                      <a href={explorerUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center">
+                        <span className="font-mono text-xs">
+                          {event.lock_address.slice(0, 6)}...
+                          {event.lock_address.slice(-4)}
+                        </span>
+                        <ExternalLink className="w-3 h-3 ml-1" />
+                      </a>
+                    </Button>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
             {/* Ticket Card */}
             <Card className="border-0 shadow-sm">
               <CardHeader className="pb-4">
@@ -1154,83 +1218,19 @@ const EventDetails = () => {
               </CardContent>
             </Card>
 
-            {/* Event Details Card */}
-            <Card className="border-0 shadow-sm">
-              <CardHeader className="pb-4">
-                <h3 className="font-semibold text-gray-900">Event details</h3>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="space-y-3">
-                  {event.date && (
-                    <div className="flex items-start space-x-3">
-                      <Calendar className="w-5 h-5 text-gray-400 mt-0.5" />
-                      <div>
-                        <div className="font-medium text-gray-900">
-                          {formatEventDateRange({ startDate: event.date, endDate: event.end_date, formatStyle: 'long' })}
-                        </div>
-                        <div className="text-sm text-gray-600">
-                          {event.time}
-                        </div>
-                      </div>
-                    </div>
-                  )}
-
-                  {event.location && (
-                    <div className="flex items-start space-x-3">
-                      <MapPin className="w-5 h-5 text-gray-400 mt-0.5" />
-                      <div>
-                        <div className="font-medium text-gray-900">Location</div>
-                        <div className="text-sm text-gray-600">
-                          {event.location}
-                        </div>
-                      </div>
-                    </div>
-                  )}
-
-                  <div className="flex items-start space-x-3">
-                    <Users className="w-5 h-5 text-gray-400 mt-0.5" />
-                    <div>
-                      <div className="font-medium text-gray-900">Capacity</div>
-                      <div className="text-sm text-gray-600">
-                        {event.capacity} attendees
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                <Separator />
-
-                <div className="space-y-2">
-                  <div className="text-xs text-gray-500 uppercase tracking-wider">
-                    Blockchain Info
-                  </div>
-                  <div className="flex items-center justify-between text-sm">
-                    <span className="text-gray-600">Contract</span>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="h-auto p-0 text-blue-600"
-                      asChild
-                    >
-                      <a href={explorerUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center">
-                        <span className="font-mono text-xs">
-                          {event.lock_address.slice(0, 6)}...
-                          {event.lock_address.slice(-4)}
-                        </span>
-                        <ExternalLink className="w-3 h-3 ml-1" />
-                      </a>
-                    </Button>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-            
             {/* Event Interactions Card */}
             <EventInteractionsCard
               eventId={event.id}
               lockAddress={event.lock_address}
-              creatorAddress={event.creator_id}
+              creatorId={event.creator_id}
               chainId={event.chain_id}
+            />
+
+            {/* Attendees List */}
+            <AttendeesList
+              eventId={event.id}
+              eventTitle={event.title}
+              attendanceSchemaUid={attendanceSchemaUid || undefined}
             />
 
             {/* Enhanced Attestation Card */}

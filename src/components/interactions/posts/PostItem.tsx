@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
-import { ThumbsUp, ThumbsDown, MessageSquare, MoreVertical, Pin, Trash2, MessageSquareOff } from 'lucide-react';
+import { ThumbsUp, ThumbsDown, MessageSquare, MoreVertical, Pin, Trash2, MessageSquareOff, Link2 } from 'lucide-react';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -14,11 +14,15 @@ import { PostContent } from './PostContent';
 import { CommentSection } from '../comments/CommentSection';
 import { usePostReactions } from '../hooks/usePostReactions';
 import { toast } from '@/hooks/use-toast';
+import { buildEventPostDiscussionsUrl } from '@/utils/discussionsLinks';
 import type { EventPost } from '../types';
 
 interface PostItemProps {
   post: EventPost;
   isCreator: boolean;
+  eventIdentifier: string;
+  isHighlighted?: boolean;
+  autoExpandComments?: boolean;
   onPin?: (postId: string, isPinned: boolean) => void;
   onDelete?: (postId: string) => void;
   onToggleComments?: (postId: string, enabled: boolean) => void;
@@ -27,6 +31,9 @@ interface PostItemProps {
 export const PostItem: React.FC<PostItemProps> = ({
   post,
   isCreator,
+  eventIdentifier,
+  isHighlighted = false,
+  autoExpandComments = false,
   onPin,
   onDelete,
   onToggleComments,
@@ -37,6 +44,29 @@ export const PostItem: React.FC<PostItemProps> = ({
   const agreeCount = post.agree_count || 0;
   const disagreeCount = post.disagree_count || 0;
   const commentCount = post.comment_count || 0;
+
+  React.useEffect(() => {
+    if (autoExpandComments) {
+      setShowComments(true);
+    }
+  }, [autoExpandComments]);
+
+  const handleCopyLink = async () => {
+    try {
+      const url = buildEventPostDiscussionsUrl(eventIdentifier, post.id);
+      await navigator.clipboard.writeText(url);
+      toast({
+        title: 'Link copied',
+        description: 'Post link copied to clipboard.',
+      });
+    } catch (error) {
+      toast({
+        title: 'Copy failed',
+        description: 'Could not copy the post link.',
+        variant: 'destructive',
+      });
+    }
+  };
 
   // Handle agree reaction
   const handleAgree = async () => {
@@ -66,16 +96,28 @@ export const PostItem: React.FC<PostItemProps> = ({
 
   return (
     <Card
-      className={`border-0 shadow-sm ${
+      id={`post-${post.id}`}
+      className={`border-0 shadow-sm scroll-mt-24 transition-colors ${
         post.is_pinned
           ? 'bg-blue-50 dark:bg-blue-950/20 border-l-4 border-l-blue-500'
           : 'bg-card'
-      }`}
+      } ${isHighlighted ? 'ring-2 ring-blue-500/60 bg-blue-50/40 dark:bg-blue-950/10' : ''}`}
     >
       <CardContent className="pt-6 space-y-4">
         {/* Header with creator badge and timestamp */}
         <div className="flex items-start justify-between">
-          <PostHeader post={post} isCreator={isCreator} />
+          <PostHeader post={post} />
+
+          <div className="flex items-center gap-1">
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-8 w-8 p-0"
+              onClick={handleCopyLink}
+              title="Copy link to this post"
+            >
+              <Link2 className="w-4 h-4" />
+            </Button>
 
           {/* Moderation Menu (Creator Only) */}
           {isCreator && (
@@ -108,6 +150,7 @@ export const PostItem: React.FC<PostItemProps> = ({
               </DropdownMenuContent>
             </DropdownMenu>
           )}
+          </div>
         </div>
 
         {/* Post Content */}

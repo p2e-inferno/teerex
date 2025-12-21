@@ -6,15 +6,14 @@ import { formatDistanceToNow } from 'date-fns';
 
 interface PostHeaderProps {
   post: EventPost;
-  isCreator: boolean;
 }
 
 export const PostHeader: React.FC<PostHeaderProps> = ({ post }) => {
   const timeAgo = formatDistanceToNow(new Date(post.created_at), { addSuffix: true });
 
   return (
-    <div className="flex items-start justify-between">
-      <div className="flex items-center space-x-2">
+    <div className="flex flex-col gap-2">
+      <div className="flex items-center gap-2 flex-wrap">
         {/* Creator Badge */}
         <div className="flex items-center space-x-1.5 px-2.5 py-1 rounded-full bg-blue-100 dark:bg-blue-900/30">
           <Crown className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />

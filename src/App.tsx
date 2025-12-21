@@ -14,6 +14,7 @@ import MyTickets from "./pages/MyTickets";
 import Attestations from "./pages/Attestations";
 import Drafts from "./pages/Drafts";
 import EventDetails from "./pages/EventDetails";
+import EventDiscussions from "./pages/EventDiscussions";
 import Admin from "./pages/Admin";
 import AdminDashboard from "./pages/AdminDashboard";
 import AdminEvents from "./pages/AdminEvents";
@@ -21,6 +22,7 @@ import AdminGaslessConfig from "./pages/AdminGaslessConfig";
 import AdminGasSponsorship from "./pages/AdminGasSponsorship";
 import AdminNetworks from "./pages/AdminNetworks";
 import AdminServiceAccount from "./pages/AdminServiceAccount";
+import AdminAnalytics from "./pages/AdminAnalytics";
 import AdminRoute from "./components/routes/AdminRoute";
 import NotFound from "./pages/NotFound";
 
@@ -49,7 +51,9 @@ const App = () => {
                 <Route path="/admin/gasless" element={<AdminRoute><AdminGaslessConfig /></AdminRoute>} />
                 <Route path="/admin/gas-sponsorship" element={<AdminRoute><AdminGasSponsorship /></AdminRoute>} />
                 <Route path="/admin/service-account" element={<AdminRoute><AdminServiceAccount /></AdminRoute>} />
+                <Route path="/admin/analytics" element={<AdminRoute><AdminAnalytics /></AdminRoute>} />
                 <Route path="/event/:id" element={<EventDetails />} />
+                <Route path="/event/:id/discussions" element={<EventDiscussions />} />
                 {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
                 <Route path="*" element={<NotFound />} />
               </Routes>
