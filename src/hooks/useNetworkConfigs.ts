@@ -54,8 +54,43 @@ export function useNetworkConfigs() {
       const network = networks.find(n => n.chain_id === chainId);
       return !!network?.usdc_token_address;
     },
+    hasToken: (chainId: number, symbol: 'USDC' | 'DG' | 'G' | 'UP'): boolean => {
+      const network = networks.find(n => n.chain_id === chainId);
+      if (!network) return false;
+
+      switch (symbol) {
+        case 'USDC': return !!network.usdc_token_address;
+        case 'DG': return !!network.dg_token_address;
+        case 'G': return !!network.g_token_address;
+        case 'UP': return !!network.up_token_address;
+        default: return false;
+      }
+    },
     getUsdcAddress: (chainId: number): string | null => {
       return networks.find(n => n.chain_id === chainId)?.usdc_token_address || null;
+    },
+    getTokenAddress: (chainId: number, symbol: 'USDC' | 'DG' | 'G' | 'UP'): string | null => {
+      const network = networks.find(n => n.chain_id === chainId);
+      if (!network) return null;
+
+      switch (symbol) {
+        case 'USDC': return network.usdc_token_address;
+        case 'DG': return network.dg_token_address;
+        case 'G': return network.g_token_address;
+        case 'UP': return network.up_token_address;
+        default: return null;
+      }
+    },
+    getAvailableTokens: (chainId: number): string[] => {
+      const network = networks.find(n => n.chain_id === chainId);
+      if (!network) return ['ETH'];
+
+      const tokens = ['ETH'];
+      if (network.usdc_token_address) tokens.push('USDC');
+      if (network.dg_token_address) tokens.push('DG');
+      if (network.g_token_address) tokens.push('G');
+      if (network.up_token_address) tokens.push('UP');
+      return tokens;
     },
     getFactoryAddress: (chainId: number): string | null => {
       return networks.find(n => n.chain_id === chainId)?.unlock_factory_address || null;

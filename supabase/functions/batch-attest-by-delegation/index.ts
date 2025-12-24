@@ -10,6 +10,8 @@ import {
   importSPKI,
 } from "https://deno.land/x/jose@v4.14.4/index.ts";
 import BatchAttABI from "../_shared/abi/BatchAttestation.json" assert { type: "json" };
+import { validateChain } from "../_shared/network-helpers.ts";
+import { appendDivviTagToCalldataAsync, submitDivviReferralBestEffort } from "../_shared/divvi.ts";
 
 function json(data: any, status = 200) {
   return new Response(JSON.stringify(data), {
@@ -104,9 +106,9 @@ serve(async (req) => {
       const userWallets = await getUserWalletAddresses(privyUserId);
       if (userWallets && userWallets.length > 0) {
         // Resolve RPC URL
-        const { data: net } = await supabase.from('network_configs').select('rpc_url').eq('chain_id', ev.chain_id).maybeSingle();
-        const rpcUrl = net?.rpc_url || (ev.chain_id === 8453 ? 'https://mainnet.base.org' : 'https://sepolia.base.org') || Deno.env.get('PRIMARY_RPC_URL');
-        if (!rpcUrl) return json({ ok: false, error: 'RPC URL not configured' }, 400);
+        const networkConfig = await validateChain(supabase, ev.chain_id);
+        if (!networkConfig?.rpc_url) return json({ ok: false, error: 'rpc_url_not_configured' }, 400);
+        const rpcUrl = networkConfig.rpc_url;
         const provider = new JsonRpcProvider(rpcUrl);
         const lockManagerABI = [{ inputs: [{ internalType: 'address', name: '_account', type: 'address' }], name: 'isLockManager', outputs: [{ internalType: 'bool', name: '', type: 'bool' }], stateMutability: 'view', type: 'function' }];
         const lock = new Contract(ev.lock_address, lockManagerABI, provider);
@@ -152,8 +154,12 @@ serve(async (req) => {
       }
     }
 
-    // Provider & signer
-    const rpcUrl = Deno.env.get('PRIMARY_RPC_URL') ?? (chainId === 8453 ? 'https://mainnet.base.org' : 'https://sepolia.base.org');
+    // Provider & signer - use DB-driven config
+    const networkConfig = await validateChain(supabase, chainId);
+    if (!networkConfig?.rpc_url) {
+      throw new Error('Chain not supported or RPC URL not configured');
+    }
+    const rpcUrl = networkConfig.rpc_url;
     const pk = Deno.env.get('UNLOCK_SERVICE_PRIVATE_KEY') ?? Deno.env.get('SERVICE_WALLET_PRIVATE_KEY') ?? Deno.env.get('SERVICE_PK');
     if (!pk) throw new Error('Missing service wallet private key');
     const provider = new JsonRpcProvider(rpcUrl);
@@ -172,15 +178,19 @@ serve(async (req) => {
     const deadline = BigInt(firstDeadline);
     const revocable = Boolean(false);
 
-    const send = async () => (contract as any).createBatchAttestationsByDelegation(
-      ev.lock_address,
-      delegations[0].schema_uid,
-      attestations,
-      signatures,
-      attester,
-      deadline,
-      revocable
-    );
+    const send = async () => {
+      const calldata = contract.interface.encodeFunctionData('createBatchAttestationsByDelegation', [
+        ev.lock_address,
+        delegations[0].schema_uid,
+        attestations,
+        signatures,
+        attester,
+        deadline,
+        revocable,
+      ]);
+      const tagged = await appendDivviTagToCalldataAsync({ data: calldata, user: signer.address as `0x${string}` });
+      return await signer.sendTransaction({ to: contractAddress!, data: tagged });
+    };
 
     if (sse) {
       let id = 0;
@@ -193,6 +203,7 @@ serve(async (req) => {
             controller.enqueue(sseEvent(++id, 'submitted', { txHash: tx.hash }));
             const receipt = await tx.wait();
             controller.enqueue(sseEvent(++id, 'confirmed', { blockNumber: receipt?.blockNumber, txHash: tx.hash }));
+            if (tx?.hash) await submitDivviReferralBestEffort({ txHash: tx.hash, chainId });
 
             const uids: string[] = [];
             try {
@@ -240,6 +251,7 @@ serve(async (req) => {
 
     const tx = await send();
     const receipt = await tx.wait();
+    if (tx?.hash) await submitDivviReferralBestEffort({ txHash: tx.hash, chainId });
 
     const { error: updErr } = await supabase
       .from('attestation_delegations')

@@ -3,24 +3,33 @@
  * Supports dynamic networks with different native currencies
  */
 
+import { usesWholeNumberPricing, isNativeToken } from '@/types/currency';
+
 export interface PriceValidationResult {
   isValid: boolean;
   error: string;
 }
 
 /**
- * Minimum price thresholds
+ * Minimum price thresholds based on token pricing rules
  */
-export const MIN_USDC_PRICE = 1;
-export const MIN_NATIVE_PRICE = 0.0001;
+// ERC20 tokens with whole-number pricing (USDC, DG, G, UP)
+export const MIN_WHOLE_NUMBER_PRICE = 1;        // $1 minimum
+// Native tokens with fractional pricing (ETH, etc.)
+export const MIN_NATIVE_TOKEN_PRICE = 0.0001;   // 0.0001 minimum
 
 /**
- * Get minimum price for a given currency
- * @param currency - The currency symbol ('USDC' or native currency)
+ * @deprecated Use MIN_WHOLE_NUMBER_PRICE instead
+ */
+export const MIN_STABLECOIN_PRICE = MIN_WHOLE_NUMBER_PRICE;
+
+/**
+ * Get minimum price for a given currency based on pricing rules
+ * @param currency - The currency symbol
  * @returns Minimum price as a number
  */
 export function getMinimumPrice(currency: string): number {
-  return currency === 'USDC' ? MIN_USDC_PRICE : MIN_NATIVE_PRICE;
+  return usesWholeNumberPricing(currency) ? MIN_WHOLE_NUMBER_PRICE : MIN_NATIVE_TOKEN_PRICE;
 }
 
 /**
@@ -30,11 +39,11 @@ export function getMinimumPrice(currency: string): number {
  * @returns Formatted string like "$1" or "0.0001 ETH"
  */
 export function getMinimumPriceString(currency: string, nativeCurrencySymbol?: string): string {
-  if (currency === 'USDC') {
-    return `$${MIN_USDC_PRICE}`;
+  if (usesWholeNumberPricing(currency)) {
+    return `$${MIN_WHOLE_NUMBER_PRICE}`;
   }
   const symbol = nativeCurrencySymbol || 'native currency';
-  return `${MIN_NATIVE_PRICE} ${symbol}`;
+  return `${MIN_NATIVE_TOKEN_PRICE} ${symbol}`;
 }
 
 /**
@@ -57,20 +66,20 @@ export function validateCryptoPrice(
     };
   }
 
-  // Check USDC minimum
-  if (currency === 'USDC' && price < MIN_USDC_PRICE) {
+  // Check whole-number pricing tokens (ERC20: USDC, DG, G, UP)
+  if (usesWholeNumberPricing(currency) && price < MIN_WHOLE_NUMBER_PRICE) {
     return {
       isValid: false,
-      error: `Minimum price is $${MIN_USDC_PRICE} USDC`,
+      error: `Minimum price is $${MIN_WHOLE_NUMBER_PRICE} for ${currency}`,
     };
   }
 
-  // Check native currency minimum
-  if (currency !== 'USDC' && price < MIN_NATIVE_PRICE) {
+  // Check native token minimum (ETH, etc.)
+  if (isNativeToken(currency) && price < MIN_NATIVE_TOKEN_PRICE) {
     const symbol = nativeCurrencySymbol || 'native currency';
     return {
       isValid: false,
-      error: `Minimum price is ${MIN_NATIVE_PRICE} ${symbol}`,
+      error: `Minimum price is ${MIN_NATIVE_TOKEN_PRICE} ${symbol}`,
     };
   }
 
@@ -92,19 +101,19 @@ export function isCryptoPriceValid(price: number, currency: string): boolean {
 }
 
 /**
- * Get step value for price input based on currency
+ * Get step value for price input based on currency pricing rules
  * @param currency - The currency symbol
  * @returns Step value for HTML input
  */
 export function getPriceStep(currency: string): string {
-  return currency === 'USDC' ? '1' : '0.0001';
+  return usesWholeNumberPricing(currency) ? '1' : '0.0001';
 }
 
 /**
- * Get placeholder value for price input based on currency
+ * Get placeholder value for price input based on currency pricing rules
  * @param currency - The currency symbol
  * @returns Placeholder string for HTML input
  */
 export function getPricePlaceholder(currency: string): string {
-  return currency === 'USDC' ? '1.00' : '0.0001';
+  return usesWholeNumberPricing(currency) ? '1.00' : '0.0001';
 }

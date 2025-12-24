@@ -7,7 +7,7 @@ import {
   DialogDescription,
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
-import { PublishedEvent } from '@/utils/eventUtils';
+import type { PublishedEvent } from '@/types/event';
 import { CreditCard, Wallet } from 'lucide-react';
 
 interface PaymentMethodDialogProps {

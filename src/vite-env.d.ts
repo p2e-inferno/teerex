@@ -6,6 +6,7 @@ interface ImportMetaEnv {
   readonly VITE_PRIMARY_CHAIN_ID?: string;
   readonly VITE_USDC_ADDRESS_BASE_MAINNET?: string;
   readonly VITE_USDC_ADDRESS_BASE_SEPOLIA?: string;
+  readonly VITE_DIVVI_CONSUMER_ADDRESS?: string;
   readonly VITE_SUPABASE_URL: string;
   readonly VITE_SUPABASE_ANON_KEY: string;
 }

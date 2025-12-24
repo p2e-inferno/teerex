@@ -13,13 +13,12 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
-import { PublishedEvent } from '@/utils/eventUtils';
+import type { PublishedEvent } from '@/types/event';
 import { purchaseKey, getBlockExplorerUrl } from '@/utils/lockUtils';
 import { Loader2, ExternalLink } from 'lucide-react';
 import { format } from 'date-fns';
 import { supabase } from '@/integrations/supabase/client';
 import { useGaslessFallback } from '@/hooks/useGasless';
-import { toast as sonnerToast } from 'sonner';
 import { normalizeEmail } from '@/utils/emailUtils';
 
 interface EventPurchaseDialogProps {
@@ -131,7 +130,7 @@ export const EventPurchaseDialog: React.FC<EventPurchaseDialogProps> = ({ event,
               headers: accessToken ? { 'X-Privy-Authorization': `Bearer ${accessToken}` } : undefined,
             });
           } catch (err) {
-            console.warn('[TICKET EMAIL] Failed to send ticket email:', err?.message || err);
+            console.warn('[TICKET EMAIL] Failed to send ticket email:', err instanceof Error ? err.message : String(err));
           }
         })();
         onClose();
@@ -154,6 +153,8 @@ export const EventPurchaseDialog: React.FC<EventPurchaseDialogProps> = ({ event,
   // Unified purchase handler for ALL currencies
   const handlePurchase = async () => {
     const normalizedEmail = normalizeEmail(email);
+    const walletAddress = wallets[0]?.address?.toLowerCase();
+
     if (!normalizedEmail) {
       toast({
         title: 'Email required',
@@ -164,12 +165,12 @@ export const EventPurchaseDialog: React.FC<EventPurchaseDialogProps> = ({ event,
     }
 
     // Check allow list if event has one
-    if (event?.has_allow_list && wallets[0]?.address) {
+    if (event?.has_allow_list && walletAddress) {
       const { data: allowListEntry, error } = await supabase
         .from('event_allow_list')
         .select('id')
         .eq('event_id', event.id)
-        .eq('wallet_address', wallets[0].address.toLowerCase())
+        .eq('wallet_address', walletAddress)
         .maybeSingle();
 
       if (error) {
@@ -183,11 +184,47 @@ export const EventPurchaseDialog: React.FC<EventPurchaseDialogProps> = ({ event,
       }
 
       if (!allowListEntry) {
-        toast({
-          title: 'Not authorized',
-          description: 'This is a private event. Your wallet address is not on the allow list.',
-          variant: 'destructive',
-        });
+        try {
+          const { error: requestError } = await supabase
+            .from('event_allow_list_requests')
+            .insert({
+              event_id: event.id,
+              user_email: normalizedEmail,
+              wallet_address: walletAddress,
+            });
+
+          if (requestError) {
+            console.error('Error requesting allow list approval:', requestError);
+            if (requestError.code === '23505') {
+              toast({
+                title: 'Request already sent',
+                description:
+                  'You have already requested approval for this wallet address. Please wait for the organizer to review.',
+              });
+            } else {
+              toast({
+                title: 'Request failed',
+                description: 'Failed to request approval for this private event.',
+                variant: 'destructive',
+              });
+            }
+          } else {
+            toast({
+              title: 'Approval requested',
+              description:
+                'This is a private event. You are not on the allow list yet. Your request has been sent to the organizer for review.',
+            });
+          }
+        } catch (err) {
+          console.error('Unexpected error requesting allow list approval:', err);
+          toast({
+            title: 'Request failed',
+            description: 'Failed to request approval for this private event.',
+            variant: 'destructive',
+          });
+        }
+
+        // Do not proceed with purchase until approved
         return;
       }
     }
@@ -196,14 +233,7 @@ export const EventPurchaseDialog: React.FC<EventPurchaseDialogProps> = ({ event,
     if (event?.currency === 'FREE') {
       setIsPurchasing(true);
       try {
-        const gaslessArgs = {
-          event_id: event.id,
-          lock_address: event.lock_address,
-          chain_id: event.chain_id,
-          recipient: wallets[0]?.address?.toLowerCase(),
-          user_email: normalizedEmail,
-        };
-        const result: any = await purchaseFreeTicketWithGasless(gaslessArgs, normalizedEmail);
+        const result: any = await purchaseFreeTicketWithGasless(normalizedEmail);
 
         if (result.ok) {
           // Check if already claimed (idempotent response)

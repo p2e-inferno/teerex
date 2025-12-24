@@ -9,6 +9,8 @@ import {
   importSPKI,
 } from "https://deno.land/x/jose@v4.14.4/index.ts";
 import { getUserWalletAddresses } from "../_shared/privy.ts";
+import { validateChain } from "../_shared/network-helpers.ts";
+import { appendDivviTagToCalldataAsync, submitDivviReferralBestEffort } from "../_shared/divvi.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -69,14 +71,16 @@ serve(async (req) => {
     const status = tx.status || tx.gateway_response?.status;
     if (status !== "success") return new Response(JSON.stringify({ error: "Payment not successful for this reference" }), { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 400 });
 
+    // Validate network config early and cache for reuse
+    const networkConfig = await validateChain(supabase, event.chain_id);
+    if (!networkConfig?.rpc_url) throw new Error("Network RPC not configured");
+
     // Authorization: creator OR on-chain manager
     let authorized = event.creator_id === privyUserId;
     if (!authorized) {
       const userWallets = await getUserWalletAddresses(privyUserId);
       if (userWallets && userWallets.length > 0) {
-        const { data: net, error: netErr } = await supabase.from("network_configs").select("rpc_url").eq("chain_id", event.chain_id).single();
-        if (netErr || !net?.rpc_url) throw new Error("Network RPC not configured");
-        const provider = new ethers.JsonRpcProvider(net.rpc_url);
+        const provider = new ethers.JsonRpcProvider(networkConfig.rpc_url);
         const lock = new ethers.Contract(event.lock_address, PublicLockV15 as any, provider);
         for (const addr of userWallets) {
           const isManager = await lock.isLockManager(addr);
@@ -92,10 +96,7 @@ serve(async (req) => {
     const recipient = userAddressField?.value;
     if (!recipient) throw new Error("User wallet address not found in transaction metadata");
 
-    const { data: netCfg, error: netCfgErr } = await supabase.from("network_configs").select("rpc_url").eq("chain_id", event.chain_id).single();
-    if (netCfgErr || !netCfg?.rpc_url) throw new Error("RPC URL not configured for chain");
-
-    const provider = new ethers.JsonRpcProvider(netCfg.rpc_url);
+    const provider = new ethers.JsonRpcProvider(networkConfig.rpc_url);
     const wallet = new ethers.Wallet(UNLOCK_SERVICE_PRIVATE_KEY, provider);
     const lock = new ethers.Contract(event.lock_address, PublicLockV15 as any, wallet);
     const isServiceManager = await lock.isLockManager(wallet.address);
@@ -110,9 +111,16 @@ serve(async (req) => {
     const recipients = [recipient];
     const expirations = [BigInt(expirationTimestamp)];
     const keyManagers = [recipient];
-    const txSend = await lock.grantKeys(recipients, expirations, keyManagers);
+    const serviceUser = wallet.address as `0x${string}`;
+    const calldata = lock.interface.encodeFunctionData('grantKeys', [recipients, expirations, keyManagers]);
+    const taggedData = await appendDivviTagToCalldataAsync({ data: calldata, user: serviceUser });
+    const txSend = await wallet.sendTransaction({ to: event.lock_address, data: taggedData });
     const receipt = await txSend.wait();
     if (receipt.status !== 1) throw new Error("Grant key transaction failed");
+    const txHash = (txSend.hash || receipt.transactionHash) as string | undefined;
+    if (txHash && typeof event.chain_id === 'number') {
+      await submitDivviReferralBestEffort({ txHash, chainId: event.chain_id });
+    }
     return new Response(JSON.stringify({ success: true, txHash: txSend.hash || receipt.transactionHash }), { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 200 });
   } catch (e: any) {
     return new Response(JSON.stringify({ error: e?.message || "Internal error" }), { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 400 });

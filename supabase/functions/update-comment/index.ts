@@ -2,18 +2,12 @@
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.50.0";
 import { corsHeaders, buildPreflightHeaders } from "../_shared/cors.ts";
-import { getUserWalletAddresses } from "../_shared/privy.ts";
+import { getUserWalletAddresses, verifyPrivyToken } from "../_shared/privy.ts";
 import { isAnyUserWalletIsLockManagerParallel } from "../_shared/unlock.ts";
-import {
-  createRemoteJWKSet,
-  jwtVerify,
-  importSPKI,
-} from "https://deno.land/x/jose@v4.14.4/index.ts";
+import { validateChain } from "../_shared/network-helpers.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-const PRIVY_APP_ID = Deno.env.get("VITE_PRIVY_APP_ID")!;
-const PRIVY_VERIFICATION_KEY = Deno.env.get("PRIVY_VERIFICATION_KEY");
 
 serve(async (req) => {
   // Handle CORS preflight
@@ -30,39 +24,7 @@ serve(async (req) => {
         { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 200 }
       );
     }
-    const token = authHeader.split(" ")[1];
-
-    let privyUserId: string | undefined;
-    try {
-      // Primary: JWKS verification with timeout
-      const timeoutPromise = new Promise((_, reject) =>
-        setTimeout(() => reject(new Error("JWKS verification timeout after 3 seconds")), 3000)
-      );
-      const jwksPromise = (async () => {
-        const JWKS = createRemoteJWKSet(
-          new URL(`https://auth.privy.io/api/v1/apps/${PRIVY_APP_ID}/jwks.json`)
-        );
-        const { payload } = await jwtVerify(token, JWKS, {
-          issuer: "privy.io",
-          audience: PRIVY_APP_ID,
-        });
-        return payload;
-      })();
-      const payload: any = await Promise.race([jwksPromise, timeoutPromise]);
-      privyUserId = payload.sub as string | undefined;
-    } catch (jwksError) {
-      // Fallback: Local JWT verification
-      if (!PRIVY_VERIFICATION_KEY) throw jwksError;
-      const publicKey = await importSPKI(PRIVY_VERIFICATION_KEY, "ES256");
-      const { payload } = await jwtVerify(token, publicKey, {
-        issuer: "privy.io",
-        audience: PRIVY_APP_ID,
-      });
-      privyUserId = (payload as any).sub as string | undefined;
-    }
-    if (!privyUserId) {
-      throw new Error("Token verification failed");
-    }
+    const privyUserId = await verifyPrivyToken(authHeader);
 
     // 2. Parse and validate request body
     const bodyText = await req.text();
@@ -130,7 +92,7 @@ serve(async (req) => {
 
     const { data: event, error: eventError } = await supabase
       .from("events")
-      .select("id, lock_address, chain_id")
+      .select("id, lock_address, chain_id, creator_id")
       .eq("id", post.event_id)
       .maybeSingle();
 
@@ -147,31 +109,21 @@ serve(async (req) => {
     if (!userWallets || userWallets.length === 0) {
       throw new Error("No wallet addresses found for user");
     }
+    const normalizedWallets = userWallets.map((addr) => addr.toLowerCase());
+    const creatorAddress = (event as any).creator_address
+      ? (event as any).creator_address.toLowerCase()
+      : undefined;
+    const isCreatorByWallet = creatorAddress ? normalizedWallets.includes(creatorAddress) : false;
+    const isCreatorById = event.creator_id ? event.creator_id === privyUserId : false;
 
-    // 6. Get RPC URL
-    let rpcUrl: string | undefined;
-    const { data: net } = await supabase
-      .from("network_configs")
-      .select("rpc_url")
-      .eq("chain_id", event.chain_id)
-      .maybeSingle();
-
-    rpcUrl = net?.rpc_url as string | undefined;
-    if (!rpcUrl) {
-      // Fallback to hardcoded RPC URLs
-      rpcUrl = ({
-        8453: "https://mainnet.base.org",
-        84532: "https://sepolia.base.org",
-        1: "https://eth.llamarpc.com",
-        11155111: "https://ethereum-sepolia-rpc.publicnode.com",
-        137: "https://polygon.llamarpc.com",
-        80002: "https://rpc-amoy.polygon.technology",
-      } as Record<number, string>)[event.chain_id] ||
-        Deno.env.get("PRIMARY_RPC_URL") ||
-        undefined;
+    // 6. Validate chain and get network configuration
+    const networkConfig = await validateChain(supabase, event.chain_id);
+    if (!networkConfig) {
+      throw new Error("Chain not supported or not active");
     }
-    if (!rpcUrl) {
-      throw new Error("Missing RPC URL for chain");
+
+    if (!networkConfig.rpc_url) {
+      throw new Error("Network not fully configured (missing RPC URL)");
     }
 
     // 7. Authorization based on update type
@@ -179,7 +131,7 @@ serve(async (req) => {
     const isDelete = "is_deleted" in updates;
 
     // Check if user is comment owner
-    const isCommentOwner = userWallets.some(
+    const isCommentOwner = normalizedWallets.some(
       (w) => w.toLowerCase() === comment.user_address.toLowerCase()
     );
 
@@ -192,16 +144,16 @@ serve(async (req) => {
 
     if (isDelete) {
       // Delete: Comment owner OR lock manager can delete
-      if (!isCommentOwner) {
+      if (!isCommentOwner && !(isCreatorByWallet || isCreatorById)) {
         // Check if user is lock manager
         const { anyIsManager } = await isAnyUserWalletIsLockManagerParallel(
           event.lock_address,
-          userWallets,
-          rpcUrl
+          normalizedWallets,
+          networkConfig.rpc_url
         );
 
         if (!anyIsManager) {
-          throw new Error("Unauthorized: Only comment owner or lock manager can delete comments");
+          throw new Error("Unauthorized: Only comment owner, event creator, or lock manager can delete comments");
         }
       }
     }

@@ -30,7 +30,7 @@ export const PostContent: React.FC<PostContentProps> = ({ post }) => {
     let match;
 
     while ((match = tagRegex.exec(htmlContent)) !== null) {
-      const [fullMatch, tag, text] = match;
+      const [, tag, text] = match;
 
       if (tag) {
         // It's a tag, include it

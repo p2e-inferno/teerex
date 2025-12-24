@@ -7,6 +7,7 @@ import { handleError } from '../_shared/error-handler.ts';
 import { verifyPrivyToken, getUserWalletAddresses } from '../_shared/privy.ts';
 import { SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY } from '../_shared/constants.ts';
 import PublicLockV15 from '../_shared/abi/PublicLockV15.json' assert { type: 'json' };
+import { validateChain } from '../_shared/network-helpers.ts';
 
 const DEFAULT_PAGE_SIZE = 50;
 const MAX_PAGE_SIZE = 200;
@@ -74,22 +75,14 @@ serve(async (req) => {
       const userWallets = await getUserWalletAddresses(privyUserId);
 
       if (userWallets && userWallets.length > 0) {
-        const { data: networkConfig } = await supabase
-          .from('network_configs')
-          .select('rpc_url')
-          .eq('chain_id', event.chain_id)
-          .single();
-
-        let rpcUrl = networkConfig?.rpc_url;
-        if (!rpcUrl) {
-          rpcUrl = event.chain_id === 8453
-            ? 'https://mainnet.base.org'
-            : event.chain_id === 84532
-              ? 'https://sepolia.base.org'
-              : Deno.env.get('PRIMARY_RPC_URL') || undefined;
+        // Get network configuration
+        const networkConfig = await validateChain(supabase, event.chain_id);
+        if (!networkConfig?.rpc_url) {
+          console.error(`[get-waitlist] RPC URL not configured for chain ${event.chain_id}`);
         }
 
-        if (rpcUrl) {
+        if (networkConfig?.rpc_url) {
+          const rpcUrl = networkConfig.rpc_url;
           const provider = new ethers.JsonRpcProvider(rpcUrl);
           const lock = new ethers.Contract(event.lock_address, PublicLockV15 as any, provider);
 

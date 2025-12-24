@@ -13,7 +13,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
-import { PublishedEvent } from "@/utils/eventUtils";
+import type { PublishedEvent } from "@/types/event";
 import { supabase } from "@/integrations/supabase/client";
 import { Loader2, CreditCard } from "lucide-react";
 import { format } from "date-fns";
@@ -144,16 +144,6 @@ export const PaystackPaymentDialog: React.FC<PaystackPaymentDialogProps> = ({
     // Pass payment data to parent; parent will open issuing flow
     onSuccess(paymentData);
     setIsLoading(false);
-  };
-
-  const handlePaymentError = () => {
-    setIsLoading(false);
-    setIsPaystackOpen(false);
-    toast({
-      title: "Payment Failed",
-      description: "Your payment could not be processed. Please try again.",
-      variant: "destructive",
-    });
   };
 
   const handlePaymentClose = () => {

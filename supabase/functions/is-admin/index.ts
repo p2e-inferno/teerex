@@ -9,6 +9,7 @@ import {
   importSPKI,
 } from "https://deno.land/x/jose@v4.14.4/index.ts";
 import { getUserWalletAddresses } from "../_shared/privy.ts";
+import { validateChain } from "../_shared/network-helpers.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -54,18 +55,14 @@ serve(async (req) => {
       return new Response(JSON.stringify({ error: "admin_lock_not_configured", is_admin: false }), { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 200 });
     }
 
-    // Prefer DB network config by primary chain id if available
+    // Get network config by primary chain id
     const primaryChainIdStr = Deno.env.get("VITE_PRIMARY_CHAIN_ID");
     const primaryChainId = primaryChainIdStr ? Number(primaryChainIdStr) : 84532;
-    let rpcUrl: string | undefined;
-    const { data: net } = await supabase
-      .from("network_configs")
-      .select("rpc_url")
-      .eq("chain_id", primaryChainId)
-      .maybeSingle();
-    rpcUrl = net?.rpc_url || (primaryChainId === 8453 ? "https://mainnet.base.org" : "https://sepolia.base.org");
-    if (!rpcUrl) rpcUrl = Deno.env.get("PRIMARY_RPC_URL") || undefined;
-    if (!rpcUrl) throw new Error("Missing RPC URL");
+    const networkConfig = await validateChain(supabase, primaryChainId);
+    if (!networkConfig?.rpc_url) {
+      throw new Error("Network RPC not configured");
+    }
+    const rpcUrl = networkConfig.rpc_url;
 
     // 3) Check if any user wallet is a lock manager
     const userWallets = await getUserWalletAddresses(privyUserId);

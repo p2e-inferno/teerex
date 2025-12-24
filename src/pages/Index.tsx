@@ -13,7 +13,8 @@ import { Badge } from "@/components/ui/badge";
 import { Shield, Users, Zap, ArrowRight, Calendar, MapPin, Clock } from "lucide-react";
 import { Link } from "react-router-dom";
 import { format } from "date-fns";
-import { getPublishedEvents, type PublishedEvent } from "@/utils/eventUtils";
+import { getPublicEvents } from "@/utils/eventUtils";
+import type { PublishedEvent } from "@/types/event";
 import {
   selectFeaturedEvents,
   selectUpcomingEvents,
@@ -39,8 +40,8 @@ const Index = () => {
     let mounted = true;
     (async () => {
       try {
-        // Fetch all published events
-        const all = await getPublishedEvents();
+        // Fetch public events only (UI-level gating)
+        const all = await getPublicEvents();
         if (!mounted) return;
         setEvents(all);
 
@@ -193,7 +194,7 @@ const Index = () => {
                         <Card className="overflow-hidden border-0 shadow-lg bg-white">
                           <div className="aspect-square relative cursor-pointer">
                             <img
-                              src={event.image_url}
+                              src={event.image_url || ''}
                               alt={event.title}
                               className="absolute inset-0 w-full h-full object-cover"
                             />

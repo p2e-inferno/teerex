@@ -12,7 +12,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
-import { PublishedEvent } from '@/utils/eventUtils';
+import type { PublishedEvent } from '@/types/event';
 import { Loader2, CheckCircle } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { normalizeEmail } from '@/utils/emailUtils';
@@ -80,7 +80,7 @@ export const WaitlistDialog: React.FC<WaitlistDialogProps> = ({ event, isOpen, o
                 });
               }
             } catch (err) {
-              console.warn('[WAITLIST] Failed to trigger confirmation email on duplicate:', err?.message || err);
+              console.warn('[WAITLIST] Failed to trigger confirmation email on duplicate:', err instanceof Error ? err.message : String(err));
             }
           })();
         } else {

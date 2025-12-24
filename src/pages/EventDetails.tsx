@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -21,12 +21,11 @@ import {
   Twitter,
   Linkedin,
 } from "lucide-react";
-import { getPublishedEventById, PublishedEvent } from "@/utils/eventUtils";
+import { getPublishedEventById } from "@/utils/eventUtils";
+import type { PublishedEvent } from "@/types/event";
 import MetaTags from "@/components/MetaTags";
 import {
-  getTotalKeys,
   getMaxKeysPerAddress,
-  checkKeyOwnership,
   getTransferabilityStatus,
 } from "@/utils/lockUtils";
 import { EventPurchaseDialog } from "@/components/events/EventPurchaseDialog";
@@ -35,9 +34,6 @@ import { TicketProcessingDialog } from "@/components/events/TicketProcessingDial
 import { PaymentMethodDialog } from "@/components/events/PaymentMethodDialog";
 import { WaitlistDialog } from "@/components/events/WaitlistDialog";
 // import { AttestationButton } from "@/components/attestations/AttestationButton";
-import { useAttestations } from "@/hooks/useAttestations";
-import { useTeeRexDelegatedAttestation } from "@/hooks/useTeeRexDelegatedAttestation";
-import { useAttestationEncoding } from "@/hooks/useAttestationEncoding";
 import { supabase } from "@/integrations/supabase/client";
 import { base, baseSepolia } from "wagmi/chains";
 import { EventAttestationCard } from "@/components/attestations/EventAttestationCard";
@@ -49,7 +45,9 @@ import { getAttestationSchemas, isValidAttestationUid, isAttestationRevocableOnC
 import { useEventAttestationState } from "@/hooks/useEventAttestationState";
 import { getDisableMessage } from "@/utils/attestationMessages";
 import { getBatchAttestationAddress } from "@/lib/config/contract-config";
-import { format } from "date-fns";
+import { useAttestations } from "@/hooks/useAttestations";
+import { useTeeRexDelegatedAttestation } from "@/hooks/useTeeRexDelegatedAttestation";
+import { useAttestationEncoding } from "@/hooks/useAttestationEncoding";
 import { formatEventDateRange } from "@/utils/dateUtils";
 import { useEventTicketRealtime } from "@/hooks/useEventTicketRealtime";
 import { useNetworkConfigs } from "@/hooks/useNetworkConfigs";
@@ -72,7 +70,7 @@ const EventDetails = () => {
   const wallet = wallets[0];
   const { revokeEventAttestation } = useAttestations();
   const { signTeeRexAttestation } = useTeeRexDelegatedAttestation();
-  const { encodeEventLikeData, encodeEventAttendanceData } = useAttestationEncoding();
+  const { encodeEventAttendanceData, encodeEventLikeData } = useAttestationEncoding();
   const { networks } = useNetworkConfigs();
 
   const [event, setEvent] = useState<PublishedEvent | null>(null);
@@ -83,7 +81,7 @@ const EventDetails = () => {
   const [transferFeeBps, setTransferFeeBps] = useState<number | null>(null);
 
   // Real-time ticket count subscription
-  const { ticketsSold: keysSold, isLoading: isLoadingTickets } = useEventTicketRealtime({
+  const { ticketsSold: keysSold } = useEventTicketRealtime({
     eventId: event?.id || '',
     lockAddress: event?.lock_address || '',
     chainId: event?.chain_id || baseSepolia.id,
@@ -99,7 +97,6 @@ const EventDetails = () => {
     | "waitlist"
   >("none");
   const [paymentData, setPaymentData] = useState<any>(null);
-  const [isLiked, setIsLiked] = useState(false);
   const [attendanceSchemaUid, setAttendanceSchemaUid] = useState<string | null>(
     null
   );
@@ -178,11 +175,9 @@ const EventDetails = () => {
 
   // Like schema + counts
   const [likeSchemaUid, setLikeSchemaUid] = useState<string | null>(null);
-  const [likeSchemaRevocable, setLikeSchemaRevocable] = useState<boolean | null>(null);
   const [likeCount, setLikeCount] = useState(0);
   const [userLikeUid, setUserLikeUid] = useState<string | null>(null);
   const [isLikeLoading, setIsLikeLoading] = useState(false);
-  const [likeInstanceRevocable, setLikeInstanceRevocable] = useState<boolean | null>(null);
   // Attendance (for top ticket card toggle)
   const [myAttendanceUidTop, setMyAttendanceUidTop] = useState<string | null>(null);
   const [isTopAttendanceBusy, setIsTopAttendanceBusy] = useState(false);
@@ -212,11 +207,9 @@ const EventDetails = () => {
         setLikeSchemaUid(null);
         setLikeCount(0);
         setUserLikeUid(null);
-        setLikeSchemaRevocable(null);
         return;
       }
       setLikeSchemaUid(schema.schema_uid);
-      setLikeSchemaRevocable(Boolean((schema as any).revocable));
       const { data: likes } = await supabase
         .from('attestations')
         .select('attestation_uid, recipient, created_at')
@@ -234,15 +227,8 @@ const EventDetails = () => {
         const uid: string | null = mine?.attestation_uid || null;
         if (isValidAttestationUid(uid)) {
           setUserLikeUid(uid);
-          try {
-            const r = await isAttestationRevocableOnChain(uid!, ev.chain_id);
-            setLikeInstanceRevocable(r);
-          } catch (_) {
-            setLikeInstanceRevocable(null);
-          }
         } else {
           setUserLikeUid(null);
-          setLikeInstanceRevocable(null);
         }
       }
     } catch (e) {
@@ -332,7 +318,11 @@ const EventDetails = () => {
       // Unlike (revoke)
       if (userLikeUid) {
         if (state.like.flags && !state.like.flags.canRevoke) {
-          toast({ title: 'Action unavailable', description: getDisableMessage('like', state.like.flags.reason) || 'Removing your like isn’t available for this event.', variant: 'destructive' });
+          toast({
+            title: 'Action unavailable',
+            description: getDisableMessage('like', state.like.flags.reason) || "Removing your like isn't available for this event.",
+            variant: 'destructive'
+          });
           return;
         }
         if (!isValidAttestationUid(userLikeUid)) {
@@ -791,7 +781,7 @@ const EventDetails = () => {
       <MetaTags
         title={`${event.title} - TeeRex Event`}
         description={event.description || `Join us for ${event.title} on TeeRex. ${event.location ? `Location: ${event.location}. ` : ''}${event.price ? `Price: ${event.price} ${event.currency}. ` : ''}Limited tickets available!`}
-        image={event.image_url}
+        image={event.image_url || undefined}
         url={window.location.href}
         type="event"
       />
@@ -901,7 +891,7 @@ const EventDetails = () => {
                         <TooltipContent>
                           {!likeSchemaUid
                             ? 'Likes unavailable: schema not configured or invalid.'
-                            : (getDisableMessage('like', state.like.flags?.reason) || 'Removing your like isn’t available for this event.')}
+                            : (getDisableMessage('like', state.like.flags?.reason) || "Removing your like isn't available for this event.")}
                         </TooltipContent>
                       )}
                     </Tooltip>
@@ -975,17 +965,81 @@ const EventDetails = () => {
                 <RichTextDisplay content={event.description} />
               </div>
             </div>
-
-            {/* Attendees List */}
-            <AttendeesList
-              eventId={event.id}
-              eventTitle={event.title}
-              attendanceSchemaUid={attendanceSchemaUid || undefined}
-            />
           </div>
 
           {/* Sidebar */}
           <div className="space-y-6">
+            {/* Event Details Card */}
+            <Card className="border-0 shadow-sm">
+              <CardHeader className="pb-4">
+                <h3 className="font-semibold text-gray-900">Event details</h3>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="space-y-3">
+                  {event.date && (
+                    <div className="flex items-start space-x-3">
+                      <Calendar className="w-5 h-5 text-gray-400 mt-0.5" />
+                      <div>
+                        <div className="font-medium text-gray-900">
+                          {formatEventDateRange({ startDate: event.date, endDate: event.end_date, formatStyle: 'long' })}
+                        </div>
+                        <div className="text-sm text-gray-600">
+                          {event.time}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {event.location && (
+                    <div className="flex items-start space-x-3">
+                      <MapPin className="w-5 h-5 text-gray-400 mt-0.5" />
+                      <div>
+                        <div className="font-medium text-gray-900">Location</div>
+                        <div className="text-sm text-gray-600">
+                          {event.location}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="flex items-start space-x-3">
+                    <Users className="w-5 h-5 text-gray-400 mt-0.5" />
+                    <div>
+                      <div className="font-medium text-gray-900">Capacity</div>
+                      <div className="text-sm text-gray-600">
+                        {event.capacity} attendees
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <Separator />
+
+                <div className="space-y-2">
+                  <div className="text-xs text-gray-500 uppercase tracking-wider">
+                    Blockchain Info
+                  </div>
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="text-gray-600">Contract</span>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-auto p-0 text-blue-600"
+                      asChild
+                    >
+                      <a href={explorerUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center">
+                        <span className="font-mono text-xs">
+                          {event.lock_address.slice(0, 6)}...
+                          {event.lock_address.slice(-4)}
+                        </span>
+                        <ExternalLink className="w-3 h-3 ml-1" />
+                      </a>
+                    </Button>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
             {/* Ticket Card */}
             <Card className="border-0 shadow-sm">
               <CardHeader className="pb-4">
@@ -1157,83 +1211,20 @@ const EventDetails = () => {
               </CardContent>
             </Card>
 
-            {/* Event Details Card */}
-            <Card className="border-0 shadow-sm">
-              <CardHeader className="pb-4">
-                <h3 className="font-semibold text-gray-900">Event details</h3>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="space-y-3">
-                  {event.date && (
-                    <div className="flex items-start space-x-3">
-                      <Calendar className="w-5 h-5 text-gray-400 mt-0.5" />
-                      <div>
-                        <div className="font-medium text-gray-900">
-                          {formatEventDateRange({ startDate: event.date, endDate: event.end_date, formatStyle: 'long' })}
-                        </div>
-                        <div className="text-sm text-gray-600">
-                          {event.time}
-                        </div>
-                      </div>
-                    </div>
-                  )}
-
-                  {event.location && (
-                    <div className="flex items-start space-x-3">
-                      <MapPin className="w-5 h-5 text-gray-400 mt-0.5" />
-                      <div>
-                        <div className="font-medium text-gray-900">Location</div>
-                        <div className="text-sm text-gray-600">
-                          {event.location}
-                        </div>
-                      </div>
-                    </div>
-                  )}
-
-                  <div className="flex items-start space-x-3">
-                    <Users className="w-5 h-5 text-gray-400 mt-0.5" />
-                    <div>
-                      <div className="font-medium text-gray-900">Capacity</div>
-                      <div className="text-sm text-gray-600">
-                        {event.capacity} attendees
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                <Separator />
-
-                <div className="space-y-2">
-                  <div className="text-xs text-gray-500 uppercase tracking-wider">
-                    Blockchain Info
-                  </div>
-                  <div className="flex items-center justify-between text-sm">
-                    <span className="text-gray-600">Contract</span>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="h-auto p-0 text-blue-600"
-                      asChild
-                    >
-                      <a href={explorerUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center">
-                        <span className="font-mono text-xs">
-                          {event.lock_address.slice(0, 6)}...
-                          {event.lock_address.slice(-4)}
-                        </span>
-                        <ExternalLink className="w-3 h-3 ml-1" />
-                      </a>
-                    </Button>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-            
             {/* Event Interactions Card */}
             <EventInteractionsCard
               eventId={event.id}
               lockAddress={event.lock_address}
-              creatorAddress={event.creator_id}
+              creatorAddress={event.creator_address || ''}
+              creatorId={event.creator_id}
               chainId={event.chain_id}
+            />
+
+            {/* Attendees List */}
+            <AttendeesList
+              eventId={event.id}
+              eventTitle={event.title}
+              attendanceSchemaUid={attendanceSchemaUid || undefined}
             />
 
             {/* Enhanced Attestation Card */}
@@ -1249,7 +1240,7 @@ const EventDetails = () => {
               canRevokeAttendanceOverride={myAttendanceUidTop ? !((attendanceSchemaRevocable === false)) : undefined}
               attendanceDisableReason={myAttendanceUidTop && attendanceSchemaRevocable === false ? 'Attendance records for this event are permanent.' : undefined}
               canRevokeGoingOverride={myGoingUid ? !((goingSchemaRevocable === false || goingInstanceRevocable === false)) : undefined}
-              goingDisableReason={myGoingUid && (goingSchemaRevocable === false || goingInstanceRevocable === false) ? 'This going status can’t be revoked.' : undefined}
+              goingDisableReason={myGoingUid && (goingSchemaRevocable === false || goingInstanceRevocable === false) ? "This going status cannot be revoked." : undefined}
             />
           </div>
         </div>
@@ -1299,31 +1290,6 @@ const EventDetails = () => {
     </div>
     </>
   );
-};
-
-// Temporary debug function - can be called from browser console
-(window as any).grantKeysManually = async () => {
-  const supabase = (await import("@/integrations/supabase/client")).supabase;
-  try {
-    const { data, error } = await supabase.functions.invoke(
-      "paystack-grant-keys",
-      {
-        body: {
-          transactionReference:
-            "TeeRex-d7928d4b-02f0-47b5-b9f0-dcff259b086a-1751938091432",
-        },
-      }
-    );
-
-    if (error) {
-      console.error("Error:", error);
-      return;
-    }
-
-    console.log("Success:", data);
-  } catch (err) {
-    console.error("Failed:", err);
-  }
 };
 
 export default EventDetails;

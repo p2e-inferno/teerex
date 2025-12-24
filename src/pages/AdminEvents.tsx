@@ -1,5 +1,4 @@
 import React, { useState, useEffect } from "react";
-import { ethers } from "ethers";
 import {
   Card,
   CardContent,
@@ -10,13 +9,6 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
@@ -36,13 +28,11 @@ import {
   Wallet,
   BarChart3,
   Copy,
-  ExternalLink,
 } from "lucide-react";
 import { Link } from "react-router-dom";
 import { baseSepolia } from "wagmi/chains";
 import { useBatchAttestation } from "@/hooks/useBatchAttestation";
 import { useAttestationEncoding } from "@/hooks/useAttestationEncoding";
-import { useDelegatedAttestation } from "@/hooks/useDelegatedAttestation";
 import { useTeeRexDelegatedAttestation } from "@/hooks/useTeeRexDelegatedAttestation";
 import { useSSE } from "@/hooks/useSSE";
 import { DirectEASAttestationButton } from "@/components/attestations/DirectEASAttestationButton";
@@ -88,7 +78,6 @@ const AdminEvents: React.FC = () => {
 
   const batch = useBatchAttestation(baseSepolia.id);
   const { encodeEventAttendanceData } = useAttestationEncoding();
-  const { signDelegatedAttestation } = useDelegatedAttestation(); // For direct EAS attestations
   const { signTeeRexAttestation } = useTeeRexDelegatedAttestation(); // For TeeRex proxy attestations
   const [batchSseLogs, setBatchSseLogs] = useState<string[]>([]);
   const [txSseLogs, setTxSseLogs] = useState<string[]>([]);
@@ -137,7 +126,7 @@ const AdminEvents: React.FC = () => {
         .order("created_at", { ascending: false });
 
       if (error) throw error;
-      setEvents(data || []);
+      setEvents((data || []) as any);
     } catch (error) {
       console.error("Error fetching events:", error);
       toast({

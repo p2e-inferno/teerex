@@ -7,6 +7,7 @@ import {
   jwtVerify,
   importSPKI,
 } from "https://deno.land/x/jose@v4.14.4/index.ts";
+import { validateChain } from '../_shared/network-helpers.ts';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
@@ -71,15 +72,18 @@ Deno.serve(async (req) => {
 
     let authorized = ev.creator_id === (privyUserId as any)
     if (!authorized) {
-      let rpcUrl: string | undefined
-      const { data: net } = await supabase.from('network_configs').select('rpc_url').eq('chain_id', ev.chain_id).maybeSingle()
-      rpcUrl = net?.rpc_url || (ev.chain_id === 8453 ? 'https://mainnet.base.org' : 'https://sepolia.base.org')
-      if (!rpcUrl) rpcUrl = Deno.env.get('PRIMARY_RPC_URL') || undefined
-      if (!rpcUrl) return new Response(JSON.stringify({ error: 'Network RPC not configured' }), { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+      const networkConfig = await validateChain(supabase, ev.chain_id);
+      if (!networkConfig?.rpc_url) {
+        return new Response(
+          JSON.stringify({ error: 'Network RPC not configured' }),
+          { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        )
+      }
       // Best-effort: require caller to be creator. If you want full on-chain wallet verification, integrate Privy user wallets fetch here.
       // For admin endpoint, creator check is usually sufficient.
+      // Note: provider/lock setup below is incomplete - not used for actual authorization
       try {
-        const provider = new ethers.JsonRpcProvider(rpcUrl)
+        const provider = new ethers.JsonRpcProvider(networkConfig.rpc_url)
         const lockAbi = [{ inputs: [{ internalType: 'address', name: '_account', type: 'address' }], name: 'isLockManager', outputs: [{ internalType: 'bool', name: '', type: 'bool' }], stateMutability: 'view', type: 'function' }]
         const lock = new ethers.Contract(ev.lock_address, lockAbi, provider)
         // We can't map Privy IDs to wallets without fetching; leave as creator-only if not using privy.ts here.

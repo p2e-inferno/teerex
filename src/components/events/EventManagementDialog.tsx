@@ -12,7 +12,7 @@ import { Badge } from '@/components/ui/badge';
 import { Card, CardContent } from '@/components/ui/card';
 import { Switch } from '@/components/ui/switch';
 import { useToast } from '@/hooks/use-toast';
-import { PublishedEvent } from '@/utils/eventUtils';
+import type { PublishedEvent } from '@/types/event';
 import { checkIfLockManager, addLockManager } from '@/utils/lockUtils';
 import { supabase } from '@/integrations/supabase/client';
 import {
@@ -31,11 +31,11 @@ import {
   Info,
   Image
 } from 'lucide-react';
-import { ethers } from 'ethers';
 import { AllowListManager } from './AllowListManager';
 import { WaitlistManager } from './WaitlistManager';
 import { useNetworkConfigs } from '@/hooks/useNetworkConfigs';
 import { base, baseSepolia } from 'wagmi/chains';
+import { getDivviBrowserProvider } from '@/lib/wallet/provider';
 
 interface EventManagementDialogProps {
   event: PublishedEvent;
@@ -128,13 +128,12 @@ export const EventManagementDialog: React.FC<EventManagementDialogProps> = ({
   useEffect(() => {
     const checkUserLockManager = async () => {
       if (!wallets[0] || !open) return;
-      
+
       try {
-        const provider = await wallets[0].getEthereumProvider();
-        const ethersProvider = new ethers.BrowserProvider(provider);
+        const ethersProvider = await getDivviBrowserProvider(wallets[0]);
         const signer = await ethersProvider.getSigner();
         const userAddress = await signer.getAddress();
-        
+
         const isManager = await checkIfLockManager(event.lock_address, userAddress, event.chain_id);
         setIsLockManager(isManager);
       } catch (error) {
@@ -144,6 +143,11 @@ export const EventManagementDialog: React.FC<EventManagementDialogProps> = ({
 
     checkUserLockManager();
   }, [wallets, event.lock_address, open]);
+
+  // Sync local state with prop changes
+  useEffect(() => {
+    setLocalAllowWaitlist(event.allow_waitlist);
+  }, [event.allow_waitlist]);
 
   const handleAddServiceManager = async () => {
     if (!wallets[0]) {
@@ -254,8 +258,7 @@ export const EventManagementDialog: React.FC<EventManagementDialogProps> = ({
     try {
       const { setLockMetadata, getBaseTokenURI, TEEREX_NFT_SYMBOL } = await import('@/utils/lockMetadata');
       
-      const provider = await wallets[0].getEthereumProvider();
-      const ethersProvider = new ethers.BrowserProvider(provider);
+      const ethersProvider = await getDivviBrowserProvider(wallets[0]);
       const signer = await ethersProvider.getSigner();
       
       const baseTokenURI = getBaseTokenURI(event.lock_address);

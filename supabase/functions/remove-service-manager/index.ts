@@ -7,6 +7,8 @@ import {
   jwtVerify,
   importSPKI,
 } from "https://deno.land/x/jose@v4.14.4/index.ts";
+import { validateChain } from "../_shared/network-helpers.ts";
+import { appendDivviTagToCalldataAsync, submitDivviReferralBestEffort } from "../_shared/divvi.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -149,9 +151,30 @@ serve(async (req) => {
     const serviceWallet = new ethers.Wallet(UNLOCK_SERVICE_PRIVATE_KEY);
     console.log("Service wallet address:", serviceWallet.address);
 
-    // Connect to Base Sepolia
-    const rpcUrl = "https://sepolia.base.org";
-    const provider = new ethers.JsonRpcProvider(rpcUrl);
+    // Validate chain and get network configuration
+    const networkConfig = await validateChain(supabaseAdmin, event.chain_id);
+    if (!networkConfig) {
+      return new Response(
+        JSON.stringify({ success: false, error: "Chain not supported or not active" }),
+        {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+          status: 400,
+        }
+      );
+    }
+
+    if (!networkConfig.rpc_url) {
+      return new Response(
+        JSON.stringify({ success: false, error: "Network not fully configured (missing RPC URL)" }),
+        {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+          status: 500,
+        }
+      );
+    }
+
+    // Connect using DB-driven RPC URL
+    const provider = new ethers.JsonRpcProvider(networkConfig.rpc_url);
     const connectedWallet = serviceWallet.connect(provider);
 
     // Create lock contract instance
@@ -174,7 +197,9 @@ serve(async (req) => {
     console.log("Renouncing lock manager role for lock:", event.lock_address);
 
     // Call renounceLockManager
-    const tx = await lockContract.renounceLockManager();
+    const calldata = lockContract.interface.encodeFunctionData("renounceLockManager", []);
+    const tagged = await appendDivviTagToCalldataAsync({ data: calldata, user: serviceWallet.address as `0x${string}` });
+    const tx = await connectedWallet.sendTransaction({ to: event.lock_address, data: tagged });
     console.log("Transaction sent:", tx.hash);
 
     const receipt = await tx.wait();
@@ -182,6 +207,9 @@ serve(async (req) => {
 
     if (receipt.status !== 1) {
       throw new Error("Transaction failed");
+    }
+    if (tx?.hash && typeof event.chain_id === 'number') {
+      await submitDivviReferralBestEffort({ txHash: tx.hash, chainId: event.chain_id });
     }
 
     // Update the database

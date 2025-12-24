@@ -1,6 +1,7 @@
 import { supabase } from '@/integrations/supabase/client';
-import { PublishedEvent } from '@/utils/eventUtils';
 import { fetchKeysSoldForEvents } from '@/lib/home/homeData';
+import { mapEventRow, MappedEvent } from '@/lib/events/eventMapping';
+import type { PublishedEvent } from '@/types/event';
 
 export type SortBy = 'upcoming' | 'newest' | 'price-asc' | 'price-desc' | 'date-desc';
 
@@ -14,26 +15,16 @@ export interface ExploreFilters {
 }
 
 export interface ExplorePageResult {
-  events: PublishedEvent[];
+  events: MappedEvent[];
   totalCount: number;
   hasMore: boolean;
 }
 
-const mapEventRow = (event: any): PublishedEvent => ({
-  ...event,
-  date: event.date ? new Date(event.date) : null,
-  created_at: new Date(event.created_at),
-  updated_at: new Date(event.updated_at),
-  currency: event.currency as 'ETH' | 'USDC' | 'FREE',
-  ngn_price: event.ngn_price || 0,
-  payment_methods: event.payment_methods || ['crypto'],
-  paystack_public_key: event.paystack_public_key,
-});
-
 export async function fetchEventsPage(
   page: number,
   pageSize: number,
-  filters: ExploreFilters = {}
+  filters: ExploreFilters = {},
+  opts: { publicOnly?: boolean } = { publicOnly: true }
 ): Promise<ExplorePageResult> {
   const from = (page - 1) * pageSize;
   const to = from + pageSize - 1;
@@ -41,6 +32,10 @@ export async function fetchEventsPage(
   let query = supabase
     .from('events')
     .select('*', { count: 'exact' });
+
+  if (opts.publicOnly !== false) {
+    query = query.eq('is_public', true);
+  }
 
   // Server-side search across multiple columns
   if (filters.query && filters.query.trim() !== '') {

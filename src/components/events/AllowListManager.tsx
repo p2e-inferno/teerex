@@ -11,10 +11,12 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
-import { PublishedEvent } from '@/utils/eventUtils';
+import type { PublishedEvent } from '@/types/event';
 import { Loader2, Trash2, Plus, Upload } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { Card, CardContent } from '@/components/ui/card';
+import { usePrivy } from '@privy-io/react-auth';
+import { normalizeEmail } from '@/utils/emailUtils';
 
 interface AllowListManagerProps {
   event: PublishedEvent | null;
@@ -25,19 +27,92 @@ interface AllowListManagerProps {
 interface AllowListEntry {
   id: string;
   wallet_address: string;
+  user_email?: string | null;
   created_at: string;
 }
+
+interface AllowListRequestEntry {
+  id: string;
+  user_email: string;
+  wallet_address: string;
+  status: 'pending' | 'approved' | 'rejected';
+  created_at: string;
+}
+
+type UpsertEntry = {
+  user_email?: string;
+  wallet_address: string;
+};
+
+type ManageAllowListPayload =
+  | {
+      action: 'upsert_allow_list';
+      event_id: string;
+      entries: UpsertEntry[];
+    }
+  | {
+      action: 'remove_allow_list';
+      event_id: string;
+      ids: string[];
+    }
+  | {
+      action: 'get_requests';
+      event_id: string;
+      status?: 'pending' | 'approved' | 'rejected';
+      page?: number;
+      page_size?: number;
+    }
+  | {
+      action: 'approve_requests';
+      event_id: string;
+      request_ids: string[];
+    }
+  | {
+      action: 'reject_requests';
+      event_id: string;
+      request_ids: string[];
+    }
+  | {
+      action: 'approve_by_email';
+      event_id: string;
+      user_email: string;
+    };
 
 export const AllowListManager: React.FC<AllowListManagerProps> = ({ event, isOpen, onClose }) => {
   const { toast } = useToast();
   const [isLoading, setIsLoading] = useState(false);
   const [allowList, setAllowList] = useState<AllowListEntry[]>([]);
   const [newAddress, setNewAddress] = useState('');
+  const [newEmail, setNewEmail] = useState('');
   const [csvContent, setCsvContent] = useState('');
+  const [requests, setRequests] = useState<AllowListRequestEntry[]>([]);
+  const [requestsLoading, setRequestsLoading] = useState(false);
+  const { getAccessToken } = usePrivy();
+
+  const callManageAllowList = async (payload: ManageAllowListPayload) => {
+    const accessToken = await getAccessToken();
+    if (!accessToken) {
+      throw new Error('Authentication required to manage allow list');
+    }
+
+    const { data, error } = await supabase.functions.invoke('manage-allow-list', {
+      body: payload,
+      headers: {
+        'X-Privy-Authorization': `Bearer ${accessToken}`,
+      },
+    });
+
+    if (error) throw error;
+    if (!data?.ok) {
+      throw new Error(data?.error || 'Allow list operation failed');
+    }
+    return data;
+  };
 
   useEffect(() => {
     if (isOpen && event) {
       loadAllowList();
+      loadRequests();
     }
   }, [isOpen, event]);
 
@@ -48,7 +123,7 @@ export const AllowListManager: React.FC<AllowListManagerProps> = ({ event, isOpe
     try {
       const { data, error } = await supabase
         .from('event_allow_list')
-        .select('*')
+        .select('id, wallet_address, user_email, created_at')
         .eq('event_id', event.id)
         .order('created_at', { ascending: false });
 
@@ -81,31 +156,18 @@ export const AllowListManager: React.FC<AllowListManagerProps> = ({ event, isOpe
 
     setIsLoading(true);
     try {
-      const { error } = await supabase
-        .from('event_allow_list')
-        .insert({
-          event_id: event.id,
-          wallet_address: newAddress.toLowerCase(),
-        });
+      await callManageAllowList({
+        action: 'upsert_allow_list',
+        event_id: event.id,
+        entries: [{ wallet_address: newAddress.toLowerCase() }],
+      });
 
-      if (error) {
-        if (error.code === '23505') {
-          toast({
-            title: 'Already exists',
-            description: 'This address is already on the allow list',
-            variant: 'default',
-          });
-        } else {
-          throw error;
-        }
-      } else {
-        toast({
-          title: 'Address added',
-          description: 'Wallet address added to allow list',
-        });
-        setNewAddress('');
-        loadAllowList();
-      }
+      toast({
+        title: 'Address added',
+        description: 'Wallet address added to allow list',
+      });
+      setNewAddress('');
+      loadAllowList();
     } catch (error) {
       console.error('Error adding address:', error);
       toast({
@@ -121,12 +183,11 @@ export const AllowListManager: React.FC<AllowListManagerProps> = ({ event, isOpe
   const removeAddress = async (id: string) => {
     setIsLoading(true);
     try {
-      const { error } = await supabase
-        .from('event_allow_list')
-        .delete()
-        .eq('id', id);
-
-      if (error) throw error;
+      await callManageAllowList({
+        action: 'remove_allow_list',
+        event_id: event!.id,
+        ids: [id],
+      });
 
       toast({
         title: 'Address removed',
@@ -166,18 +227,14 @@ export const AllowListManager: React.FC<AllowListManagerProps> = ({ event, isOpe
     setIsLoading(true);
     try {
       const entries = addresses.map(address => ({
-        event_id: event.id,
         wallet_address: address,
       }));
 
-      const { error } = await supabase
-        .from('event_allow_list')
-        .insert(entries);
-
-      if (error) {
-        // Some might be duplicates - that's okay
-        console.warn('Some addresses may have been skipped (duplicates):', error);
-      }
+      await callManageAllowList({
+        action: 'upsert_allow_list',
+        event_id: event.id,
+        entries,
+      });
 
       toast({
         title: 'Addresses uploaded',
@@ -194,6 +251,113 @@ export const AllowListManager: React.FC<AllowListManagerProps> = ({ event, isOpe
       });
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const addByEmail = async () => {
+    if (!event || !newEmail) return;
+
+    const normalized = normalizeEmail(newEmail);
+    if (!normalized) {
+      toast({
+        title: 'Invalid email',
+        description: 'Please enter a valid email address',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    try {
+      await callManageAllowList({
+        action: 'approve_by_email' as any,
+        event_id: event.id,
+        user_email: normalized,
+      });
+
+      toast({
+        title: 'Approved by email',
+        description: 'User has been added to the allow list if a pending request existed for this email.',
+      });
+      setNewEmail('');
+      await Promise.all([loadAllowList(), loadRequests()]);
+    } catch (error: any) {
+      console.error('Error approving by email:', error);
+      toast({
+        title: 'Error',
+        description: error?.message || 'Failed to approve by email',
+        variant: 'destructive',
+      });
+    }
+  };
+
+  const loadRequests = async () => {
+    if (!event) return;
+
+    setRequestsLoading(true);
+    try {
+      const data = await callManageAllowList({
+        action: 'get_requests',
+        event_id: event.id,
+        status: 'pending',
+        page: 1,
+        page_size: 100,
+      });
+      setRequests((data?.data as AllowListRequestEntry[]) || []);
+    } catch (error) {
+      console.error('Error loading allow list requests:', error);
+      toast({
+        title: 'Error',
+        description: 'Failed to load approval requests',
+        variant: 'destructive',
+      });
+    } finally {
+      setRequestsLoading(false);
+    }
+  };
+
+  const approveRequest = async (requestId: string) => {
+    if (!event) return;
+    try {
+      await callManageAllowList({
+        action: 'approve_requests',
+        event_id: event.id,
+        request_ids: [requestId],
+      });
+      toast({
+        title: 'Request approved',
+        description: 'User has been added to the allow list',
+      });
+      await Promise.all([loadAllowList(), loadRequests()]);
+    } catch (error) {
+      console.error('Error approving allow list request:', error);
+      toast({
+        title: 'Error',
+        description: 'Failed to approve request',
+        variant: 'destructive',
+      });
+    }
+  };
+
+  const rejectRequest = async (requestId: string) => {
+    if (!event) return;
+    try {
+      await callManageAllowList({
+        action: 'reject_requests',
+        event_id: event.id,
+        request_ids: [requestId],
+      });
+      toast({
+        title: 'Request rejected',
+        description: 'The request has been marked as rejected',
+      });
+      await loadRequests();
+    } catch (error) {
+      console.error('Error rejecting allow list request:', error);
+      toast({
+        title: 'Error',
+        description: 'Failed to reject request',
+        variant: 'destructive',
+      });
     }
   };
 
@@ -225,6 +389,27 @@ export const AllowListManager: React.FC<AllowListManagerProps> = ({ event, isOpe
                 <Plus className="w-4 h-4" />
               </Button>
             </div>
+          </div>
+
+          {/* Add by Email (approve existing request) */}
+          <div className="space-y-2">
+            <Label htmlFor="new-email">Add by Email (Existing Request)</Label>
+            <div className="flex gap-2">
+              <Input
+                id="new-email"
+                type="email"
+                value={newEmail}
+                onChange={(e) => setNewEmail(e.target.value)}
+                placeholder="user@example.com"
+                disabled={isLoading}
+              />
+              <Button onClick={addByEmail} disabled={isLoading || !newEmail}>
+                <Plus className="w-4 h-4" />
+              </Button>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Approves pending requests for this email and adds their wallet(s) to the allow list.
+            </p>
           </div>
 
           {/* CSV Upload */}
@@ -281,9 +466,16 @@ export const AllowListManager: React.FC<AllowListManagerProps> = ({ event, isOpe
                 {allowList.map((entry) => (
                   <Card key={entry.id}>
                     <CardContent className="py-3 flex items-center justify-between">
-                      <code className="text-sm break-all flex-1 mr-2">
-                        {entry.wallet_address}
-                      </code>
+                      <div className="flex-1 mr-2">
+                        <code className="text-sm break-all block">
+                          {entry.wallet_address}
+                        </code>
+                        {entry.user_email && (
+                          <span className="text-xs text-muted-foreground break-all">
+                            {entry.user_email}
+                          </span>
+                        )}
+                      </div>
                       <Button
                         variant="ghost"
                         size="sm"
@@ -292,6 +484,70 @@ export const AllowListManager: React.FC<AllowListManagerProps> = ({ event, isOpe
                       >
                         <Trash2 className="w-4 h-4 text-red-500" />
                       </Button>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Approval Requests */}
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <Label>Approval Requests ({requests.length})</Label>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={loadRequests}
+                disabled={requestsLoading}
+              >
+                Refresh
+              </Button>
+            </div>
+
+            {requestsLoading ? (
+              <div className="flex justify-center py-4">
+                <Loader2 className="w-5 h-5 animate-spin" />
+              </div>
+            ) : requests.length === 0 ? (
+              <Card>
+                <CardContent className="py-4 text-center text-muted-foreground">
+                  No pending approval requests
+                </CardContent>
+              </Card>
+            ) : (
+              <div className="space-y-2 max-h-[300px] overflow-y-auto">
+                {requests.map((req) => (
+                  <Card key={req.id}>
+                    <CardContent className="py-3">
+                      <div className="flex justify-between items-start gap-2">
+                        <div className="flex-1">
+                          <p className="text-sm font-mono break-all">
+                            {req.wallet_address}
+                          </p>
+                          <p className="text-xs text-muted-foreground break-all">
+                            {req.user_email}
+                          </p>
+                        </div>
+                        <div className="flex gap-2">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            disabled={requestsLoading}
+                            onClick={() => approveRequest(req.id)}
+                          >
+                            Approve
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            disabled={requestsLoading}
+                            onClick={() => rejectRequest(req.id)}
+                          >
+                            Reject
+                          </Button>
+                        </div>
+                      </div>
                     </CardContent>
                   </Card>
                 ))}

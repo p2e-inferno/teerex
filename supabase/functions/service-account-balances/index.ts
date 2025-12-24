@@ -6,6 +6,7 @@ import { SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, SERVICE_PK } from "../_shared/
 import { enforcePost } from "../_shared/http.ts";
 import { ensureAdmin } from "../_shared/admin-check.ts";
 import { handleError } from "../_shared/error-handler.ts";
+import { validateChain } from "../_shared/network-helpers.ts";
 
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: buildPreflightHeaders(req) });
@@ -52,12 +53,16 @@ serve(async (req) => {
       error?: string;
     }> = [];
     for (const net of networks || []) {
-      const rpcUrl = net.rpc_url ||
-        (net.chain_id === 8453 ? "https://mainnet.base.org" :
-        net.chain_id === 84532 ? "https://sepolia.base.org" :
-        Deno.env.get("PRIMARY_RPC_URL"));
-
-      if (!rpcUrl) continue;
+      // Use DB value if present, otherwise validate chain
+      let rpcUrl = net.rpc_url;
+      if (!rpcUrl) {
+        const networkConfig = await validateChain(supabase, net.chain_id);
+        if (!networkConfig?.rpc_url) {
+          console.warn(`Skipping chain ${net.chain_id} - RPC URL not configured`);
+          continue;
+        }
+        rpcUrl = networkConfig.rpc_url;
+      }
 
       try {
         const provider = new JsonRpcProvider(rpcUrl);

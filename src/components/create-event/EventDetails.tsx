@@ -18,7 +18,6 @@ interface EventDetailsProps {
 export const EventDetails: React.FC<EventDetailsProps> = ({
   formData,
   updateFormData,
-  onNext,
   editingEventId
 }) => {
   const categories = [

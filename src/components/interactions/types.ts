@@ -135,16 +135,26 @@ export interface CreateLikeInput {
 export interface UseEventPostsReturn {
   posts: EventPost[];
   isLoading: boolean;
+  isRefreshing: boolean;
   error: Error | null;
   createPost: (content: string) => Promise<void>;
   deletePost: (postId: string) => Promise<void>;
   pinPost: (postId: string, isPinned: boolean) => Promise<void>;
   toggleComments: (postId: string, enabled: boolean) => Promise<void>;
+  applyReactionOptimistic: (
+    postId: string,
+    reactionType: 'agree' | 'disagree',
+    action: 'added' | 'removed' | 'switched'
+  ) => void;
+  applyCommentDelta: (postId: string, delta: number) => void;
   refetch: () => Promise<void>;
 }
 
 export interface UsePostReactionsReturn {
-  toggleReaction: (postId: string, reactionType: 'agree' | 'disagree') => Promise<void>;
+  toggleReaction: (
+    postId: string,
+    reactionType: 'agree' | 'disagree'
+  ) => Promise<'added' | 'removed' | 'switched' | undefined>;
   isLoading: boolean;
   error: Error | null;
 }
@@ -168,6 +178,8 @@ export interface UseTicketVerificationReturn {
   hasTicket: boolean;
   isChecking: boolean;
   ticketCount: number;
+  error: Error | null;
+  refetch: () => void;
 }
 
 export interface UseCreatorPermissionsReturn {

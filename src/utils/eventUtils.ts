@@ -2,48 +2,9 @@
 import { supabase } from '@/integrations/supabase/client';
 import { EventFormData } from '@/pages/CreateEvent';
 import { checkKeyOwnership } from './lockUtils';
-import { baseSepolia } from 'wagmi/chains';
 import { createEventHash } from './eventIdempotency';
-
-export interface PublishedEvent {
-  id: string;
-  creator_id: string;
-  title: string;
-  description: string;
-  date: Date | null;
-  end_date: Date | null;
-  starts_at?: string | null;
-  time: string;
-  location: string;
-  event_type: 'physical' | 'virtual';
-  capacity: number;
-  price: number;
-  currency: 'ETH' | 'USDC' | 'FREE';
-  ngn_price: number;
-  payment_methods: string[];
-  paystack_public_key: string | null;
-  category: string;
-  image_url: string | null;
-  image_crop_x?: number;
-  image_crop_y?: number;
-  lock_address: string;
-  transaction_hash: string;
-  chain_id: number;
-  created_at: Date;
-  updated_at: Date;
-  attestation_enabled: boolean;
-  attendance_schema_uid: string | null;
-  review_schema_uid: string | null;
-  max_keys_per_address: number;
-  transferable: boolean;
-  requires_approval: boolean;
-  service_manager_added: boolean;
-  is_public: boolean;
-  allow_waitlist: boolean;
-  has_allow_list: boolean;
-  nft_metadata_set: boolean;
-  nft_base_uri: string | null;
-}
+import { mapEventRow, MappedEvent } from '@/lib/events/eventMapping';
+import type { PublishedEvent } from '@/types/event';
 
 export const savePublishedEvent = async (
   formData: EventFormData,
@@ -56,7 +17,6 @@ export const savePublishedEvent = async (
     // Map payment method to persisted fields
     const isCrypto = formData.paymentMethod === 'crypto';
     const isFiat = formData.paymentMethod === 'fiat';
-    const isFree = formData.paymentMethod === 'free';
 
     // Require Paystack public key for fiat
     let paystackPublicKey: string | null = null;
@@ -127,8 +87,8 @@ export const savePublishedEvent = async (
       paystack_public_key: paystackPublicKey,
       category: formData.category,
       image_url: formData.imageUrl || null,
-      image_crop_x: formData.imageCropX,
-      image_crop_y: formData.imageCropY,
+      image_crop_x: formData.imageCropX || null,
+      image_crop_y: formData.imageCropY || null,
       lock_address: lockAddress,
       transaction_hash: transactionHash,
       chain_id: (formData as any).chainId,
@@ -194,7 +154,7 @@ export const savePublishedEvent = async (
       date: data.date ? new Date(data.date) : null,
       created_at: new Date(data.created_at),
       updated_at: new Date(data.updated_at),
-      currency: data.currency as 'ETH' | 'USDC' | 'FREE',
+      currency: data.currency,
       ngn_price: data.ngn_price || 0,
       payment_methods: data.payment_methods || [formData.paymentMethod],
       paystack_public_key: data.paystack_public_key
@@ -205,7 +165,7 @@ export const savePublishedEvent = async (
   }
 };
 
-export const getPublishedEvents = async (): Promise<PublishedEvent[]> => {
+export const getPublishedEvents = async (): Promise<MappedEvent[]> => {
   try {
     const { data, error } = await supabase
       .from('events')
@@ -217,20 +177,29 @@ export const getPublishedEvents = async (): Promise<PublishedEvent[]> => {
       return [];
     }
 
-    return (data || []).map((event: any) => ({
-      ...event,
-      date: event.date ? new Date(event.date) : null,
-      end_date: event.end_date ? new Date(event.end_date) : null,
-      starts_at: event.starts_at || null,
-      created_at: new Date(event.created_at),
-      updated_at: new Date(event.updated_at),
-      currency: event.currency as 'ETH' | 'USDC' | 'FREE',
-      ngn_price: event.ngn_price || 0,
-      payment_methods: event.payment_methods || ['crypto'],
-      paystack_public_key: event.paystack_public_key
-    }));
+    return (data || []).map(mapEventRow);
   } catch (error) {
     console.error('Error fetching published events:', error);
+    return [];
+  }
+};
+
+export const getPublicEvents = async (): Promise<MappedEvent[]> => {
+  try {
+    const { data, error } = await supabase
+      .from('events')
+      .select('*')
+      .eq('is_public', true)
+      .order('created_at', { ascending: false });
+
+    if (error) {
+      console.error('Error fetching public events:', error);
+      return [];
+    }
+
+    return (data || []).map(mapEventRow);
+  } catch (error) {
+    console.error('Error fetching public events:', error);
     return [];
   }
 };
@@ -241,7 +210,7 @@ export const getPublishedEvents = async (): Promise<PublishedEvent[]> => {
  */
 export const getPublishedEventByLockAddress = async (
   lockAddress: string
-): Promise<PublishedEvent | null> => {
+): Promise<MappedEvent | null> => {
   try {
     const normalizedAddress = lockAddress.toLowerCase();
 
@@ -256,18 +225,7 @@ export const getPublishedEventByLockAddress = async (
       return null;
     }
 
-    const event = data as any;
-    return {
-      ...event,
-      date: event.date ? new Date(event.date) : null,
-      end_date: event.end_date ? new Date(event.end_date) : null,
-      created_at: new Date(event.created_at),
-      updated_at: new Date(event.updated_at),
-      currency: event.currency as 'ETH' | 'USDC' | 'FREE',
-      ngn_price: event.ngn_price || 0,
-      payment_methods: event.payment_methods || ['crypto'],
-      paystack_public_key: event.paystack_public_key
-    } as PublishedEvent;
+    return mapEventRow(data);
   } catch (error) {
     console.error('Error fetching event by lock address:', error);
     return null;
@@ -280,7 +238,7 @@ export const getPublishedEventByLockAddress = async (
  * - Otherwise, lookup by UUID
  * This provides backwards compatibility while enabling Web3-native URLs
  */
-export const getPublishedEventById = async (id: string): Promise<PublishedEvent | null> => {
+export const getPublishedEventById = async (id: string): Promise<MappedEvent | null> => {
   try {
     // Check if id is an Ethereum address (0x + 40 hex chars)
     const isAddress = /^0x[a-fA-F0-9]{40}$/.test(id);
@@ -302,18 +260,7 @@ export const getPublishedEventById = async (id: string): Promise<PublishedEvent 
       return null;
     }
 
-    const event = data as any;
-    return {
-      ...event,
-      date: event.date ? new Date(event.date) : null,
-      end_date: event.end_date ? new Date(event.end_date) : null,
-      created_at: new Date(event.created_at),
-      updated_at: new Date(event.updated_at),
-      currency: event.currency as 'ETH' | 'USDC' | 'FREE',
-      ngn_price: event.ngn_price || 0,
-      payment_methods: event.payment_methods || ['crypto'],
-      paystack_public_key: event.paystack_public_key
-    } as PublishedEvent;
+    return mapEventRow(data);
   } catch (error) {
     console.error('Error fetching event by id:', error);
     return null;
@@ -339,7 +286,7 @@ export const getUserEvents = async (userId: string): Promise<PublishedEvent[]> =
       end_date: event.end_date ? new Date(event.end_date) : null,
       created_at: new Date(event.created_at),
       updated_at: new Date(event.updated_at),
-      currency: event.currency as 'ETH' | 'USDC' | 'FREE',
+      currency: event.currency,
       ngn_price: event.ngn_price || 0,
       payment_methods: event.payment_methods || ['crypto'],
       paystack_public_key: event.paystack_public_key

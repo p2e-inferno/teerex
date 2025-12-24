@@ -9,7 +9,7 @@ import {
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/use-toast';
-import { PublishedEvent } from '@/utils/eventUtils';
+import type { PublishedEvent } from '@/types/event';
 import { Loader2, Mail, Users, Filter, Link as LinkIcon, AlertCircle, CheckCircle2 } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { Card, CardContent } from '@/components/ui/card';
@@ -17,7 +17,7 @@ import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
 import { useMyEventsList } from '@/hooks/useMyEventsList';
-import { useEventWaitlist, WaitlistFilter, WaitlistEntry } from '@/hooks/useEventWaitlist';
+import { useEventWaitlist, WaitlistFilter } from '@/hooks/useEventWaitlist';
 import { usePrivy } from '@privy-io/react-auth';
 
 interface WaitlistManagerProps {

@@ -3,6 +3,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.50.0";
 import { JsonRpcProvider, Contract } from "https://esm.sh/ethers@6.14.4";
 import { verifyPrivyToken, getUserWalletAddresses } from "./privy.ts";
 import { SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY } from "./constants.ts";
+import { validateChain } from "./network-helpers.ts";
 
 const LOCK_MANAGER_ABI = [
   {
@@ -30,21 +31,11 @@ export async function ensureAdmin(headers: Headers): Promise<string> {
   const primaryChainId = primaryChainIdStr ? Number(primaryChainIdStr) : 84532;
 
   const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
-  const { data: net } = await supabase
-    .from("network_configs")
-    .select("rpc_url")
-    .eq("chain_id", primaryChainId)
-    .maybeSingle();
-
-  let rpcUrl = net?.rpc_url;
-  if (!rpcUrl) {
-    rpcUrl = primaryChainId === 8453 ? "https://mainnet.base.org"
-      : primaryChainId === 84532 ? "https://sepolia.base.org"
-      : Deno.env.get("PRIMARY_RPC_URL") || undefined;
-  }
-  if (!rpcUrl) {
+  const networkConfig = await validateChain(supabase, primaryChainId);
+  if (!networkConfig?.rpc_url) {
     throw new Error("network_rpc_not_configured");
   }
+  const rpcUrl = networkConfig.rpc_url;
 
   const wallets = await getUserWalletAddresses(privyUserId);
   if (!wallets || wallets.length === 0) {

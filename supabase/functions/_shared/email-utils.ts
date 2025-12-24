@@ -283,6 +283,40 @@ export function getWaitlistSpotOpenEmail(
 }
 
 /**
+ * Generate allow list approval email content
+ */
+export function getAllowListApprovalEmail(
+  eventTitle: string,
+  eventDate: string,
+  eventUrl: string
+) {
+  const bodyHtml = `
+    <h1 style="margin: 0 0 16px; font-size: 24px; font-weight: 700; color: ${TEXT_COLOR}; text-align: center;">You're Approved 🎟️</h1>
+    <p style="margin: 0 0 24px; font-size: 16px; line-height: 24px; color: #4B5563; text-align: center;">
+      You've been approved to purchase tickets for <strong>${eventTitle}</strong>.
+    </p>
+
+    <div style="background-color: #F9FAFB; border-radius: 8px; padding: 20px; margin-bottom: 24px; text-align: center;">
+      <p style="margin: 0 0 4px; font-size: 12px; color: #6B7280; text-transform: uppercase;">Event</p>
+      <p style="margin: 0 0 8px; font-size: 18px; font-weight: 600; color: ${TEXT_COLOR};">${eventTitle}</p>
+      <p style="margin: 0; font-size: 14px; color: #6B7280;">${eventDate}</p>
+    </div>
+
+    <div style="text-align: center; margin: 32px 0;">
+      <a href="${eventUrl}" style="background-color: ${BRAND_COLOR}; color: #ffffff; padding: 14px 32px; text-decoration: none; border-radius: 6px; font-weight: 600; font-size: 16px; display: inline-block;">
+        Get Your Ticket
+      </a>
+    </div>
+  `;
+
+  return {
+    subject: `Approved for ${eventTitle}`,
+    text: `You have been approved to purchase tickets for ${eventTitle} on ${eventDate}.\n\nGet your ticket here: ${eventUrl}`,
+    html: wrapHtmlContent(`Approved for ${eventTitle}`, bodyHtml),
+  };
+}
+
+/**
  * Generate post notification email content
  */
 export function getPostNotificationEmail(
