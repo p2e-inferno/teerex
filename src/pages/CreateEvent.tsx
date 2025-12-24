@@ -772,8 +772,8 @@ const CreateEvent = () => {
   if (!authenticated) {
     return (
       <WalletConnectionGate
-        title="Connect Your Wallet to Create Events"
-        description="You need to connect your wallet to create and manage Web3 events"
+        title="Connect to the App to Create Events"
+        description="You need to connect using email or wallet and manage Web3 events"
         fullPage={true}
       />
     );

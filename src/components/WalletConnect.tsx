@@ -22,10 +22,10 @@ export const WalletConnect: React.FC = () => {
         <CardHeader className="text-center pb-4">
           <CardTitle className="flex items-center justify-center gap-2 text-gray-900 text-xl">
             <Wallet className="h-5 w-5 text-purple-600" />
-            Connect Wallet
+            Connect to App
           </CardTitle>
           <CardDescription className="text-gray-600">
-            Connect your wallet to start creating events
+            Connect to the App to start creating events
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -33,7 +33,7 @@ export const WalletConnect: React.FC = () => {
             onClick={login} 
             className="w-full bg-purple-600 hover:bg-purple-700 text-white font-medium rounded-xl py-3"
           >
-            Connect Wallet
+            Connect
           </Button>
         </CardContent>
       </Card>
