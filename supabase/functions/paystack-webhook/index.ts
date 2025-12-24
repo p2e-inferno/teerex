@@ -6,6 +6,7 @@ import PublicLockV15 from "../_shared/abi/PublicLockV15.json" assert { type: "js
 import { sendEmail, getTicketEmail, normalizeEmail } from "../_shared/email-utils.ts";
 import { formatEventDate } from "../_shared/date-utils.ts";
 import { validateChain } from "../_shared/network-helpers.ts";
+import { appendDivviTagToCalldataAsync, submitDivviReferralBestEffort } from "../_shared/divvi.ts";
 
 function json(data: any, status = 200) {
   return new Response(JSON.stringify(data), {
@@ -147,9 +148,15 @@ serve(async (req) => {
     let granted = false;
     let grantTxHash: string | undefined;
     if (!hasKey) {
-      const txSend = await lock.grantKeys(recipients, expirations, keyManagers);
+      const serviceUser = (await signer.getAddress()) as `0x${string}`;
+      const calldata = lock.interface.encodeFunctionData('grantKeys', [recipients, expirations, keyManagers]);
+      const taggedData = await appendDivviTagToCalldataAsync({ data: calldata, user: serviceUser });
+      const txSend = await signer.sendTransaction({ to: lockAddress, data: taggedData });
       await txSend.wait();
       grantTxHash = txSend.hash as string | undefined;
+      if (typeof chainId === 'number' && grantTxHash) {
+        await submitDivviReferralBestEffort({ txHash: grantTxHash, chainId });
+      }
       granted = true;
     } else {
       console.log(" [KEY GRANT] Recipient already has valid key; skipping grant");

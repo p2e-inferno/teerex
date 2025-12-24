@@ -233,7 +233,6 @@ export function buildDelegatedTypedData(params: {
     schemaUid,
     recipient,
     data,
-    attester,
     deadline,
     expirationTime = 0,
     revocable = false,

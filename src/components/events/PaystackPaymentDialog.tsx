@@ -146,16 +146,6 @@ export const PaystackPaymentDialog: React.FC<PaystackPaymentDialogProps> = ({
     setIsLoading(false);
   };
 
-  const handlePaymentError = () => {
-    setIsLoading(false);
-    setIsPaystackOpen(false);
-    toast({
-      title: "Payment Failed",
-      description: "Your payment could not be processed. Please try again.",
-      variant: "destructive",
-    });
-  };
-
   const handlePaymentClose = () => {
     // Paystack closes after success too; avoid misleading cancel toasts
     setIsLoading(false);

@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { usePrivy } from '@privy-io/react-auth';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { usePrivy, useWallets } from '@privy-io/react-auth';
 import { supabase } from '@/integrations/supabase/client';
 import { CommentList } from './CommentList';
 import { CommentInput } from './CommentInput';
@@ -8,119 +8,75 @@ import type { PostComment } from '../types';
 
 interface CommentSectionProps {
   postId: string;
-  creatorAddress: string;
   commentsEnabled: boolean;
+  canModerateComments?: boolean;
+  onCommentDelta?: (delta: number) => void;
 }
 
 export const CommentSection: React.FC<CommentSectionProps> = ({
   postId,
-  creatorAddress,
   commentsEnabled,
+  canModerateComments = false,
+  onCommentDelta,
 }) => {
-  const { getAccessToken } = usePrivy();
+  const { getAccessToken, authenticated } = usePrivy();
+  const { wallets } = useWallets();
+  const walletKey = useMemo(
+    () =>
+      (wallets || [])
+        .map((w) => w?.address?.toLowerCase())
+        .filter(Boolean)
+        .join(','),
+    [wallets]
+  );
   const [comments, setComments] = useState<PostComment[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
+  const [isAllowed, setIsAllowed] = useState(true);
 
   // Fetch comments for this post
   const fetchComments = useCallback(async () => {
-    if (!postId) return;
+    if (!postId || !commentsEnabled) return;
 
     try {
       setIsLoading(true);
       setError(null);
+      setIsAllowed(true);
 
-      const res: any = await supabase
-        .from('post_comments' as any)
-        .select('*')
-        .eq('post_id', postId)
-        .eq('is_deleted', false)
-        .order('created_at', { ascending: true });
+      const token = await getAccessToken?.();
+      if (!token) {
+        setComments([]);
+        setIsAllowed(false);
+        return;
+      }
 
-      if (res.error) throw res.error;
+      const { data, error: invokeError } = await supabase.functions.invoke('get-post-comments', {
+        body: { postId },
+        headers: { 'X-Privy-Authorization': `Bearer ${token}` },
+      });
 
-      setComments((res.data as PostComment[]) || []);
+      if (invokeError) throw invokeError;
+      if (!data?.ok) throw new Error(data?.error || 'Failed to load comments');
+
+      if (!data.allowed) {
+        setComments([]);
+        setIsAllowed(false);
+        return;
+      }
+
+      setComments((data.comments as PostComment[]) || []);
     } catch (err) {
       console.error('Error fetching comments:', err);
       setError(err as Error);
     } finally {
       setIsLoading(false);
     }
-  }, [postId]);
+  }, [postId, commentsEnabled, getAccessToken, walletKey]);
 
   // Initial fetch
   useEffect(() => {
     fetchComments();
-  }, [fetchComments]);
-
-  // Realtime subscription
-  useEffect(() => {
-    if (!postId) return;
-
-    console.log('[Realtime] Setting up comment subscription for post:', postId);
-
-    const channel = supabase
-      .channel(`post-comments-${postId}`)
-      .on(
-        'postgres_changes',
-        {
-          event: 'INSERT',
-          schema: 'public',
-          table: 'post_comments',
-          filter: `post_id=eq.${postId}`,
-        },
-        (payload) => {
-          console.log('[Realtime] New comment:', payload.new);
-          const newComment = payload.new as PostComment;
-          if (!newComment.is_deleted) {
-            setComments((prev) => [...prev, newComment]);
-          }
-        }
-      )
-      .on(
-        'postgres_changes',
-        {
-          event: 'UPDATE',
-          schema: 'public',
-          table: 'post_comments',
-          filter: `post_id=eq.${postId}`,
-        },
-        (payload) => {
-          console.log('[Realtime] Updated comment:', payload.new);
-          const updatedComment = payload.new as PostComment;
-          if (updatedComment.is_deleted) {
-            // Remove deleted comment
-            setComments((prev) => prev.filter((c) => c.id !== updatedComment.id));
-          } else {
-            // Update comment content
-            setComments((prev) =>
-              prev.map((c) => (c.id === updatedComment.id ? updatedComment : c))
-            );
-          }
-        }
-      )
-      .on(
-        'postgres_changes',
-        {
-          event: 'DELETE',
-          schema: 'public',
-          table: 'post_comments',
-          filter: `post_id=eq.${postId}`,
-        },
-        (payload) => {
-          console.log('[Realtime] Deleted comment:', payload.old);
-          setComments((prev) => prev.filter((c) => c.id !== (payload.old as PostComment).id));
-        }
-      )
-      .subscribe((status) => {
-        console.log('[Realtime] Comment subscription status:', status);
-      });
-
-    return () => {
-      console.log('[Realtime] Cleaning up comment subscription for post:', postId);
-      channel.unsubscribe();
-    };
-  }, [postId]);
+  }, [fetchComments, authenticated, walletKey]);
 
   // Create comment via edge function
   const handleCreateComment = useCallback(
@@ -146,10 +102,39 @@ export const CommentSection: React.FC<CommentSectionProps> = ({
         throw new Error(errorMessage);
       }
 
-      // Comment will be added via Realtime subscription
+      const created = (data.comment as PostComment) || null;
+      if (created) {
+        setComments((prev) => [...prev, created]);
+      }
+      onCommentDelta?.(1);
     },
-    [getAccessToken]
+    [getAccessToken, onCommentDelta]
   );
+
+  const handleCommentUpdated = useCallback(
+    (commentId: string, updates: Partial<PostComment>) => {
+      setComments((prev) =>
+        prev.map((comment) => (comment.id === commentId ? { ...comment, ...updates } : comment))
+      );
+    },
+    []
+  );
+
+  const handleCommentDeleted = useCallback(
+    (commentId: string) => {
+      setComments((prev) => prev.filter((comment) => comment.id !== commentId));
+      onCommentDelta?.(-1);
+    },
+    [onCommentDelta]
+  );
+
+  if (!commentsEnabled) {
+    return (
+      <div className="py-4 text-center">
+        <p className="text-sm text-muted-foreground">Comments are disabled for this post</p>
+      </div>
+    );
+  }
 
   if (isLoading) {
     return (
@@ -168,17 +153,22 @@ export const CommentSection: React.FC<CommentSectionProps> = ({
     );
   }
 
-  if (!commentsEnabled) {
+  if (!isAllowed) {
     return (
       <div className="py-4 text-center">
-        <p className="text-sm text-muted-foreground">Comments are disabled for this post</p>
+        <p className="text-sm text-muted-foreground">Get a ticket to view comments</p>
       </div>
     );
   }
 
   return (
     <div className="space-y-4">
-      <CommentList comments={comments} creatorAddress={creatorAddress} />
+      <CommentList
+        comments={comments}
+        canModerateComments={canModerateComments}
+        onCommentUpdated={handleCommentUpdated}
+        onCommentDeleted={handleCommentDeleted}
+      />
       <CommentInput postId={postId} onSubmit={handleCreateComment} />
     </div>
   );

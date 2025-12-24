@@ -1,0 +1,10 @@
+{
+  "fixturesFolder": false,
+  "video": false,
+  "screenshotsFolder": false,
+  "e2e": {
+    "baseUrl": "http://localhost:8080",
+    "supportFile": "e2e/support/index.ts",
+    "specPattern": "e2e/**/*.spec.{js,ts}"
+  }
+}

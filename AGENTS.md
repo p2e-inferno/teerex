@@ -16,6 +16,16 @@ Functions used by the ticketing flow:
 
 Both are deployed to project `project_id` from `supabase/config.toml`.
 
+## Frontend Interaction Principle (Optimistic + Localized UX)
+
+When building or modifying client components/pages:
+- Default to optimistic/localized updates: update local state first, then background-refetch to reconcile (no full component reloads for a single action).
+- Keep loading states scoped to the element acted on (button/icon/row), not the whole card/page, unless the initial load is empty.
+- Prefer background refreshes (refetch with existing data retained) after writes; avoid blocking spinners when data is already on screen.
+- Preserve counts/flags locally (e.g., reactions, comment counts, pin status) and reconcile on refetch; never clear data on transient errors—show a toast instead.
+- If realtime is absent, combine optimistic update + background refetch for eventual consistency; only revert UI on a confirmed failure.
+- Use existing hooks as patterns (e.g., `useEventPosts`, `usePostReactions`, `CommentSection` local updates) before adding new ones; extend them rather than duplicating behaviors.
+
 ## Deploying Functions
 
 Prerequisites:
@@ -40,8 +50,23 @@ Set these in the Supabase dashboard → Functions → Secrets:
 - `SUPABASE_URL`
 - `SUPABASE_SERVICE_ROLE_KEY`
 - `UNLOCK_SERVICE_PRIVATE_KEY`
+- `DIVVI_CONSUMER_ADDRESS` (Divvi identifier for referral tracking in Edge Functions)
 - Optionally `RPC_URL` if not using `network_configs` or chain fallbacks
 - Privy secrets if required by other functions
+
+## Divvi Referral Tracking (Client + Edge)
+
+Divvi attribution is implemented for:
+- **Client (Privy + ethers)**: automatic via the EIP-1193 wrapper inside `getDivviBrowserProvider` (`src/lib/wallet/provider.ts`).
+- **Edge Functions**: explicit tagging + best-effort submit via `supabase/functions/_shared/divvi.ts`.
+
+### Wagmi/Viem (Optional)
+
+The app currently uses the Privy + ethers path for client writes.
+
+If wagmi/viem write paths are added later, use the explicit helper `sendDivviTransaction` (`src/lib/divvi/viem.ts`) and pass the already-known connected wallet address as `account`.
+
+Do **not** combine wagmi provider-level wrapping (`wrapEip1193ProviderWithDivvi`) with `sendDivviTransaction` to avoid double-tagging and double-submit.
 
 ## RLS and Client Polling
 
@@ -243,4 +268,3 @@ COMMENT ON INDEX idx_table_foreign_key
 - See `CLAUDE.md` → Database Performance Best Practices for detailed examples
 - Supabase RLS docs: https://supabase.com/docs/guides/database/postgres/row-level-security
 - Performance optimization: https://supabase.com/docs/guides/database/database-linter
-

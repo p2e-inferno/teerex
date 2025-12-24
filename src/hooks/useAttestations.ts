@@ -60,7 +60,7 @@ export const useAttestations = () => {
 };
 
 export const useEventAttestations = (eventId: string) => {
-  const [attestations, setAttestations] = useState([]);
+  const [attestations, setAttestations] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
   const fetchAttestations = async () => {
@@ -85,7 +85,7 @@ export const useEventAttestations = (eventId: string) => {
 };
 
 export const useUserAttestations = (userAddress: string) => {
-  const [attestations, setAttestations] = useState([]);
+  const [attestations, setAttestations] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
   const fetchAttestations = async () => {

@@ -18,14 +18,12 @@ import {
   Users,
   Award,
   AlertTriangle,
-  ThumbsUp,
-  ThumbsDown,
   Loader2,
   Clock,
   CheckCircle,
   XCircle
 } from 'lucide-react';
-import { format, isAfter, isBefore, addHours, parseISO } from 'date-fns';
+import { isAfter, addHours } from 'date-fns';
 
 interface EventAttestationCardProps {
   eventId: string;
@@ -71,7 +69,7 @@ export const EventAttestationCard: React.FC<EventAttestationCardProps & {
   const { authenticated, getAccessToken } = usePrivy();
   const { wallets } = useWallets();
   const wallet = wallets[0];
-  const { createEventAttestation, revokeEventAttestation, isLoading } = useAttestations();
+  const { revokeEventAttestation, isLoading } = useAttestations();
   const { signTeeRexAttestation } = useTeeRexDelegatedAttestation();
   const { encodeEventAttendanceData } = useAttestationEncoding();
   const { toast } = useToast();
@@ -195,7 +193,7 @@ export const EventAttestationCard: React.FC<EventAttestationCardProps & {
             .from('attestations')
             .select('attestation_uid, created_at')
             .eq('event_id', eventId)
-            .eq('schema_uid', goingSchemaUid)
+            .eq('schema_uid', goingSchemaUid!)
             .eq('recipient', wallet.address)
             .eq('is_revoked', false)
             .order('created_at', { ascending: false })
@@ -273,7 +271,7 @@ export const EventAttestationCard: React.FC<EventAttestationCardProps & {
           .from('attestations')
           .select('recipient')
           .eq('event_id', eventId)
-          .eq('schema_uid', goingSchemaUid)
+          .eq('schema_uid', goingSchemaUid!)
           .eq('is_revoked', false);
         goingCount = new Set((goingData || []).map((g: any) => g.recipient)).size;
       }
