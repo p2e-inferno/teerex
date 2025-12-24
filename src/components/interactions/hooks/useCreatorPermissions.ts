@@ -1,39 +1,48 @@
-import { useState, useEffect } from 'react';
-import { usePrivy } from '@privy-io/react-auth';
+import { useMemo, useState, useEffect } from 'react';
+import { usePrivy, useWallets } from '@privy-io/react-auth';
 import type { UseCreatorPermissionsReturn } from '../types';
 
 /**
  * Hook to check if the current user is the event creator
- * Compares Privy user ID (DID) with creator ID from event
+ * Compares user wallet addresses (and optionally Privy userId) with event creator data
  */
-export const useCreatorPermissions = (creatorId: string): UseCreatorPermissionsReturn => {
+export const useCreatorPermissions = (
+  creatorAddress?: string,
+  creatorId?: string
+): UseCreatorPermissionsReturn => {
   const { authenticated, user } = usePrivy();
+  const { wallets } = useWallets();
 
   const [isCreator, setIsCreator] = useState(false);
   const [isChecking, setIsChecking] = useState(true);
 
+  const addresses = useMemo(() => {
+    const fromWallets = (wallets || [])
+      .map((wallet) => wallet?.address)
+      .filter((addr): addr is string => Boolean(addr));
+    const embedded = user?.wallet?.address ? [user.wallet.address] : [];
+    const all = [...fromWallets, ...embedded].map((addr) => addr.toLowerCase());
+    return Array.from(new Set(all));
+  }, [wallets, user?.wallet?.address]);
+
   useEffect(() => {
     setIsChecking(true);
 
-    if (!authenticated || !user?.id || !creatorId) {
-      console.log('[Creator Check] Missing data:', { authenticated, userId: user?.id, creatorId });
+    if (!authenticated || (!creatorAddress && !creatorId)) {
       setIsCreator(false);
       setIsChecking(false);
       return;
     }
 
-    // Compare Privy user IDs (DIDs)
-    const match = user.id === creatorId;
-
-    console.log('[Creator Check]', {
-      userId: user.id,
-      creatorId,
-      match,
-    });
+    const matchByAddress = creatorAddress
+      ? addresses.includes(creatorAddress.toLowerCase())
+      : false;
+    const matchById = creatorId && user?.id ? user.id === creatorId : false;
+    const match = matchByAddress || matchById;
 
     setIsCreator(match);
     setIsChecking(false);
-  }, [authenticated, user?.id, creatorId]);
+  }, [authenticated, creatorAddress, creatorId, addresses, user?.id]);
 
   return {
     isCreator,

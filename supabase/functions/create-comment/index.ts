@@ -2,19 +2,12 @@
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.50.0";
 import { corsHeaders, buildPreflightHeaders } from "../_shared/cors.ts";
-import { getUserWalletAddresses } from "../_shared/privy.ts";
-import { isAnyUserWalletHasValidKeyParallel } from "../_shared/unlock.ts";
-import {
-  createRemoteJWKSet,
-  jwtVerify,
-  importSPKI,
-} from "https://deno.land/x/jose@v4.14.4/index.ts";
+import { getUserWalletAddresses, verifyPrivyToken } from "../_shared/privy.ts";
+import { isAnyUserWalletHasValidKeyParallel, isAnyUserWalletIsLockManagerParallel } from "../_shared/unlock.ts";
 import { validateChain } from "../_shared/network-helpers.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-const PRIVY_APP_ID = Deno.env.get("VITE_PRIVY_APP_ID")!;
-const PRIVY_VERIFICATION_KEY = Deno.env.get("PRIVY_VERIFICATION_KEY");
 
 serve(async (req) => {
   // Handle CORS preflight
@@ -31,39 +24,7 @@ serve(async (req) => {
         { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 200 }
       );
     }
-    const token = authHeader.split(" ")[1];
-
-    let privyUserId: string | undefined;
-    try {
-      // Primary: JWKS verification with timeout
-      const timeoutPromise = new Promise((_, reject) =>
-        setTimeout(() => reject(new Error("JWKS verification timeout after 3 seconds")), 3000)
-      );
-      const jwksPromise = (async () => {
-        const JWKS = createRemoteJWKSet(
-          new URL(`https://auth.privy.io/api/v1/apps/${PRIVY_APP_ID}/jwks.json`)
-        );
-        const { payload} = await jwtVerify(token, JWKS, {
-          issuer: "privy.io",
-          audience: PRIVY_APP_ID,
-        });
-        return payload;
-      })();
-      const payload: any = await Promise.race([jwksPromise, timeoutPromise]);
-      privyUserId = payload.sub as string | undefined;
-    } catch (jwksError) {
-      // Fallback: Local JWT verification
-      if (!PRIVY_VERIFICATION_KEY) throw jwksError;
-      const publicKey = await importSPKI(PRIVY_VERIFICATION_KEY, "ES256");
-      const { payload } = await jwtVerify(token, publicKey, {
-        issuer: "privy.io",
-        audience: PRIVY_APP_ID,
-      });
-      privyUserId = (payload as any).sub as string | undefined;
-    }
-    if (!privyUserId) {
-      throw new Error("Token verification failed");
-    }
+    const privyUserId = await verifyPrivyToken(authHeader);
 
     // 2. Parse and validate request body
     const bodyText = await req.text();
@@ -114,7 +75,7 @@ serve(async (req) => {
     // 5. Get event details
     const { data: event, error: eventError } = await supabase
       .from("events")
-      .select("id, lock_address, chain_id")
+      .select("id, lock_address, chain_id, creator_id")
       .eq("id", post.event_id)
       .maybeSingle();
 
@@ -131,6 +92,12 @@ serve(async (req) => {
     if (!userWallets || userWallets.length === 0) {
       throw new Error("No wallet addresses found for user");
     }
+    const normalizedWallets = userWallets.map((addr) => addr.toLowerCase());
+    const creatorAddress = (event as any).creator_address
+      ? (event as any).creator_address.toLowerCase()
+      : undefined;
+    const isCreatorByWallet = creatorAddress ? normalizedWallets.includes(creatorAddress) : false;
+    const isCreatorById = event.creator_id ? event.creator_id === privyUserId : false;
 
     // 7. Validate chain and get network configuration
     const networkConfig = await validateChain(supabase, event.chain_id);
@@ -142,15 +109,28 @@ serve(async (req) => {
       throw new Error("Network not fully configured (missing RPC URL)");
     }
 
-    // 8. Authorization: ONLY key holders (ticket holders) can comment
-    const { anyHasKey, holder } = await isAnyUserWalletHasValidKeyParallel(
-      event.lock_address,
-      userWallets,
-      networkConfig.rpc_url
-    );
+    // 8. Authorization: creators, lock managers, or key holders can comment
+    const [{ anyHasKey, holder }, { anyIsManager, manager }] = await Promise.all([
+      isAnyUserWalletHasValidKeyParallel(event.lock_address, normalizedWallets, networkConfig.rpc_url),
+      isAnyUserWalletIsLockManagerParallel(event.lock_address, normalizedWallets, networkConfig.rpc_url),
+    ]);
 
-    if (!anyHasKey) {
-      throw new Error("Unauthorized: You must hold a valid ticket to comment on posts");
+    if (!(isCreatorByWallet || isCreatorById || anyIsManager || anyHasKey)) {
+      throw new Error("Unauthorized: You must be an event creator, lock manager, or ticket holder to comment");
+    }
+
+    let commenterAddress: string | undefined;
+    if (isCreatorByWallet) {
+      commenterAddress = creatorAddress;
+    } else if (anyIsManager) {
+      commenterAddress = manager;
+    } else if (anyHasKey) {
+      commenterAddress = holder;
+    } else if (isCreatorById && normalizedWallets.length > 0) {
+      commenterAddress = normalizedWallets[0];
+    }
+    if (!commenterAddress) {
+      throw new Error("Unable to resolve commenter address");
     }
 
     // 9. Insert comment
@@ -159,7 +139,7 @@ serve(async (req) => {
       .insert({
         post_id: postId,
         parent_comment_id: parentCommentId || null,
-        user_address: holder!.toLowerCase(),
+        user_address: commenterAddress.toLowerCase(),
         content: content.trim(),
       })
       .select()

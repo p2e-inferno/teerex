@@ -296,8 +296,9 @@ const getTokenInfo = async (chainId: number, symbol: string): Promise<{ address:
   if (symbol === 'FREE') return { address: ZERO_ADDRESS, decimals: 18 };
   if (symbol === 'ETH') return { address: ZERO_ADDRESS, decimals: 18 };
 
-  // Use async function to get token address from database
-  const address = await getTokenAddressAsync(chainId, symbol as 'USDC');
+  // Use async function to get token address from database (supports USDC, DG, G, UP)
+  // After FREE and ETH checks, symbol must be a valid CryptoCurrency
+  const address = await getTokenAddressAsync(chainId, symbol as any);
 
   if (!address) {
     throw new Error(`${symbol} token address not configured for chain ID ${chainId}. Please contact administrator.`);

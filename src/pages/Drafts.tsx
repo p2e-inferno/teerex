@@ -1,5 +1,5 @@
 ﻿
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { usePrivy, useWallets } from '@privy-io/react-auth';
 import { useNavigate, Navigate } from 'react-router-dom';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -161,7 +161,7 @@ const Drafts = () => {
             ? (draft.payment_methods[0] as 'free' | 'crypto' | 'fiat')
             : (draft.currency && draft.currency !== 'FREE' ? 'crypto' : 'free'),
           price: draft.currency !== 'FREE' ? draft.price : 0,
-          currency: (draft.currency && draft.currency !== 'FREE' ? (draft.currency as 'ETH' | 'USDC') : 'ETH'),
+          currency: (draft.currency && draft.currency !== 'FREE' ? draft.currency : 'ETH'),
           ngnPrice: draft.ngn_price || 0,
           category: draft.category,
           imageUrl: draft.image_url || '',

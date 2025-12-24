@@ -7,12 +7,14 @@ import { MessageSquare, ChevronRight, Plus, AlertCircle, RefreshCw, Sparkles } f
 import { useEventPosts } from '../hooks/useEventPosts';
 import { useCreatorPermissions } from '../hooks/useCreatorPermissions';
 import { useTicketVerification } from '../hooks/useTicketVerification';
+import { useLockManagerVerification } from '../hooks/useLockManagerVerification';
 import { buildEventDiscussionsPath, buildEventPostDiscussionsPath } from '@/utils/discussionsLinks';
 import { prepareTextForCard } from '@/utils/textUtils';
 
 interface EventInteractionsCardProps {
   eventId: string;
   lockAddress: string;
+  creatorAddress: string;
   creatorId: string;
   chainId: number;
 }
@@ -20,13 +22,16 @@ interface EventInteractionsCardProps {
 export const EventInteractionsCard: React.FC<EventInteractionsCardProps> = ({
   eventId,
   lockAddress,
+  creatorAddress,
   creatorId,
   chainId,
 }) => {
   const navigate = useNavigate();
   const { posts, isLoading, error: postsError, refetch: refetchPosts } = useEventPosts(eventId);
   const { hasTicket, isChecking, error, refetch } = useTicketVerification(lockAddress, chainId);
-  const { isCreator } = useCreatorPermissions(creatorId);
+  const { isLockManager, isChecking: isCheckingManager, error: lockManagerError } = useLockManagerVerification(lockAddress, chainId);
+  const { isCreator } = useCreatorPermissions(creatorAddress, creatorId);
+  const canManagePosts = isCreator || isLockManager;
 
   const totalPosts = posts?.length || 0;
   const totalComments = posts?.reduce((sum, post) => sum + (post.comment_count || 0), 0) || 0;
@@ -56,7 +61,7 @@ export const EventInteractionsCard: React.FC<EventInteractionsCardProps> = ({
     navigate(buildEventPostDiscussionsPath(eventIdentifier, latestPost.id));
   };
 
-  if (isChecking || (isLoading && totalPosts === 0)) {
+  if (isChecking || isCheckingManager || (isLoading && totalPosts === 0)) {
     return (
       <Card className="border-0 shadow-sm animate-pulse">
         <CardContent className="py-8">
@@ -66,16 +71,16 @@ export const EventInteractionsCard: React.FC<EventInteractionsCardProps> = ({
     );
   }
 
-  if (error && !isCreator) {
+  if ((error || lockManagerError) && !(isCreator || isLockManager)) {
     return (
       <Card className="border-0 shadow-sm border-yellow-200 bg-yellow-50/50">
         <CardContent className="py-8 text-center space-y-3">
           <AlertCircle className="w-12 h-12 mx-auto mb-3 text-yellow-600" />
           <p className="text-sm font-medium text-yellow-900">
-            Unable to verify ticket status
+            Unable to verify access
           </p>
           <p className="text-xs text-yellow-700">
-            {error.message || 'Network error. Please check your connection.'}
+            {error?.message || lockManagerError?.message || 'Network error. Please check your connection.'}
           </p>
           <Button
             variant="outline"
@@ -91,7 +96,7 @@ export const EventInteractionsCard: React.FC<EventInteractionsCardProps> = ({
     );
   }
 
-  if (!hasTicket && !isCreator) {
+  if (!hasTicket && !isCreator && !isLockManager) {
     return (
       <Card className="border-0 shadow-sm">
         <CardContent className="py-8 text-center">
@@ -186,7 +191,7 @@ export const EventInteractionsCard: React.FC<EventInteractionsCardProps> = ({
         )}
 
         {totalPosts === 0 ? (
-          isCreator ? (
+          canManagePosts ? (
             <Button
               variant="default"
               className="w-full bg-indigo-600 hover:bg-indigo-700"

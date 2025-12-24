@@ -40,4 +40,10 @@ export const CACHE_TIMES = {
     STALE_TIME_MS: 60 * 60 * 1000, // 1 hour
     GARBAGE_COLLECTION_TIME_MS: 24 * 60 * 60 * 1000, // 24 hours
   },
+
+  // Token metadata from contracts (rarely changes)
+  TOKEN_METADATA: {
+    STALE_TIME_MS: 60 * 60 * 1000, // 1 hour
+    GARBAGE_COLLECTION_TIME_MS: 24 * 60 * 60 * 1000, // 24 hours
+  },
 } as const;

@@ -213,6 +213,13 @@ const result = await contract.someMethod();
 - Validation errors shown inline on forms
 - Network errors prompt for retry
 
+### Client Interaction UX (Optimistic + Localized)
+- Default to optimistic/local updates with background refetch: keep existing UI visible, update local state first, then reconcile via background refetch (no full-component spinners after a single action).
+- Scope loading to the interacted element (button/icon/row), not the whole card/page unless it’s the initial empty load.
+- Preserve counters/flags locally (reactions, comment counts, pin status) and refetch in the background; show toasts for errors instead of clearing UI.
+- If realtime is absent, pair optimistic update + background refetch for eventual consistency; only revert UI on confirmed failure.
+- Reuse established patterns/hooks before adding new ones: `useEventPosts` (posts/reactions/comments optimistic helpers), `CommentSection` (local comment create/edit/delete), `usePostReactions` (returns action type for optimistic handling). Extend these instead of duplicating behavior.
+
 ### Gas Sponsorship (Planned)
 - See `docs/gas-sponsorship-prd.md` for detailed specification
 - Modular architecture with separate hooks, services, and utilities

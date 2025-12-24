@@ -9,6 +9,7 @@ import { PostList } from '../posts/PostList';
 import { useEventPosts } from '../hooks/useEventPosts';
 import { useCreatorPermissions } from '../hooks/useCreatorPermissions';
 import { useTicketVerification } from '../hooks/useTicketVerification';
+import { useLockManagerVerification } from '../hooks/useLockManagerVerification';
 import { toast } from '@/hooks/use-toast';
 import { buildEventDiscussionsPath } from '@/utils/discussionsLinks';
 import { prepareTextForCard } from '@/utils/textUtils';
@@ -18,7 +19,8 @@ interface EventDiscussionsPanelProps {
   eventIdentifier: string;
   lockAddress: string;
   chainId: number;
-  creatorId: string;
+  creatorAddress: string;
+  creatorId?: string;
   highlightPostId?: string | null;
 }
 
@@ -27,20 +29,32 @@ export const EventDiscussionsPanel: React.FC<EventDiscussionsPanelProps> = ({
   eventIdentifier,
   lockAddress,
   chainId,
+  creatorAddress,
   creatorId,
   highlightPostId,
 }) => {
-  const { posts, isLoading, error: postsError, refetch: refetchPosts, createPost, deletePost, pinPost, toggleComments } = useEventPosts(eventId);
-  const { isCreator, isChecking: isCheckingCreator } = useCreatorPermissions(creatorId);
+  const {
+    posts,
+    isLoading,
+    error: postsError,
+    refetch: refetchPosts,
+    createPost,
+    deletePost,
+    pinPost,
+    toggleComments,
+    applyReactionOptimistic,
+    applyCommentDelta,
+  } = useEventPosts(eventId);
+  const { isCreator, isChecking: isCheckingCreator } = useCreatorPermissions(creatorAddress, creatorId);
   const { hasTicket, isChecking: isCheckingTicket, error: ticketError, refetch } = useTicketVerification(lockAddress, chainId);
+  const { isLockManager, isChecking: isCheckingManager, error: lockManagerError } = useLockManagerVerification(lockAddress, chainId);
   const toastRef = useRef(toast);
 
   const [activeTab, setActiveTab] = useState<'all' | 'pinned'>('all');
   const [highlightId, setHighlightId] = useState<string | null>(highlightPostId || null);
   const missingPostToastRef = useRef<string | null>(null);
-
-
-  const canView = isCreator || hasTicket;
+  const canView = isCreator || isLockManager || hasTicket;
+  const canManagePosts = isCreator || isLockManager;
 
   const totalPosts = posts?.length || 0;
   const totalComments = posts?.reduce((sum, post) => sum + (post.comment_count || 0), 0) || 0;
@@ -106,7 +120,7 @@ export const EventDiscussionsPanel: React.FC<EventDiscussionsPanelProps> = ({
     }
   };
 
-  const isChecking = isCheckingCreator || isCheckingTicket;
+  const isChecking = isCheckingCreator || isCheckingManager || isCheckingTicket;
 
   if (isChecking || (isLoading && totalPosts === 0)) {
     return (
@@ -118,7 +132,7 @@ export const EventDiscussionsPanel: React.FC<EventDiscussionsPanelProps> = ({
     );
   }
 
-  if (ticketError && !isCreator) {
+  if ((ticketError || lockManagerError) && !(isCreator || isLockManager)) {
     return (
       <Card className="border-0 shadow-sm border-yellow-200 bg-yellow-50/50">
         <CardHeader className="pb-2">
@@ -130,9 +144,9 @@ export const EventDiscussionsPanel: React.FC<EventDiscussionsPanelProps> = ({
           </div>
         </CardHeader>
         <CardContent className="space-y-3">
-          <p className="text-sm text-yellow-900 font-medium">Unable to verify ticket status</p>
-          <p className="text-xs text-yellow-700">{ticketError.message || 'Network error. Please try again.'}</p>
-          <Button variant="outline" size="sm" onClick={() => refetch()} className="border-yellow-300 hover:bg-yellow-100">
+          <p className="text-sm text-yellow-900 font-medium">Unable to verify access</p>
+          <p className="text-xs text-yellow-700">{ticketError?.message || lockManagerError?.message || 'Network error. Please try again.'}</p>
+          <Button variant="outline" size="sm" onClick={() => { refetch(); }} className="border-yellow-300 hover:bg-yellow-100">
             Retry
           </Button>
         </CardContent>
@@ -255,17 +269,19 @@ export const EventDiscussionsPanel: React.FC<EventDiscussionsPanelProps> = ({
           </TabsList>
 
           <TabsContent value="all" className="mt-4 space-y-4">
-            {isCreator && <PostComposer createPost={createPost} />}
+            {canManagePosts && <PostComposer createPost={createPost} />}
             <PostList
               eventIdentifier={eventIdentifier}
               posts={posts}
               isLoading={isLoading}
-              creatorId={creatorId}
+              canManagePosts={canManagePosts}
               filterPinned={false}
               deletePost={deletePost}
               pinPost={pinPost}
               toggleComments={toggleComments}
               highlightPostId={highlightId}
+              onReactionApplied={applyReactionOptimistic}
+              onCommentDelta={applyCommentDelta}
             />
           </TabsContent>
 
@@ -274,12 +290,14 @@ export const EventDiscussionsPanel: React.FC<EventDiscussionsPanelProps> = ({
               eventIdentifier={eventIdentifier}
               posts={posts}
               isLoading={isLoading}
-              creatorId={creatorId}
+              canManagePosts={canManagePosts}
               filterPinned={true}
               deletePost={deletePost}
               pinPost={pinPost}
               toggleComments={toggleComments}
               highlightPostId={highlightId}
+              onReactionApplied={applyReactionOptimistic}
+              onCommentDelta={applyCommentDelta}
             />
           </TabsContent>
         </Tabs>

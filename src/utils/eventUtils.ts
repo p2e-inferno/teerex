@@ -154,7 +154,7 @@ export const savePublishedEvent = async (
       date: data.date ? new Date(data.date) : null,
       created_at: new Date(data.created_at),
       updated_at: new Date(data.updated_at),
-      currency: data.currency as 'ETH' | 'USDC' | 'FREE',
+      currency: data.currency,
       ngn_price: data.ngn_price || 0,
       payment_methods: data.payment_methods || [formData.paymentMethod],
       paystack_public_key: data.paystack_public_key
@@ -286,7 +286,7 @@ export const getUserEvents = async (userId: string): Promise<PublishedEvent[]> =
       end_date: event.end_date ? new Date(event.end_date) : null,
       created_at: new Date(event.created_at),
       updated_at: new Date(event.updated_at),
-      currency: event.currency as 'ETH' | 'USDC' | 'FREE',
+      currency: event.currency,
       ngn_price: event.ngn_price || 0,
       payment_methods: event.payment_methods || ['crypto'],
       paystack_public_key: event.paystack_public_key

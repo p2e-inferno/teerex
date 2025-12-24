@@ -1,71 +1,95 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
-import { useWallets, usePrivy } from '@privy-io/react-auth';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { usePrivy, useWallets } from '@privy-io/react-auth';
 import { supabase } from '@/integrations/supabase/client';
-import type { EventPost, UseEventPostsReturn, EventPostWithStats } from '../types';
+import type { EventPost, UseEventPostsReturn } from '../types';
 
 /**
- * Hook to manage event posts with Realtime subscriptions
- * Handles CRUD operations and live updates
+ * Hook to manage event posts via protected Edge Functions
+ * Handles CRUD operations with explicit refresh
  */
 export const useEventPosts = (eventId: string): UseEventPostsReturn => {
+  const { getAccessToken, authenticated } = usePrivy();
   const { wallets } = useWallets();
-  const wallet = wallets?.[0];
-  const { getAccessToken } = usePrivy();
+  const walletKey = useMemo(
+    () =>
+      (wallets || [])
+        .map((w) => w?.address?.toLowerCase())
+        .filter(Boolean)
+        .join(','),
+    [wallets]
+  );
 
   const [posts, setPosts] = useState<EventPost[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const [error, setError] = useState<Error | null>(null);
 
+  const normalizePost = useCallback((post: EventPost): EventPost => {
+    return {
+      agree_count: 0,
+      disagree_count: 0,
+      comment_count: 0,
+      engagement_score: 0,
+      user_has_reacted_agree: false,
+      user_has_reacted_disagree: false,
+      ...post,
+    };
+  }, []);
+
   // Fetch posts with engagement stats and user reactions
-  const fetchPosts = useCallback(async () => {
+  const fetchPosts = useCallback(async (opts?: { background?: boolean }) => {
     if (!eventId) return;
+    const isBackground = opts?.background;
 
     try {
-      setIsLoading(true);
+      if (isBackground) {
+        setIsRefreshing(true);
+      } else {
+        setIsLoading(true);
+      }
       setError(null);
 
-      // Query posts with stats
-      const postsRes: any = await supabase
-        .from('event_posts' as any)
-        .select(`
-          *,
-          post_engagement_stats (*),
-          post_reactions (*)
-        `)
-        .eq('event_id', eventId)
-        .eq('is_deleted', false)
-        .order('is_pinned', { ascending: false })
-        .order('created_at', { ascending: false });
+      const token = await getAccessToken?.();
+      console.debug('useEventPosts: invoking get-event-discussions', {
+        eventId,
+        tokenPresent: Boolean(token),
+        walletKey,
+      });
+      if (!token) {
+        setPosts([]);
+        return;
+      }
 
-      if (postsRes.error) throw postsRes.error;
-
-      // Transform data and add user-specific flags
-      const userAddress = wallet?.address?.toLowerCase();
-      const transformedPosts: EventPost[] = ((postsRes.data as EventPostWithStats[]) || []).map((post) => {
-        const stats = post.post_engagement_stats;
-        const userReactions = post.post_reactions.filter(
-          (r) => r.user_address.toLowerCase() === userAddress
-        );
-
-        return {
-          ...post,
-          agree_count: stats?.agree_count || 0,
-          disagree_count: stats?.disagree_count || 0,
-          comment_count: stats?.comment_count || 0,
-          engagement_score: stats?.engagement_score || 0,
-          user_has_reacted_agree: userReactions.some((r) => r.reaction_type === 'agree'),
-          user_has_reacted_disagree: userReactions.some((r) => r.reaction_type === 'disagree'),
-        };
+      const { data, error: invokeError } = await supabase.functions.invoke('get-event-discussions', {
+        body: { eventId },
+        headers: { 'X-Privy-Authorization': `Bearer ${token}` },
       });
 
-      setPosts(transformedPosts);
+      console.debug('useEventPosts: get-event-discussions response', {
+        eventId,
+        ok: data?.ok,
+        allowed: data?.allowed,
+        postCount: data?.posts?.length,
+        invokeError: invokeError?.message,
+      });
+
+      if (invokeError) throw invokeError;
+      if (!data?.ok) throw new Error(data?.error || 'Failed to load discussions');
+
+      if (!data.allowed) {
+        setPosts([]);
+        return;
+      }
+
+      setPosts(((data.posts as EventPost[]) || []).map(normalizePost));
     } catch (err) {
-      console.error('Error fetching posts:', err);
+      console.error('useEventPosts: error fetching posts', { eventId, walletKey }, err);
       setError(err as Error);
     } finally {
       setIsLoading(false);
+      setIsRefreshing(false);
     }
-  }, [eventId, wallet?.address]);
+  }, [eventId, getAccessToken, walletKey, normalizePost]);
 
   // Store latest fetchPosts in ref to avoid stale closures
   const fetchPostsRef = useRef(fetchPosts);
@@ -76,84 +100,9 @@ export const useEventPosts = (eventId: string): UseEventPostsReturn => {
   // Initial fetch
   useEffect(() => {
     fetchPosts();
-  }, [fetchPosts]);
+  }, [fetchPosts, authenticated, walletKey]);
 
-  // Realtime subscription
-  useEffect(() => {
-    if (!eventId) return;
-
-    const channel = supabase
-      .channel(`event-posts-${eventId}`)
-      .on(
-        'postgres_changes',
-        {
-          event: 'INSERT',
-          schema: 'public',
-          table: 'event_posts',
-          filter: `event_id=eq.${eventId}`,
-        },
-        () => {
-          fetchPostsRef.current();
-        }
-      )
-      .on(
-        'postgres_changes',
-        {
-          event: 'UPDATE',
-          schema: 'public',
-          table: 'event_posts',
-          filter: `event_id=eq.${eventId}`,
-        },
-        () => {
-          fetchPostsRef.current();
-        }
-      )
-      .on(
-        'postgres_changes',
-        {
-          event: 'DELETE',
-          schema: 'public',
-          table: 'event_posts',
-          filter: `event_id=eq.${eventId}`,
-        },
-        (payload) => {
-          setPosts((prev) => prev.filter((p) => p.id !== (payload.old as EventPost).id));
-        }
-      )
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'post_reactions',
-        },
-        () => {
-          fetchPostsRef.current();
-        }
-      )
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'post_engagement_stats',
-        },
-        () => {
-          fetchPostsRef.current();
-        }
-      )
-      .subscribe((status, err) => {
-        if (status === 'CHANNEL_ERROR') {
-          console.error('[Realtime] Channel error:', err);
-        } else if (status === 'TIMED_OUT') {
-          console.error('[Realtime] Subscription timed out');
-        }
-      });
-
-    return () => {
-      channel.unsubscribe();
-    };
-  }, [eventId]); // Only depend on eventId, not fetchPosts
+  // No Realtime subscription here: discussions are loaded via protected Edge Function.
 
   // Create a new post
   const createPost = useCallback(
@@ -183,9 +132,11 @@ export const useEventPosts = (eventId: string): UseEventPostsReturn => {
         throw new Error(errorMessage);
       }
 
-      // Posts will be added via Realtime subscription
+      const newPost = normalizePost((data.post as EventPost) || { id: data.postId, event_id: eventId, content });
+      setPosts((prev) => [newPost, ...prev]);
+      fetchPostsRef.current({ background: true });
     },
-    [eventId, getAccessToken]
+    [eventId, getAccessToken, normalizePost]
   );
 
   // Delete a post
@@ -212,7 +163,8 @@ export const useEventPosts = (eventId: string): UseEventPostsReturn => {
         throw new Error(errorMessage);
       }
 
-      // Update will be handled by Realtime subscription
+      setPosts((prev) => prev.filter((p) => p.id !== postId));
+      fetchPostsRef.current({ background: true });
     },
     [getAccessToken]
   );
@@ -241,7 +193,10 @@ export const useEventPosts = (eventId: string): UseEventPostsReturn => {
         throw new Error(errorMessage);
       }
 
-      // Update will be handled by Realtime subscription
+      setPosts((prev) =>
+        prev.map((p) => (p.id === postId ? { ...p, is_pinned: isPinned } : p))
+      );
+      fetchPostsRef.current({ background: true });
     },
     [getAccessToken]
   );
@@ -270,19 +225,93 @@ export const useEventPosts = (eventId: string): UseEventPostsReturn => {
         throw new Error(errorMessage);
       }
 
-      // Update will be handled by Realtime subscription
+      setPosts((prev) =>
+        prev.map((p) => (p.id === postId ? { ...p, comments_enabled: enabled } : p))
+      );
+      fetchPostsRef.current({ background: true });
     },
     [getAccessToken]
   );
 
+  const applyReactionOptimistic = useCallback(
+    (postId: string, reactionType: 'agree' | 'disagree', action: 'added' | 'removed' | 'switched') => {
+      setPosts((prev) =>
+        prev.map((post) => {
+          if (post.id !== postId) return post;
+
+          let agree = post.agree_count || 0;
+          let disagree = post.disagree_count || 0;
+          let userAgree = post.user_has_reacted_agree || false;
+          let userDisagree = post.user_has_reacted_disagree || false;
+
+          if (action === 'removed') {
+            if (reactionType === 'agree') {
+              agree = Math.max(0, agree - 1);
+              userAgree = false;
+            } else {
+              disagree = Math.max(0, disagree - 1);
+              userDisagree = false;
+            }
+          } else if (action === 'added') {
+            if (reactionType === 'agree') {
+              agree += 1;
+              userAgree = true;
+              userDisagree = false;
+            } else {
+              disagree += 1;
+              userDisagree = true;
+              userAgree = false;
+            }
+          } else if (action === 'switched') {
+            if (reactionType === 'agree') {
+              agree += 1;
+              disagree = Math.max(0, disagree - 1);
+              userAgree = true;
+              userDisagree = false;
+            } else {
+              disagree += 1;
+              agree = Math.max(0, agree - 1);
+              userDisagree = true;
+              userAgree = false;
+            }
+          }
+
+          return {
+            ...post,
+            agree_count: agree,
+            disagree_count: disagree,
+            user_has_reacted_agree: userAgree,
+            user_has_reacted_disagree: userDisagree,
+          };
+        })
+      );
+      fetchPostsRef.current({ background: true });
+    },
+    []
+  );
+
+  const applyCommentDelta = useCallback((postId: string, delta: number) => {
+    setPosts((prev) =>
+      prev.map((post) =>
+        post.id === postId
+          ? { ...post, comment_count: Math.max(0, (post.comment_count || 0) + delta) }
+          : post
+      )
+    );
+    fetchPostsRef.current({ background: true });
+  }, []);
+
   return {
     posts,
     isLoading,
+    isRefreshing,
     error,
     createPost,
     deletePost,
     pinPost,
     toggleComments,
-    refetch: fetchPosts,
+    applyReactionOptimistic,
+    applyCommentDelta,
+    refetch: () => fetchPostsRef.current({ background: true }),
   };
 };

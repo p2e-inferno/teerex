@@ -30,3 +30,11 @@ project_id = "nclavsvzjzegqvkjezyz"
 [functions.nft-metadata]
   # Public endpoint - NFT marketplaces and wallets need unauthenticated access
   verify_jwt = false
+
+[functions.get-event-discussions]
+  # Browser calls this with Privy JWT (not Supabase JWT)
+  verify_jwt = false
+
+[functions.get-post-comments]
+  # Browser calls this with Privy JWT (not Supabase JWT)
+  verify_jwt = false

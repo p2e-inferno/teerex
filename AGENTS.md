@@ -16,6 +16,16 @@ Functions used by the ticketing flow:
 
 Both are deployed to project `project_id` from `supabase/config.toml`.
 
+## Frontend Interaction Principle (Optimistic + Localized UX)
+
+When building or modifying client components/pages:
+- Default to optimistic/localized updates: update local state first, then background-refetch to reconcile (no full component reloads for a single action).
+- Keep loading states scoped to the element acted on (button/icon/row), not the whole card/page, unless the initial load is empty.
+- Prefer background refreshes (refetch with existing data retained) after writes; avoid blocking spinners when data is already on screen.
+- Preserve counts/flags locally (e.g., reactions, comment counts, pin status) and reconcile on refetch; never clear data on transient errors—show a toast instead.
+- If realtime is absent, combine optimistic update + background refetch for eventual consistency; only revert UI on a confirmed failure.
+- Use existing hooks as patterns (e.g., `useEventPosts`, `usePostReactions`, `CommentSection` local updates) before adding new ones; extend them rather than duplicating behaviors.
+
 ## Deploying Functions
 
 Prerequisites:

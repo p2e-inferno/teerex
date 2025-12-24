@@ -175,11 +175,9 @@ const EventDetails = () => {
 
   // Like schema + counts
   const [likeSchemaUid, setLikeSchemaUid] = useState<string | null>(null);
-  const [likeSchemaRevocable, setLikeSchemaRevocable] = useState<boolean | null>(null);
   const [likeCount, setLikeCount] = useState(0);
   const [userLikeUid, setUserLikeUid] = useState<string | null>(null);
   const [isLikeLoading, setIsLikeLoading] = useState(false);
-  const [likeInstanceRevocable, setLikeInstanceRevocable] = useState<boolean | null>(null);
   // Attendance (for top ticket card toggle)
   const [myAttendanceUidTop, setMyAttendanceUidTop] = useState<string | null>(null);
   const [isTopAttendanceBusy, setIsTopAttendanceBusy] = useState(false);
@@ -209,11 +207,9 @@ const EventDetails = () => {
         setLikeSchemaUid(null);
         setLikeCount(0);
         setUserLikeUid(null);
-        setLikeSchemaRevocable(null);
         return;
       }
       setLikeSchemaUid(schema.schema_uid);
-      setLikeSchemaRevocable(Boolean((schema as any).revocable));
       const { data: likes } = await supabase
         .from('attestations')
         .select('attestation_uid, recipient, created_at')
@@ -231,15 +227,8 @@ const EventDetails = () => {
         const uid: string | null = mine?.attestation_uid || null;
         if (isValidAttestationUid(uid)) {
           setUserLikeUid(uid);
-          try {
-            const r = await isAttestationRevocableOnChain(uid!, ev.chain_id);
-            setLikeInstanceRevocable(r);
-          } catch (_) {
-            setLikeInstanceRevocable(null);
-          }
         } else {
           setUserLikeUid(null);
-          setLikeInstanceRevocable(null);
         }
       }
     } catch (e) {
@@ -329,7 +318,11 @@ const EventDetails = () => {
       // Unlike (revoke)
       if (userLikeUid) {
         if (state.like.flags && !state.like.flags.canRevoke) {
-          toast({ title: 'Action unavailable', description: getDisableMessage('like', state.like.flags.reason) || 'Removing your like isn’t available for this event.', variant: 'destructive' });
+          toast({
+            title: 'Action unavailable',
+            description: getDisableMessage('like', state.like.flags.reason) || "Removing your like isn't available for this event.",
+            variant: 'destructive'
+          });
           return;
         }
         if (!isValidAttestationUid(userLikeUid)) {
@@ -898,7 +891,7 @@ const EventDetails = () => {
                         <TooltipContent>
                           {!likeSchemaUid
                             ? 'Likes unavailable: schema not configured or invalid.'
-                            : (getDisableMessage('like', state.like.flags?.reason) || 'Removing your like isn’t available for this event.')}
+                            : (getDisableMessage('like', state.like.flags?.reason) || "Removing your like isn't available for this event.")}
                         </TooltipContent>
                       )}
                     </Tooltip>
@@ -1222,6 +1215,7 @@ const EventDetails = () => {
             <EventInteractionsCard
               eventId={event.id}
               lockAddress={event.lock_address}
+              creatorAddress={event.creator_address || ''}
               creatorId={event.creator_id}
               chainId={event.chain_id}
             />
@@ -1246,7 +1240,7 @@ const EventDetails = () => {
               canRevokeAttendanceOverride={myAttendanceUidTop ? !((attendanceSchemaRevocable === false)) : undefined}
               attendanceDisableReason={myAttendanceUidTop && attendanceSchemaRevocable === false ? 'Attendance records for this event are permanent.' : undefined}
               canRevokeGoingOverride={myGoingUid ? !((goingSchemaRevocable === false || goingInstanceRevocable === false)) : undefined}
-              goingDisableReason={myGoingUid && (goingSchemaRevocable === false || goingInstanceRevocable === false) ? 'This going status can’t be revoked.' : undefined}
+              goingDisableReason={myGoingUid && (goingSchemaRevocable === false || goingInstanceRevocable === false) ? "This going status cannot be revoked." : undefined}
             />
           </div>
         </div>

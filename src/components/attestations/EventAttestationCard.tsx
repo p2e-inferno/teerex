@@ -193,7 +193,7 @@ export const EventAttestationCard: React.FC<EventAttestationCardProps & {
             .from('attestations')
             .select('attestation_uid, created_at')
             .eq('event_id', eventId)
-            .eq('schema_uid', goingSchemaUid)
+            .eq('schema_uid', goingSchemaUid!)
             .eq('recipient', wallet.address)
             .eq('is_revoked', false)
             .order('created_at', { ascending: false })
@@ -271,7 +271,7 @@ export const EventAttestationCard: React.FC<EventAttestationCardProps & {
           .from('attestations')
           .select('recipient')
           .eq('event_id', eventId)
-          .eq('schema_uid', goingSchemaUid)
+          .eq('schema_uid', goingSchemaUid!)
           .eq('is_revoked', false);
         goingCount = new Set((goingData || []).map((g: any) => g.recipient)).size;
       }

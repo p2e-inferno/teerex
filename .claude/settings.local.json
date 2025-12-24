@@ -12,7 +12,12 @@
       "Bash(test:*)",
       "Bash(npm install:*)",
       "mcp__supabase__deploy_edge_function",
-      "Bash(supabase functions deploy:*)"
+      "Bash(supabase functions deploy:*)",
+      "Bash(npm run test:*)",
+      "Bash(npm run test:unit:*)",
+      "Bash(npm run test:coverage:*)",
+      "Bash(npm run typecheck:*)",
+      "Bash(grep:*)"
     ],
     "deny": [],
     "ask": []

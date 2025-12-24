@@ -18,7 +18,7 @@ const queryClient = new QueryClient();
 
 export const PrivyProvider: React.FC<PrivyProviderProps> = ({ children }) => {
   const [privyConfig, setPrivyConfig] = useState<any>(null);
-  const [wagmiConfig, setWagmiConfig] = useState(fallbackWagmiConfig);
+  const [wagmiConfig, setWagmiConfig] = useState<any>(fallbackWagmiConfig);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 

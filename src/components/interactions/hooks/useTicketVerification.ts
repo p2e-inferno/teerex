@@ -1,5 +1,8 @@
-import { useWallets } from '@privy-io/react-auth';
-import { useTicketBalance } from '@/hooks/useTicketBalance';
+import { useMemo } from 'react';
+import { usePrivy, useWallets } from '@privy-io/react-auth';
+import { useQuery } from '@tanstack/react-query';
+import { checkKeyOwnership } from '@/utils/lockUtils';
+import { MAX_RETRIES, calculateRetryDelay, CACHE_TIMES } from '@/lib/config/react-query-config';
 import type { UseTicketVerificationReturn } from '../types';
 
 /**
@@ -8,23 +11,43 @@ import type { UseTicketVerificationReturn } from '../types';
  */
 export const useTicketVerification = (lockAddress: string, chainId: number): UseTicketVerificationReturn => {
   const { wallets } = useWallets();
-  const wallet = wallets?.[0];
+  const { user } = usePrivy();
+
+  const addresses = useMemo(() => {
+    const fromWallets = (wallets || [])
+      .map((wallet) => wallet?.address)
+      .filter((addr): addr is string => Boolean(addr));
+    const embedded = user?.wallet?.address ? [user.wallet.address] : [];
+    const all = [...fromWallets, ...embedded].map((addr) => addr.toLowerCase());
+    return Array.from(new Set(all));
+  }, [wallets, user?.wallet?.address]);
 
   const {
-    data: ticketCount = 0,
+    data,
     isLoading: isChecking,
     error,
-    refetch
-  } = useTicketBalance({
-    lockAddress: lockAddress || '',
-    userAddress: wallet?.address || '',
-    chainId: chainId || 0,
+    refetch,
+  } = useQuery({
+    queryKey: ['ticket-verification', chainId, lockAddress, addresses.join(',')],
+    queryFn: async () => {
+      const checks = await Promise.all(
+        addresses.map((addr) => checkKeyOwnership(lockAddress, addr, chainId))
+      );
+      const count = checks.filter(Boolean).length;
+      return { hasTicket: count > 0, count };
+    },
+    enabled: Boolean(lockAddress && chainId && addresses.length),
+    staleTime: CACHE_TIMES.USER_TICKET_BALANCE.STALE_TIME_MS,
+    gcTime: CACHE_TIMES.USER_TICKET_BALANCE.GARBAGE_COLLECTION_TIME_MS,
+    refetchOnWindowFocus: false,
+    retry: MAX_RETRIES,
+    retryDelay: calculateRetryDelay,
   });
 
   return {
-    hasTicket: ticketCount > 0,
+    hasTicket: data?.hasTicket ?? false,
     isChecking,
-    ticketCount,
+    ticketCount: data?.count ?? 0,
     error: error as Error | null,
     refetch,
   };

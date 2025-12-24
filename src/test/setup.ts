@@ -2,6 +2,32 @@ import "@testing-library/jest-dom";
 import { beforeAll, afterAll, afterEach, vi } from "vitest";
 import { server } from "./msw/server";
 
+// Polyfill for pointer capture (required for Radix UI components in JSDOM)
+if (!Element.prototype.hasPointerCapture) {
+  Element.prototype.hasPointerCapture = function () {
+    return false;
+  };
+}
+
+if (!Element.prototype.setPointerCapture) {
+  Element.prototype.setPointerCapture = function () {
+    // noop
+  };
+}
+
+if (!Element.prototype.releasePointerCapture) {
+  Element.prototype.releasePointerCapture = function () {
+    // noop
+  };
+}
+
+// Polyfill for scrollIntoView (required for Radix UI Select component)
+if (!Element.prototype.scrollIntoView) {
+  Element.prototype.scrollIntoView = function () {
+    // noop
+  };
+}
+
 beforeAll(() => {
   server.listen({ onUnhandledRequest: "error" });
 });

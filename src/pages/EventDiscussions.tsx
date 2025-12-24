@@ -101,6 +101,7 @@ const EventDiscussions = () => {
             eventIdentifier={eventIdentifier || id}
             lockAddress={event.lock_address || ''}
             chainId={event.chain_id}
+            creatorAddress={event.creator_address || ''}
             creatorId={event.creator_id}
             highlightPostId={highlightPostId}
           />

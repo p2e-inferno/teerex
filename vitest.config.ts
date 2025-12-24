@@ -20,5 +20,26 @@ export default defineConfig({
       VITE_SUPABASE_ANON_KEY: "test-anon-key",
     },
     include: ["tests/**/*.test.{ts,tsx}"],
+    coverage: {
+      provider: 'v8',
+      reporter: ['text', 'html', 'lcov', 'json'],
+      exclude: [
+        'node_modules/**',
+        'dist/**',
+        'tests/**',
+        '**/*.d.ts',
+        '**/*.config.*',
+        '**/mockData/**',
+        'src/test/**',
+        'src/integrations/supabase/types.ts', // Auto-generated
+      ],
+      include: [
+        'src/lib/config/network-config.ts',
+        'src/hooks/useNetworkConfigs.ts',
+        'src/components/create-event/TicketSettings.tsx',
+        'src/utils/lockUtils.ts',
+        'src/pages/AdminNetworks.tsx',
+      ],
+    },
   },
 });

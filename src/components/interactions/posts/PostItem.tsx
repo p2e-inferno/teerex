@@ -19,27 +19,37 @@ import type { EventPost } from '../types';
 
 interface PostItemProps {
   post: EventPost;
-  isCreator: boolean;
+  canManagePosts: boolean;
   eventIdentifier: string;
   isHighlighted?: boolean;
   autoExpandComments?: boolean;
   onPin?: (postId: string, isPinned: boolean) => void;
   onDelete?: (postId: string) => void;
   onToggleComments?: (postId: string, enabled: boolean) => void;
+  onReactionApplied?: (
+    postId: string,
+    reactionType: 'agree' | 'disagree',
+    action: 'added' | 'removed' | 'switched'
+  ) => void;
+  onCommentDelta?: (postId: string, delta: number) => void;
 }
 
 export const PostItem: React.FC<PostItemProps> = ({
   post,
-  isCreator,
+  canManagePosts,
   eventIdentifier,
   isHighlighted = false,
   autoExpandComments = false,
   onPin,
   onDelete,
   onToggleComments,
+  onReactionApplied,
+  onCommentDelta,
 }) => {
   const [showComments, setShowComments] = useState(false);
-  const { toggleReaction, isLoading: isReacting } = usePostReactions();
+  const { toggleReaction } = usePostReactions();
+  const [reactingType, setReactingType] = useState<'agree' | 'disagree' | null>(null);
+  const isReacting = reactingType !== null;
 
   const agreeCount = post.agree_count || 0;
   const disagreeCount = post.disagree_count || 0;
@@ -71,26 +81,38 @@ export const PostItem: React.FC<PostItemProps> = ({
   // Handle agree reaction
   const handleAgree = async () => {
     try {
-      await toggleReaction(post.id, 'agree');
+      setReactingType('agree');
+      const action = await toggleReaction(post.id, 'agree');
+      if (action) {
+        onReactionApplied?.(post.id, 'agree', action);
+      }
     } catch (error) {
       toast({
         title: 'Failed to react',
         description: error instanceof Error ? error.message : 'Unknown error occurred',
         variant: 'destructive',
       });
+    } finally {
+      setReactingType(null);
     }
   };
 
   // Handle disagree reaction
   const handleDisagree = async () => {
     try {
-      await toggleReaction(post.id, 'disagree');
+      setReactingType('disagree');
+      const action = await toggleReaction(post.id, 'disagree');
+      if (action) {
+        onReactionApplied?.(post.id, 'disagree', action);
+      }
     } catch (error) {
       toast({
         title: 'Failed to react',
         description: error instanceof Error ? error.message : 'Unknown error occurred',
         variant: 'destructive',
       });
+    } finally {
+      setReactingType(null);
     }
   };
 
@@ -120,7 +142,7 @@ export const PostItem: React.FC<PostItemProps> = ({
             </Button>
 
           {/* Moderation Menu (Creator Only) */}
-          {isCreator && (
+          {canManagePosts && (
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
@@ -220,8 +242,9 @@ export const PostItem: React.FC<PostItemProps> = ({
             <Separator />
             <CommentSection
               postId={post.id}
-              creatorAddress={post.creator_address}
               commentsEnabled={post.comments_enabled}
+              canModerateComments={canManagePosts}
+              onCommentDelta={(delta) => onCommentDelta?.(post.id, delta)}
             />
           </>
         )}
