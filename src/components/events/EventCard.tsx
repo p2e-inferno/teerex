@@ -4,9 +4,8 @@ import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { ImageModal } from '@/components/ui/image-modal';
-import { Calendar, Clock, MapPin, Users, Globe, ExternalLink } from 'lucide-react';
+import { Calendar, Clock, MapPin, Users, Globe } from 'lucide-react';
 import type { PublishedEvent } from '@/types/event';
-import { format } from 'date-fns';
 import { ShareButton } from '@/components/interactions/ShareButton';
 import { RichTextDisplay } from '@/components/ui/rich-text/RichTextDisplay';
 import { stripHtml } from '@/utils/textUtils';
@@ -68,12 +67,6 @@ export const EventCard: React.FC<EventCardProps> = ({
     navigate(`/event/${event.lock_address}`);
   };
 
-  const handleViewDetailsClick = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    if (onViewDetails) {
-      onViewDetails(event);
-    }
-  };
   const handleEditClick = (e: React.MouseEvent) => { e.stopPropagation(); onEdit?.(event); };
   const handleManageClick = (e: React.MouseEvent) => { e.stopPropagation(); onManage?.(event); };
 

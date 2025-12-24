@@ -40,7 +40,7 @@ export const usePostReactions = (): UsePostReactionsReturn => {
           throw new Error(errorMessage);
         }
 
-        // Reaction will be updated via Realtime subscription
+        return data?.action as 'added' | 'removed' | 'switched' | undefined;
       } catch (err) {
         const error = err instanceof Error ? err : new Error('Unknown error occurred');
         setError(error);

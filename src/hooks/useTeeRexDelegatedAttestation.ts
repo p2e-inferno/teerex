@@ -1,6 +1,6 @@
 import { useWallets } from '@privy-io/react-auth';
-import { ethers } from 'ethers';
 import { getBatchAttestationAddress } from '@/lib/config/contract-config';
+import { getDivviBrowserProvider } from '@/lib/wallet/provider';
 
 /**
  * Hook for signing delegated attestations specifically for the TeeRex EIP712Proxy contract.
@@ -32,8 +32,7 @@ export const useTeeRexDelegatedAttestation = () => {
     refUID?: string;
   }): Promise<TeeRexDelegatedAttestationSignature> => {
     if (!wallet) throw new Error('No wallet connected');
-    const provider = await wallet.getEthereumProvider();
-    const ethersProvider = new ethers.BrowserProvider(provider);
+    const ethersProvider = await getDivviBrowserProvider(wallet);
     const signer = await ethersProvider.getSigner();
 
     const chainId = params.chainId ?? 84532; // Base Sepolia

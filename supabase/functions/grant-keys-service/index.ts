@@ -10,6 +10,7 @@ import {
 } from "https://deno.land/x/jose@v4.14.4/index.ts";
 import { getUserWalletAddresses } from "../_shared/privy.ts";
 import { validateChain } from "../_shared/network-helpers.ts";
+import { appendDivviTagToCalldataAsync, submitDivviReferralBestEffort } from "../_shared/divvi.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -110,9 +111,16 @@ serve(async (req) => {
     const recipients = [recipient];
     const expirations = [BigInt(expirationTimestamp)];
     const keyManagers = [recipient];
-    const txSend = await lock.grantKeys(recipients, expirations, keyManagers);
+    const serviceUser = wallet.address as `0x${string}`;
+    const calldata = lock.interface.encodeFunctionData('grantKeys', [recipients, expirations, keyManagers]);
+    const taggedData = await appendDivviTagToCalldataAsync({ data: calldata, user: serviceUser });
+    const txSend = await wallet.sendTransaction({ to: event.lock_address, data: taggedData });
     const receipt = await txSend.wait();
     if (receipt.status !== 1) throw new Error("Grant key transaction failed");
+    const txHash = (txSend.hash || receipt.transactionHash) as string | undefined;
+    if (txHash && typeof event.chain_id === 'number') {
+      await submitDivviReferralBestEffort({ txHash, chainId: event.chain_id });
+    }
     return new Response(JSON.stringify({ success: true, txHash: txSend.hash || receipt.transactionHash }), { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 200 });
   } catch (e: any) {
     return new Response(JSON.stringify({ error: e?.message || "Internal error" }), { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 400 });

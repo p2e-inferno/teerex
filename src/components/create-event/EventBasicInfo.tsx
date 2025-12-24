@@ -25,7 +25,6 @@ interface EventBasicInfoProps {
 export const EventBasicInfo: React.FC<EventBasicInfoProps> = ({
   formData,
   updateFormData,
-  onNext
 }) => {
   const { user, authenticated } = usePrivy();
   const { toast } = useToast();
@@ -35,7 +34,6 @@ export const EventBasicInfo: React.FC<EventBasicInfoProps> = ({
   const [previewUrl, setPreviewUrl] = useState<string>('');
   const [displayImageUrl, setDisplayImageUrl] = useState<string>(''); // What user sees (optimistic)
   const [showCropper, setShowCropper] = useState(false);
-  const isValid = formData.title.trim() && (formData.description && formData.description.trim() !== '<p></p>' && formData.description.trim() !== '') && formData.date && formData.time;
 
   // Cleanup blob URLs on unmount
   useEffect(() => {
@@ -299,13 +297,6 @@ export const EventBasicInfo: React.FC<EventBasicInfoProps> = ({
 
   const triggerFileInput = () => {
     fileInputRef.current?.click();
-  };
-
-  const handleContinue = () => {
-    if (isValid) {
-      console.log('Basic info is valid, proceeding to next step');
-      onNext();
-    }
   };
 
   return (

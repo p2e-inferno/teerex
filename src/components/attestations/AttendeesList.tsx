@@ -12,7 +12,6 @@ import {
   AlertTriangle,
   ThumbsUp,
   ThumbsDown,
-  CheckCircle,
   Clock,
   Award
 } from 'lucide-react';
@@ -182,7 +181,7 @@ export const AttendeesList: React.FC<AttendeesListProps> = ({
       <Card className="border-0 shadow-sm">
         <CardHeader>
           <div className="flex items-center space-x-2">
-            <Users className="w-5 h-5 text-muted-foreground" />
+            <Users className="w-5 h-5 text-muted-foreground flex-shrink-0" />
             <h3 className="font-semibold text-foreground">Verified Attendees</h3>
           </div>
         </CardHeader>
@@ -199,14 +198,14 @@ export const AttendeesList: React.FC<AttendeesListProps> = ({
   return (
     <Card className="border-0 shadow-sm">
       <CardHeader>
-        <div className="flex items-center justify-between">
+        <div className="space-y-2">
           <div className="flex items-center space-x-2">
-            <Users className="w-5 h-5 text-primary" />
+            <Users className="w-5 h-5 text-primary flex-shrink-0" />
             <h3 className="font-semibold text-foreground">
               Verified Attendees ({attendees.length})
             </h3>
           </div>
-          <Badge variant="outline" className="text-xs">
+          <Badge variant="outline" className="text-xs w-fit">
             Community Verified
           </Badge>
         </div>
@@ -215,33 +214,34 @@ export const AttendeesList: React.FC<AttendeesListProps> = ({
         {attendees.map((attendee) => (
           <div
             key={attendee.id}
-            className="flex items-center justify-between p-3 rounded-lg bg-muted/40 hover:bg-muted/60 transition-colors"
+            className="p-4 rounded-lg bg-muted/40 hover:bg-muted/60 transition-colors space-y-3"
           >
-            <div className="flex items-center space-x-3">
-              <Avatar className="w-10 h-10">
+            {/* Top section: Avatar and User Info */}
+            <div className="flex items-start gap-3">
+              <Avatar className="w-10 h-10 flex-shrink-0">
                 <AvatarFallback className="bg-primary/10 text-primary">
                   {attendee.recipient.slice(2, 4).toUpperCase()}
                 </AvatarFallback>
               </Avatar>
-              
-              <div className="flex-1">
-                <div className="flex items-center space-x-2 mb-1">
+
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 mb-1 flex-wrap">
                   <span className="font-medium text-sm">
                     {formatAddress(attendee.recipient)}
                   </span>
                   <ReputationBadge score={attendee.reputation_score} size="sm" />
                 </div>
-                
-                <div className="flex items-center space-x-3 text-xs text-muted-foreground">
-                  <span className="flex items-center space-x-1">
+
+                <div className="flex items-center gap-3 text-xs text-muted-foreground flex-wrap">
+                  <span className="flex items-center gap-1">
                     <Clock className="w-3 h-3" />
                     <span>
                       {new Date(attendee.created_at).toLocaleDateString()}
                     </span>
                   </span>
-                  
+
                   {attendee.total_attestations > 0 && (
-                    <span className="flex items-center space-x-1">
+                    <span className="flex items-center gap-1">
                       <Award className="w-3 h-3" />
                       <span>{attendee.total_attestations} attestations</span>
                     </span>
@@ -250,10 +250,10 @@ export const AttendeesList: React.FC<AttendeesListProps> = ({
               </div>
             </div>
 
-            {/* Actions */}
-            <div className="flex items-center space-x-2">
+            {/* Bottom section: Actions - stacks on mobile, inline on desktop */}
+            <div className="flex flex-wrap items-center gap-2">
               {/* Vote buttons */}
-              <div className="flex items-center space-x-1">
+              <div className="flex items-center gap-1">
                 <Button
                   variant="ghost"
                   size="sm"
@@ -264,7 +264,7 @@ export const AttendeesList: React.FC<AttendeesListProps> = ({
                   <ThumbsUp className="w-3 h-3 mr-1" />
                   <span className="text-xs">{attendee.votes_support}</span>
                 </Button>
-                
+
                 <Button
                   variant="ghost"
                   size="sm"
@@ -287,7 +287,7 @@ export const AttendeesList: React.FC<AttendeesListProps> = ({
                   <Button
                     variant="outline"
                     size="sm"
-                    className="h-8 text-orange-600 border-orange-200 hover:bg-orange-50"
+                    className="h-8 px-3 text-orange-600 border-orange-200 hover:bg-orange-50"
                   >
                     <AlertTriangle className="w-3 h-3 mr-1" />
                     Challenge

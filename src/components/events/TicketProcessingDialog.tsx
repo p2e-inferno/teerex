@@ -40,14 +40,12 @@ export const TicketProcessingDialog: React.FC<TicketProcessingDialogProps> = ({
 }) => {
   const { toast } = useToast();
   const [status, setStatus] = useState<ProcessingStatus>("processing");
-  const [isLoading, setIsLoading] = useState(true);
   const [progressMessage, setProgressMessage] = useState("Processing your payment...");
   const [transactionHash, setTransactionHash] = useState<string | null>(null);
 
   useEffect(() => {
     if (isOpen && paymentData) {
       setStatus("processing");
-      setIsLoading(true);
       setProgressMessage("Processing your payment...");
       setTransactionHash(null);
       startWebhookMonitoring();
@@ -66,7 +64,6 @@ export const TicketProcessingDialog: React.FC<TicketProcessingDialogProps> = ({
     } catch (error) {
       console.error("[TICKET PROCESSING] Error starting monitoring:", error);
       setStatus("error");
-      setIsLoading(false);
       toast({
         title: "Payment Processing Error",
         description:
@@ -99,7 +96,6 @@ export const TicketProcessingDialog: React.FC<TicketProcessingDialogProps> = ({
           console.warn("[WEBHOOK MONITOR] Status check error:", error.message);
           if (attempts < maxAttempts) return setTimeout(pollForStatus, pollInterval);
           setStatus("timeout");
-          setIsLoading(false);
           return setProgressMessage(
             "Processing is taking longer than expected. Please go to My Tickets for manual issuance/reconciliation."
           );
@@ -109,7 +105,6 @@ export const TicketProcessingDialog: React.FC<TicketProcessingDialogProps> = ({
           console.warn("[WEBHOOK MONITOR] Transaction status check failed:", data?.error);
           if (attempts < maxAttempts) return setTimeout(pollForStatus, pollInterval);
           setStatus("timeout");
-          setIsLoading(false);
           return setProgressMessage(
             "Processing is taking longer than expected. Please go to My Tickets for manual issuance/reconciliation."
           );
@@ -119,7 +114,6 @@ export const TicketProcessingDialog: React.FC<TicketProcessingDialogProps> = ({
           console.log("[WEBHOOK MONITOR] Transaction not found yet");
           if (attempts < maxAttempts) return setTimeout(pollForStatus, pollInterval);
           setStatus("timeout");
-          setIsLoading(false);
           return setProgressMessage(
             "Processing is taking longer than expected. Please go to My Tickets for manual issuance/reconciliation."
           );
@@ -132,7 +126,6 @@ export const TicketProcessingDialog: React.FC<TicketProcessingDialogProps> = ({
         if (isKeyGranted) {
           setTransactionHash(txHash || null);
           setStatus("success");
-          setIsLoading(false);
           setProgressMessage("Your NFT ticket has been issued successfully!");
           toast({
             title: "Ticket Issued!",
@@ -145,7 +138,6 @@ export const TicketProcessingDialog: React.FC<TicketProcessingDialogProps> = ({
           setProgressMessage("Payment confirmed. Issuing your NFT ticket...");
           if (attempts < maxAttempts) return setTimeout(pollForStatus, pollInterval);
           setStatus("timeout");
-          setIsLoading(false);
           return setProgressMessage(
             "Ticket issuance is taking longer than expected. Please go to My Tickets for manual issuance/reconciliation."
           );
@@ -154,7 +146,6 @@ export const TicketProcessingDialog: React.FC<TicketProcessingDialogProps> = ({
         // still processing
         if (attempts < maxAttempts) return setTimeout(pollForStatus, pollInterval);
         setStatus("timeout");
-        setIsLoading(false);
         return setProgressMessage(
           "Processing is taking longer than expected. Please go to My Tickets for manual issuance/reconciliation."
         );
@@ -162,7 +153,6 @@ export const TicketProcessingDialog: React.FC<TicketProcessingDialogProps> = ({
         console.error("[WEBHOOK MONITOR] Error checking status:", err);
         if (attempts < maxAttempts) return setTimeout(pollForStatus, pollInterval);
         setStatus("error");
-        setIsLoading(false);
         return setProgressMessage("An error occurred while processing your ticket.");
       }
     };

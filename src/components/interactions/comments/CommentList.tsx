@@ -4,10 +4,17 @@ import type { PostComment } from '../types';
 
 interface CommentListProps {
   comments: PostComment[];
-  creatorAddress: string;
+  canModerateComments?: boolean;
+  onCommentUpdated?: (commentId: string, updates: Partial<PostComment>) => void;
+  onCommentDeleted?: (commentId: string) => void;
 }
 
-export const CommentList: React.FC<CommentListProps> = ({ comments, creatorAddress }) => {
+export const CommentList: React.FC<CommentListProps> = ({
+  comments,
+  canModerateComments = false,
+  onCommentUpdated,
+  onCommentDeleted,
+}) => {
   // Sort comments by created_at (oldest first for conversation flow)
   const sortedComments = [...comments].sort(
     (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
@@ -26,7 +33,13 @@ export const CommentList: React.FC<CommentListProps> = ({ comments, creatorAddre
   return (
     <div className="divide-y divide-border">
       {sortedComments.map((comment) => (
-        <CommentItem key={comment.id} comment={comment} creatorAddress={creatorAddress} />
+        <CommentItem
+          key={comment.id}
+          comment={comment}
+          canModerateComments={canModerateComments}
+          onCommentUpdated={onCommentUpdated}
+          onCommentDeleted={onCommentDeleted}
+        />
       ))}
     </div>
   );

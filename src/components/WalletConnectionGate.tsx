@@ -11,8 +11,8 @@ interface WalletConnectionGateProps {
 }
 
 export const WalletConnectionGate: React.FC<WalletConnectionGateProps> = ({
-  title = "Connect Your Wallet",
-  description = "Connect your wallet to access this feature",
+  title = "Connect to the App",
+  description = "Connect to the App to access this feature",
   fullPage = false
 }) => {
   const { login, ready } = usePrivy();
@@ -40,7 +40,7 @@ export const WalletConnectionGate: React.FC<WalletConnectionGateProps> = ({
           className="w-full bg-purple-600 hover:bg-purple-700 text-white font-medium rounded-xl py-3"
           size="lg"
         >
-          Connect Wallet
+          Connect
         </Button>
       </CardContent>
     </Card>

@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { useWallets } from '@privy-io/react-auth';
+import React, { useMemo, useState } from 'react';
+import { usePrivy, useWallets } from '@privy-io/react-auth';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import {
@@ -10,20 +10,25 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { MoreVertical, Pencil, Trash2, Loader2 } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
-import { useCreatorPermissions } from '../hooks/useCreatorPermissions';
 import { usePostComments } from '../hooks/usePostComments';
 import type { PostComment } from '../types';
 import { formatDistanceToNow } from 'date-fns';
 
 interface CommentItemProps {
   comment: PostComment;
-  creatorAddress: string;
+  canModerateComments?: boolean;
+  onCommentUpdated?: (commentId: string, updates: Partial<PostComment>) => void;
+  onCommentDeleted?: (commentId: string) => void;
 }
 
-export const CommentItem: React.FC<CommentItemProps> = ({ comment, creatorAddress }) => {
+export const CommentItem: React.FC<CommentItemProps> = ({
+  comment,
+  canModerateComments = false,
+  onCommentUpdated,
+  onCommentDeleted,
+}) => {
   const { wallets } = useWallets();
-  const wallet = wallets?.[0];
-  const { isCreator } = useCreatorPermissions(creatorAddress);
+  const { user } = usePrivy();
   const { updateComment, deleteComment } = usePostComments();
 
   const [isEditing, setIsEditing] = useState(false);
@@ -31,9 +36,16 @@ export const CommentItem: React.FC<CommentItemProps> = ({ comment, creatorAddres
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Check if current user owns this comment
-  const isOwner = wallet?.address
-    ? wallet.address.toLowerCase() === comment.user_address.toLowerCase()
-    : false;
+  const addresses = useMemo(() => {
+    const fromWallets = (wallets || [])
+      .map((wallet) => wallet?.address)
+      .filter((addr): addr is string => Boolean(addr));
+    const embedded = user?.wallet?.address ? [user.wallet.address] : [];
+    const all = [...fromWallets, ...embedded].map((addr) => addr.toLowerCase());
+    return Array.from(new Set(all));
+  }, [wallets, user?.wallet?.address]);
+
+  const isOwner = addresses.includes(comment.user_address.toLowerCase());
 
   // Handle edit save
   const handleSave = async () => {
@@ -61,6 +73,10 @@ export const CommentItem: React.FC<CommentItemProps> = ({ comment, creatorAddres
       setIsSubmitting(true);
       await updateComment(comment.id, trimmedContent);
       setIsEditing(false);
+      onCommentUpdated?.(comment.id, {
+        content: trimmedContent,
+        updated_at: new Date().toISOString(),
+      });
       toast({
         title: 'Comment updated',
         description: 'Your comment has been updated',
@@ -87,6 +103,7 @@ export const CommentItem: React.FC<CommentItemProps> = ({ comment, creatorAddres
   const handleDelete = async () => {
     try {
       await deleteComment(comment.id);
+      onCommentDeleted?.(comment.id);
       toast({
         title: 'Comment deleted',
         description: 'The comment has been removed',
@@ -123,7 +140,7 @@ export const CommentItem: React.FC<CommentItemProps> = ({ comment, creatorAddres
           </div>
 
           {/* Edit/Delete menu - show if owner or creator */}
-          {(isOwner || isCreator) && (
+          {(isOwner || canModerateComments) && (
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
@@ -138,7 +155,7 @@ export const CommentItem: React.FC<CommentItemProps> = ({ comment, creatorAddres
                     Edit comment
                   </DropdownMenuItem>
                 )}
-                {/* Delete - owner or creator */}
+                {/* Delete - owner or moderator */}
                 <DropdownMenuItem
                   onClick={handleDelete}
                   className="text-destructive focus:text-destructive"

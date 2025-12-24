@@ -110,7 +110,22 @@ serve(async (req) => {
     const baseUrl = event.lock_address
       ? `${APP_URL}/event/${event.lock_address.toLowerCase()}`
       : `${APP_URL}/event/${event.id}`;
-    const eventUrlFinal = event_url || `${baseUrl}#posts`;
+
+    const fallbackUrl = new URL(`${baseUrl}/discussions`);
+    fallbackUrl.searchParams.set('post', String(post_id));
+
+    let eventUrlFinal = fallbackUrl.toString();
+    if (event_url) {
+      try {
+        const u = new URL(event_url, APP_URL);
+        if (!u.searchParams.has('post')) {
+          u.searchParams.set('post', String(post_id));
+        }
+        eventUrlFinal = u.toString();
+      } catch {
+        eventUrlFinal = fallbackUrl.toString();
+      }
+    }
 
     const emailContent = getPostNotificationEmail(
       event.title,

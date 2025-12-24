@@ -12,7 +12,7 @@ export const mapEventRow = (event: any): MappedEvent => ({
   created_at: new Date(event.created_at),
   updated_at: new Date(event.updated_at),
   starts_at: event.starts_at || null,
-  currency: event.currency as 'ETH' | 'USDC' | 'FREE',
+  currency: event.currency,
   ngn_price: event.ngn_price || 0,
   payment_methods: event.payment_methods || ['crypto'],
   paystack_public_key: event.paystack_public_key,

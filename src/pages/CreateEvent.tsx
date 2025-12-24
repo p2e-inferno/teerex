@@ -2,7 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { EventCreateSchema } from '@/types/event.schema';
 import { usePrivy, useWallets } from '@privy-io/react-auth';
-import { useNavigate, useSearchParams, Navigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { EventBasicInfo } from '@/components/create-event/EventBasicInfo';
 import { EventDetails } from '@/components/create-event/EventDetails';
 import { TicketSettings } from '@/components/create-event/TicketSettings';
@@ -10,7 +10,7 @@ import { TicketSettingsDisplay } from '@/components/create-event/TicketSettingsD
 import { EventPreview } from '@/components/create-event/EventPreview';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
-import { ChevronLeft, ChevronRight, ExternalLink } from 'lucide-react';
+import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { deployLock, updateLockTransferability } from '@/utils/lockUtils';
 import { savePublishedEvent } from '@/utils/eventUtils';
@@ -21,6 +21,7 @@ import { EventCreationSuccessModal } from '@/components/events/EventCreationSucc
 import { WalletConnectionGate } from '@/components/WalletConnectionGate';
 import { useGaslessFallback } from '@/hooks/useGasless';
 import { isCryptoPriceValid } from '@/utils/priceUtils';
+import type { CryptoCurrency } from '@/types/currency';
 
 export interface EventFormData {
   title: string;
@@ -33,13 +34,15 @@ export interface EventFormData {
   capacity: number;
   // Crypto pricing (used only when paymentMethod === 'crypto')
   price: number;
-  currency: 'ETH' | 'USDC';
+  currency: CryptoCurrency;
   // Fiat pricing (used only when paymentMethod === 'fiat')
   ngnPrice: number;
   // Single, mutually exclusive payment method
   paymentMethod: 'free' | 'crypto' | 'fiat';
   category: string;
   imageUrl: string;
+  imageCropX?: number;
+  imageCropY?: number;
   chainId?: number;
   // Ticket validity duration
   ticketDuration: 'event' | '30' | '365' | 'unlimited' | 'custom';
@@ -211,7 +214,7 @@ const CreateEvent = () => {
           setCurrentDraftId(null);
           setEditingMeta({
             lockAddress: (event as any).lockAddress || (event as any).lock_address,
-            chainId: event.chain_id,
+            chainId: event.chain_id || 0,
             initialTransferable: (event as any).transferable ?? false,
           });
         } else {
@@ -233,8 +236,6 @@ const CreateEvent = () => {
     { number: 3, title: 'Tickets', component: TicketSettings },
     { number: 4, title: 'Preview', component: EventPreview }
   ];
-
-  const currentStepData = steps[currentStep - 1];
 
   const nextStep = () => {
     console.log('Moving to next step, current step:', currentStep);
@@ -412,8 +413,8 @@ const CreateEvent = () => {
         maxNumberOfKeys: formData.capacity,
         expirationDuration: getExpirationDuration(formData.ticketDuration, formData.customDurationDays),
         currency: formData.paymentMethod === 'crypto' ? formData.currency : 'FREE',
-        price: formData.price,
-        chainId: (formData as any).chainId as number
+        price: formData.paymentMethod === 'crypto' ? formData.price : (formData.paymentMethod === 'fiat' ? formData.ngnPrice : 0),
+        chainId: ((formData as any).chainId || 0) as number
       };
 
       if (!lockConfig.chainId) {
@@ -422,11 +423,7 @@ const CreateEvent = () => {
 
       // Try gasless deployment first, fallback to client-side if it fails
       const result: any = await deployLockWithGasless({
-        name: formData.title,
-        expirationDuration: getExpirationDuration(formData.ticketDuration, formData.customDurationDays),
-        currency: formData.paymentMethod === 'crypto' ? formData.currency : 'FREE',
-        price: formData.paymentMethod === 'crypto' ? formData.price : (formData.paymentMethod === 'fiat' ? formData.ngnPrice : 0),
-        maxNumberOfKeys: formData.capacity,
+        ...lockConfig,
         chain_id: lockConfig.chainId,
         maxKeysPerAddress: 1,
         transferable: formData.transferable ?? false,
@@ -437,8 +434,6 @@ const CreateEvent = () => {
         eventTime: formData.time,
         eventLocation: formData.location,
         paymentMethod: formData.paymentMethod,
-        // Include lockConfig properties for fallback
-        ...lockConfig
       });
 
       // Normalize response format (gasless returns {ok, lock_address, tx_hash}, client returns {success, lockAddress, transactionHash})
@@ -754,7 +749,7 @@ const CreateEvent = () => {
       formData,
       updateFormData,
       onNext: nextStep,
-      editingEventId
+      editingEventId: editingEventId || undefined
     };
 
     switch (currentStep) {
@@ -777,8 +772,8 @@ const CreateEvent = () => {
   if (!authenticated) {
     return (
       <WalletConnectionGate
-        title="Connect Your Wallet to Create Events"
-        description="You need to connect your wallet to create and manage Web3 events"
+        title="Connect to the App to Create Events"
+        description="You need to connect using email or wallet and manage Web3 events"
         fullPage={true}
       />
     );

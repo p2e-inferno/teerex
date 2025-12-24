@@ -10,8 +10,11 @@ import { Shield, Zap, Ticket, CreditCard, Info, Loader2, AlertCircle } from 'luc
 import { EventFormData } from '@/pages/CreateEvent';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { useNetworkConfigs } from '@/hooks/useNetworkConfigs';
+import { useMultipleTokenMetadata } from '@/hooks/useTokenMetadata';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { validateCryptoPrice, getPricePlaceholder, getPriceStep, MIN_USDC_PRICE, MIN_NATIVE_PRICE } from '@/utils/priceUtils';
+import { validateCryptoPrice, getPricePlaceholder, getPriceStep, MIN_WHOLE_NUMBER_PRICE, MIN_NATIVE_TOKEN_PRICE } from '@/utils/priceUtils';
+import type { CryptoCurrency } from '@/types/currency';
+import { usesWholeNumberPricing } from '@/types/currency';
 
 interface TicketSettingsProps {
   formData: EventFormData;
@@ -22,9 +25,22 @@ interface TicketSettingsProps {
 export const TicketSettings: React.FC<TicketSettingsProps> = ({
   formData,
   updateFormData,
-  onNext
 }) => {
-  const { networks, isLoading, error, hasUSDC, getNetworkByChainId } = useNetworkConfigs();
+  const { networks, isLoading, error, getNetworkByChainId, getAvailableTokens, getTokenAddress } = useNetworkConfigs();
+
+  // Check if current network supports selected currency
+  const currentChainId = (formData as any).chainId;
+
+  // Fetch token metadata for all available tokens on current chain
+  const availableTokens = currentChainId ? getAvailableTokens(currentChainId) : ['ETH'];
+  const tokenAddresses = useMemo(() => {
+    if (!currentChainId) return [];
+    return availableTokens
+      .filter(token => token !== 'ETH') // Skip native token
+      .map(token => getTokenAddress(currentChainId, token as 'USDC' | 'DG' | 'G' | 'UP'));
+  }, [currentChainId, availableTokens, getTokenAddress]);
+
+  const { metadataMap } = useMultipleTokenMetadata(currentChainId, tokenAddresses);
 
   const fiatEnabled = useMemo(() => {
     const raw = (import.meta as any).env?.VITE_ENABLE_FIAT;
@@ -39,19 +55,18 @@ export const TicketSettings: React.FC<TicketSettingsProps> = ({
     }
   }, [networks, formData, updateFormData]);
 
-  // Check if current network supports USDC and adjust currency selection
-  const currentChainId = (formData as any).chainId;
-  const currentNetworkHasUSDC = currentChainId ? hasUSDC(currentChainId) : false;
-
   // Validation state for real-time feedback
   const [priceError, setPriceError] = useState<string>('');
 
   useEffect(() => {
-    // If USDC is selected but current network doesn't support it, switch to ETH
-    if (formData.currency === 'USDC' && !currentNetworkHasUSDC) {
-      updateFormData({ currency: 'ETH' });
+    // If selected currency is not available on current network, switch to ETH
+    if (currentChainId && formData.paymentMethod === 'crypto') {
+      const availableTokens = getAvailableTokens(currentChainId);
+      if (!availableTokens.includes(formData.currency)) {
+        updateFormData({ currency: 'ETH' });
+      }
     }
-  }, [currentChainId, currentNetworkHasUSDC, formData.currency, updateFormData]);
+  }, [currentChainId, formData.currency, formData.paymentMethod, getAvailableTokens, updateFormData]);
 
   // Re-validate price when currency changes
   useEffect(() => {
@@ -67,44 +82,6 @@ export const TicketSettings: React.FC<TicketSettingsProps> = ({
       updateFormData({ paymentMethod: 'free' });
     }
   }, [fiatEnabled, formData.paymentMethod, updateFormData]);
-
-  const handleContinue = () => {
-    if (!fiatEnabled && formData.paymentMethod === 'fiat') {
-      alert('Fiat checkout is temporarily unavailable.');
-      return;
-    }
-    if (formData.paymentMethod === 'fiat') {
-      const pk = (import.meta as any).env?.VITE_PAYSTACK_PUBLIC_KEY as string | undefined;
-      if (!pk) {
-        alert('PAYSTACK public key not configured. Please set VITE_PAYSTACK_PUBLIC_KEY.');
-        return;
-      }
-      if (!formData.ngnPrice || formData.ngnPrice <= 0) {
-        alert('Please enter a valid NGN price for fiat payments');
-        return;
-      }
-    }
-    if (formData.paymentMethod === 'crypto') {
-      if (!formData.price || formData.price <= 0) {
-        alert('Please enter a valid price for crypto payments');
-        return;
-      }
-      // USDC requires minimum $1 due to token decimals and practical considerations
-      if (formData.currency === 'USDC' && formData.price < 1) {
-        alert('USDC payments require a minimum price of $1');
-        return;
-      }
-    }
-    // Validate custom duration
-    if (formData.ticketDuration === 'custom') {
-      if (!formData.customDurationDays || formData.customDurationDays <= 0) {
-        alert('Please enter a valid custom duration (at least 1 day)');
-        return;
-      }
-    }
-    console.log('Ticket settings completed, proceeding to next step');
-    onNext();
-  };
 
   return (
     <div className="space-y-6">
@@ -134,6 +111,106 @@ export const TicketSettings: React.FC<TicketSettingsProps> = ({
         </CardContent>
       </Card>
 
+      {/* Network and Ticket Duration */}
+      <div className="space-y-4">
+        <h3 className="text-lg font-medium text-gray-900">Ticket Configuration</h3>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="space-y-2">
+            <Label>Ticket Duration</Label>
+            <Select
+              value={formData.ticketDuration}
+              onValueChange={(value) => {
+                updateFormData({
+                  ticketDuration: value as any,
+                  // Reset custom duration if switching away from custom
+                  customDurationDays: value === 'custom' ? formData.customDurationDays : undefined
+                });
+              }}
+            >
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="event">Until event ends</SelectItem>
+                <SelectItem value="30">30 days</SelectItem>
+                <SelectItem value="365">1 year</SelectItem>
+                <SelectItem value="unlimited">Unlimited</SelectItem>
+                <SelectItem value="custom">Custom duration</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="space-y-2">
+            <Label>Network</Label>
+            {isLoading ? (
+              <div className="flex items-center gap-2 h-10 px-3 py-2 border rounded-md bg-gray-50">
+                <Loader2 className="w-4 h-4 animate-spin text-gray-500" />
+                <span className="text-sm text-gray-500">Loading networks...</span>
+              </div>
+            ) : error ? (
+              <Alert variant="destructive">
+                <AlertCircle className="h-4 w-4" />
+                <AlertDescription>{error}</AlertDescription>
+              </Alert>
+            ) : networks.length === 0 ? (
+              <Alert variant="destructive">
+                <AlertCircle className="h-4 w-4" />
+                <AlertDescription>No active networks available. Please contact administrator.</AlertDescription>
+              </Alert>
+            ) : (
+              <Select
+                value={currentChainId?.toString() || ''}
+                onValueChange={(value) => updateFormData({ chainId: parseInt(value) } as any)}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select network" />
+                </SelectTrigger>
+                <SelectContent>
+                  {networks.map((network) => (
+                    <SelectItem
+                      key={network.chain_id}
+                      value={network.chain_id.toString()}
+                      disabled={!network.unlock_factory_address}
+                    >
+                      <div className="flex items-center gap-2">
+                        <span>{network.chain_name}</span>
+                        {network.is_mainnet && (
+                          <Badge variant="secondary" className="text-xs">Mainnet</Badge>
+                        )}
+                        {!network.unlock_factory_address && (
+                          <span className="text-xs text-amber-600">(No factory address)</span>
+                        )}
+                      </div>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
+            {currentChainId && getNetworkByChainId(currentChainId) && !getNetworkByChainId(currentChainId)?.unlock_factory_address && (
+              <p className="text-xs text-amber-600">
+                This network does not have an Unlock factory address configured. Deployment may fail.
+              </p>
+            )}
+          </div>
+
+          {formData.ticketDuration === 'custom' && (
+            <div className="space-y-2">
+              <Label htmlFor="custom-duration">Custom Duration (days)</Label>
+              <Input
+                id="custom-duration"
+                type="number"
+                placeholder="Enter number of days"
+                value={formData.customDurationDays || ''}
+                onChange={(e) => updateFormData({ customDurationDays: parseInt(e.target.value) || 1 })}
+                min="1"
+                step="1"
+              />
+            </div>
+          )}
+        </div>
+      </div>
+
       {/* Payment Method */}
       <div className="space-y-4">
         <h3 className="text-lg font-medium text-gray-900">Payment Method</h3>
@@ -149,7 +226,7 @@ export const TicketSettings: React.FC<TicketSettingsProps> = ({
           <div className="flex items-center space-x-2">
             <RadioGroupItem id="pm-crypto" value="crypto" />
             <Label htmlFor="pm-crypto" className="flex items-center gap-2">
-              <Shield className="w-4 h-4" /> Crypto (ETH, USDC)
+              <Shield className="w-4 h-4" /> Crypto
             </Label>
           </div>
           <div className="flex items-center justify-between space-x-2">
@@ -192,35 +269,54 @@ export const TicketSettings: React.FC<TicketSettingsProps> = ({
               <Label>Currency</Label>
               <Select
                 value={formData.currency}
-                onValueChange={(value: 'ETH' | 'USDC') => updateFormData({ currency: value })}
+                onValueChange={(value) => updateFormData({ currency: value as CryptoCurrency })}
               >
                 <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="ETH">
-                    {getNetworkByChainId(currentChainId)?.native_currency_symbol || 'ETH'}
-                  </SelectItem>
-                  <SelectItem value="USDC" disabled={!currentNetworkHasUSDC}>
-                    USDC {!currentNetworkHasUSDC && '(Not available on this network)'}
-                  </SelectItem>
+                  {availableTokens.map(token => {
+                    // For native token (ETH), use network's native currency symbol
+                    if (token === 'ETH') {
+                      const nativeSymbol = getNetworkByChainId(currentChainId)?.native_currency_symbol || 'ETH';
+                      const nativeName = getNetworkByChainId(currentChainId)?.native_currency_name || 'Ethereum';
+                      return (
+                        <SelectItem key={token} value={token}>
+                          <div className="flex items-baseline gap-2">
+                            <span>{nativeSymbol}</span>
+                            <span className="text-xs text-gray-500">{nativeName}</span>
+                          </div>
+                        </SelectItem>
+                      );
+                    }
+
+                    // For ERC20 tokens, fetch metadata from contracts
+                    const tokenAddr = getTokenAddress(currentChainId, token as 'USDC' | 'DG' | 'G' | 'UP');
+                    const metadata = tokenAddr ? metadataMap[tokenAddr.toLowerCase()] : null;
+
+                    return (
+                      <SelectItem key={token} value={token}>
+                        <div className="flex items-baseline gap-2">
+                          <span>{metadata?.symbol || token}</span>
+                          {metadata?.name && (
+                            <span className="text-xs text-gray-500">{metadata.name}</span>
+                          )}
+                        </div>
+                      </SelectItem>
+                    );
+                  })}
                 </SelectContent>
               </Select>
-              {!currentNetworkHasUSDC && formData.currency === 'USDC' && (
-                <p className="text-xs text-amber-600">
-                  USDC is not available on the selected network. Switched to {getNetworkByChainId(currentChainId)?.native_currency_symbol || 'ETH'}.
-                </p>
-              )}
             </div>
 
             <div className="space-y-2">
               <Label htmlFor="price">
                 Price
-                {formData.currency === 'USDC' && (
-                  <span className="text-xs text-gray-500 ml-2">(min: ${MIN_USDC_PRICE})</span>
+                {usesWholeNumberPricing(formData.currency) && (
+                  <span className="text-xs text-gray-500 ml-2">(min: ${MIN_WHOLE_NUMBER_PRICE})</span>
                 )}
-                {formData.currency !== 'USDC' && (
-                  <span className="text-xs text-gray-500 ml-2">(min: {MIN_NATIVE_PRICE} {getNetworkByChainId(currentChainId)?.native_currency_symbol || 'native'})</span>
+                {!usesWholeNumberPricing(formData.currency) && (
+                  <span className="text-xs text-gray-500 ml-2">(min: {MIN_NATIVE_TOKEN_PRICE} {getNetworkByChainId(currentChainId)?.native_currency_symbol || 'native'})</span>
                 )}
               </Label>
               <Input
@@ -240,7 +336,7 @@ export const TicketSettings: React.FC<TicketSettingsProps> = ({
                   const { error } = validateCryptoPrice(formData.price || 0, formData.currency, nativeCurrency);
                   setPriceError(error);
                 }}
-                min={formData.currency === 'USDC' ? MIN_USDC_PRICE.toString() : MIN_NATIVE_PRICE.toString()}
+                min={usesWholeNumberPricing(formData.currency) ? MIN_WHOLE_NUMBER_PRICE.toString() : MIN_NATIVE_TOKEN_PRICE.toString()}
                 step={getPriceStep(formData.currency)}
                 className={priceError ? 'border-red-500' : ''}
               />
@@ -317,105 +413,6 @@ export const TicketSettings: React.FC<TicketSettingsProps> = ({
         </div>
       )}
 
-      {/* Ticket Configuration Settings */}
-      <div className="space-y-4">
-        <h3 className="text-lg font-medium text-gray-900">Ticket Configuration</h3>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div className="space-y-2">
-            <Label>Ticket Duration</Label>
-            <Select
-              value={formData.ticketDuration}
-              onValueChange={(value) => {
-                updateFormData({
-                  ticketDuration: value as any,
-                  // Reset custom duration if switching away from custom
-                  customDurationDays: value === 'custom' ? formData.customDurationDays : undefined
-                });
-              }}
-            >
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="event">Until event ends</SelectItem>
-                <SelectItem value="30">30 days</SelectItem>
-                <SelectItem value="365">1 year</SelectItem>
-                <SelectItem value="unlimited">Unlimited</SelectItem>
-                <SelectItem value="custom">Custom duration</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-
-          {formData.ticketDuration === 'custom' && (
-            <div className="space-y-2">
-              <Label htmlFor="custom-duration">Duration (days)</Label>
-              <Input
-                id="custom-duration"
-                type="number"
-                placeholder="Enter number of days"
-                value={formData.customDurationDays || ''}
-                onChange={(e) => updateFormData({ customDurationDays: parseInt(e.target.value) || 1 })}
-                min="1"
-                step="1"
-              />
-            </div>
-          )}
-
-          <div className="space-y-2">
-            <Label>Network</Label>
-            {isLoading ? (
-              <div className="flex items-center gap-2 h-10 px-3 py-2 border rounded-md bg-gray-50">
-                <Loader2 className="w-4 h-4 animate-spin text-gray-500" />
-                <span className="text-sm text-gray-500">Loading networks...</span>
-              </div>
-            ) : error ? (
-              <Alert variant="destructive">
-                <AlertCircle className="h-4 w-4" />
-                <AlertDescription>{error}</AlertDescription>
-              </Alert>
-            ) : networks.length === 0 ? (
-              <Alert variant="destructive">
-                <AlertCircle className="h-4 w-4" />
-                <AlertDescription>No active networks available. Please contact administrator.</AlertDescription>
-              </Alert>
-            ) : (
-              <Select
-                value={currentChainId?.toString() || ''}
-                onValueChange={(value) => updateFormData({ chainId: parseInt(value) } as any)}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Select network" />
-                </SelectTrigger>
-                <SelectContent>
-                  {networks.map((network) => (
-                    <SelectItem
-                      key={network.chain_id}
-                      value={network.chain_id.toString()}
-                      disabled={!network.unlock_factory_address}
-                    >
-                      <div className="flex items-center gap-2">
-                        <span>{network.chain_name}</span>
-                        {network.is_mainnet && (
-                          <Badge variant="secondary" className="text-xs">Mainnet</Badge>
-                        )}
-                        {!network.unlock_factory_address && (
-                          <span className="text-xs text-amber-600">(No factory address)</span>
-                        )}
-                      </div>
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            )}
-            {currentChainId && getNetworkByChainId(currentChainId) && !getNetworkByChainId(currentChainId)?.unlock_factory_address && (
-              <p className="text-xs text-amber-600">
-                This network does not have an Unlock factory address configured. Deployment may fail.
-              </p>
-            )}
-          </div>
-        </div>
-      </div>
     </div>
   );
 };

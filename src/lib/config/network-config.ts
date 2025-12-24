@@ -1,5 +1,6 @@
 import { base, baseSepolia } from 'wagmi/chains';
 import { supabase } from '@/integrations/supabase/client';
+import type { CryptoCurrency } from '@/types/currency';
 
 export const CHAINS = {
   [base.id]: base,
@@ -13,6 +14,9 @@ export interface NetworkConfig {
   chain_id: number;
   chain_name: string;
   usdc_token_address: string | null;
+  dg_token_address: string | null;
+  g_token_address: string | null;
+  up_token_address: string | null;
   unlock_factory_address: string | null;
   native_currency_symbol: string;
   native_currency_name: string | null;
@@ -35,6 +39,9 @@ function isValidNetworkConfig(data: any): data is NetworkConfig {
     typeof data.is_active === 'boolean' &&
     typeof data.is_mainnet === 'boolean' &&
     (data.usdc_token_address === null || typeof data.usdc_token_address === 'string') &&
+    (data.dg_token_address === null || typeof data.dg_token_address === 'string') &&
+    (data.g_token_address === null || typeof data.g_token_address === 'string') &&
+    (data.up_token_address === null || typeof data.up_token_address === 'string') &&
     (data.unlock_factory_address === null || typeof data.unlock_factory_address === 'string') &&
     (data.native_currency_name === null || typeof data.native_currency_name === 'string') &&
     (data.native_currency_decimals === null || typeof data.native_currency_decimals === 'number') &&
@@ -267,9 +274,24 @@ export async function getUsdcAddressAsync(chainId: number): Promise<string | nul
   }
 }
 
-export async function getTokenAddressAsync(chainId: number, symbol: 'ETH' | 'USDC'): Promise<string | null> {
+export async function getTokenAddressAsync(chainId: number, symbol: CryptoCurrency): Promise<string | null> {
   if (symbol === 'ETH') return ZERO_ADDRESS;
-  return getUsdcAddressAsync(chainId);
+  if (symbol === 'USDC') return getUsdcAddressAsync(chainId);
+
+  try {
+    const networkConfig = await getNetworkConfigByChainId(chainId);
+    if (!networkConfig) return null;
+
+    switch (symbol) {
+      case 'DG': return networkConfig.dg_token_address || null;
+      case 'G': return networkConfig.g_token_address || null;
+      case 'UP': return networkConfig.up_token_address || null;
+      default: return null;
+    }
+  } catch (error) {
+    console.error(`Error fetching ${symbol} address for chain ${chainId}:`, error);
+    return null;
+  }
 }
 
 export function getTokenAddress(chainId: number, symbol: 'ETH' | 'USDC'): string {

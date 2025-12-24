@@ -7,6 +7,7 @@ import { useWallets } from '@privy-io/react-auth';
 import { useDelegatedAttestation } from '@/hooks/useDelegatedAttestation';
 import { useAttestationEncoding } from '@/hooks/useAttestationEncoding';
 import { Zap, Loader2 } from 'lucide-react';
+import { getDivviBrowserProvider } from '@/lib/wallet/provider';
 
 interface Event {
   id: string;
@@ -85,8 +86,7 @@ export const DirectEASAttestationButton: React.FC<DirectEASAttestationButtonProp
 
       // Step 3: Initialize EAS and connect signer
       onResult?.('Step 3/4: Connecting to EAS contract...');
-      const provider = await wallet.getEthereumProvider();
-      const ethersProvider = new ethers.BrowserProvider(provider);
+      const ethersProvider = await getDivviBrowserProvider(wallet);
       const signer = await ethersProvider.getSigner();
 
       // EAS contract address (Base Sepolia/Mainnet)

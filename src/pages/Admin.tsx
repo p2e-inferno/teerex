@@ -7,7 +7,6 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
-import { Separator } from "@/components/ui/separator";
 import { toast } from "@/hooks/use-toast";
 import { supabase } from '@/integrations/supabase/client';
 import { registerSchema, getAttestationSchemas, checkSchemaExists, importExistingSchema } from '@/utils/schemaUtils';
@@ -251,24 +250,6 @@ const Admin: React.FC = () => {
       });
     } finally {
       setLoading(false);
-    }
-  };
-
-  const handleRegisterOrImportPredefined = async (index: number) => {
-    const schema = predefinedSchemas[index];
-    const status = schemaStatus[index];
-    
-    if (status?.exists) {
-      await handleImportSchema(index);
-    } else {
-      // Set form data and let user register manually
-      setFormData({
-        name: schema.name,
-        description: schema.description,
-        category: schema.category,
-        schemaDefinition: schema.schemaDefinition,
-        revocable: true
-      });
     }
   };
 

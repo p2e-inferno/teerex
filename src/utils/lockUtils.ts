@@ -1,9 +1,10 @@
 
 import { parseEther, parseUnits } from 'viem';
 import { base, baseSepolia } from 'wagmi/chains';
-import { getRpcUrl, getExplorerTxUrl, getTokenAddress, getTokenAddressAsync, ZERO_ADDRESS, getNetworkConfigByChainId } from '@/lib/config/network-config';
+import { getRpcUrl, getExplorerTxUrl, getTokenAddressAsync, ZERO_ADDRESS, getNetworkConfigByChainId } from '@/lib/config/network-config';
 import { ethers } from 'ethers';
 import { supabase } from '@/integrations/supabase/client';
+import { getDivviBrowserProvider, getDivviEip1193Provider } from '@/lib/wallet/provider';
 
 interface LockConfig {
   name: string;
@@ -295,8 +296,9 @@ const getTokenInfo = async (chainId: number, symbol: string): Promise<{ address:
   if (symbol === 'FREE') return { address: ZERO_ADDRESS, decimals: 18 };
   if (symbol === 'ETH') return { address: ZERO_ADDRESS, decimals: 18 };
 
-  // Use async function to get token address from database
-  const address = await getTokenAddressAsync(chainId, symbol as 'USDC');
+  // Use async function to get token address from database (supports USDC, DG, G, UP)
+  // After FREE and ETH checks, symbol must be a valid CryptoCurrency
+  const address = await getTokenAddressAsync(chainId, symbol as any);
 
   if (!address) {
     throw new Error(`${symbol} token address not configured for chain ID ${chainId}. Please contact administrator.`);
@@ -379,10 +381,10 @@ export const checkIfLockManager = async (
       throw new Error('Invalid manager address.');
     }
 
-    let rpcUrl: string | undefined;
+    let rpcUrl: string | undefined = undefined;
     if (chainId !== undefined) {
       const networkConfig = await getNetworkConfigByChainId(chainId);
-      rpcUrl = networkConfig?.rpc_url;
+      rpcUrl = networkConfig?.rpc_url || undefined;
       if (!rpcUrl) {
         try {
           rpcUrl = getRpcUrl(chainId);
@@ -430,8 +432,7 @@ export const addLockManager = async (
       throw new Error('No wallet provided or not connected.');
     }
 
-    const provider = await wallet.getEthereumProvider();
-    const ethersProvider = new ethers.BrowserProvider(provider);
+    const ethersProvider = await getDivviBrowserProvider(wallet);
     const signer = await ethersProvider.getSigner();
 
     const lockContract = new ethers.Contract(lockAddress, PublicLockABI, signer);
@@ -486,7 +487,7 @@ export const deployLock = async (config: LockConfig, wallet: any, chainId: numbe
     }
 
     // Get the Ethereum provider from Privy wallet
-    const provider = await wallet.getEthereumProvider();
+    const provider = await getDivviEip1193Provider(wallet);
     await ensureCorrectNetwork(provider, chainId);
 
     // Get factory address from database
@@ -696,7 +697,7 @@ export const purchaseKey = async (
 
     if (!chainId) throw new Error('Missing chainId for purchase.');
 
-    const provider = await wallet.getEthereumProvider();
+    const provider = await getDivviEip1193Provider(wallet);
     await ensureCorrectNetwork(provider, chainId);
     const ethersProvider = new ethers.BrowserProvider(provider);
     const signer = await ethersProvider.getSigner();
@@ -895,8 +896,7 @@ export const configureMaxKeysPerAddress = async (
       throw new Error('No wallet provided or not connected.');
     }
 
-    const provider = await wallet.getEthereumProvider();
-    const ethersProvider = new ethers.BrowserProvider(provider);
+    const ethersProvider = await getDivviBrowserProvider(wallet);
     const signer = await ethersProvider.getSigner();
 
     const lockContract = new ethers.Contract(lockAddress, PublicLockABI, signer);
@@ -1018,7 +1018,7 @@ export const updateLockTransferability = async (
       throw new Error('Missing chainId for transferability update.');
     }
 
-    const provider = await wallet.getEthereumProvider();
+    const provider = await getDivviEip1193Provider(wallet);
     await ensureCorrectNetwork(provider, chainId);
     const ethersProvider = new ethers.BrowserProvider(provider);
     const signer = await ethersProvider.getSigner();

@@ -107,7 +107,7 @@ export const Header: React.FC = () => {
                 className="border-gray-300 text-gray-700 hover:bg-gray-50 font-medium"
                 onClick={login}
               >
-                Connect Wallet
+                Connect
               </Button>
             )}
           </div>

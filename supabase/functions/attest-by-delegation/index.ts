@@ -12,6 +12,7 @@ import {
 } from "https://deno.land/x/jose@v4.14.4/index.ts";
 import PublicLockV15 from "../_shared/abi/PublicLockV15.json" assert { type: "json" };
 import { validateChain } from "../_shared/network-helpers.ts";
+import { appendDivviTagToCalldataAsync, submitDivviReferralBestEffort } from "../_shared/divvi.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -243,8 +244,12 @@ serve(async (req) => {
       deadline: BigInt(deadline),
     };
 
-    const tx = await contract.attestByDelegation(delegatedRequest);
+    const serviceUser = signer.address as `0x${string}`;
+    const calldata = contract.interface.encodeFunctionData('attestByDelegation', [delegatedRequest]);
+    const tagged = await appendDivviTagToCalldataAsync({ data: calldata, user: serviceUser });
+    const tx = await signer.sendTransaction({ to: contractAddress!, data: tagged });
     const receipt = await tx.wait();
+    if (tx?.hash) await submitDivviReferralBestEffort({ txHash: tx.hash, chainId });
 
     // Parse Attested event for UID
     let uid: string | undefined;

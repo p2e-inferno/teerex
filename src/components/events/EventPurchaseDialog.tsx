@@ -19,7 +19,6 @@ import { Loader2, ExternalLink } from 'lucide-react';
 import { format } from 'date-fns';
 import { supabase } from '@/integrations/supabase/client';
 import { useGaslessFallback } from '@/hooks/useGasless';
-import { toast as sonnerToast } from 'sonner';
 import { normalizeEmail } from '@/utils/emailUtils';
 
 interface EventPurchaseDialogProps {
@@ -131,7 +130,7 @@ export const EventPurchaseDialog: React.FC<EventPurchaseDialogProps> = ({ event,
               headers: accessToken ? { 'X-Privy-Authorization': `Bearer ${accessToken}` } : undefined,
             });
           } catch (err) {
-            console.warn('[TICKET EMAIL] Failed to send ticket email:', err?.message || err);
+            console.warn('[TICKET EMAIL] Failed to send ticket email:', err instanceof Error ? err.message : String(err));
           }
         })();
         onClose();
@@ -234,14 +233,7 @@ export const EventPurchaseDialog: React.FC<EventPurchaseDialogProps> = ({ event,
     if (event?.currency === 'FREE') {
       setIsPurchasing(true);
       try {
-        const gaslessArgs = {
-          event_id: event.id,
-          lock_address: event.lock_address,
-          chain_id: event.chain_id,
-          recipient: wallets[0]?.address?.toLowerCase(),
-          user_email: normalizedEmail,
-        };
-        const result: any = await purchaseFreeTicketWithGasless(gaslessArgs, normalizedEmail);
+        const result: any = await purchaseFreeTicketWithGasless(normalizedEmail);
 
         if (result.ok) {
           // Check if already claimed (idempotent response)

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { usePrivy } from '@privy-io/react-auth';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -16,7 +16,7 @@ import { EventPurchaseDialog } from '@/components/events/EventPurchaseDialog';
 import { PaystackPaymentDialog } from '@/components/events/PaystackPaymentDialog';
 import { TicketProcessingDialog } from '@/components/events/TicketProcessingDialog';
 import { PaymentMethodDialog } from '@/components/events/PaymentMethodDialog';
-import { fetchEventsPage, fetchKeysForPage, ExploreFilters } from '@/lib/explore/exploreData';
+import { fetchEventsPage, ExploreFilters } from '@/lib/explore/exploreData';
 import { useMultiEventTicketRealtime } from '@/hooks/useMultiEventTicketRealtime';
 
 const Explore = () => {
@@ -36,7 +36,7 @@ const Explore = () => {
   const loadMoreRef = useRef<HTMLDivElement | null>(null);
 
   // Real-time ticket counts for all displayed events
-  const { keysSoldMap, refreshAllTicketCounts } = useMultiEventTicketRealtime(events);
+  const { keysSoldMap } = useMultiEventTicketRealtime(events);
 
   const [filters, setFilters] = useState<ExploreFilters>({ sortBy: 'date-desc', isFree: null });
   const [filtersOpen, setFiltersOpen] = useState(false);

@@ -11,6 +11,7 @@ import { RATE_LIMITS, SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, SERVICE_PK } from
 import { validateChain } from '../_shared/network-helpers.ts';
 import { sendEmail, getTicketEmail, normalizeEmail } from '../_shared/email-utils.ts';
 import { formatEventDate } from '../_shared/date-utils.ts';
+import { appendDivviTagToCalldataAsync, submitDivviReferralBestEffort } from '../_shared/divvi.ts';
 
 /**
  * Checks if recipient already owns keys and validates against max limits
@@ -252,14 +253,20 @@ serve(async (req) => {
     // 9. Call purchase() with value=0 (FREE ticket) - with error handling
     let tx, receipt;
     try {
-      tx = await lock.purchase(
+      const serviceUser = (await signer.getAddress()) as `0x${string}`;
+      const calldata = lock.interface.encodeFunctionData('purchase', [
         [0], // _values: price = 0
-        [normalizedRecipient], // _recipients: who receives the ticket
-        [normalizedRecipient], // _referrers: referrer (self)
-        [normalizedRecipient], // _keyManagers: key manager (self)
-        ['0x'] // _data: empty bytes (0x is the correct ethers.js representation)
-      );
+        [normalizedRecipient], // _recipients
+        [normalizedRecipient], // _referrers
+        [normalizedRecipient], // _keyManagers
+        ['0x'], // _data
+      ]);
+      const taggedData = await appendDivviTagToCalldataAsync({ data: calldata, user: serviceUser });
+      tx = await signer.sendTransaction({ to: lock_address, data: taggedData });
       receipt = await tx.wait();
+      if (tx?.hash) {
+        await submitDivviReferralBestEffort({ txHash: tx.hash, chainId: chain_id });
+      }
     } catch (purchaseError: any) {
       // Check if error is due to already owning a key or hitting limits
       const errorMessage = purchaseError.message || '';

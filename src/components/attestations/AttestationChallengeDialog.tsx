@@ -14,9 +14,7 @@ import {
 } from '@/components/ui/dialog';
 import {
   AlertTriangle,
-  Loader2,
-  Upload,
-  ExternalLink
+  Loader2
 } from 'lucide-react';
 
 interface AttestationChallengeDialogProps {

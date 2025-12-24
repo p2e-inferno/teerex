@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import type { EventAttestationState, SchemaInfo, InstanceInfo, AttestationKind } from '@/types/attestations';
+import type { EventAttestationState, SchemaInfo, InstanceInfo } from '@/types/attestations';
 import { getSchemaByName, getFirstAttendanceSchema, getAttendanceSchemaForEvent, getLatestUserUid } from '@/integrations/supabase/attestations';
 import { isAttestationRevocableOnChain } from '@/utils/attestationUtils';
 import { deriveUiFlags } from '@/utils/attestationHelpers';
@@ -13,7 +13,7 @@ interface Params {
 }
 
 export function useEventAttestationState(params: Params) {
-  const { eventId, chainId, lockAddress, userAddress, preferredAttendanceSchemaUid } = params;
+  const { eventId, chainId, userAddress, preferredAttendanceSchemaUid } = params;
 
   // Schema state
   const [attendanceSchema, setAttendanceSchema] = useState<SchemaInfo>({ uid: null, revocable: null });

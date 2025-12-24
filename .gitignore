@@ -183,3 +183,9 @@ bun.lockb
 
 # reference files
 reff/
+
+# Cypress/Synpress
+cypress/
+e2e/videos/
+e2e/screenshots/
+.synpress/

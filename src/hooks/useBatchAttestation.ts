@@ -3,6 +3,7 @@ import { ethers } from 'ethers';
 import { useWallets } from '@privy-io/react-auth';
 import TEEREX_ABI from '@/lib/abi/teerex-abi';
 import { getBatchAttestationAddress } from '@/lib/config/contract-config';
+import { getDivviBrowserProvider } from '@/lib/wallet/provider';
 
 export interface SignedAttestation {
   schemaUid: string; // 0x...
@@ -39,9 +40,8 @@ export const useBatchAttestation = (chainId: number) => {
 
   const getSigner = useCallback(async () => {
     if (!wallet) throw new Error('Wallet not connected');
-    const provider = await wallet.getEthereumProvider();
-    const ethersProvider = new ethers.BrowserProvider(provider);
-    return ethersProvider.getSigner();
+    const ethersProvider = await getDivviBrowserProvider(wallet);
+    return await ethersProvider.getSigner();
   }, [wallet]);
 
   const getContractRO = useCallback(async () => {

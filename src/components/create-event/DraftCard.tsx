@@ -4,7 +4,6 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Calendar, Clock, MapPin, Edit, Trash2, Upload, Loader2 } from 'lucide-react';
-import { format } from 'date-fns';
 import { EventDraft } from '@/types/event';
 import { RichTextDisplay } from '@/components/ui/rich-text/RichTextDisplay';
 import { formatEventDateRange } from '@/utils/dateUtils';

@@ -1,6 +1,6 @@
 import { useWallets } from '@privy-io/react-auth';
-import { ethers } from 'ethers';
 import { EAS } from '@ethereum-attestation-service/eas-sdk';
+import { getDivviBrowserProvider } from '@/lib/wallet/provider';
 
 // EAS contract on Base Sepolia/Mainnet share same address in our config
 const EAS_CONTRACT_ADDRESS = '0x4200000000000000000000000000000000000021';
@@ -27,8 +27,7 @@ export const useDelegatedAttestation = () => {
     refUID?: string;
   }): Promise<DelegatedAttestationSignature> => {
     if (!wallet) throw new Error('No wallet connected');
-    const provider = await wallet.getEthereumProvider();
-    const ethersProvider = new ethers.BrowserProvider(provider);
+    const ethersProvider = await getDivviBrowserProvider(wallet);
     const signer = await ethersProvider.getSigner();
 
     const deadline = BigInt(Math.floor(Date.now() / 1000) + (params.deadlineSecondsFromNow ?? 3600));

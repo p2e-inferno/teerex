@@ -1,4 +1,4 @@
-import type { AttestationKind, SchemaInfo, InstanceInfo, UiFlags, DisableReason } from '@/types/attestations';
+import type { AttestationKind, SchemaInfo, InstanceInfo, UiFlags } from '@/types/attestations';
 
 export const isValidSchemaUid = (uid?: string | null) => !!uid && uid.startsWith('0x') && uid.length === 66 && /^0x[0-9a-f]{64}$/i.test(uid);
 

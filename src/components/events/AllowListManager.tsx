@@ -71,6 +71,11 @@ type ManageAllowListPayload =
       action: 'reject_requests';
       event_id: string;
       request_ids: string[];
+    }
+  | {
+      action: 'approve_by_email';
+      event_id: string;
+      user_email: string;
     };
 
 export const AllowListManager: React.FC<AllowListManagerProps> = ({ event, isOpen, onClose }) => {

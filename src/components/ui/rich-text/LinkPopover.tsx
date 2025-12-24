@@ -26,7 +26,6 @@ export const LinkPopover: React.FC<LinkPopoverProps> = ({
   onClose,
   position,
   url,
-  text,
   onEdit,
   onUnlink,
   onCopy,

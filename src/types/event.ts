@@ -10,7 +10,7 @@ export interface EventDraft {
   location: string;
   capacity: number;
   price: number;
-  currency: 'ETH' | 'USDC' | 'FREE';
+  currency: string;
   ngn_price: number;
   payment_methods: string[];
   paystack_public_key: string | null;
@@ -36,6 +36,7 @@ export interface PublishedDraftEvent extends EventDraft {
 export interface PublishedEvent {
   id: string;
   creator_id: string;
+  creator_address?: string | null;
   title: string;
   description: string;
   date: Date | null;
@@ -46,7 +47,7 @@ export interface PublishedEvent {
   event_type: 'physical' | 'virtual';
   capacity: number;
   price: number;
-  currency: 'ETH' | 'USDC' | 'FREE';
+  currency: string;
   ngn_price: number;
   payment_methods: string[];
   paystack_public_key: string | null;

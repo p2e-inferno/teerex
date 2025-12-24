@@ -34,9 +34,11 @@ export async function buildWagmiConfig() {
     networks = [];
   }
 
-  const chains = networks.length
-    ? networks.map(mapNetworkToWagmiChain).filter(Boolean) as ReturnType<typeof mapNetworkToWagmiChain>[]
-    : FALLBACK_CHAINS;
+  const mappedChains = networks.length
+    ? networks.map(mapNetworkToWagmiChain).filter((chain): chain is NonNullable<ReturnType<typeof mapNetworkToWagmiChain>> => chain !== null)
+    : [];
+
+  const chains = mappedChains.length > 0 ? mappedChains : FALLBACK_CHAINS;
 
   const transports = chains.reduce((acc, chain) => {
     const url = chain.rpcUrls?.default?.http?.[0];
@@ -51,7 +53,7 @@ export async function buildWagmiConfig() {
   transports[baseSepolia.id] = transports[baseSepolia.id] || http();
 
   return createConfig({
-    chains,
+    chains: chains.length >= 1 ? (chains as any) : FALLBACK_CHAINS,
     transports,
     multiInjectedProviderDiscovery: true,
   });
@@ -59,7 +61,7 @@ export async function buildWagmiConfig() {
 
 // Static fallback config (used until dynamic config loads)
 export const wagmiConfig = createConfig({
-  chains: FALLBACK_CHAINS,
+  chains: FALLBACK_CHAINS as any,
   transports: {
     [base.id]: http(),
     [baseSepolia.id]: http(),

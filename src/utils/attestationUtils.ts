@@ -2,10 +2,10 @@
 import { ethers } from 'ethers';
 import { EAS, SchemaEncoder } from '@ethereum-attestation-service/eas-sdk';
 import { supabase } from '@/integrations/supabase/client';
+import { getDivviBrowserProvider } from '@/lib/wallet/provider';
 
 // EAS Contract addresses on Base Sepolia
 const EAS_CONTRACT_ADDRESS = '0x4200000000000000000000000000000000000021'; // Base Sepolia EAS
-const SCHEMA_REGISTRY_ADDRESS = '0x4200000000000000000000000000000000000020'; // Base Sepolia Schema Registry
 
 // EAS Contract ABI (correct standard EAS format)
 const EAS_ABI = [
@@ -45,21 +45,6 @@ const EAS_ABI = [
     "name": "revoke",
     "outputs": [{ "internalType": "bool", "name": "", "type": "bool" }],
     "stateMutability": "payable",
-    "type": "function"
-  }
-];
-
-// Schema Registry ABI (for registering new schemas)
-const SCHEMA_REGISTRY_ABI = [
-  {
-    "inputs": [
-      { "internalType": "string", "name": "schema", "type": "string" },
-      { "internalType": "address", "name": "resolver", "type": "address" },
-      { "internalType": "bool", "name": "revocable", "type": "bool" }
-    ],
-    "name": "register",
-    "outputs": [{ "internalType": "bytes32", "name": "", "type": "bytes32" }],
-    "stateMutability": "nonpayable",
     "type": "function"
   }
 ];
@@ -249,9 +234,7 @@ export const createAttestation = async (params: CreateAttestationParams): Promis
       throw new Error('Schema not found');
     }
 
-    // Get Ethereum provider
-    const provider = await wallet.getEthereumProvider();
-    const ethersProvider = new ethers.BrowserProvider(provider);
+    const ethersProvider = await getDivviBrowserProvider(wallet);
     const signer = await ethersProvider.getSigner();
 
     // Initialize EAS with the Base Sepolia contract address
@@ -292,7 +275,7 @@ export const createAttestation = async (params: CreateAttestationParams): Promis
       return val ?? '';
     };
 
-    const fields = schema.schema_definition.split(',').map(f => f.trim()).filter(Boolean);
+    const fields = schema.schema_definition.split(',').map((f: string) => f.trim()).filter(Boolean);
     const encoderItems: { name: string; value: any; type: string }[] = [];
 
     for (const field of fields) {
@@ -461,8 +444,7 @@ export const revokeAttestation = async (
       throw new Error('Invalid attestation UID. Please reload and try again.');
     }
 
-    const provider = await wallet.getEthereumProvider();
-    const ethersProvider = new ethers.BrowserProvider(provider);
+    const ethersProvider = await getDivviBrowserProvider(wallet);
     const signer = await ethersProvider.getSigner();
 
     const easAddress = (chainId && EAS_ADDRESS_BY_CHAIN[chainId]) ? EAS_ADDRESS_BY_CHAIN[chainId] : EAS_CONTRACT_ADDRESS;

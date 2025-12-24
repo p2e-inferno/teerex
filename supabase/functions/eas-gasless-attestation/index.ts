@@ -11,6 +11,7 @@ import {
   importSPKI,
 } from "https://deno.land/x/jose@v4.14.4/index.ts";
 import { validateChain } from "../_shared/network-helpers.ts";
+import { appendDivviTagToCalldataAsync, submitDivviReferralBestEffort } from "../_shared/divvi.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -190,6 +191,24 @@ serve(async (req) => {
     const rpcUrl = networkConfig.rpc_url;
     const provider = new JsonRpcProvider(rpcUrl);
     const signer = new Wallet(SERVICE_PK!, provider);
+    const serviceUser = (await signer.getAddress()) as `0x${string}`;
+
+    // Wrap signer sendTransaction to append Divvi tag to calldata before signing.
+    const divviSigner = new Proxy(signer as any, {
+      get(target, prop, receiver) {
+        if (prop === 'sendTransaction') {
+          return async (txReq: any) => {
+            const taggedData = await appendDivviTagToCalldataAsync({
+              data: txReq?.data,
+              user: serviceUser,
+            });
+            return await target.sendTransaction({ ...txReq, data: taggedData });
+          };
+        }
+        const value = Reflect.get(target, prop, receiver);
+        return typeof value === 'function' ? value.bind(target) : value;
+      },
+    });
 
     if (config.log_sensitive_data) {
       console.log('[eas-gasless] Service wallet:', await signer.getAddress());
@@ -201,7 +220,7 @@ serve(async (req) => {
 
     // Initialize EAS SDK
     const eas = new EAS(easAddress);
-    eas.connect(signer);
+    eas.connect(divviSigner as any);
 
     let transaction, newAttestationUID;
     try {
@@ -241,6 +260,7 @@ serve(async (req) => {
 
     const uid = newAttestationUID;
     const txHash = (transaction as any)?.hash || (transaction as any)?.receipt?.transactionHash;
+    if (txHash) await submitDivviReferralBestEffort({ txHash, chainId });
 
     // 5) Log attestation to gasless_attestation_log for rate limiting and monitoring
     try {

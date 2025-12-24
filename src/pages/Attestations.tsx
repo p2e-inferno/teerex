@@ -1,8 +1,6 @@
-import React from 'react';
 import { useWallets, usePrivy } from '@privy-io/react-auth';
 import { useUserAttestations } from '@/hooks/useAttestations';
 import { Loader2, Shield, User } from 'lucide-react';
-import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 

@@ -11,6 +11,7 @@ import { handleError } from '../_shared/error-handler.ts';
 import { RATE_LIMITS, SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, SERVICE_PK } from '../_shared/constants.ts';
 import { validateChain } from '../_shared/network-helpers.ts';
 import { retryWithBackoff, isRetryableTransactionError } from '../_shared/retry-helper.ts';
+import { appendDivviTagToCalldataAsync, submitDivviReferralBestEffort } from '../_shared/divvi.ts';
 
 // Retry configuration for addLockManager transaction
 const RETRY_CONFIG = {
@@ -220,9 +221,12 @@ serve(async (req) => {
       name,
     ]);
 
-    // 10. Deploy lock via createUpgradeableLockAtVersion
-    const tx = await unlock.createUpgradeableLockAtVersion(initializeCalldata, 14);
+    // 10. Deploy lock via createUpgradeableLockAtVersion (append Divvi tag)
+    const deployCalldata = unlock.interface.encodeFunctionData('createUpgradeableLockAtVersion', [initializeCalldata, 14]);
+    const deployTagged = await appendDivviTagToCalldataAsync({ data: deployCalldata, user: serviceWalletAddress as `0x${string}` });
+    const tx = await signer.sendTransaction({ to: networkConfig.unlock_factory_address, data: deployTagged });
     const receipt = await tx.wait();
+    if (tx?.hash) await submitDivviReferralBestEffort({ txHash: tx.hash, chainId: chain_id });
 
     // 11. Parse lock address from event logs
     const unlockInterface = new ethers.Interface(UnlockABI);
@@ -254,12 +258,12 @@ serve(async (req) => {
         // Get fresh nonce for each retry attempt to avoid nonce conflicts
         const currentNonce = await signer.getNonce();
         console.log(`Attempting addLockManager with nonce: ${currentNonce} for lock ${lockAddress}`);
-
-        const addManagerTx = await lock.addLockManager(normalizedCreator, {
-          nonce: currentNonce
-        });
-
-        return await addManagerTx.wait();
+        const calldata = lock.interface.encodeFunctionData('addLockManager', [normalizedCreator]);
+        const tagged = await appendDivviTagToCalldataAsync({ data: calldata, user: serviceWalletAddress as `0x${string}` });
+        const addManagerTx = await signer.sendTransaction({ to: lockAddress, data: tagged, nonce: currentNonce });
+        const receipt = await addManagerTx.wait();
+        if (addManagerTx?.hash) await submitDivviReferralBestEffort({ txHash: addManagerTx.hash, chainId: chain_id });
+        return receipt;
       },
       {
         maxAttempts: RETRY_CONFIG.MAX_ATTEMPTS,
@@ -281,12 +285,12 @@ serve(async (req) => {
           async () => {
             const currentNonce = await signer.getNonce();
             console.log(`Attempting updateTransferFee with nonce: ${currentNonce} for lock ${lockAddress}`);
-
-            const transferFeeTx = await lock.updateTransferFee(10000, {
-              nonce: currentNonce,
-            });
-
-            return await transferFeeTx.wait();
+            const calldata = lock.interface.encodeFunctionData('updateTransferFee', [10000]);
+            const tagged = await appendDivviTagToCalldataAsync({ data: calldata, user: serviceWalletAddress as `0x${string}` });
+            const transferFeeTx = await signer.sendTransaction({ to: lockAddress, data: tagged, nonce: currentNonce });
+            const receipt = await transferFeeTx.wait();
+            if (transferFeeTx?.hash) await submitDivviReferralBestEffort({ txHash: transferFeeTx.hash, chainId: chain_id });
+            return receipt;
           },
           {
             maxAttempts: RETRY_CONFIG.MAX_ATTEMPTS,
@@ -316,12 +320,12 @@ serve(async (req) => {
         async () => {
           const currentNonce = await signer.getNonce();
           console.log(`Attempting setLockMetadata with nonce: ${currentNonce} for lock ${lockAddress}`);
-
-          const metadataTx = await lock.setLockMetadata(name, 'TEEREX', baseTokenURI, {
-            nonce: currentNonce,
-          });
-
-          return await metadataTx.wait();
+          const calldata = lock.interface.encodeFunctionData('setLockMetadata', [name, 'TEEREX', baseTokenURI]);
+          const tagged = await appendDivviTagToCalldataAsync({ data: calldata, user: serviceWalletAddress as `0x${string}` });
+          const metadataTx = await signer.sendTransaction({ to: lockAddress, data: tagged, nonce: currentNonce });
+          const receipt = await metadataTx.wait();
+          if (metadataTx?.hash) await submitDivviReferralBestEffort({ txHash: metadataTx.hash, chainId: chain_id });
+          return receipt;
         },
         {
           maxAttempts: RETRY_CONFIG.MAX_ATTEMPTS,
@@ -349,12 +353,12 @@ serve(async (req) => {
         async () => {
           const currentNonce = await signer.getNonce();
           console.log(`Attempting setOwner with nonce: ${currentNonce} for lock ${lockAddress}`);
-
-          const setOwnerTx = await lock.setOwner(normalizedCreator, {
-            nonce: currentNonce,
-          });
-
-          return await setOwnerTx.wait();
+          const calldata = lock.interface.encodeFunctionData('setOwner', [normalizedCreator]);
+          const tagged = await appendDivviTagToCalldataAsync({ data: calldata, user: serviceWalletAddress as `0x${string}` });
+          const setOwnerTx = await signer.sendTransaction({ to: lockAddress, data: tagged, nonce: currentNonce });
+          const receipt = await setOwnerTx.wait();
+          if (setOwnerTx?.hash) await submitDivviReferralBestEffort({ txHash: setOwnerTx.hash, chainId: chain_id });
+          return receipt;
         },
         {
           maxAttempts: RETRY_CONFIG.MAX_ATTEMPTS,

@@ -4,7 +4,6 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Calendar, Clock, MapPin, Users, Ticket, Save, Loader2 } from 'lucide-react';
-import { format } from 'date-fns';
 import { EventFormData } from '@/pages/CreateEvent';
 import { RichTextDisplay } from '@/components/ui/rich-text/RichTextDisplay';
 import { formatEventDateRange } from '@/utils/dateUtils';
@@ -20,8 +19,6 @@ interface EventPreviewProps {
 
 export const EventPreview: React.FC<EventPreviewProps> = ({
   formData,
-  updateFormData,
-  onNext,
   onSaveAsDraft,
   isSavingDraft = false,
   isPublishing = false

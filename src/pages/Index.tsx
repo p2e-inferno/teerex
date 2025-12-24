@@ -194,7 +194,7 @@ const Index = () => {
                         <Card className="overflow-hidden border-0 shadow-lg bg-white">
                           <div className="aspect-square relative cursor-pointer">
                             <img
-                              src={event.image_url}
+                              src={event.image_url || ''}
                               alt={event.title}
                               className="absolute inset-0 w-full h-full object-cover"
                             />

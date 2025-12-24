@@ -18,6 +18,9 @@ interface NetworkConfig {
   chain_id: number;
   chain_name: string;
   usdc_token_address: string | null;
+  dg_token_address: string | null;
+  g_token_address: string | null;
+  up_token_address: string | null;
   unlock_factory_address: string | null;
   native_currency_symbol: string;
   native_currency_name: string | null;
@@ -34,6 +37,9 @@ interface NetworkFormData {
   chain_id: number;
   chain_name: string;
   usdc_token_address: string;
+  dg_token_address: string;
+  g_token_address: string;
+  up_token_address: string;
   unlock_factory_address: string;
   native_currency_symbol: string;
   native_currency_name: string;
@@ -55,6 +61,9 @@ const AdminNetworks: React.FC = () => {
     chain_id: 0,
     chain_name: '',
     usdc_token_address: '',
+    dg_token_address: '',
+    g_token_address: '',
+    up_token_address: '',
     unlock_factory_address: '',
     native_currency_symbol: 'ETH',
     native_currency_name: 'Ethereum',
@@ -110,6 +119,9 @@ const AdminNetworks: React.FC = () => {
         chain_id: formData.chain_id,
         chain_name: formData.chain_name,
         usdc_token_address: formData.usdc_token_address || null,
+        dg_token_address: formData.dg_token_address || null,
+        g_token_address: formData.g_token_address || null,
+        up_token_address: formData.up_token_address || null,
         unlock_factory_address: formData.unlock_factory_address || null,
         native_currency_symbol: formData.native_currency_symbol,
         native_currency_name: formData.native_currency_name,
@@ -186,6 +198,9 @@ const AdminNetworks: React.FC = () => {
       chain_id: network.chain_id,
       chain_name: network.chain_name,
       usdc_token_address: network.usdc_token_address || '',
+      dg_token_address: network.dg_token_address || '',
+      g_token_address: network.g_token_address || '',
+      up_token_address: network.up_token_address || '',
       unlock_factory_address: network.unlock_factory_address || '',
       native_currency_symbol: network.native_currency_symbol,
       native_currency_name: network.native_currency_name || '',
@@ -292,6 +307,9 @@ const AdminNetworks: React.FC = () => {
       chain_id: 0,
       chain_name: '',
       usdc_token_address: '',
+      dg_token_address: '',
+      g_token_address: '',
+      up_token_address: '',
       unlock_factory_address: '',
       native_currency_symbol: 'ETH',
       native_currency_name: 'Ethereum',
@@ -431,6 +449,36 @@ const AdminNetworks: React.FC = () => {
                 </div>
 
                 <div className="space-y-2">
+                  <Label htmlFor="dg_token_address">DG Token Address (Optional)</Label>
+                  <Input
+                    id="dg_token_address"
+                    value={formData.dg_token_address}
+                    onChange={(e) => setFormData(prev => ({ ...prev, dg_token_address: e.target.value }))}
+                    placeholder="0x..."
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="g_token_address">G Token Address (Optional)</Label>
+                  <Input
+                    id="g_token_address"
+                    value={formData.g_token_address}
+                    onChange={(e) => setFormData(prev => ({ ...prev, g_token_address: e.target.value }))}
+                    placeholder="0x..."
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="up_token_address">UP Token Address (Optional)</Label>
+                  <Input
+                    id="up_token_address"
+                    value={formData.up_token_address}
+                    onChange={(e) => setFormData(prev => ({ ...prev, up_token_address: e.target.value }))}
+                    placeholder="0x..."
+                  />
+                </div>
+
+                <div className="space-y-2">
                   <Label htmlFor="unlock_factory_address">Unlock Factory Address (Optional)</Label>
                   <Input
                     id="unlock_factory_address"
@@ -541,6 +589,15 @@ const AdminNetworks: React.FC = () => {
                     <div><strong>Native:</strong> {network.native_currency_name} ({network.native_currency_symbol})</div>
                     {network.usdc_token_address && (
                       <div><strong>USDC:</strong> {network.usdc_token_address.slice(0, 6)}...{network.usdc_token_address.slice(-4)}</div>
+                    )}
+                    {network.dg_token_address && (
+                      <div><strong>DG:</strong> {network.dg_token_address.slice(0, 6)}...{network.dg_token_address.slice(-4)}</div>
+                    )}
+                    {network.g_token_address && (
+                      <div><strong>G:</strong> {network.g_token_address.slice(0, 6)}...{network.g_token_address.slice(-4)}</div>
+                    )}
+                    {network.up_token_address && (
+                      <div><strong>UP:</strong> {network.up_token_address.slice(0, 6)}...{network.up_token_address.slice(-4)}</div>
                     )}
                     {network.unlock_factory_address && (
                       <div><strong>Unlock Factory:</strong> {network.unlock_factory_address.slice(0, 6)}...{network.unlock_factory_address.slice(-4)}</div>

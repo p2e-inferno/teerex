@@ -1,4 +1,3 @@
-import { useState } from 'react';
 import { usePrivy } from '@privy-io/react-auth';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
@@ -8,19 +7,16 @@ export function useGaslessFallback<TArgs, TFallbackResult>(
   fallbackFn: (args: TArgs) => Promise<TFallbackResult>,
   enabled: boolean = true
 ) {
-  const [isLoading, setIsLoading] = useState(false);
   const { getAccessToken } = usePrivy();
 
   return async (args: TArgs, fallbackArgs?: TFallbackResult): Promise<TFallbackResult | { ok: boolean; [key: string]: any }> => {
     if (!enabled) {
       return await fallbackFn(fallbackArgs || args as any);
     }
-
-    setIsLoading(true);
     try {
       const token = await getAccessToken?.();
       const { data, error } = await supabase.functions.invoke(edgeFunctionName, {
-        body: args,
+        body: args as any,
         headers: token ? { 'X-Privy-Authorization': `Bearer ${token}` } : undefined,
       });
 
@@ -57,8 +53,6 @@ export function useGaslessFallback<TArgs, TFallbackResult>(
       console.warn(`Gasless ${edgeFunctionName} unexpected error, falling back to client-side:`, err);
       toast.info('Unable to process gasless transaction, using your wallet instead...');
       return await fallbackFn(fallbackArgs || args as any);
-    } finally {
-      setIsLoading(false);
     }
   };
 }
