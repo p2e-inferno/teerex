@@ -52,6 +52,7 @@ import { formatEventDateRange } from "@/utils/dateUtils";
 import { useEventTicketRealtime } from "@/hooks/useEventTicketRealtime";
 import { useNetworkConfigs } from "@/hooks/useNetworkConfigs";
 import { useTicketBalance } from "@/hooks/useTicketBalance";
+import { useUserAddresses } from "@/hooks/useUserAddresses";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -60,6 +61,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { RichTextDisplay } from "@/components/ui/rich-text/RichTextDisplay";
+import { hasMethod, isFreeEvent } from "@/lib/events/paymentMethods";
 
 const EventDetails = () => {
   const { id } = useParams<{ id: string }>();
@@ -68,6 +70,7 @@ const EventDetails = () => {
   const { authenticated, getAccessToken, login } = usePrivy();
   const { wallets } = useWallets();
   const wallet = wallets[0];
+  const userAddresses = useUserAddresses();
   const { revokeEventAttestation } = useAttestations();
   const { signTeeRexAttestation } = useTeeRexDelegatedAttestation();
   const { encodeEventAttendanceData, encodeEventLikeData } = useAttestationEncoding();
@@ -379,7 +382,7 @@ const EventDetails = () => {
   // Load user ticket data when authenticated
   const { data: ticketBalance = 0 } = useTicketBalance({
     lockAddress: event?.lock_address || '',
-    userAddress: wallet?.address || '',
+    userAddresses,
     chainId: event?.chain_id || 0,
   });
 
@@ -701,10 +704,9 @@ const EventDetails = () => {
     console.log("Paystack key:", event.paystack_public_key);
     console.log("NGN price:", event.ngn_price);
 
-    const hasCrypto =
-      event.payment_methods?.includes("crypto") || event.currency !== "FREE";
+    const hasCrypto = hasMethod(event, "crypto") || hasMethod(event, "free");
     const hasPaystack =
-      event.payment_methods?.includes("fiat") &&
+      hasMethod(event, "fiat") &&
       event.paystack_public_key &&
       event.ngn_price;
 
@@ -1080,7 +1082,7 @@ const EventDetails = () => {
                   <span className="text-2xl font-bold text-gray-900">
                     {event.payment_methods?.includes('fiat') && event.ngn_price > 0
                       ? `₦${event.ngn_price.toLocaleString()}`
-                      : event.currency === 'FREE'
+                      : isFreeEvent(event)
                       ? 'Free'
                       : `${event.price} ${event.currency}`}
                   </span>

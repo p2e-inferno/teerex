@@ -1,4 +1,5 @@
 import type { PublishedEvent } from '@/types/event';
+import { hasMethod, isFreeEvent } from '@/lib/events/paymentMethods';
 
 /**
  * Standard NFT metadata structure following OpenSea standards
@@ -48,7 +49,14 @@ export function generateEventNFTMetadata(
       { trait_type: 'Start Date', value: startDateStr },
       { trait_type: 'End Date', value: endDateStr },
       { trait_type: 'Capacity', value: event.capacity },
-      { trait_type: 'Price', value: event.currency === 'FREE' ? 'Free' : `${event.price} ${event.currency}` },
+      {
+        trait_type: 'Price',
+        value: isFreeEvent(event)
+          ? 'Free'
+          : hasMethod(event, 'fiat') && event.ngn_price > 0
+          ? `₦${event.ngn_price}`
+          : `${event.price} ${event.currency}`,
+      },
       { trait_type: 'Chain ID', value: event.chain_id },
       { trait_type: 'Transferable', value: event.transferable ? 'Yes' : 'No' }
     ]

@@ -23,6 +23,7 @@ import {
   getTotalTicketsSold,
 } from "@/lib/home/homeData";
 import MetaTags from "@/components/MetaTags";
+import { isFreeEvent } from "@/lib/events/paymentMethods";
 
 const Index = () => {
   const { authenticated, ready } = usePrivy();
@@ -411,7 +412,7 @@ const Index = () => {
                         <div className="text-lg font-semibold text-gray-900">
                           {e.payment_methods?.includes('fiat') && e.ngn_price > 0
                             ? `₦${e.ngn_price.toLocaleString()}`
-                            : e.currency === 'FREE' ? 'Free' : `${e.price} ${e.currency}`}
+                            : isFreeEvent(e) ? 'Free' : `${e.price} ${e.currency}`}
                         </div>
                         <div className="text-sm text-gray-600">
                           {Math.max(0, e.capacity - (keysSold[e.id] ?? 0))} spots left
