@@ -9,6 +9,7 @@ import {
 import { Button } from '@/components/ui/button';
 import type { PublishedEvent } from '@/types/event';
 import { CreditCard, Wallet } from 'lucide-react';
+import { hasMethod, isFreeEvent } from '@/lib/events/paymentMethods';
 
 interface PaymentMethodDialogProps {
   event: PublishedEvent | null;
@@ -27,8 +28,8 @@ export const PaymentMethodDialog: React.FC<PaymentMethodDialogProps> = ({
 }) => {
   if (!event) return null;
 
-  const hasCrypto = event.payment_methods?.includes('crypto') || event.currency !== 'FREE';
-  const hasPaystack = event.payment_methods?.includes('fiat') && event.paystack_public_key && event.ngn_price;
+  const hasCrypto = hasMethod(event, 'crypto');
+  const hasPaystack = hasMethod(event, 'fiat') && event.paystack_public_key && event.ngn_price;
 
   // If only one payment method, don't show this dialog
   if (!hasCrypto || !hasPaystack) return null;
@@ -56,7 +57,7 @@ export const PaymentMethodDialog: React.FC<PaymentMethodDialogProps> = ({
                 <div className="text-left">
                   <div className="font-medium">Pay with Crypto</div>
                   <div className="text-sm text-muted-foreground">
-                    {event.currency === 'FREE' ? 'Free' : `${event.price} ${event.currency}`}
+                    {isFreeEvent(event) ? 'Free' : `${event.price} ${event.currency}`}
                   </div>
                 </div>
               </div>

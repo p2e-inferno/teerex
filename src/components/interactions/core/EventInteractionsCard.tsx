@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Card, CardHeader, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -17,6 +17,8 @@ interface EventInteractionsCardProps {
   creatorAddress: string;
   creatorId: string;
   chainId: number;
+  /** When this value changes, the component refetches ticket verification and posts */
+  refreshToken?: number;
 }
 
 export const EventInteractionsCard: React.FC<EventInteractionsCardProps> = ({
@@ -25,6 +27,7 @@ export const EventInteractionsCard: React.FC<EventInteractionsCardProps> = ({
   creatorAddress,
   creatorId,
   chainId,
+  refreshToken,
 }) => {
   const navigate = useNavigate();
   const { posts, isLoading, error: postsError, refetch: refetchPosts } = useEventPosts(eventId);
@@ -32,6 +35,30 @@ export const EventInteractionsCard: React.FC<EventInteractionsCardProps> = ({
   const { isLockManager, isChecking: isCheckingManager, error: lockManagerError } = useLockManagerVerification(lockAddress, chainId);
   const { isCreator } = useCreatorPermissions(creatorAddress, creatorId);
   const canManagePosts = isCreator || isLockManager;
+
+  // Track if this is the initial mount to avoid refetching on first render
+  const isInitialMountRef = useRef(true);
+  const refetchRef = useRef(refetch);
+  const refetchPostsRef = useRef(refetchPosts);
+
+  useEffect(() => {
+    refetchRef.current = refetch;
+  }, [refetch]);
+
+  useEffect(() => {
+    refetchPostsRef.current = refetchPosts;
+  }, [refetchPosts]);
+
+  // Refetch data when refreshToken changes (but not on initial mount)
+  useEffect(() => {
+    if (isInitialMountRef.current) {
+      isInitialMountRef.current = false;
+      return;
+    }
+    // refreshToken changed - refetch both ticket verification and posts
+    refetchRef.current();
+    refetchPostsRef.current();
+  }, [refreshToken]);
 
   const totalPosts = posts?.length || 0;
   const totalComments = posts?.reduce((sum, post) => sum + (post.comment_count || 0), 0) || 0;

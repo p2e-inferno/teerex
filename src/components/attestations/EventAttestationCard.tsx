@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -34,6 +34,8 @@ interface EventAttestationCardProps {
   userHasTicket: boolean;
   attendanceSchemaUid?: string;
   chainId?: number;
+  /** When this value changes, the component reloads stats */
+  refreshToken?: number;
 }
 
 interface AttestationStats {
@@ -64,7 +66,8 @@ export const EventAttestationCard: React.FC<EventAttestationCardProps & {
   canRevokeGoingOverride,
   goingDisableReason,
   canRevokeAttendanceOverride,
-  attendanceDisableReason
+  attendanceDisableReason,
+  refreshToken
 }) => {
   const { authenticated, getAccessToken } = usePrivy();
   const { wallets } = useWallets();
@@ -92,6 +95,18 @@ export const EventAttestationCard: React.FC<EventAttestationCardProps & {
   const [attendanceSchemaRevocable, setAttendanceSchemaRevocable] = useState<boolean | null>(null);
   const [goingInstanceRevocable, setGoingInstanceRevocable] = useState<boolean | null>(null);
   const [attendanceInstanceRevocable, setAttendanceInstanceRevocable] = useState<boolean | null>(null);
+
+  // Track if this is the initial mount to avoid refetching on first render
+  const isInitialMountRef = useRef(true);
+
+  // Reload stats when refreshToken changes (but not on initial mount)
+  useEffect(() => {
+    if (isInitialMountRef.current) {
+      isInitialMountRef.current = false;
+      return;
+    }
+    loadStats();
+  }, [refreshToken]);
 
   // Calculate event timing - handle both ISO and regular date formats
   const eventDateTime = new Date(`${eventDate.split('T')[0]}T${eventTime}`);

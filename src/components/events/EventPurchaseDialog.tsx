@@ -20,16 +20,23 @@ import { format } from 'date-fns';
 import { supabase } from '@/integrations/supabase/client';
 import { useGaslessFallback } from '@/hooks/useGasless';
 import { normalizeEmail } from '@/utils/emailUtils';
+import { isFreeEvent } from '@/lib/events/paymentMethods';
 
 interface EventPurchaseDialogProps {
   event: PublishedEvent | null;
   isOpen: boolean;
   onClose: () => void;
+  onPurchaseSuccess?: (opts?: { increment?: boolean }) => void;
 }
 
-export const EventPurchaseDialog: React.FC<EventPurchaseDialogProps> = ({ event, isOpen, onClose }) => {
+export const EventPurchaseDialog: React.FC<EventPurchaseDialogProps> = ({
+  event,
+  isOpen,
+  onClose,
+  onPurchaseSuccess,
+}) => {
   const { wallets } = useWallets();
-  const { getAccessToken } = usePrivy();
+  const { getAccessToken, user } = usePrivy();
   const { toast } = useToast();
   const [isPurchasing, setIsPurchasing] = useState(false);
   const [email, setEmail] = useState('');
@@ -37,12 +44,13 @@ export const EventPurchaseDialog: React.FC<EventPurchaseDialogProps> = ({ event,
   // Load email from previous tickets (prefill if user has bought before)
   useEffect(() => {
     const loadEmail = async () => {
-      if (!wallets[0]?.address) return;
+      const address = (wallets[0]?.address ?? user?.wallet?.address)?.toLowerCase();
+      if (!address) return;
 
       // Use secure RPC function that only returns user's own email
       const { data, error } = await supabase
         .rpc('get_my_ticket_email', {
-          p_owner_wallet: wallets[0].address.toLowerCase()
+          p_owner_wallet: address
         });
 
       if (!error && data) {
@@ -50,20 +58,28 @@ export const EventPurchaseDialog: React.FC<EventPurchaseDialogProps> = ({ event,
       }
     };
     loadEmail();
-  }, [wallets]);
+  }, [wallets, user?.wallet?.address]);
+
+  type GaslessPurchaseArgs = {
+    event_id: string;
+    lock_address: string;
+    chain_id: number;
+    recipient: string;
+    user_email: string;
+  };
 
   // Use shared hook for gasless FREE purchase (with auto-fallback)
-  const purchaseFreeTicketWithGasless = useGaslessFallback(
+  const purchaseFreeTicketWithGasless = useGaslessFallback<GaslessPurchaseArgs, any>(
     'gasless-purchase',
-    async (userEmail: string) => {
-      // Fallback: client-side purchase flow with email storage
-      return await handleClientSidePurchase(userEmail);
-    },
-    event?.currency === 'FREE'
+    async (args) => await handleClientSidePurchase(args.user_email, { currency: 'FREE', price: 0 }),
+    isFreeEvent(event)
   );
 
   // Client-side purchase handler (ALL currencies: FREE, ETH, USDC)
-  const handleClientSidePurchase = async (userEmail: string) => {
+  const handleClientSidePurchase = async (
+    userEmail: string,
+    override?: { currency: string; price: number }
+  ) => {
     if (!event) return { success: false };
 
     const wallet = wallets[0];
@@ -78,11 +94,14 @@ export const EventPurchaseDialog: React.FC<EventPurchaseDialogProps> = ({ event,
 
     setIsPurchasing(true);
     try {
+      const currency = override?.currency ?? event.currency;
+      const price = override?.price ?? event.price;
+
       // Purchase ticket on-chain
       const result = await purchaseKey(
         event.lock_address,
-        event.price,
-        event.currency,
+        price,
+        currency,
         wallet,
         event.chain_id
       );
@@ -114,6 +133,7 @@ export const EventPurchaseDialog: React.FC<EventPurchaseDialogProps> = ({ event,
             </div>
           ),
         });
+        onPurchaseSuccess?.({ increment: true });
 
         // Fire-and-forget ticket email via Edge Function
         void (async () => {
@@ -153,7 +173,7 @@ export const EventPurchaseDialog: React.FC<EventPurchaseDialogProps> = ({ event,
   // Unified purchase handler for ALL currencies
   const handlePurchase = async () => {
     const normalizedEmail = normalizeEmail(email);
-    const walletAddress = wallets[0]?.address?.toLowerCase();
+    const walletAddress = (wallets[0]?.address ?? user?.wallet?.address)?.toLowerCase();
 
     if (!normalizedEmail) {
       toast({
@@ -164,8 +184,17 @@ export const EventPurchaseDialog: React.FC<EventPurchaseDialogProps> = ({ event,
       return;
     }
 
+    if (!event) {
+      toast({
+        title: 'Event unavailable',
+        description: 'Please refresh and try again.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
     // Check allow list if event has one
-    if (event?.has_allow_list && walletAddress) {
+    if (event.has_allow_list && walletAddress) {
       const { data: allowListEntry, error } = await supabase
         .from('event_allow_list')
         .select('id')
@@ -230,10 +259,27 @@ export const EventPurchaseDialog: React.FC<EventPurchaseDialogProps> = ({ event,
     }
 
     // FREE tickets: try gasless first, fallback to client-side
-    if (event?.currency === 'FREE') {
+    if (isFreeEvent(event)) {
+      if (!walletAddress) {
+        toast({
+          title: 'Wallet not connected',
+          description: 'Please connect your wallet to claim this ticket.',
+          variant: 'destructive',
+        });
+        return;
+      }
+
       setIsPurchasing(true);
       try {
-        const result: any = await purchaseFreeTicketWithGasless(normalizedEmail);
+        const gaslessArgs: GaslessPurchaseArgs = {
+          event_id: event.id,
+          lock_address: event.lock_address,
+          chain_id: event.chain_id,
+          recipient: walletAddress,
+          user_email: normalizedEmail,
+        };
+
+        const result: any = await purchaseFreeTicketWithGasless(gaslessArgs);
 
         if (result.ok) {
           // Check if already claimed (idempotent response)
@@ -259,6 +305,7 @@ export const EventPurchaseDialog: React.FC<EventPurchaseDialogProps> = ({ event,
                 </div>
               ),
             });
+            onPurchaseSuccess?.({ increment: false });
             onClose();
             return;
           }
@@ -291,6 +338,7 @@ export const EventPurchaseDialog: React.FC<EventPurchaseDialogProps> = ({ event,
               </div>
             ),
           });
+          onPurchaseSuccess?.({ increment: true });
           onClose();
         } else if (result.error) {
           // Gasless returned an error before fallback
@@ -358,7 +406,7 @@ export const EventPurchaseDialog: React.FC<EventPurchaseDialogProps> = ({ event,
           <div className="flex justify-between items-center text-lg">
             <span className="text-muted-foreground">Price</span>
             <span className="font-bold text-primary">
-              {event.currency === 'FREE' ? 'Free' : `${event.price} ${event.currency}`}
+              {isFreeEvent(event) ? 'Free' : `${event.price} ${event.currency}`}
             </span>
           </div>
 
@@ -386,7 +434,7 @@ export const EventPurchaseDialog: React.FC<EventPurchaseDialogProps> = ({ event,
           <Button onClick={handlePurchase} disabled={isPurchasing || !email} className="w-32">
             {isPurchasing ? (
               <Loader2 className="animate-spin" />
-            ) : event.currency === 'FREE' ? (
+            ) : isFreeEvent(event) ? (
               'Claim Ticket'
             ) : (
               'Purchase'

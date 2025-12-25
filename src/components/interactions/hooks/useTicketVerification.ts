@@ -1,8 +1,7 @@
-import { useMemo } from 'react';
-import { usePrivy, useWallets } from '@privy-io/react-auth';
 import { useQuery } from '@tanstack/react-query';
 import { checkKeyOwnership } from '@/utils/lockUtils';
 import { MAX_RETRIES, calculateRetryDelay, CACHE_TIMES } from '@/lib/config/react-query-config';
+import { useUserAddresses } from '@/hooks/useUserAddresses';
 import type { UseTicketVerificationReturn } from '../types';
 
 /**
@@ -10,17 +9,7 @@ import type { UseTicketVerificationReturn } from '../types';
  * Uses React Query and Unlock Protocol to check key ownership with automatic retries and caching
  */
 export const useTicketVerification = (lockAddress: string, chainId: number): UseTicketVerificationReturn => {
-  const { wallets } = useWallets();
-  const { user } = usePrivy();
-
-  const addresses = useMemo(() => {
-    const fromWallets = (wallets || [])
-      .map((wallet) => wallet?.address)
-      .filter((addr): addr is string => Boolean(addr));
-    const embedded = user?.wallet?.address ? [user.wallet.address] : [];
-    const all = [...fromWallets, ...embedded].map((addr) => addr.toLowerCase());
-    return Array.from(new Set(all));
-  }, [wallets, user?.wallet?.address]);
+  const addresses = useUserAddresses();
 
   const {
     data,

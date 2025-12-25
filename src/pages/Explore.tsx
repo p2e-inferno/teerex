@@ -18,6 +18,7 @@ import { TicketProcessingDialog } from '@/components/events/TicketProcessingDial
 import { PaymentMethodDialog } from '@/components/events/PaymentMethodDialog';
 import { fetchEventsPage, ExploreFilters } from '@/lib/explore/exploreData';
 import { useMultiEventTicketRealtime } from '@/hooks/useMultiEventTicketRealtime';
+import { hasMethod } from '@/lib/events/paymentMethods';
 
 const Explore = () => {
   const PAGE_SIZE = 12;
@@ -128,8 +129,8 @@ const Explore = () => {
     console.log('Paystack key:', event.paystack_public_key);
     console.log('NGN price:', event.ngn_price);
     
-    const hasCrypto = event.payment_methods?.includes('crypto') || event.currency !== 'FREE';
-    const hasPaystack = event.payment_methods?.includes('fiat') && event.paystack_public_key && event.ngn_price;
+    const hasCrypto = hasMethod(event, 'crypto') || hasMethod(event, 'free');
+    const hasPaystack = hasMethod(event, 'fiat') && event.paystack_public_key && event.ngn_price;
     
     console.log('Has crypto:', hasCrypto);
     console.log('Has paystack:', hasPaystack);

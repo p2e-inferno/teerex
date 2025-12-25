@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -32,6 +32,8 @@ interface AttendeesListProps {
   eventId: string;
   eventTitle: string;
   attendanceSchemaUid?: string;
+  /** When this value changes, the component reloads attendees */
+  refreshToken?: number;
 }
 
 
@@ -39,12 +41,25 @@ export const AttendeesList: React.FC<AttendeesListProps> = ({
   eventId,
   eventTitle,
   attendanceSchemaUid,
+  refreshToken,
 }) => {
   const { wallets } = useWallets();
   const wallet = wallets[0];
 
   const [attendees, setAttendees] = useState<Attendee[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+
+  // Track if this is the initial mount to avoid refetching on first render
+  const isInitialMountRef = useRef(true);
+
+  // Reload attendees when refreshToken changes (but not on initial mount)
+  useEffect(() => {
+    if (isInitialMountRef.current) {
+      isInitialMountRef.current = false;
+      return;
+    }
+    loadAttendees();
+  }, [refreshToken]);
 
   const loadAttendees = async () => {
     if (!eventId || !attendanceSchemaUid) return;

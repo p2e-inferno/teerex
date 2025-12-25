@@ -104,7 +104,7 @@ const Drafts = () => {
       // Determine payment method
       const paymentMethod = (draft.payment_methods && draft.payment_methods[0])
         ? (draft.payment_methods[0] as 'free' | 'crypto' | 'fiat')
-        : (draft.currency && draft.currency !== 'FREE' ? 'crypto' : 'free');
+        : 'free';
 
       // Determine price based on payment method
       const isCrypto = paymentMethod === 'crypto';
@@ -115,7 +115,7 @@ const Drafts = () => {
       const result: any = await deployLockWithGasless({
         name: draft.title,
         expirationDuration: 86400,
-        currency: draft.currency || 'FREE',
+        currency: paymentMethod === 'crypto' ? (draft.currency || 'ETH') : 'FREE',
         price: eventPrice,
         maxNumberOfKeys: draft.capacity,
         chain_id: chainId,
@@ -130,7 +130,7 @@ const Drafts = () => {
         paymentMethod: paymentMethod,
         // Include additional properties for fallback
         symbol: `${draft.title.slice(0, 3).toUpperCase()}TIX`,
-        keyPrice: draft.currency === 'FREE' ? '0' : draft.price.toString(),
+        keyPrice: paymentMethod === 'crypto' ? String(draft.price ?? 0) : '0',
         chainId: chainId,
       });
 
@@ -159,9 +159,9 @@ const Drafts = () => {
           // derive payment model
           paymentMethod: (draft.payment_methods && draft.payment_methods[0])
             ? (draft.payment_methods[0] as 'free' | 'crypto' | 'fiat')
-            : (draft.currency && draft.currency !== 'FREE' ? 'crypto' : 'free'),
-          price: draft.currency !== 'FREE' ? draft.price : 0,
-          currency: (draft.currency && draft.currency !== 'FREE' ? draft.currency : 'ETH'),
+            : 'free',
+          price: paymentMethod === 'crypto' ? draft.price : 0,
+          currency: paymentMethod === 'crypto' ? (draft.currency as any) : 'ETH',
           ngnPrice: draft.ngn_price || 0,
           category: draft.category,
           imageUrl: draft.image_url || '',

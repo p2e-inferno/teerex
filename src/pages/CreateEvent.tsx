@@ -164,9 +164,11 @@ const CreateEvent = () => {
             // derive payment model
             paymentMethod: (draft.payment_methods && draft.payment_methods[0])
               ? (draft.payment_methods[0] as 'free' | 'crypto' | 'fiat')
-              : (draft.currency && draft.currency !== 'FREE' ? 'crypto' : 'free'),
-            price: draft.currency !== 'FREE' ? draft.price : 0,
-            currency: (draft.currency && draft.currency !== 'FREE' ? (draft.currency as 'ETH' | 'USDC') : 'ETH'),
+              : 'free',
+            price: (draft.payment_methods && draft.payment_methods[0] === 'crypto') ? draft.price : 0,
+            currency: (draft.payment_methods && draft.payment_methods[0] === 'crypto')
+              ? (draft.currency as CryptoCurrency)
+              : 'ETH',
             ngnPrice: draft.ngn_price || 0,
             category: draft.category,
             imageUrl: draft.image_url || '',
@@ -197,9 +199,11 @@ const CreateEvent = () => {
             capacity: event.capacity,
             paymentMethod: (event.payment_methods && event.payment_methods[0])
               ? (event.payment_methods[0] as 'free' | 'crypto' | 'fiat')
-              : (event.currency && event.currency !== 'FREE' ? 'crypto' : 'free'),
-            price: event.currency !== 'FREE' ? event.price : 0,
-            currency: (event.currency && event.currency !== 'FREE' ? (event.currency as 'ETH' | 'USDC') : 'ETH'),
+              : 'free',
+            price: (event.payment_methods && event.payment_methods[0] === 'crypto') ? event.price : 0,
+            currency: (event.payment_methods && event.payment_methods[0] === 'crypto')
+              ? (event.currency as CryptoCurrency)
+              : 'ETH',
             ngnPrice: event.ngn_price || 0,
             category: event.category,
             imageUrl: event.image_url || '',
