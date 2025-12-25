@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useRef } from "react";
 import {
   Dialog,
   DialogContent,
@@ -28,6 +28,8 @@ interface TicketProcessingDialogProps {
   isOpen: boolean;
   onClose: () => void;
   paymentData: PaymentData | null;
+  /** Called once when ticket issuance succeeds (key_granted = true) */
+  onPurchaseSuccess?: () => void;
 }
 
 type ProcessingStatus = "processing" | "success" | "error" | "timeout";
@@ -37,17 +39,21 @@ export const TicketProcessingDialog: React.FC<TicketProcessingDialogProps> = ({
   isOpen,
   onClose,
   paymentData,
+  onPurchaseSuccess,
 }) => {
   const { toast } = useToast();
   const [status, setStatus] = useState<ProcessingStatus>("processing");
   const [progressMessage, setProgressMessage] = useState("Processing your payment...");
   const [transactionHash, setTransactionHash] = useState<string | null>(null);
+  // Track if we've already called onPurchaseSuccess to prevent multiple calls
+  const hasCalledSuccessRef = useRef(false);
 
   useEffect(() => {
     if (isOpen && paymentData) {
       setStatus("processing");
       setProgressMessage("Processing your payment...");
       setTransactionHash(null);
+      hasCalledSuccessRef.current = false; // Reset on new dialog open
       startWebhookMonitoring();
     }
   }, [isOpen, paymentData]);
@@ -131,6 +137,11 @@ export const TicketProcessingDialog: React.FC<TicketProcessingDialogProps> = ({
             title: "Ticket Issued!",
             description: `Your NFT ticket has been sent to ${paymentData.walletAddress}`,
           });
+          // Notify parent that purchase succeeded (only once)
+          if (!hasCalledSuccessRef.current) {
+            hasCalledSuccessRef.current = true;
+            onPurchaseSuccess?.();
+          }
           return;
         }
 
