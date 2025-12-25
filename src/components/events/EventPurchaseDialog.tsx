@@ -26,9 +26,15 @@ interface EventPurchaseDialogProps {
   event: PublishedEvent | null;
   isOpen: boolean;
   onClose: () => void;
+  onPurchaseSuccess?: (opts?: { increment?: boolean }) => void;
 }
 
-export const EventPurchaseDialog: React.FC<EventPurchaseDialogProps> = ({ event, isOpen, onClose }) => {
+export const EventPurchaseDialog: React.FC<EventPurchaseDialogProps> = ({
+  event,
+  isOpen,
+  onClose,
+  onPurchaseSuccess,
+}) => {
   const { wallets } = useWallets();
   const { getAccessToken, user } = usePrivy();
   const { toast } = useToast();
@@ -127,6 +133,7 @@ export const EventPurchaseDialog: React.FC<EventPurchaseDialogProps> = ({ event,
             </div>
           ),
         });
+        onPurchaseSuccess?.({ increment: true });
 
         // Fire-and-forget ticket email via Edge Function
         void (async () => {
@@ -298,6 +305,7 @@ export const EventPurchaseDialog: React.FC<EventPurchaseDialogProps> = ({ event,
                 </div>
               ),
             });
+            onPurchaseSuccess?.({ increment: false });
             onClose();
             return;
           }
@@ -330,6 +338,7 @@ export const EventPurchaseDialog: React.FC<EventPurchaseDialogProps> = ({ event,
               </div>
             ),
           });
+          onPurchaseSuccess?.({ increment: true });
           onClose();
         } else if (result.error) {
           // Gasless returned an error before fallback

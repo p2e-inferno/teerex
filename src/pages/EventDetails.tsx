@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -62,9 +62,11 @@ import {
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { RichTextDisplay } from "@/components/ui/rich-text/RichTextDisplay";
 import { hasMethod, isFreeEvent } from "@/lib/events/paymentMethods";
+import { EventDetailsRefreshProvider, useEventDetailsRefresh } from "@/pages/event-details/eventDetailsRefresh";
 
-const EventDetails = () => {
+const EventDetailsContent = () => {
   const { id } = useParams<{ id: string }>();
+  const { refreshToken, triggerRefresh } = useEventDetailsRefresh();
   const navigate = useNavigate();
   const { toast } = useToast();
   const { authenticated, getAccessToken, login } = usePrivy();
@@ -380,7 +382,7 @@ const EventDetails = () => {
   };
 
   // Load user ticket data when authenticated
-  const { data: ticketBalance = 0 } = useTicketBalance({
+  const { data: ticketBalance = 0, refetch: refetchTicketBalance } = useTicketBalance({
     lockAddress: event?.lock_address || '',
     userAddresses,
     chainId: event?.chain_id || 0,
@@ -389,6 +391,17 @@ const EventDetails = () => {
   useEffect(() => {
     setUserTicketCount(ticketBalance);
   }, [ticketBalance]);
+
+  const handlePurchaseSuccess = useCallback((opts?: { increment?: boolean }) => {
+    if (opts?.increment === false) {
+      setUserTicketCount((prev) => Math.max(prev, 1));
+    } else {
+      setUserTicketCount((prev) => prev + 1);
+    }
+    void refetchTicketBalance();
+    // Trigger refresh for all gated children (discussions, attestations, attendees)
+    triggerRefresh();
+  }, [refetchTicketBalance, triggerRefresh]);
 
   // Compute if event has ended (same 2h duration assumption)
   useEffect(() => {
@@ -1220,6 +1233,7 @@ const EventDetails = () => {
               creatorAddress={event.creator_address || ''}
               creatorId={event.creator_id}
               chainId={event.chain_id}
+              refreshToken={refreshToken}
             />
 
             {/* Attendees List */}
@@ -1227,6 +1241,7 @@ const EventDetails = () => {
               eventId={event.id}
               eventTitle={event.title}
               attendanceSchemaUid={attendanceSchemaUid || undefined}
+              refreshToken={refreshToken}
             />
 
             {/* Enhanced Attestation Card */}
@@ -1243,6 +1258,7 @@ const EventDetails = () => {
               attendanceDisableReason={myAttendanceUidTop && attendanceSchemaRevocable === false ? 'Attendance records for this event are permanent.' : undefined}
               canRevokeGoingOverride={myGoingUid ? !((goingSchemaRevocable === false || goingInstanceRevocable === false)) : undefined}
               goingDisableReason={myGoingUid && (goingSchemaRevocable === false || goingInstanceRevocable === false) ? "This going status cannot be revoked." : undefined}
+              refreshToken={refreshToken}
             />
           </div>
         </div>
@@ -1262,6 +1278,7 @@ const EventDetails = () => {
         event={event}
         isOpen={activeModal === "crypto-purchase"}
         onClose={closeAllModals}
+        onPurchaseSuccess={handlePurchaseSuccess}
       />
 
       {/* Paystack Payment Dialog */}
@@ -1281,6 +1298,7 @@ const EventDetails = () => {
         isOpen={activeModal === "ticket-processing"}
         onClose={closeAllModals}
         paymentData={paymentData}
+        onPurchaseSuccess={handlePurchaseSuccess}
       />
 
       {/* Waitlist Dialog */}
@@ -1291,6 +1309,15 @@ const EventDetails = () => {
       />
     </div>
     </>
+  );
+};
+
+/** Wrapper component that provides the refresh context */
+const EventDetails = () => {
+  return (
+    <EventDetailsRefreshProvider>
+      <EventDetailsContent />
+    </EventDetailsRefreshProvider>
   );
 };
 
