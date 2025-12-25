@@ -288,7 +288,7 @@ export const getUserEvents = async (userId: string): Promise<PublishedEvent[]> =
       updated_at: new Date(event.updated_at),
       currency: event.currency,
       ngn_price: event.ngn_price || 0,
-      payment_methods: event.payment_methods || ['crypto'],
+      payment_methods: event.payment_methods || [],
       paystack_public_key: event.paystack_public_key
     }));
   } catch (error) {
@@ -300,19 +300,27 @@ export const getUserEvents = async (userId: string): Promise<PublishedEvent[]> =
 /**
  * Fetches all published events and filters them to return only those
  * for which the user owns a valid ticket (key).
+ * @param userAddresses - Array of user wallet addresses to check (supports multiple wallets)
  */
-export const getEventsWithUserTickets = async (userAddress: string): Promise<PublishedEvent[]> => {
+export const getEventsWithUserTickets = async (userAddresses: string[]): Promise<PublishedEvent[]> => {
   try {
     const allEvents = await getPublishedEvents();
-    if (!userAddress || allEvents.length === 0) {
+    const validAddresses = userAddresses.filter(Boolean);
+    if (validAddresses.length === 0 || allEvents.length === 0) {
       return [];
     }
-    
+
     // This is not the most performant way for a large number of events,
-    // as it makes one RPC call per event. A better solution for production
+    // as it makes one RPC call per event per address. A better solution for production
     // would be to use the Unlock Subgraph to query all keys for a user in one go.
     const ownershipChecks = await Promise.all(
-      allEvents.map(event => checkKeyOwnership(event.lock_address, userAddress, event.chain_id))
+      allEvents.map(async (event) => {
+        // Check if ANY of the user's addresses owns a ticket
+        const checks = await Promise.all(
+          validAddresses.map((addr) => checkKeyOwnership(event.lock_address, addr, event.chain_id))
+        );
+        return checks.some(Boolean);
+      })
     );
 
     const userEvents = allEvents.filter((_, index) => ownershipChecks[index]);

@@ -24,6 +24,7 @@ import { formatEventDateRange } from "@/utils/dateUtils";
 import { ShareButton } from "@/components/interactions/ShareButton";
 import { RichTextDisplay } from "@/components/ui/rich-text/RichTextDisplay";
 import { stripHtml } from "@/utils/textUtils";
+import { hasMethod, isFreeEvent } from "@/lib/events/paymentMethods";
 
 interface EventCreationSuccessModalProps {
   event: PublishedEvent;
@@ -152,11 +153,11 @@ export const EventCreationSuccessModal: React.FC<EventCreationSuccessModalProps>
                 {event.payment_methods?.includes('fiat') && event.ngn_price > 0 ? (
                   <div className="space-y-1">
                     <div>₦{event.ngn_price.toLocaleString()}</div>
-                    {event.payment_methods?.includes('crypto') && event.currency !== 'FREE' && (
+                    {hasMethod(event, 'crypto') && (
                       <div className="text-sm text-gray-600">or {event.price} {event.currency}</div>
                     )}
                   </div>
-                ) : event.currency === 'FREE' ? 'Free' : `${event.price} ${event.currency}`}
+                ) : isFreeEvent(event) ? 'Free' : `${event.price} ${event.currency}`}
               </div>
             </CardContent>
           </Card>

@@ -41,6 +41,7 @@ const isHex = (v: unknown): v is Hex =>
   typeof v === 'string' && /^0x[0-9a-fA-F]*$/.test(v);
 
 const strip0x = (hex: string) => (hex.startsWith('0x') ? hex.slice(2) : hex);
+const ensure0x = (hex: string) => (hex.startsWith('0x') ? hex : `0x${hex}`);
 
 const concatHex = (a: Hex, b: Hex): Hex => (`0x${strip0x(a)}${strip0x(b)}` as Hex);
 
@@ -78,9 +79,10 @@ export async function sendDivviTransaction(
 
   if (shouldTag && consumer && isAddress(consumer)) {
     try {
-      const tag = sdk.getReferralTag({ user: account, consumer });
+      const rawTag = sdk.getReferralTag({ user: account, consumer }) as unknown as string;
+      const tag = ensure0x(String(rawTag)) as Hex;
       if (isHex(tag) && tag !== '0x' && strip0x(tag).length % 2 === 0) {
-        data = concatHex(data as Hex, tag as Hex);
+        data = concatHex(data as Hex, tag);
       } else {
         opts.onError?.(new Error('Divvi referral tag was invalid hex'), { phase: 'tag' });
       }

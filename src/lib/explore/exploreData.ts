@@ -50,9 +50,9 @@ export async function fetchEventsPage(
   }
 
   if (filters.isFree === true) {
-    query = query.eq('currency', 'FREE');
+    query = query.contains('payment_methods', ['free']);
   } else if (filters.isFree === false) {
-    query = query.neq('currency', 'FREE');
+    query = query.not('payment_methods', 'cs', '{free}');
   }
 
   if (filters.dateFrom) {

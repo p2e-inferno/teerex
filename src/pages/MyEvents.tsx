@@ -11,6 +11,7 @@ import { getUserEvents } from '@/utils/eventUtils';
 import type { PublishedEvent } from '@/types/event';
 import { useToast } from '@/hooks/use-toast';
 import { WalletConnectionGate } from '@/components/WalletConnectionGate';
+import { isFreeEvent } from '@/lib/events/paymentMethods';
 
 const MyEvents = () => {
   const { authenticated, user } = usePrivy();
@@ -138,7 +139,7 @@ const MyEvents = () => {
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="text-sm font-medium text-gray-600">Free Events</p>
-                    <p className="text-2xl font-bold text-gray-900">{events.filter(event => event.currency === 'FREE').length}</p>
+                    <p className="text-2xl font-bold text-gray-900">{events.filter(isFreeEvent).length}</p>
                   </div>
                   <div className="w-12 h-12 bg-green-100 rounded-full flex items-center justify-center">
                     <TrendingUp className="w-6 h-6 text-green-600" />
@@ -152,7 +153,7 @@ const MyEvents = () => {
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="text-sm font-medium text-gray-600">Paid Events</p>
-                    <p className="text-2xl font-bold text-gray-900">{events.filter(event => event.currency !== 'FREE').length}</p>
+                    <p className="text-2xl font-bold text-gray-900">{events.filter((event) => !isFreeEvent(event)).length}</p>
                   </div>
                   <div className="w-12 h-12 bg-orange-100 rounded-full flex items-center justify-center">
                     <DollarSign className="w-6 h-6 text-orange-600" />

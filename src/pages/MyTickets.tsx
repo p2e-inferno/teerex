@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
-import { useWallets, usePrivy } from '@privy-io/react-auth';
+import { usePrivy } from '@privy-io/react-auth';
 import { useToast } from '@/hooks/use-toast';
+import { useUserAddresses } from '@/hooks/useUserAddresses';
 import { getEventsWithUserTickets } from '@/utils/eventUtils';
 import type { PublishedEvent } from '@/types/event';
 import { EventCard } from '@/components/events/EventCard';
@@ -10,24 +11,22 @@ import { Link } from 'react-router-dom';
 
 const MyTickets = () => {
   const { authenticated } = usePrivy();
-  const { wallets } = useWallets();
+  const userAddresses = useUserAddresses();
   const { toast } = useToast();
   const [isLoading, setIsLoading] = useState(true);
   const [tickets, setTickets] = useState<PublishedEvent[]>([]);
-  
+
   useEffect(() => {
     const fetchTickets = async () => {
-      const wallet = wallets[0];
-      if (!authenticated || !wallet?.address) {
+      if (!authenticated || userAddresses.length === 0) {
         setTickets([]);
-        if (authenticated) setIsLoading(true);
-        else setIsLoading(false);
+        setIsLoading(!authenticated);
         return;
       }
 
       setIsLoading(true);
       try {
-        const userTickets = await getEventsWithUserTickets(wallet.address);
+        const userTickets = await getEventsWithUserTickets(userAddresses);
         setTickets(userTickets);
       } catch (error) {
         console.error("Failed to fetch tickets:", error);
@@ -42,12 +41,12 @@ const MyTickets = () => {
     };
 
     if (authenticated) {
-        fetchTickets();
+      fetchTickets();
     } else {
-        setIsLoading(false);
-        setTickets([]);
+      setIsLoading(false);
+      setTickets([]);
     }
-  }, [authenticated, wallets, toast]);
+  }, [authenticated, userAddresses, toast]);
   
   if (!authenticated && !isLoading) {
     return (
