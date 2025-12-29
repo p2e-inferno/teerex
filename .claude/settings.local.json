@@ -17,7 +17,8 @@
       "Bash(npm run test:unit:*)",
       "Bash(npm run test:coverage:*)",
       "Bash(npm run typecheck:*)",
-      "Bash(grep:*)"
+      "Bash(grep:*)",
+      "Bash(find:*)"
     ],
     "deny": [],
     "ask": []

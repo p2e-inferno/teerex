@@ -5,6 +5,7 @@ import { useNetworkConfigs } from '@/hooks/useNetworkConfigs';
 import { WalletIdentityCard } from '@/components/profile/WalletIdentityCard';
 import { TokenBalancesCard } from '@/components/profile/TokenBalancesCard';
 import { TransferTokenCard } from '@/components/profile/TransferTokenCard';
+import { TransactionHistoryCard } from '@/components/profile/TransactionHistoryCard';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Loader2, User } from 'lucide-react';
@@ -31,7 +32,7 @@ const Profile: React.FC = () => {
     isLoading,
     isAuthenticated,
   } = useUserProfile();
-  const { activeNetworks } = useNetworkConfigs();
+  const { networks: activeNetworks } = useNetworkConfigs();
 
   // Use first active network or default to Base Mainnet (8453)
   const primaryChainId = activeNetworks?.[0]?.chain_id || 8453;
@@ -120,26 +121,32 @@ const Profile: React.FC = () => {
         </div>
 
         {/* Main Content */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 lg:gap-8 lg:items-start">
-          {/* Left Column - Wallet Identity */}
-          <div className="flex flex-col h-full">
-            <WalletIdentityCard
-              address={primaryAddress}
-              walletType={walletType as 'embedded' | 'connected'}
-              allAddresses={allAddresses}
-              chainId={primaryChainId}
-            />
+        <div className="space-y-6 sm:space-y-8">
+          {/* Top Section - 3-Column Grid */}
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 lg:gap-8 lg:items-start">
+            {/* Left Column - Wallet Identity */}
+            <div className="flex flex-col h-full">
+              <WalletIdentityCard
+                address={primaryAddress}
+                walletType={walletType as 'embedded' | 'connected'}
+                allAddresses={allAddresses}
+                chainId={primaryChainId}
+              />
+            </div>
+
+            {/* Middle Column - Token Balances */}
+            <div className="flex flex-col h-full">
+              <TokenBalancesCard address={primaryAddress} />
+            </div>
+
+            {/* Right Column - Send Tokens */}
+            <div className="flex flex-col h-full">
+              <TransferTokenCard address={primaryAddress} />
+            </div>
           </div>
 
-          {/* Middle Column - Token Balances */}
-          <div className="flex flex-col h-full">
-            <TokenBalancesCard address={primaryAddress} />
-          </div>
-
-          {/* Right Column - Send Tokens */}
-          <div className="flex flex-col h-full">
-            <TransferTokenCard address={primaryAddress} />
-          </div>
+          {/* Bottom Section - Full-Width Transaction History */}
+          <TransactionHistoryCard address={primaryAddress} />
         </div>
       </div>
     </div>
