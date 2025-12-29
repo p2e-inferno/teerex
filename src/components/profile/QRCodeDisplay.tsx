@@ -26,13 +26,13 @@ export const QRCodeDisplay: React.FC<QRCodeDisplayProps> = ({
 }) => {
   const canvasRef = useRef<HTMLDivElement>(null);
   const { toast } = useToast();
-  const { activeNetworks } = useNetworkConfigs();
+  const { networks: activeNetworks } = useNetworkConfigs();
 
   // Build EIP-681 compliant Ethereum URI
   const buildEthereumURI = (): string => {
     // Find network config if chainId provided and networks loaded
     const network = chainId && activeNetworks
-      ? activeNetworks.find((n) => n.chain_id === chainId)
+      ? activeNetworks.find((n: { chain_id: number }) => n.chain_id === chainId)
       : null;
 
     // If DG token exists on this network, create token transfer URI
