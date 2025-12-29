@@ -13,6 +13,7 @@ import MyEvents from "./pages/MyEvents";
 import MyTickets from "./pages/MyTickets";
 import Attestations from "./pages/Attestations";
 import Drafts from "./pages/Drafts";
+import Profile from "./pages/Profile";
 import EventDetails from "./pages/EventDetails";
 import EventDiscussions from "./pages/EventDiscussions";
 import Admin from "./pages/Admin";
@@ -44,6 +45,7 @@ const App = () => {
                 <Route path="/my-tickets" element={<MyTickets />} />
                 <Route path="/attestations" element={<Attestations />} />
                 <Route path="/drafts" element={<Drafts />} />
+                <Route path="/profile" element={<Profile />} />
                 <Route path="/admin" element={<AdminRoute><AdminDashboard /></AdminRoute>} />
                 <Route path="/admin/networks" element={<AdminRoute><AdminNetworks /></AdminRoute>} />
                 <Route path="/admin/schemas" element={<AdminRoute><Admin /></AdminRoute>} />

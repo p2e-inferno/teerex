@@ -2,6 +2,22 @@
 # Supabase project configuration
 project_id = "nclavsvzjzegqvkjezyz"
 
+# Custom ports to avoid conflicts with other running Supabase projects
+[api]
+port = 54331
+enabled = true
+
+[db]
+port = 54332
+
+[studio]
+port = 54333
+enabled = true
+
+[inbucket]
+port = 54334
+enabled = true
+
 [functions.update-event]
   # Require Supabase JWT (anon key in Authorization) for platform check
   verify_jwt = true

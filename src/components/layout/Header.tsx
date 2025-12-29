@@ -61,6 +61,12 @@ export const Header: React.FC = () => {
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end" className="w-48 bg-white border border-gray-200 shadow-lg">
                     <DropdownMenuItem asChild>
+                      <Link to="/profile" className="flex items-center cursor-pointer">
+                        <User className="h-4 w-4 mr-2" />
+                        Profile
+                      </Link>
+                    </DropdownMenuItem>
+                    <DropdownMenuItem asChild>
                       <Link to="/events" className="flex items-center cursor-pointer">
                         <Calendar className="h-4 w-4 mr-2" />
                         My Events
