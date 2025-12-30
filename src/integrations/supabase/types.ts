@@ -7,10 +7,30 @@ export type Json =
   | Json[]
 
 export type Database = {
-  // Allows to automatically instantiate createClient with right options
-  // instead of createClient<Database, { PostgrestVersion: 'XX' }>(URL, KEY)
-  __InternalSupabase: {
-    PostgrestVersion: "13.0.5"
+  graphql_public: {
+    Tables: {
+      [_ in never]: never
+    }
+    Views: {
+      [_ in never]: never
+    }
+    Functions: {
+      graphql: {
+        Args: {
+          extensions?: Json
+          operationName?: string
+          query?: string
+          variables?: Json
+        }
+        Returns: Json
+      }
+    }
+    Enums: {
+      [_ in never]: never
+    }
+    CompositeTypes: {
+      [_ in never]: never
+    }
   }
   public: {
     Tables: {
@@ -69,6 +89,68 @@ export type Database = {
             columns: ["attestation_id"]
             isOneToOne: false
             referencedRelation: "attestations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      attestation_delegations: {
+        Row: {
+          created_at: string
+          data: string
+          deadline: string
+          event_id: string
+          event_title: string | null
+          executed: boolean
+          executed_at: string | null
+          executed_tx_hash: string | null
+          id: string
+          lock_address: string | null
+          message_hash: string
+          recipient: string
+          schema_uid: string
+          signature: string
+          signer_address: string
+        }
+        Insert: {
+          created_at?: string
+          data: string
+          deadline: string
+          event_id: string
+          event_title?: string | null
+          executed?: boolean
+          executed_at?: string | null
+          executed_tx_hash?: string | null
+          id?: string
+          lock_address?: string | null
+          message_hash: string
+          recipient: string
+          schema_uid: string
+          signature: string
+          signer_address: string
+        }
+        Update: {
+          created_at?: string
+          data?: string
+          deadline?: string
+          event_id?: string
+          event_title?: string | null
+          executed?: boolean
+          executed_at?: string | null
+          executed_tx_hash?: string | null
+          id?: string
+          lock_address?: string | null
+          message_hash?: string
+          recipient?: string
+          schema_uid?: string
+          signature?: string
+          signer_address?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "attestation_delegations_event_id_fkey"
+            columns: ["event_id"]
+            isOneToOne: false
+            referencedRelation: "events"
             referencedColumns: ["id"]
           },
         ]
@@ -652,6 +734,265 @@ export type Database = {
         }
         Relationships: []
       }
+      gaming_bundle_claim_code_rotations: {
+        Row: {
+          created_at: string
+          id: string
+          new_claim_code_hash: string
+          old_claim_code_hash: string
+          order_id: string
+          reason: string | null
+          vendor_address: string
+          vendor_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          new_claim_code_hash: string
+          old_claim_code_hash: string
+          order_id: string
+          reason?: string | null
+          vendor_address: string
+          vendor_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          new_claim_code_hash?: string
+          old_claim_code_hash?: string
+          order_id?: string
+          reason?: string | null
+          vendor_address?: string
+          vendor_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "gaming_bundle_claim_code_rotations_order_id_fkey"
+            columns: ["order_id"]
+            isOneToOne: false
+            referencedRelation: "gaming_bundle_orders"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      gaming_bundle_orders: {
+        Row: {
+          amount_dg: number | null
+          amount_fiat: number | null
+          bundle_address: string
+          bundle_id: string
+          buyer_address: string | null
+          buyer_display_name: string | null
+          buyer_email: string | null
+          buyer_phone: string | null
+          chain_id: number
+          claim_code_hash: string | null
+          created_at: string
+          eas_uid: string | null
+          fiat_symbol: string | null
+          fulfillment_method: string
+          id: string
+          nft_recipient_address: string | null
+          payment_provider: string
+          payment_reference: string | null
+          status: string
+          token_id: string | null
+          txn_hash: string | null
+          updated_at: string
+          vendor_address: string
+          vendor_id: string
+        }
+        Insert: {
+          amount_dg?: number | null
+          amount_fiat?: number | null
+          bundle_address: string
+          bundle_id: string
+          buyer_address?: string | null
+          buyer_display_name?: string | null
+          buyer_email?: string | null
+          buyer_phone?: string | null
+          chain_id: number
+          claim_code_hash?: string | null
+          created_at?: string
+          eas_uid?: string | null
+          fiat_symbol?: string | null
+          fulfillment_method?: string
+          id?: string
+          nft_recipient_address?: string | null
+          payment_provider?: string
+          payment_reference?: string | null
+          status?: string
+          token_id?: string | null
+          txn_hash?: string | null
+          updated_at?: string
+          vendor_address: string
+          vendor_id: string
+        }
+        Update: {
+          amount_dg?: number | null
+          amount_fiat?: number | null
+          bundle_address?: string
+          bundle_id?: string
+          buyer_address?: string | null
+          buyer_display_name?: string | null
+          buyer_email?: string | null
+          buyer_phone?: string | null
+          chain_id?: number
+          claim_code_hash?: string | null
+          created_at?: string
+          eas_uid?: string | null
+          fiat_symbol?: string | null
+          fulfillment_method?: string
+          id?: string
+          nft_recipient_address?: string | null
+          payment_provider?: string
+          payment_reference?: string | null
+          status?: string
+          token_id?: string | null
+          txn_hash?: string | null
+          updated_at?: string
+          vendor_address?: string
+          vendor_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "gaming_bundle_orders_bundle_id_fkey"
+            columns: ["bundle_id"]
+            isOneToOne: false
+            referencedRelation: "gaming_bundles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      gaming_bundle_redemptions: {
+        Row: {
+          bundle_id: string
+          created_at: string
+          id: string
+          metadata: Json | null
+          order_id: string
+          redeemed_at: string
+          redeemer_address: string | null
+          redemption_location: string | null
+          updated_at: string
+          vendor_address: string
+          vendor_id: string
+        }
+        Insert: {
+          bundle_id: string
+          created_at?: string
+          id?: string
+          metadata?: Json | null
+          order_id: string
+          redeemed_at?: string
+          redeemer_address?: string | null
+          redemption_location?: string | null
+          updated_at?: string
+          vendor_address: string
+          vendor_id: string
+        }
+        Update: {
+          bundle_id?: string
+          created_at?: string
+          id?: string
+          metadata?: Json | null
+          order_id?: string
+          redeemed_at?: string
+          redeemer_address?: string | null
+          redemption_location?: string | null
+          updated_at?: string
+          vendor_address?: string
+          vendor_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "gaming_bundle_redemptions_bundle_id_fkey"
+            columns: ["bundle_id"]
+            isOneToOne: false
+            referencedRelation: "gaming_bundles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "gaming_bundle_redemptions_order_id_fkey"
+            columns: ["order_id"]
+            isOneToOne: false
+            referencedRelation: "gaming_bundle_orders"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      gaming_bundles: {
+        Row: {
+          bundle_address: string
+          bundle_type: string
+          chain_id: number
+          console: string | null
+          created_at: string
+          description: string
+          fiat_symbol: string
+          game_title: string | null
+          id: string
+          image_url: string | null
+          is_active: boolean
+          key_expiration_duration_seconds: number
+          location: string
+          price_dg: number | null
+          price_fiat: number
+          quantity_units: number
+          title: string
+          unit_label: string
+          updated_at: string
+          vendor_address: string
+          vendor_id: string
+        }
+        Insert: {
+          bundle_address: string
+          bundle_type: string
+          chain_id: number
+          console?: string | null
+          created_at?: string
+          description: string
+          fiat_symbol?: string
+          game_title?: string | null
+          id?: string
+          image_url?: string | null
+          is_active?: boolean
+          key_expiration_duration_seconds?: number
+          location: string
+          price_dg?: number | null
+          price_fiat?: number
+          quantity_units: number
+          title: string
+          unit_label: string
+          updated_at?: string
+          vendor_address: string
+          vendor_id: string
+        }
+        Update: {
+          bundle_address?: string
+          bundle_type?: string
+          chain_id?: number
+          console?: string | null
+          created_at?: string
+          description?: string
+          fiat_symbol?: string
+          game_title?: string | null
+          id?: string
+          image_url?: string | null
+          is_active?: boolean
+          key_expiration_duration_seconds?: number
+          location?: string
+          price_dg?: number | null
+          price_fiat?: number
+          quantity_units?: number
+          title?: string
+          unit_label?: string
+          updated_at?: string
+          vendor_address?: string
+          vendor_id?: string
+        }
+        Relationships: []
+      }
       gas_transactions: {
         Row: {
           block_number: number | null
@@ -1039,6 +1380,7 @@ export type Database = {
           event_id: string
           gateway_response: Json | null
           id: string
+          payout_account_id: string | null
           reference: string
           status: string
           updated_at: string
@@ -1052,6 +1394,7 @@ export type Database = {
           event_id: string
           gateway_response?: Json | null
           id?: string
+          payout_account_id?: string | null
           reference: string
           status?: string
           updated_at?: string
@@ -1065,6 +1408,7 @@ export type Database = {
           event_id?: string
           gateway_response?: Json | null
           id?: string
+          payout_account_id?: string | null
           reference?: string
           status?: string
           updated_at?: string
@@ -1079,7 +1423,41 @@ export type Database = {
             referencedRelation: "events"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "paystack_transactions_payout_account_id_fkey"
+            columns: ["payout_account_id"]
+            isOneToOne: false
+            referencedRelation: "vendor_payout_accounts"
+            referencedColumns: ["id"]
+          },
         ]
+      }
+      platform_config: {
+        Row: {
+          created_at: string | null
+          description: string | null
+          id: string
+          key: string
+          updated_at: string | null
+          value: Json
+        }
+        Insert: {
+          created_at?: string | null
+          description?: string | null
+          id?: string
+          key: string
+          updated_at?: string | null
+          value: Json
+        }
+        Update: {
+          created_at?: string | null
+          description?: string | null
+          id?: string
+          key?: string
+          updated_at?: string | null
+          value?: Json
+        }
+        Relationships: []
       }
       post_comments: {
         Row: {
@@ -1328,6 +1706,96 @@ export type Database = {
         }
         Relationships: []
       }
+      vendor_payout_accounts: {
+        Row: {
+          account_holder_name: string | null
+          account_number: string | null
+          business_name: string
+          created_at: string | null
+          currency: string
+          id: string
+          is_verified: boolean | null
+          mobile_network: string | null
+          percentage_charge: number | null
+          phone_number: string | null
+          provider: string
+          provider_account_code: string | null
+          provider_account_id: string | null
+          provider_metadata: Json | null
+          settlement_bank_code: string | null
+          settlement_bank_name: string | null
+          settlement_schedule: string | null
+          status: string
+          submitted_at: string | null
+          suspended_at: string | null
+          suspended_by: string | null
+          suspension_reason: string | null
+          updated_at: string | null
+          vendor_id: string
+          verification_error: string | null
+          verification_status: string | null
+          verified_at: string | null
+        }
+        Insert: {
+          account_holder_name?: string | null
+          account_number?: string | null
+          business_name: string
+          created_at?: string | null
+          currency?: string
+          id?: string
+          is_verified?: boolean | null
+          mobile_network?: string | null
+          percentage_charge?: number | null
+          phone_number?: string | null
+          provider?: string
+          provider_account_code?: string | null
+          provider_account_id?: string | null
+          provider_metadata?: Json | null
+          settlement_bank_code?: string | null
+          settlement_bank_name?: string | null
+          settlement_schedule?: string | null
+          status?: string
+          submitted_at?: string | null
+          suspended_at?: string | null
+          suspended_by?: string | null
+          suspension_reason?: string | null
+          updated_at?: string | null
+          vendor_id: string
+          verification_error?: string | null
+          verification_status?: string | null
+          verified_at?: string | null
+        }
+        Update: {
+          account_holder_name?: string | null
+          account_number?: string | null
+          business_name?: string
+          created_at?: string | null
+          currency?: string
+          id?: string
+          is_verified?: boolean | null
+          mobile_network?: string | null
+          percentage_charge?: number | null
+          phone_number?: string | null
+          provider?: string
+          provider_account_code?: string | null
+          provider_account_id?: string | null
+          provider_metadata?: Json | null
+          settlement_bank_code?: string | null
+          settlement_bank_name?: string | null
+          settlement_schedule?: string | null
+          status?: string
+          submitted_at?: string | null
+          suspended_at?: string | null
+          suspended_by?: string | null
+          suspension_reason?: string | null
+          updated_at?: string | null
+          vendor_id?: string
+          verification_error?: string | null
+          verification_status?: string | null
+          verified_at?: string | null
+        }
+        Relationships: []
+      }
     }
     Views: {
       tickets_public: {
@@ -1546,7 +2014,11 @@ export type CompositeTypes<
     : never
 
 export const Constants = {
+  graphql_public: {
+    Enums: {},
+  },
   public: {
     Enums: {},
   },
 } as const
+

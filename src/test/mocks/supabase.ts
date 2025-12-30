@@ -1,7 +1,7 @@
 import { http, HttpResponse } from "msw";
 
 const supabaseUrl =
-  import.meta.env.VITE_SUPABASE_URL || "http://localhost:54321";
+  (import.meta.env.VITE_SUPABASE_URL || "http://localhost:54321").replace(/\/+$/, "");
 
 export function edgeFunctionUrl(name: string) {
   return `${supabaseUrl}/functions/v1/${name}`;
@@ -11,8 +11,11 @@ export function mockEdgeFunction(
   name: string,
   handler: (ctx: { request: Request; body: any; headers: Headers }) => any | Promise<any>
 ) {
-  return http.post(edgeFunctionUrl(name), async ({ request }) => {
-    const body = await request.json().catch(() => null);
+  return http.all(edgeFunctionUrl(name), async ({ request }) => {
+    const body =
+      request.method === "GET" || request.method === "HEAD"
+        ? null
+        : await request.json().catch(() => null);
     const result = await handler({
       request,
       body,
@@ -23,4 +26,3 @@ export function mockEdgeFunction(
 }
 
 export { http, HttpResponse };
-

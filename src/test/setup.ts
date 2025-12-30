@@ -28,6 +28,54 @@ if (!Element.prototype.scrollIntoView) {
   };
 }
 
+// Polyfill for ResizeObserver (required for cmdk / Radix UI in JSDOM)
+if (!(globalThis as any).ResizeObserver) {
+  (globalThis as any).ResizeObserver = class ResizeObserver {
+    observe() {
+      // noop
+    }
+    unobserve() {
+      // noop
+    }
+    disconnect() {
+      // noop
+    }
+  };
+}
+
+// Polyfill for HTMLCanvasElement.getContext (required for qrcode.react in JSDOM)
+if (typeof HTMLCanvasElement !== "undefined") {
+  HTMLCanvasElement.prototype.getContext = function getContext() {
+    return {
+      canvas: this,
+      fillRect: () => {},
+      clearRect: () => {},
+      getImageData: () => ({ data: new Uint8ClampedArray() }),
+      putImageData: () => {},
+      createImageData: () => ({ data: new Uint8ClampedArray() }),
+      setTransform: () => {},
+      drawImage: () => {},
+      save: () => {},
+      restore: () => {},
+      beginPath: () => {},
+      moveTo: () => {},
+      lineTo: () => {},
+      closePath: () => {},
+      stroke: () => {},
+      translate: () => {},
+      scale: () => {},
+      rotate: () => {},
+      arc: () => {},
+      fill: () => {},
+      measureText: () => ({ width: 0 }),
+      transform: () => {},
+      rect: () => {},
+      clip: () => {},
+      fillText: () => {},
+    } as any;
+  };
+}
+
 beforeAll(() => {
   server.listen({ onUnhandledRequest: "error" });
 });

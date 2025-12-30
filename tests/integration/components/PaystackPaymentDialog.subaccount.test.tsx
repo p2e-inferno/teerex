@@ -56,8 +56,10 @@ vi.mock("@/hooks/use-toast", () => ({
 
 // Mock react-paystack
 const mockInitializePayment = vi.fn();
+let lastPaystackConfig: any = null;
 vi.mock("react-paystack", () => ({
   usePaystackPayment: (config: any) => {
+    lastPaystackConfig = config;
     return mockInitializePayment;
   },
 }));
@@ -66,6 +68,7 @@ describe("PaystackPaymentDialog - Subaccount Integration", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockInitializePayment.mockClear();
+    lastPaystackConfig = null;
   });
 
   afterEach(() => {
@@ -91,7 +94,7 @@ describe("PaystackPaymentDialog - Subaccount Integration", () => {
           event={mockEvent as any}
           isOpen={true}
           onClose={() => {}}
-          onPaymentSuccess={() => {}}
+          onSuccess={() => {}}
         />
       );
 
@@ -116,7 +119,7 @@ describe("PaystackPaymentDialog - Subaccount Integration", () => {
       });
 
       // Verify Paystack config includes subaccount
-      const paystackConfig = mockInitializePayment.mock.calls[0]?.[0];
+      const paystackConfig = lastPaystackConfig;
       expect(paystackConfig).toMatchObject({
         email: "user@test.com",
         amount: 500000, // 5000 NGN in kobo
@@ -152,7 +155,7 @@ describe("PaystackPaymentDialog - Subaccount Integration", () => {
           event={mockEvent as any}
           isOpen={true}
           onClose={() => {}}
-          onPaymentSuccess={() => {}}
+          onSuccess={() => {}}
         />
       );
 
@@ -184,7 +187,7 @@ describe("PaystackPaymentDialog - Subaccount Integration", () => {
           event={mockEvent as any}
           isOpen={true}
           onClose={() => {}}
-          onPaymentSuccess={() => {}}
+          onSuccess={() => {}}
         />
       );
 
@@ -220,7 +223,7 @@ describe("PaystackPaymentDialog - Subaccount Integration", () => {
           event={mockEvent as any}
           isOpen={true}
           onClose={() => {}}
-          onPaymentSuccess={() => {}}
+          onSuccess={() => {}}
         />
       );
 
@@ -236,7 +239,7 @@ describe("PaystackPaymentDialog - Subaccount Integration", () => {
       });
 
       // Verify Paystack config does NOT include subaccount
-      const paystackConfig = mockInitializePayment.mock.calls[0]?.[0];
+      const paystackConfig = lastPaystackConfig;
       expect(paystackConfig.subaccount).toBeUndefined();
     });
 
@@ -253,7 +256,7 @@ describe("PaystackPaymentDialog - Subaccount Integration", () => {
           event={mockEvent as any}
           isOpen={true}
           onClose={() => {}}
-          onPaymentSuccess={() => {}}
+          onSuccess={() => {}}
         />
       );
 
@@ -269,7 +272,7 @@ describe("PaystackPaymentDialog - Subaccount Integration", () => {
       });
 
       // Without subaccount, Paystack routes 100% to platform
-      const paystackConfig = mockInitializePayment.mock.calls[0]?.[0];
+      const paystackConfig = lastPaystackConfig;
       expect(paystackConfig.amount).toBe(500000); // Full amount
       expect(paystackConfig).not.toHaveProperty("subaccount");
     });
@@ -300,7 +303,7 @@ describe("PaystackPaymentDialog - Subaccount Integration", () => {
           event={mockEvent as any}
           isOpen={true}
           onClose={() => {}}
-          onPaymentSuccess={() => {}}
+          onSuccess={() => {}}
         />
       );
 
@@ -335,7 +338,7 @@ describe("PaystackPaymentDialog - Subaccount Integration", () => {
           event={mockEvent as any}
           isOpen={true}
           onClose={() => {}}
-          onPaymentSuccess={() => {}}
+          onSuccess={() => {}}
         />
       );
 
@@ -369,7 +372,7 @@ describe("PaystackPaymentDialog - Subaccount Integration", () => {
           event={mockEvent as any}
           isOpen={true}
           onClose={() => {}}
-          onPaymentSuccess={() => {}}
+          onSuccess={() => {}}
         />
       );
 
@@ -390,7 +393,7 @@ describe("PaystackPaymentDialog - Subaccount Integration", () => {
         expect.anything()
       );
 
-      const paystackConfig = mockInitializePayment.mock.calls[0]?.[0];
+      const paystackConfig = lastPaystackConfig;
       expect(paystackConfig).not.toHaveProperty("subaccount");
 
       consoleSpy.mockRestore();
@@ -398,7 +401,7 @@ describe("PaystackPaymentDialog - Subaccount Integration", () => {
   });
 
   describe("Payment Success Callback", () => {
-    it("calls onPaymentSuccess after successful payment", async () => {
+    it("calls onSuccess after successful payment", async () => {
       const mockOnSuccess = vi.fn();
 
       server.use(
@@ -420,7 +423,7 @@ describe("PaystackPaymentDialog - Subaccount Integration", () => {
           event={mockEvent as any}
           isOpen={true}
           onClose={() => {}}
-          onPaymentSuccess={mockOnSuccess}
+          onSuccess={mockOnSuccess}
         />
       );
 
@@ -451,7 +454,7 @@ describe("PaystackPaymentDialog - Subaccount Integration", () => {
           event={mockEvent as any}
           isOpen={true}
           onClose={() => {}}
-          onPaymentSuccess={() => {}}
+          onSuccess={() => {}}
         />
       );
 
@@ -466,7 +469,7 @@ describe("PaystackPaymentDialog - Subaccount Integration", () => {
         expect(mockInitializePayment).toHaveBeenCalled();
       });
 
-      const paystackConfig = mockInitializePayment.mock.calls[0]?.[0];
+      const paystackConfig = lastPaystackConfig;
       expect(paystackConfig.metadata).toMatchObject({
         lock_address: "0xlock123",
         chain_id: 8453,
@@ -497,7 +500,7 @@ describe("PaystackPaymentDialog - Subaccount Integration", () => {
           event={mockEvent as any}
           isOpen={true}
           onClose={() => {}}
-          onPaymentSuccess={() => {}}
+          onSuccess={() => {}}
         />
       );
 
@@ -511,7 +514,7 @@ describe("PaystackPaymentDialog - Subaccount Integration", () => {
         expect(mockInitializePayment).toHaveBeenCalled();
       });
 
-      const firstReference = mockInitializePayment.mock.calls[0]?.[0].reference;
+      const firstReference = lastPaystackConfig?.reference;
 
       // Close and reopen
       rerender(
@@ -519,7 +522,7 @@ describe("PaystackPaymentDialog - Subaccount Integration", () => {
           event={mockEvent as any}
           isOpen={false}
           onClose={() => {}}
-          onPaymentSuccess={() => {}}
+          onSuccess={() => {}}
         />
       );
 
@@ -528,7 +531,7 @@ describe("PaystackPaymentDialog - Subaccount Integration", () => {
           event={mockEvent as any}
           isOpen={true}
           onClose={() => {}}
-          onPaymentSuccess={() => {}}
+          onSuccess={() => {}}
         />
       );
 
@@ -542,7 +545,7 @@ describe("PaystackPaymentDialog - Subaccount Integration", () => {
         expect(mockInitializePayment).toHaveBeenCalledTimes(2);
       });
 
-      const secondReference = mockInitializePayment.mock.calls[1]?.[0].reference;
+      const secondReference = lastPaystackConfig?.reference;
 
       // References should be unique
       expect(firstReference).not.toBe(secondReference);
@@ -565,7 +568,7 @@ describe("PaystackPaymentDialog - Subaccount Integration", () => {
           event={eventWith10000NGN as any}
           isOpen={true}
           onClose={() => {}}
-          onPaymentSuccess={() => {}}
+          onSuccess={() => {}}
         />
       );
 
@@ -580,7 +583,7 @@ describe("PaystackPaymentDialog - Subaccount Integration", () => {
         expect(mockInitializePayment).toHaveBeenCalled();
       });
 
-      const paystackConfig = mockInitializePayment.mock.calls[0]?.[0];
+      const paystackConfig = lastPaystackConfig;
       expect(paystackConfig.amount).toBe(1000000); // 10000 * 100
     });
 
@@ -599,7 +602,7 @@ describe("PaystackPaymentDialog - Subaccount Integration", () => {
           event={eventWithDecimal as any}
           isOpen={true}
           onClose={() => {}}
-          onPaymentSuccess={() => {}}
+          onSuccess={() => {}}
         />
       );
 
@@ -614,7 +617,7 @@ describe("PaystackPaymentDialog - Subaccount Integration", () => {
         expect(mockInitializePayment).toHaveBeenCalled();
       });
 
-      const paystackConfig = mockInitializePayment.mock.calls[0]?.[0];
+      const paystackConfig = lastPaystackConfig;
       expect(paystackConfig.amount).toBe(5055); // Rounded: Math.round(50.55 * 100)
     });
   });

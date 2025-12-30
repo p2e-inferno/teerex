@@ -27,6 +27,13 @@ import AdminAnalytics from "./pages/AdminAnalytics";
 import AdminPayoutAccounts from "./pages/AdminPayoutAccounts";
 import AdminRoute from "./components/routes/AdminRoute";
 import VendorPayoutAccount from "./pages/VendorPayoutAccount";
+import VendorGamingBundles from "./pages/VendorGamingBundles";
+import GamingBundlePOS from "./pages/GamingBundlePOS";
+import GamingBundleRedemption from "./pages/GamingBundleRedemption";
+import GamingBundleDetails from "./pages/GamingBundleDetails";
+import GamingBundleClaim from "./pages/GamingBundleClaim";
+import GamingBundles from "./pages/GamingBundles";
+import VendorGamingBundleOrders from "./pages/VendorGamingBundleOrders";
 import NotFound from "./pages/NotFound";
 
 const App = () => {
@@ -41,6 +48,7 @@ const App = () => {
               <Routes>
                 <Route path="/" element={<Index />} />
                 <Route path="/explore" element={<Explore />} />
+                <Route path="/gaming-bundles" element={<GamingBundles />} />
                 <Route path="/create" element={<CreateEvent />} />
                 <Route path="/events" element={<MyEvents />} />
                 <Route path="/my-events" element={<MyEvents />} />
@@ -58,6 +66,12 @@ const App = () => {
                 <Route path="/admin/analytics" element={<AdminRoute><AdminAnalytics /></AdminRoute>} />
                 <Route path="/admin/payout-accounts" element={<AdminRoute><AdminPayoutAccounts /></AdminRoute>} />
                 <Route path="/vendor/payout-account" element={<VendorPayoutAccount />} />
+                <Route path="/vendor/gaming-bundles" element={<VendorGamingBundles />} />
+                <Route path="/vendor/bundles-pos" element={<GamingBundlePOS />} />
+                <Route path="/vendor/bundles-redeem" element={<GamingBundleRedemption />} />
+                <Route path="/vendor/bundles-orders" element={<VendorGamingBundleOrders />} />
+                <Route path="/gaming-bundles/claim" element={<GamingBundleClaim />} />
+                <Route path="/gaming-bundles/:id" element={<GamingBundleDetails />} />
                 <Route path="/event/:id" element={<EventDetails />} />
                 <Route path="/event/:id/discussions" element={<EventDiscussions />} />
                 {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}

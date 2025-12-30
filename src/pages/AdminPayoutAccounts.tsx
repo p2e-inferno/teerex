@@ -153,6 +153,8 @@ const AdminPayoutAccounts: React.FC = () => {
       if (data?.ok) {
         setAccounts(data.payout_accounts || []);
         setPagination(data.pagination);
+      } else {
+        toast.error(data?.error || 'Failed to load payout accounts');
       }
     } catch (err) {
       console.error('Error fetching payout accounts:', err);
@@ -170,8 +172,9 @@ const AdminPayoutAccounts: React.FC = () => {
   }, [isAdmin, fetchAccounts]);
 
   // Handle suspend/unsuspend
-  const handleSuspendAction = async (action: 'suspend' | 'unsuspend') => {
-    if (!selectedAccount) return;
+  const handleSuspendAction = async (action: 'suspend' | 'unsuspend', accountOverride?: PayoutAccount) => {
+    const targetAccount = accountOverride ?? selectedAccount;
+    if (!targetAccount) return;
     if (action === 'suspend' && !suspendReason.trim()) {
       toast.error('Please provide a reason for suspension');
       return;
@@ -182,7 +185,7 @@ const AdminPayoutAccounts: React.FC = () => {
       const token = await getAccessToken();
       const { data, error } = await supabase.functions.invoke('admin-suspend-payout-account', {
         body: {
-          payout_account_id: selectedAccount.id,
+          payout_account_id: targetAccount.id,
           action,
           reason: action === 'suspend' ? suspendReason.trim() : undefined,
         },
@@ -472,8 +475,7 @@ const AdminPayoutAccounts: React.FC = () => {
                                 variant="outline"
                                 size="sm"
                                 onClick={() => {
-                                  setSelectedAccount(account);
-                                  handleSuspendAction('unsuspend');
+                                  handleSuspendAction('unsuspend', account);
                                 }}
                                 disabled={isActioning}
                               >
