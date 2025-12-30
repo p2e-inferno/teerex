@@ -84,6 +84,7 @@ const EventDetailsContent = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [isTransferableOnChain, setIsTransferableOnChain] = useState<boolean | null>(null);
   const [transferFeeBps, setTransferFeeBps] = useState<number | null>(null);
+  const [vendorHasPayoutAccount, setVendorHasPayoutAccount] = useState<boolean>(true); // Default to true for backwards compatibility
 
   // Real-time ticket count subscription
   const { ticketsSold: keysSold } = useEventTicketRealtime({
@@ -168,6 +169,44 @@ const EventDetailsContent = () => {
 
     loadEvent();
   }, [id, navigate, toast]);
+
+  // Check if vendor has verified payout account (for fiat payment blocking)
+  useEffect(() => {
+    const checkVendorPayoutAccount = async () => {
+      if (!event?.creator_id) {
+        setVendorHasPayoutAccount(true); // Default to true if no creator
+        return;
+      }
+
+      // Only check if event has fiat payment method
+      if (!hasMethod(event, 'fiat')) {
+        setVendorHasPayoutAccount(true);
+        return;
+      }
+
+      try {
+        const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
+        const accessToken = await getAccessToken?.();
+
+        // Use query params for GET request by appending to function name
+        const functionName = `get-vendor-payout-account?vendor_id=${encodeURIComponent(event.creator_id)}`;
+
+        const { data } = await supabase.functions.invoke(functionName, {
+          headers: {
+            ...(anonKey ? { Authorization: `Bearer ${anonKey}` } : {}),
+            ...(accessToken ? { 'X-Privy-Authorization': `Bearer ${accessToken}` } : {}),
+          },
+        });
+
+        setVendorHasPayoutAccount(data?.can_receive_fiat_payments === true);
+      } catch (error) {
+        console.error('Error checking vendor payout account:', error);
+        setVendorHasPayoutAccount(false); // Fail closed - don't allow fiat if check fails
+      }
+    };
+
+    checkVendorPayoutAccount();
+  }, [event?.creator_id, event?.payment_methods, getAccessToken]);
 
   // Centralized attestation state (schemas, UIDs, on-chain instance revocability)
   const { state } = useEventAttestationState({
@@ -1271,6 +1310,7 @@ const EventDetailsContent = () => {
         onClose={closeAllModals}
         onSelectCrypto={handleSelectCrypto}
         onSelectPaystack={handleSelectPaystack}
+        vendorHasPayoutAccount={vendorHasPayoutAccount}
       />
 
       {/* Crypto Purchase Dialog */}

@@ -84,6 +84,7 @@ Server-side only (Edge Functions):
    - Flow: `PaystackPaymentDialog` → `init-paystack-transaction` edge function → Paystack checkout
    - Webhook: `paystack-webhook` verifies payment → `paystack-grant-keys` issues ticket
    - Email captured in `paystack_transactions.user_email`
+   - **Subaccount routing**: If vendor has verified payout account, payments are split (vendor receives 95%, platform 5%)
 
 2. **Crypto**:
    - Free: Direct `purchase()` call with value=0
@@ -91,12 +92,31 @@ Server-side only (Edge Functions):
    - USDC: User approves ERC20 + calls `purchase()` with token transfer
    - Gasless (planned): Server sponsors gas via edge functions
 
+### Vendor Payout Accounts (Paystack Subaccounts)
+- **Purpose**: Enable event creators to receive fiat payments directly to their bank accounts
+- **Database**: `vendor_payout_accounts` table (provider-agnostic design for future Stripe/M-Pesa)
+- **Workflow**: Vendor submits banking details → Auto-verified via Paystack API → Subaccount created
+- **Verification**: Pluggable strategy pattern (`_shared/verification.ts`) - can swap for BVN, KYC, etc.
+- **Edge Functions**:
+  - `submit-payout-account` - Vendor submits banking details, auto-verification
+  - `retry-payout-verification` - Retry verification after failure
+  - `get-vendor-payout-account` - Vendor checks their account status
+  - `admin-list-payout-accounts` - Admin oversight
+  - `admin-suspend-payout-account` - Admin can suspend/unsuspend accounts
+  - `list-nigerian-banks` - Bank codes for dropdown (public, cached)
+- **Payment Flow**: Verified vendors receive: `amount - (amount × 5% commission)`
+- **Routes**:
+  - `/vendor/payout-account` - Vendor self-service page
+  - `/admin/payout-accounts` - Admin oversight dashboard
+
 ### Database Schema (Supabase)
 Key tables:
 - `events`: Published events with lock_address, chain_id, creator_id
 - `event_drafts`: Unpublished drafts
 - `tickets`: Issued tickets (owner_wallet, token_id, tx_hash)
-- `paystack_transactions`: Fiat payment records with reference and status
+- `paystack_transactions`: Fiat payment records with reference, status, and payout_account_id
+- `vendor_payout_accounts`: Vendor bank accounts for receiving fiat payments (Paystack subaccounts)
+- `platform_config`: Platform-wide configuration (e.g., default commission rate)
 - `network_configs`: Chain configurations (RPC URLs, USDC addresses)
 - `attestations`: On-chain attestation records
 - `event_interactions`: Posts, comments, reactions

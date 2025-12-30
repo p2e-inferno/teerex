@@ -24,7 +24,9 @@ import AdminGasSponsorship from "./pages/AdminGasSponsorship";
 import AdminNetworks from "./pages/AdminNetworks";
 import AdminServiceAccount from "./pages/AdminServiceAccount";
 import AdminAnalytics from "./pages/AdminAnalytics";
+import AdminPayoutAccounts from "./pages/AdminPayoutAccounts";
 import AdminRoute from "./components/routes/AdminRoute";
+import VendorPayoutAccount from "./pages/VendorPayoutAccount";
 import NotFound from "./pages/NotFound";
 
 const App = () => {
@@ -54,6 +56,8 @@ const App = () => {
                 <Route path="/admin/gas-sponsorship" element={<AdminRoute><AdminGasSponsorship /></AdminRoute>} />
                 <Route path="/admin/service-account" element={<AdminRoute><AdminServiceAccount /></AdminRoute>} />
                 <Route path="/admin/analytics" element={<AdminRoute><AdminAnalytics /></AdminRoute>} />
+                <Route path="/admin/payout-accounts" element={<AdminRoute><AdminPayoutAccounts /></AdminRoute>} />
+                <Route path="/vendor/payout-account" element={<VendorPayoutAccount />} />
                 <Route path="/event/:id" element={<EventDetails />} />
                 <Route path="/event/:id/discussions" element={<EventDiscussions />} />
                 {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
