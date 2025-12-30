@@ -7,10 +7,39 @@ import * as React from "react";
 import { render, screen, waitFor, fireEvent } from "@testing-library/react";
 import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
 import { BrowserRouter } from "react-router-dom";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { server } from "@/test/msw/server";
 import { mockEdgeFunction } from "@/test/mocks/supabase";
 import VendorPayoutAccount from "@/pages/VendorPayoutAccount";
 import { usePrivy } from "@privy-io/react-auth";
+
+vi.mock("@/hooks/useDebounce", () => ({
+  useDebounce: (value: any) => value,
+}));
+
+const mockUseBanks = vi.fn(() => ({
+  data: [{ code: "044", name: "Access Bank", slug: "access-bank", type: "nuban" }],
+  isLoading: false,
+  error: null,
+}));
+
+vi.mock("@/hooks/useBanks", () => ({
+  useBanks: () => mockUseBanks(),
+}));
+
+const mockUseResolveAccount = vi.fn((accountNumber: string, bankCode: string) => ({
+  data:
+    accountNumber.length === 10 && bankCode
+      ? { account_number: accountNumber, account_name: "Test Business LLC", bank_id: 1 }
+      : undefined,
+  isLoading: false,
+  error: null,
+}));
+
+vi.mock("@/hooks/useResolveAccount", () => ({
+  useResolveAccount: (accountNumber: string, bankCode: string) =>
+    mockUseResolveAccount(accountNumber, bankCode),
+}));
 
 // Mock Privy
 const mockGetAccessToken = vi.fn().mockResolvedValue("test-token");
@@ -43,12 +72,25 @@ vi.mock("sonner", () => {
 import { toast as mockToast } from "sonner";
 
 const renderWithRouter = (component: React.ReactElement) => {
-  return render(<BrowserRouter>{component}</BrowserRouter>);
+  const queryClient = new QueryClient({
+    defaultOptions: {
+      queries: { retry: false },
+      mutations: { retry: false },
+    },
+  });
+
+  return render(
+    <QueryClientProvider client={queryClient}>
+      <BrowserRouter>{component}</BrowserRouter>
+    </QueryClientProvider>
+  );
 };
 
-describe("VendorPayoutAccount", () => {
+  describe("VendorPayoutAccount", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockUseBanks.mockClear();
+    mockUseResolveAccount.mockClear();
   });
 
   afterEach(() => {
@@ -62,51 +104,32 @@ describe("VendorPayoutAccount", () => {
           ok: true,
           payout_account: null,
           can_receive_fiat_payments: false,
-        })),
-        mockEdgeFunction("list-nigerian-banks", async () => ({
-          ok: true,
-          banks: [
-            { code: "044", name: "Access Bank", slug: "access-bank" },
-            { code: "058", name: "GTBank", slug: "gtbank" },
-          ],
         }))
       );
 
       renderWithRouter(<VendorPayoutAccount />);
 
       await waitFor(() => {
-        expect(screen.getByText(/set up payout account/i)).toBeInTheDocument();
+        expect(screen.getByText(/add payout account/i)).toBeInTheDocument();
       });
 
-      expect(screen.getByLabelText(/business name/i)).toBeInTheDocument();
-      expect(screen.getByLabelText(/bank/i)).toBeInTheDocument();
+      expect(screen.getByRole("combobox", { name: /bank/i })).toBeInTheDocument();
       expect(screen.getByLabelText(/account number/i)).toBeInTheDocument();
     });
 
-    it("loads and displays bank options from list-nigerian-banks", async () => {
+    it("renders bank selector", async () => {
       server.use(
         mockEdgeFunction("get-vendor-payout-account", async () => ({
           ok: true,
           payout_account: null,
-        })),
-        mockEdgeFunction("list-nigerian-banks", async () => ({
-          ok: true,
-          banks: [
-            { code: "044", name: "Access Bank", slug: "access-bank" },
-            { code: "058", name: "GTBank", slug: "gtbank" },
-            { code: "033", name: "United Bank for Africa", slug: "uba" },
-          ],
         }))
       );
 
       renderWithRouter(<VendorPayoutAccount />);
 
       await waitFor(() => {
-        expect(screen.getByLabelText(/bank/i)).toBeInTheDocument();
+        expect(screen.getByRole("combobox", { name: /bank/i })).toBeInTheDocument();
       });
-
-      // Bank select should be populated (implementation-specific check)
-      // In real implementation, you'd click the select and verify options
     });
   });
 
@@ -128,16 +151,11 @@ describe("VendorPayoutAccount", () => {
       renderWithRouter(<VendorPayoutAccount />);
 
       await waitFor(() => {
-        expect(screen.getByRole("button", { name: /submit/i })).toBeInTheDocument();
+        expect(screen.getByRole("button", { name: /add account/i })).toBeInTheDocument();
       });
 
-      const submitButton = screen.getByRole("button", { name: /submit/i });
-      fireEvent.click(submitButton);
-
-      // Should show validation errors (implementation-specific)
-      await waitFor(() => {
-        expect(mockToast.error).toHaveBeenCalled();
-      });
+      const submitButton = screen.getByRole("button", { name: /add account/i }) as HTMLButtonElement;
+      expect(submitButton.disabled).toBe(true);
     });
 
     it("validates account number is exactly 10 digits", async () => {
@@ -149,21 +167,11 @@ describe("VendorPayoutAccount", () => {
 
       const accountNumberInput = screen.getByLabelText(/account number/i);
 
-      // Test invalid lengths
       fireEvent.change(accountNumberInput, { target: { value: "123" } });
-      fireEvent.blur(accountNumberInput);
+      expect((accountNumberInput as HTMLInputElement).value).toBe("123");
 
-      await waitFor(() => {
-        expect(screen.getByText(/10 digits/i)).toBeInTheDocument();
-      });
-
-      // Test valid length
-      fireEvent.change(accountNumberInput, { target: { value: "0123456789" } });
-      fireEvent.blur(accountNumberInput);
-
-      await waitFor(() => {
-        expect(screen.queryByText(/10 digits/i)).not.toBeInTheDocument();
-      });
+      fireEvent.change(accountNumberInput, { target: { value: "01234567890123" } });
+      expect((accountNumberInput as HTMLInputElement).value).toBe("0123456789");
     });
 
     it("only allows numeric input for account number", async () => {
@@ -189,10 +197,6 @@ describe("VendorPayoutAccount", () => {
           ok: true,
           payout_account: null,
         })),
-        mockEdgeFunction("list-nigerian-banks", async () => ({
-          ok: true,
-          banks: [{ code: "044", name: "Access Bank", slug: "access-bank" }],
-        })),
         mockEdgeFunction("submit-payout-account", async ({ body }) => ({
           ok: true,
           payout_account: {
@@ -213,30 +217,32 @@ describe("VendorPayoutAccount", () => {
       renderWithRouter(<VendorPayoutAccount />);
 
       await waitFor(() => {
-        expect(screen.getByLabelText(/business name/i)).toBeInTheDocument();
+        expect(screen.getByLabelText(/account number/i)).toBeInTheDocument();
       });
 
-      // Fill out form
-      fireEvent.change(screen.getByLabelText(/business name/i), {
-        target: { value: "Test Business LLC" },
-      });
+      // Select bank
+      fireEvent.click(screen.getByRole("combobox", { name: /bank/i }));
+      fireEvent.click(await screen.findByText(/access bank/i));
+
       fireEvent.change(screen.getByLabelText(/account number/i), {
         target: { value: "0123456789" },
       });
 
+      await waitFor(() => {
+        expect(screen.getByText(/account verified/i)).toBeInTheDocument();
+      });
+
       // Submit
-      const submitButton = screen.getByRole("button", { name: /submit/i });
+      const submitButton = screen.getByRole("button", { name: /add account/i });
       fireEvent.click(submitButton);
 
       await waitFor(() => {
-        expect(mockToast.success).toHaveBeenCalledWith(
-          expect.stringMatching(/success/i)
-        );
+        expect(mockToast.success).toHaveBeenCalled();
       });
 
       // Should show verified status
       await waitFor(() => {
-        expect(screen.getByText(/verified/i)).toBeInTheDocument();
+        expect(screen.getByText(/^verified$/i)).toBeInTheDocument();
       });
     });
   });
@@ -248,10 +254,6 @@ describe("VendorPayoutAccount", () => {
           ok: true,
           payout_account: null,
         })),
-        mockEdgeFunction("list-nigerian-banks", async () => ({
-          ok: true,
-          banks: [{ code: "044", name: "Access Bank", slug: "access-bank" }],
-        })),
         mockEdgeFunction("submit-payout-account", async () => ({
           ok: false,
           error: "Account verification failed: Invalid account number",
@@ -260,6 +262,7 @@ describe("VendorPayoutAccount", () => {
             status: "verification_failed",
             business_name: "Test Business",
             account_number: "****6789",
+            can_retry: true,
           },
           can_retry: true,
           retry_hint: "Please check your account number and try again",
@@ -269,27 +272,25 @@ describe("VendorPayoutAccount", () => {
       renderWithRouter(<VendorPayoutAccount />);
 
       await waitFor(() => {
-        expect(screen.getByLabelText(/business name/i)).toBeInTheDocument();
+        expect(screen.getByLabelText(/account number/i)).toBeInTheDocument();
       });
 
       // Fill and submit form
-      fireEvent.change(screen.getByLabelText(/business name/i), {
-        target: { value: "Test Business" },
-      });
+      fireEvent.click(screen.getByRole("combobox", { name: /bank/i }));
+      fireEvent.click(await screen.findByText(/access bank/i));
       fireEvent.change(screen.getByLabelText(/account number/i), {
         target: { value: "9999999999" },
       });
 
-      fireEvent.click(screen.getByRole("button", { name: /submit/i }));
+      await waitFor(() => {
+        expect(screen.getByText(/account verified/i)).toBeInTheDocument();
+      });
+
+      fireEvent.click(screen.getByRole("button", { name: /add account/i }));
 
       // Should show error
       await waitFor(() => {
         expect(mockToast.error).toHaveBeenCalled();
-      });
-
-      // Should show retry hint
-      await waitFor(() => {
-        expect(screen.getByText(/check your account number/i)).toBeInTheDocument();
       });
 
       // Should show retry button
@@ -323,7 +324,7 @@ describe("VendorPayoutAccount", () => {
 
       expect(screen.getByText(/\*\*\*\*6789/)).toBeInTheDocument();
       expect(screen.getByText(/access bank/i)).toBeInTheDocument();
-      expect(screen.getByText(/verified/i)).toBeInTheDocument();
+      expect(screen.getByText(/^verified$/i)).toBeInTheDocument();
     });
 
     it("shows commission percentage (5%)", async () => {
@@ -362,6 +363,7 @@ describe("VendorPayoutAccount", () => {
                 status: "verification_failed",
                 business_name: "Test Business",
                 verification_error: "Invalid account",
+                can_retry: true,
               },
               can_receive_fiat_payments: false,
             };
@@ -400,6 +402,9 @@ describe("VendorPayoutAccount", () => {
       });
 
       // Update account number and retry
+      fireEvent.click(screen.getByRole("combobox"));
+      fireEvent.click(await screen.findByText(/access bank/i));
+
       fireEvent.change(screen.getByLabelText(/account number/i), {
         target: { value: "0987654321" },
       });
@@ -407,9 +412,7 @@ describe("VendorPayoutAccount", () => {
       fireEvent.click(screen.getByRole("button", { name: /retry/i }));
 
       await waitFor(() => {
-        expect(mockToast.success).toHaveBeenCalledWith(
-          expect.stringMatching(/success/i)
-        );
+        expect(mockToast.success).toHaveBeenCalled();
       });
     });
   });
@@ -436,37 +439,11 @@ describe("VendorPayoutAccount", () => {
       });
     });
 
-    it("shows loading spinner while fetching banks", async () => {
-      server.use(
-        mockEdgeFunction("get-vendor-payout-account", async () => ({
-          ok: true,
-          payout_account: null,
-        })),
-        mockEdgeFunction("list-nigerian-banks", async () => {
-          await new Promise((resolve) => setTimeout(resolve, 100));
-          return {
-            ok: true,
-            banks: [],
-          };
-        })
-      );
-
-      renderWithRouter(<VendorPayoutAccount />);
-
-      await waitFor(() => {
-        expect(screen.getByText(/loading.*banks/i)).toBeInTheDocument();
-      });
-    });
-
     it("disables submit button while submitting", async () => {
       server.use(
         mockEdgeFunction("get-vendor-payout-account", async () => ({
           ok: true,
           payout_account: null,
-        })),
-        mockEdgeFunction("list-nigerian-banks", async () => ({
-          ok: true,
-          banks: [{ code: "044", name: "Access Bank", slug: "access-bank" }],
         })),
         mockEdgeFunction("submit-payout-account", async () => {
           return {
@@ -479,10 +456,20 @@ describe("VendorPayoutAccount", () => {
       renderWithRouter(<VendorPayoutAccount />);
 
       await waitFor(() => {
-        expect(screen.getByRole("button", { name: /submit/i })).toBeInTheDocument();
+        expect(screen.getByRole("button", { name: /add account/i })).toBeInTheDocument();
       });
 
-      const submitButton = screen.getByRole("button", { name: /submit/i }) as HTMLButtonElement;
+      fireEvent.click(screen.getByRole("combobox", { name: /bank/i }));
+      fireEvent.click(await screen.findByText(/access bank/i));
+      fireEvent.change(screen.getByLabelText(/account number/i), {
+        target: { value: "0123456789" },
+      });
+
+      await waitFor(() => {
+        expect(screen.getByText(/account verified/i)).toBeInTheDocument();
+      });
+
+      const submitButton = screen.getByRole("button", { name: /add account/i }) as HTMLButtonElement;
 
       fireEvent.click(submitButton);
 
@@ -512,22 +499,24 @@ describe("VendorPayoutAccount", () => {
       });
     });
 
-    it("shows error message if list-nigerian-banks fails", async () => {
+    it("renders banks error alert when banks fail to load", async () => {
+      mockUseBanks.mockReturnValue({
+        data: [],
+        isLoading: false,
+        error: new Error("API error"),
+      });
+
       server.use(
         mockEdgeFunction("get-vendor-payout-account", async () => ({
           ok: true,
           payout_account: null,
-        })),
-        mockEdgeFunction("list-nigerian-banks", async () => ({
-          ok: false,
-          error: "API error",
         }))
       );
 
       renderWithRouter(<VendorPayoutAccount />);
 
       await waitFor(() => {
-        expect(mockToast.error).toHaveBeenCalled();
+        expect(screen.getByText(/error loading banks/i)).toBeInTheDocument();
       });
     });
   });

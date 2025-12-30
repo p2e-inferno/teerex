@@ -87,9 +87,86 @@ serve(async (req) => {
       .maybeSingle();
 
     if (!tx) {
-      // No pending tx found; do not create blindly. Acknowledge 200 to avoid webhook retries.
-      console.warn("[WEBHOOK] No pending transaction found for reference:", reference);
-      return json({ ok: true, skipped: true, reason: "transaction_not_found" }, 200);
+      const { data: bundleOrder } = await supabase
+        .from("gaming_bundle_orders")
+        .select("id, status, txn_hash, nft_recipient_address, payment_reference, bundle_address, chain_id, gaming_bundles(bundle_address, chain_id, key_expiration_duration_seconds)")
+        .eq("payment_reference", reference)
+        .maybeSingle();
+
+      if (!bundleOrder) {
+        console.warn("[WEBHOOK] No pending transaction found for reference:", reference);
+        return json({ ok: true, skipped: true, reason: "transaction_not_found" }, 200);
+      }
+
+      const bundle = (bundleOrder as any)?.gaming_bundles;
+      const lockAddress: string | undefined = bundle?.bundle_address || (bundleOrder as any)?.bundle_address;
+      const recipient: string | undefined = (bundleOrder as any)?.nft_recipient_address;
+      const chainId = Number(bundle?.chain_id || (bundleOrder as any)?.chain_id);
+      const expirationSeconds = Number(bundle?.key_expiration_duration_seconds || 60 * 60 * 24 * 30);
+
+      if ((bundleOrder as any)?.status === "PAID" && (bundleOrder as any)?.txn_hash) {
+        console.log("[WEBHOOK] Bundle order already processed and key granted. Skipping.");
+        return json({ ok: true, granted: true, reference }, 200);
+      }
+
+      // Determine RPC URL from network config
+      let rpcUrl: string | undefined;
+      if (Number.isFinite(chainId)) {
+        const networkConfig = await validateChain(supabase, chainId);
+        if (!networkConfig?.rpc_url) {
+          throw new Error(`RPC URL not configured for chain ${chainId}`);
+        }
+        rpcUrl = networkConfig.rpc_url;
+      }
+
+      const serviceWalletPrivateKey: string | undefined = (Deno.env.get("UNLOCK_SERVICE_PRIVATE_KEY") ?? Deno.env.get("SERVICE_WALLET_PRIVATE_KEY") ?? Deno.env.get("SERVICE_PK")) as string | undefined;
+
+      if (!rpcUrl) throw new Error("Missing RPC_URL");
+      if (!serviceWalletPrivateKey) throw new Error("Missing service wallet private key");
+      if (!lockAddress || !recipient) throw new Error("Missing lockAddress or recipient");
+
+      const provider = new JsonRpcProvider(rpcUrl);
+      const signer = new Wallet(serviceWalletPrivateKey, provider);
+      const lock = new Contract(lockAddress, PublicLockV15 as any, signer);
+
+      const hasKey: boolean = await lock.getHasValidKey(recipient).catch(() => false);
+
+      const expirationTimestamp: number = Number(
+        Math.floor(Date.now() / 1000) + expirationSeconds,
+      );
+      const recipients = [recipient];
+      const expirations = [BigInt(expirationTimestamp)];
+      const keyManagers = [recipient];
+
+      let granted = false;
+      let grantTxHash: string | undefined;
+      if (!hasKey) {
+        const serviceUser = (await signer.getAddress()) as `0x${string}`;
+        const calldata = lock.interface.encodeFunctionData('grantKeys', [recipients, expirations, keyManagers]);
+        const taggedData = await appendDivviTagToCalldataAsync({ data: calldata, user: serviceUser });
+        const txSend = await signer.sendTransaction({ to: lockAddress, data: taggedData });
+        await txSend.wait();
+        grantTxHash = txSend.hash as string | undefined;
+        if (Number.isFinite(chainId) && grantTxHash) {
+          await submitDivviReferralBestEffort({ txHash: grantTxHash, chainId });
+        }
+        granted = true;
+      } else {
+        console.log(" [KEY GRANT] Recipient already has valid key; skipping grant");
+        granted = true;
+      }
+
+      await supabase
+        .from("gaming_bundle_orders")
+        .update({
+          status: "PAID",
+          fulfillment_method: "NFT",
+          txn_hash: grantTxHash || (bundleOrder as any)?.txn_hash,
+          nft_recipient_address: recipient,
+        })
+        .eq("id", (bundleOrder as any).id);
+
+      return json({ ok: true, granted, reference, txHash: grantTxHash });
     }
 
     // Idempotency: if already successful and key granted, exit

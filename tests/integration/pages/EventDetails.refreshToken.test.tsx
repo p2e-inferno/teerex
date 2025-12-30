@@ -1,18 +1,18 @@
-import { render, screen, waitFor } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import * as React from "react";
 
 import EventDetails from "@/pages/EventDetails";
 
 const mockUseParams = vi.fn();
+const mockNavigate = vi.fn();
 
 vi.mock("react-router-dom", async () => {
   const actual = await vi.importActual("react-router-dom");
   return {
     ...actual,
     useParams: () => mockUseParams(),
-    useNavigate: () => vi.fn(),
+    useNavigate: () => mockNavigate,
   };
 });
 
@@ -169,10 +169,17 @@ vi.mock("@/components/events/WaitlistDialog", () => ({
   WaitlistDialog: () => null,
 }));
 
+const mockToast = vi.fn();
+vi.mock("@/hooks/use-toast", () => ({
+  useToast: () => ({ toast: mockToast }),
+}));
+
 describe("EventDetails refreshToken wiring (TDD)", () => {
   beforeEach(() => {
     receivedRefreshTokens.length = 0; // Clear between tests
     ticketBalanceRefetch.mockClear();
+    mockNavigate.mockClear();
+    mockToast.mockClear();
   });
 
   it("passes refreshToken to EventInteractionsCard on initial render", async () => {
@@ -215,15 +222,14 @@ describe("EventDetails refreshToken wiring (TDD)", () => {
       wallets: [{ address: "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" }],
     } as any);
 
-    const user = userEvent.setup();
     render(<EventDetails />);
 
     await waitFor(() => {
       expect(screen.getByText("Get tickets")).toBeInTheDocument();
     });
 
-    await user.click(screen.getByRole("button", { name: "Get Ticket" }));
-    await user.click(screen.getByRole("button", { name: "simulate purchase success" }));
+    fireEvent.click(screen.getByRole("button", { name: "Get Ticket" }));
+    fireEvent.click(screen.getByRole("button", { name: "simulate purchase success" }));
 
     // This should be invoked by the purchase-success handler.
     expect(ticketBalanceRefetch).toHaveBeenCalledTimes(1);
@@ -249,7 +255,6 @@ describe("EventDetails refreshToken wiring (TDD)", () => {
       wallets: [{ address: "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" }],
     } as any);
 
-    const user = userEvent.setup();
     render(<EventDetails />);
 
     await waitFor(() => {
@@ -265,8 +270,8 @@ describe("EventDetails refreshToken wiring (TDD)", () => {
     expect(attestationCard).toHaveAttribute("data-refresh", "0");
 
     // Trigger purchase success
-    await user.click(screen.getByRole("button", { name: "Get Ticket" }));
-    await user.click(screen.getByRole("button", { name: "simulate purchase success" }));
+    fireEvent.click(screen.getByRole("button", { name: "Get Ticket" }));
+    fireEvent.click(screen.getByRole("button", { name: "simulate purchase success" }));
 
     // After purchase, refreshToken should be 1
     await waitFor(() => {
@@ -307,7 +312,6 @@ describe("EventDetails refreshToken wiring (TDD)", () => {
     // This test verifies the handler respects the increment flag
     // The actual assertion would check that userTicketCount is not optimistically incremented
     // For now, we just verify refetch is still called (for background sync)
-    const user = userEvent.setup();
     render(<EventDetails />);
 
     await waitFor(() => {

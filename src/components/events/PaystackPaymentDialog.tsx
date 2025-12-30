@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { usePrivy, useWallets } from "@privy-io/react-auth";
 import { usePaystackPayment } from "react-paystack";
 import {
@@ -52,9 +52,22 @@ export const PaystackPaymentDialog: React.FC<PaystackPaymentDialogProps> = ({
     wallets[0]?.address || ""
   );
   const [subaccountCode, setSubaccountCode] = useState<string | null>(null);
+  const [reference, setReference] = useState<string>("");
+  const [shouldLaunchPaystack, setShouldLaunchPaystack] = useState(false);
+
+  useEffect(() => {
+    if (isOpen) return;
+    // Parent closed the dialog; reset transient state so reopening works reliably.
+    setIsPaystackOpen(false);
+    setIsLoading(false);
+    setShouldLaunchPaystack(false);
+    setPaymentHandled(false);
+    setSubaccountCode(null);
+    setReference("");
+  }, [isOpen]);
 
   const config = {
-    reference: `TeeRex-${event?.id}-${Date.now()}`,
+    reference: reference || `TeeRex-${event?.id}-${Date.now()}`,
     email: userEmail,
     amount: Math.round((event?.ngn_price || 0) * 100), // Paystack expects amount in kobo
     publicKey: event?.paystack_public_key || "",
@@ -92,7 +105,14 @@ export const PaystackPaymentDialog: React.FC<PaystackPaymentDialogProps> = ({
 
   const initializePayment = usePaystackPayment(config);
 
-  const ensureTransactionRecord = async (): Promise<string | null> => {
+  useEffect(() => {
+    // Prevent z-index conflicts between the shadcn Dialog overlay and Paystack's modal.
+    const dialogElement = document.querySelector('[role="none"]');
+    if (!dialogElement) return;
+    (dialogElement as HTMLElement).style.display = isPaystackOpen ? "none" : "";
+  }, [isPaystackOpen]);
+
+  const ensureTransactionRecord = async (paymentReference: string): Promise<string | null> => {
     if (!event) return null;
     try {
       const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
@@ -102,7 +122,7 @@ export const PaystackPaymentDialog: React.FC<PaystackPaymentDialogProps> = ({
         {
           body: {
             event_id: event.id,
-            reference: config.reference,
+            reference: paymentReference,
             email: userEmail,
             wallet_address: userWalletAddress,
             amount: config.amount,
@@ -170,10 +190,20 @@ export const PaystackPaymentDialog: React.FC<PaystackPaymentDialogProps> = ({
     });
   };
 
+  useEffect(() => {
+    if (!shouldLaunchPaystack) return;
+    initializePayment({
+      onSuccess: handlePaymentSuccess,
+      onClose: handlePaymentClose,
+    });
+    setShouldLaunchPaystack(false);
+    // At this point we've handed off to the Paystack modal, so stop blocking UI.
+    setIsLoading(false);
+  }, [shouldLaunchPaystack, initializePayment, handlePaymentClose, handlePaymentSuccess]);
+
   const handlePayment = async (e?: React.MouseEvent) => {
     e?.preventDefault();
     setPaymentHandled(false);
-    setIsPaystackOpen(true);
     console.log("🚀 [PAYMENT INIT] User clicked Pay button");
     console.log(
       "📋 [PAYMENT INIT] Event:",
@@ -224,32 +254,26 @@ export const PaystackPaymentDialog: React.FC<PaystackPaymentDialogProps> = ({
       "✅ [PAYMENT INIT] Validation passed, launching Paystack modal..."
     );
 
-    // Keep dialog open but hide it to prevent z-index conflicts
-    // This maintains the component lifecycle while avoiding overlay issues
-    const dialogElement = document.querySelector('[role="none"]');
-    if (dialogElement) {
-      (dialogElement as HTMLElement).style.display = "none";
-    }
+    setIsPaystackOpen(true);
 
     console.log("🔄 [PAYMENT INIT] Initializing Paystack payment...");
     setIsLoading(true);
+    const paymentReference = `TeeRex-${event?.id}-${Date.now()}`;
+    setReference(paymentReference);
     // Pre-create transaction and get subaccount code
-    const vendorSubaccount = await ensureTransactionRecord();
+    const vendorSubaccount = await ensureTransactionRecord(paymentReference);
     if (vendorSubaccount) {
       setSubaccountCode(vendorSubaccount);
       console.log("📍 [PAYMENT INIT] Using vendor subaccount:", vendorSubaccount);
     }
-    initializePayment({
-      onSuccess: handlePaymentSuccess,
-      onClose: handlePaymentClose,
-    });
+    setShouldLaunchPaystack(true);
   };
 
   if (!event) return null;
 
   return (
     <Dialog
-      open={isOpen && !isPaystackOpen}
+      open={isOpen}
       onOpenChange={(open) => {
         if (!open) onClose();
       }}

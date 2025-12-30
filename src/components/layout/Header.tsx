@@ -10,7 +10,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { Ticket, Plus, ChevronDown, FileText, Calendar, LogOut, User, Settings, Building2 } from 'lucide-react';
+import { Ticket, Plus, ChevronDown, FileText, Calendar, LogOut, User, Settings, Building2, Gamepad2, ScanLine, ClipboardList } from 'lucide-react';
 import { useIsAdmin } from '@/hooks/useIsAdmin';
 
 export const Header: React.FC = () => {
@@ -31,6 +31,9 @@ export const Header: React.FC = () => {
           <nav className="hidden md:flex items-center gap-8">
             <Link to="/explore" className="text-gray-700 hover:text-gray-900 transition-colors font-medium">
               Explore
+            </Link>
+            <Link to="/gaming-bundles" className="text-gray-700 hover:text-gray-900 transition-colors font-medium">
+              Bundles
             </Link>
             {authenticated && (
               <>
@@ -94,6 +97,30 @@ export const Header: React.FC = () => {
                       <Link to="/vendor/payout-account" className="flex items-center cursor-pointer">
                         <Building2 className="h-4 w-4 mr-2" />
                         Payout Account
+                      </Link>
+                    </DropdownMenuItem>
+                    <DropdownMenuItem asChild>
+                      <Link to="/vendor/gaming-bundles" className="flex items-center cursor-pointer">
+                        <Gamepad2 className="h-4 w-4 mr-2" />
+                        Gaming Bundles
+                      </Link>
+                    </DropdownMenuItem>
+                    <DropdownMenuItem asChild>
+                      <Link to="/vendor/bundles-pos" className="flex items-center cursor-pointer">
+                        <Ticket className="h-4 w-4 mr-2" />
+                        Bundle POS
+                      </Link>
+                    </DropdownMenuItem>
+                    <DropdownMenuItem asChild>
+                      <Link to="/vendor/bundles-redeem" className="flex items-center cursor-pointer">
+                        <ScanLine className="h-4 w-4 mr-2" />
+                        Bundle Redemption
+                      </Link>
+                    </DropdownMenuItem>
+                    <DropdownMenuItem asChild>
+                      <Link to="/vendor/bundles-orders" className="flex items-center cursor-pointer">
+                        <ClipboardList className="h-4 w-4 mr-2" />
+                        Bundle Orders
                       </Link>
                     </DropdownMenuItem>
                     {isAdmin && (
