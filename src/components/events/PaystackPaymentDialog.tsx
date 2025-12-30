@@ -51,6 +51,7 @@ export const PaystackPaymentDialog: React.FC<PaystackPaymentDialogProps> = ({
   const [userWalletAddress, setUserWalletAddress] = useState(
     wallets[0]?.address || ""
   );
+  const [subaccountCode, setSubaccountCode] = useState<string | null>(null);
 
   const config = {
     reference: `TeeRex-${event?.id}-${Date.now()}`,
@@ -58,6 +59,8 @@ export const PaystackPaymentDialog: React.FC<PaystackPaymentDialogProps> = ({
     amount: Math.round((event?.ngn_price || 0) * 100), // Paystack expects amount in kobo
     publicKey: event?.paystack_public_key || "",
     currency: "NGN",
+    // Include subaccount for split payments to vendor
+    ...(subaccountCode && { subaccount: subaccountCode }),
     metadata: {
       lock_address: event?.lock_address || "",
       chain_id: event?.chain_id ?? undefined,
@@ -89,8 +92,8 @@ export const PaystackPaymentDialog: React.FC<PaystackPaymentDialogProps> = ({
 
   const initializePayment = usePaystackPayment(config);
 
-  const ensureTransactionRecord = async () => {
-    if (!event) return;
+  const ensureTransactionRecord = async (): Promise<string | null> => {
+    if (!event) return null;
     try {
       const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
       const accessToken = await getAccessToken?.();
@@ -112,11 +115,20 @@ export const PaystackPaymentDialog: React.FC<PaystackPaymentDialogProps> = ({
       );
       if (error) {
         console.warn("[PAYSTACK INIT] Failed to create transaction record", error?.message);
+        return null;
       } else if (data && !data.ok) {
         console.warn("[PAYSTACK INIT] Failed to create transaction record", data?.error);
+        return null;
       }
+      // Return subaccount_code if vendor has verified payout account
+      if (data?.subaccount_code) {
+        console.log("[PAYSTACK INIT] Vendor has subaccount:", data.subaccount_code);
+        return data.subaccount_code;
+      }
+      return null;
     } catch (e: any) {
       console.warn("[PAYSTACK INIT] Error ensuring transaction record", e?.message || e);
+      return null;
     }
   };
 
@@ -158,7 +170,7 @@ export const PaystackPaymentDialog: React.FC<PaystackPaymentDialogProps> = ({
     });
   };
 
-  const handlePayment = (e?: React.MouseEvent) => {
+  const handlePayment = async (e?: React.MouseEvent) => {
     e?.preventDefault();
     setPaymentHandled(false);
     setIsPaystackOpen(true);
@@ -221,8 +233,12 @@ export const PaystackPaymentDialog: React.FC<PaystackPaymentDialogProps> = ({
 
     console.log("🔄 [PAYMENT INIT] Initializing Paystack payment...");
     setIsLoading(true);
-    // Pre-create transaction so webhook can find it immediately
-    void ensureTransactionRecord();
+    // Pre-create transaction and get subaccount code
+    const vendorSubaccount = await ensureTransactionRecord();
+    if (vendorSubaccount) {
+      setSubaccountCode(vendorSubaccount);
+      console.log("📍 [PAYMENT INIT] Using vendor subaccount:", vendorSubaccount);
+    }
     initializePayment({
       onSuccess: handlePaymentSuccess,
       onClose: handlePaymentClose,

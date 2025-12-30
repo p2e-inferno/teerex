@@ -10,7 +10,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { Ticket, Plus, ChevronDown, FileText, Calendar, LogOut, User, Settings } from 'lucide-react';
+import { Ticket, Plus, ChevronDown, FileText, Calendar, LogOut, User, Settings, Building2 } from 'lucide-react';
 import { useIsAdmin } from '@/hooks/useIsAdmin';
 
 export const Header: React.FC = () => {
@@ -88,6 +88,12 @@ export const Header: React.FC = () => {
                       <Link to="/drafts" className="flex items-center cursor-pointer">
                         <FileText className="h-4 w-4 mr-2" />
                         Drafts
+                      </Link>
+                    </DropdownMenuItem>
+                    <DropdownMenuItem asChild>
+                      <Link to="/vendor/payout-account" className="flex items-center cursor-pointer">
+                        <Building2 className="h-4 w-4 mr-2" />
+                        Payout Account
                       </Link>
                     </DropdownMenuItem>
                     {isAdmin && (

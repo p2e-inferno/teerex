@@ -31,14 +31,32 @@ serve(async (req) => {
       return new Response(JSON.stringify({ error: 'Missing required fields: event_id, reference, email, wallet_address' }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 400 });
     }
 
-    // Validate event exists
+    // Validate event exists and get creator info
     const { data: ev, error: evErr } = await supabase
       .from('events')
-      .select('id, paystack_public_key')
+      .select('id, paystack_public_key, creator_id')
       .eq('id', eventId)
       .maybeSingle();
     if (evErr || !ev) {
       return new Response(JSON.stringify({ error: 'Event not found' }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 404 });
+    }
+
+    // Fetch vendor's verified payout account for subaccount routing
+    let subaccountCode: string | null = null;
+    let payoutAccountId: string | null = null;
+    if (ev.creator_id) {
+      const { data: vendorPayoutAccount } = await supabase
+        .from('vendor_payout_accounts')
+        .select('id, provider_account_code')
+        .eq('vendor_id', ev.creator_id)
+        .eq('provider', 'paystack')
+        .eq('status', 'verified')
+        .maybeSingle();
+
+      if (vendorPayoutAccount?.provider_account_code) {
+        subaccountCode = vendorPayoutAccount.provider_account_code;
+        payoutAccountId = vendorPayoutAccount.id;
+      }
     }
 
     const normalizedEmail = normalizeEmail(email);
@@ -52,9 +70,11 @@ serve(async (req) => {
       reference,
       currency: 'NGN',
       status: 'pending',
+      payout_account_id: payoutAccountId, // Link to vendor's payout account
       gateway_response: {
         reference,
         status: 'initialized',
+        subaccount_code: subaccountCode, // Store for reference
         metadata: {
           custom_fields: [
             { display_name: 'Wallet Address', variable_name: 'user_wallet_address', value: walletAddress },
@@ -73,7 +93,11 @@ serve(async (req) => {
       return new Response(JSON.stringify({ error: error.message }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 400 });
     }
 
-    return new Response(JSON.stringify({ ok: true }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 200 });
+    // Return subaccount_code for frontend to pass to Paystack
+    return new Response(JSON.stringify({
+      ok: true,
+      subaccount_code: subaccountCode, // Frontend uses this in Paystack config
+    }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 200 });
   } catch (e: any) {
     return new Response(JSON.stringify({ error: e?.message || 'Internal error' }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 200 });
   }

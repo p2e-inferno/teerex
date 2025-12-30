@@ -39,6 +39,15 @@ afterEach(() => {
 
 afterAll(() => server.close());
 
+// Mock Deno global for Edge Function shared utils compatibility
+(global as any).Deno = {
+  env: {
+    get: (key: string) => process.env[key],
+    toObject: () => process.env,
+  },
+};
+
+
 vi.mock("@privy-io/react-auth", async () => {
   const React = await import("react");
   return {
@@ -62,9 +71,13 @@ vi.mock("@/integrations/supabase/client", async () => {
     // Call through to the current global fetch (MSW patches this in beforeAll)
     globalThis.fetch(...args);
 
-  const supabase = createClient("http://localhost:54321", "test-anon-key", {
-    global: { fetch: fetchProxy },
-  });
+  const supabase = createClient(
+    import.meta.env.VITE_SUPABASE_URL || "http://localhost:54321",
+    "test-anon-key",
+    {
+      global: { fetch: fetchProxy },
+    }
+  );
   return { supabase };
 });
 
