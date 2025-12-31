@@ -26,7 +26,10 @@ import AdminServiceAccount from "./pages/AdminServiceAccount";
 import AdminAnalytics from "./pages/AdminAnalytics";
 import AdminPayoutAccounts from "./pages/AdminPayoutAccounts";
 import AdminRoute from "./components/routes/AdminRoute";
+import VendorRoute from "./components/routes/VendorRoute";
 import VendorPayoutAccount from "./pages/VendorPayoutAccount";
+import BecomeVendor from "./pages/BecomeVendor";
+import AdminVendorLock from "./pages/AdminVendorLock";
 import VendorGamingBundles from "./pages/VendorGamingBundles";
 import GamingBundlePOS from "./pages/GamingBundlePOS";
 import GamingBundleRedemption from "./pages/GamingBundleRedemption";
@@ -65,11 +68,13 @@ const App = () => {
                 <Route path="/admin/service-account" element={<AdminRoute><AdminServiceAccount /></AdminRoute>} />
                 <Route path="/admin/analytics" element={<AdminRoute><AdminAnalytics /></AdminRoute>} />
                 <Route path="/admin/payout-accounts" element={<AdminRoute><AdminPayoutAccounts /></AdminRoute>} />
-                <Route path="/vendor/payout-account" element={<VendorPayoutAccount />} />
-                <Route path="/vendor/gaming-bundles" element={<VendorGamingBundles />} />
-                <Route path="/vendor/bundles-pos" element={<GamingBundlePOS />} />
-                <Route path="/vendor/bundles-redeem" element={<GamingBundleRedemption />} />
-                <Route path="/vendor/bundles-orders" element={<VendorGamingBundleOrders />} />
+                <Route path="/admin/vendor-lock" element={<AdminRoute><AdminVendorLock /></AdminRoute>} />
+                <Route path="/become-vendor" element={<BecomeVendor />} />
+                <Route path="/vendor/payout-account" element={<VendorRoute><VendorPayoutAccount /></VendorRoute>} />
+                <Route path="/vendor/gaming-bundles" element={<VendorRoute><VendorGamingBundles /></VendorRoute>} />
+                <Route path="/vendor/bundles-pos" element={<VendorRoute><GamingBundlePOS /></VendorRoute>} />
+                <Route path="/vendor/bundles-redeem" element={<VendorRoute><GamingBundleRedemption /></VendorRoute>} />
+                <Route path="/vendor/bundles-orders" element={<VendorRoute><VendorGamingBundleOrders /></VendorRoute>} />
                 <Route path="/gaming-bundles/claim" element={<GamingBundleClaim />} />
                 <Route path="/gaming-bundles/:id" element={<GamingBundleDetails />} />
                 <Route path="/event/:id" element={<EventDetails />} />

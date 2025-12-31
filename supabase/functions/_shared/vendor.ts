@@ -19,8 +19,26 @@ export async function requireVendor(req: Request): Promise<VendorAuthResult> {
   const vendorId = await verifyPrivyToken(req.headers.get("X-Privy-Authorization"));
   const vendorWallets = await getUserWalletAddresses(vendorId);
 
-  const vendorLockAddress = Deno.env.get("VENDOR_LOCK_ADDRESS");
-  const vendorLockChainId = Number(Deno.env.get("VENDOR_LOCK_CHAIN_ID") || DEFAULT_VENDOR_CHAIN_ID);
+  // Try DB first, fallback to environment variable (backward compatibility)
+  const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+  const { data: vendorLockSettings } = await supabase
+    .from("vendor_lock_settings")
+    .select("lock_address, chain_id")
+    .eq("is_active", true)
+    .maybeSingle();
+
+  let vendorLockAddress: string | undefined;
+  let vendorLockChainId: number;
+
+  if (vendorLockSettings) {
+    // Use DB config (new behavior)
+    vendorLockAddress = vendorLockSettings.lock_address;
+    vendorLockChainId = vendorLockSettings.chain_id;
+  } else {
+    // Fallback to environment variable (backward compatibility)
+    vendorLockAddress = Deno.env.get("VENDOR_LOCK_ADDRESS");
+    vendorLockChainId = Number(Deno.env.get("VENDOR_LOCK_CHAIN_ID") || DEFAULT_VENDOR_CHAIN_ID);
+  }
 
   if (!vendorLockAddress) {
     throw new Error("vendor_lock_not_configured");
@@ -30,7 +48,6 @@ export async function requireVendor(req: Request): Promise<VendorAuthResult> {
     throw new Error("vendor_no_wallets");
   }
 
-  const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
   const networkConfig = await validateChain(supabase, vendorLockChainId);
   if (!networkConfig?.rpc_url) {
     throw new Error("vendor_lock_chain_not_configured");

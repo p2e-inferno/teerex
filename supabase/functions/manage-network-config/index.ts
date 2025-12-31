@@ -3,7 +3,7 @@ import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.50.0";
 import { corsHeaders, buildPreflightHeaders } from "../_shared/cors.ts";
 import { verifyPrivyToken, getUserWalletAddresses } from "../_shared/privy.ts";
-import { isAnyUserWalletIsLockManagerParallel } from "../_shared/unlock.ts";
+import { isAnyUserWalletHasValidKeyParallel } from "../_shared/unlock.ts";
 import { SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY } from "../_shared/constants.ts";
 import { validateChain } from "../_shared/network-helpers.ts";
 
@@ -29,6 +29,7 @@ async function verifyAdminAccess(privyUserId: string): Promise<void> {
   }
 
   const userWallets = await getUserWalletAddresses(privyUserId);
+
   if (!userWallets || userWallets.length === 0) {
     throw new Error("No wallets found for user");
   }
@@ -40,21 +41,25 @@ async function verifyAdminAccess(privyUserId: string): Promise<void> {
   // Get RPC URL from network configs
   const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
   const networkConfig = await validateChain(supabase, primaryChainId);
+
   if (!networkConfig?.rpc_url) {
     throw new Error("Network RPC not configured");
   }
   const rpcUrl = networkConfig.rpc_url;
 
-  // Check if any user wallet is admin (parallel)
-  const { anyIsManager } = await isAnyUserWalletIsLockManagerParallel(
+  // Check if any user wallet has a valid key to the admin lock (parallel)
+  const { anyHasKey } = await isAnyUserWalletHasValidKeyParallel(
     ADMIN_LOCK_ADDRESS,
     userWallets,
     rpcUrl
   );
 
-  if (anyIsManager) return; // Authorized
+  if (anyHasKey) {
+    return; // Authorized
+  }
 
-  throw new Error("Unauthorized: Admin access required");
+  const walletInfo = userWallets[0] ? ` Your wallet: ${userWallets[0]}` : '';
+  throw new Error(`Unauthorized: Admin access required.${walletInfo}`);
 }
 
 function validateNetworkConfig(input: any): NetworkConfigInput {
@@ -129,14 +134,12 @@ serve(async (req) => {
     // 2. Verify admin access
     await verifyAdminAccess(privyUserId);
 
-    // 3. Parse and validate request
-    const url = new URL(req.url);
-    const action = url.pathname.split('/').pop(); // get, create, update, delete
-
+    // 3. Handle request based on HTTP method
+    const method = req.method;
     const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
-    switch (action) {
-      case 'get': {
+    switch (method) {
+      case 'GET': {
         const networks = await supabase
           .from('network_configs')
           .select('*')
@@ -150,7 +153,7 @@ serve(async (req) => {
         );
       }
 
-      case 'create': {
+      case 'POST': {
         const body = await req.json();
         const validatedData = validateNetworkConfig(body);
 
@@ -168,7 +171,7 @@ serve(async (req) => {
         );
       }
 
-      case 'update': {
+      case 'PUT': {
         const body = await req.json();
         const { id, ...updateData } = body;
 
@@ -193,7 +196,7 @@ serve(async (req) => {
         );
       }
 
-      case 'delete': {
+      case 'DELETE': {
         const body = await req.json();
         const { id } = body;
 
@@ -215,7 +218,7 @@ serve(async (req) => {
       }
 
       default:
-        throw new Error('Invalid action');
+        throw new Error(`Method ${method} not allowed`);
     }
 
   } catch (error) {

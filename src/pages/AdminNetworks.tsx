@@ -80,7 +80,8 @@ const AdminNetworks: React.FC = () => {
       const token = await getAccessToken?.();
       const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
 
-      const { data, error } = await supabase.functions.invoke('manage-network-config/get', {
+      const { data, error } = await supabase.functions.invoke('manage-network-config', {
+        method: 'GET',
         headers: {
           Authorization: `Bearer ${anonKey}`,
           'X-Privy-Authorization': `Bearer ${token}`,
@@ -134,7 +135,8 @@ const AdminNetworks: React.FC = () => {
 
       if (editingNetwork) {
         // Update existing network
-        const { data, error } = await supabase.functions.invoke('manage-network-config/update', {
+        const { data, error } = await supabase.functions.invoke('manage-network-config', {
+          method: 'PUT',
           body: { id: editingNetwork.id, ...payload },
           headers: {
             Authorization: `Bearer ${anonKey}`,
@@ -155,7 +157,8 @@ const AdminNetworks: React.FC = () => {
         });
       } else {
         // Create new network
-        const { data, error } = await supabase.functions.invoke('manage-network-config/create', {
+        const { data, error } = await supabase.functions.invoke('manage-network-config', {
+          method: 'POST',
           body: payload,
           headers: {
             Authorization: `Bearer ${anonKey}`,
@@ -222,7 +225,8 @@ const AdminNetworks: React.FC = () => {
       const token = await getAccessToken?.();
       const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
 
-      const { data, error } = await supabase.functions.invoke('manage-network-config/delete', {
+      const { data, error } = await supabase.functions.invoke('manage-network-config', {
+        method: 'DELETE',
         body: { id: network.id },
         headers: {
           Authorization: `Bearer ${anonKey}`,
@@ -258,7 +262,8 @@ const AdminNetworks: React.FC = () => {
       const token = await getAccessToken?.();
       const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
 
-      const { data, error } = await supabase.functions.invoke('manage-network-config/update', {
+      const { data, error } = await supabase.functions.invoke('manage-network-config', {
+        method: 'PUT',
         body: {
           id: network.id,
           chain_id: network.chain_id,
