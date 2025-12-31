@@ -10,12 +10,14 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { Ticket, Plus, ChevronDown, FileText, Calendar, LogOut, User, Settings, Building2, Gamepad2, ScanLine, ClipboardList } from 'lucide-react';
+import { Ticket, Plus, ChevronDown, FileText, Calendar, LogOut, User, Settings, Building2, Gamepad2, ScanLine, ClipboardList, Lock, Shield } from 'lucide-react';
 import { useIsAdmin } from '@/hooks/useIsAdmin';
+import { useIsVendor } from '@/hooks/useIsVendor';
 
 export const Header: React.FC = () => {
   const { authenticated, logout, login } = usePrivy();
   const { isAdmin } = useIsAdmin();
+  const { isVendor, loading: vendorLoading } = useIsVendor();
 
   return (
     <header className="border-b border-gray-200 bg-white/80 backdrop-blur-xl supports-[backdrop-filter]:bg-white/60 sticky top-0 z-50">
@@ -123,13 +125,33 @@ export const Header: React.FC = () => {
                         Bundle Orders
                       </Link>
                     </DropdownMenuItem>
+                    {authenticated && !isVendor && !vendorLoading && (
+                      <>
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem asChild>
+                          <Link to="/become-vendor" className="flex items-center cursor-pointer text-purple-600">
+                            <Shield className="h-4 w-4 mr-2" />
+                            Become a Vendor
+                          </Link>
+                        </DropdownMenuItem>
+                      </>
+                    )}
                     {isAdmin && (
-                      <DropdownMenuItem asChild>
-                        <Link to="/admin" className="flex items-center cursor-pointer">
-                          <Settings className="h-4 w-4 mr-2" />
-                          Admin
-                        </Link>
-                      </DropdownMenuItem>
+                      <>
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem asChild>
+                          <Link to="/admin" className="flex items-center cursor-pointer">
+                            <Settings className="h-4 w-4 mr-2" />
+                            Admin Dashboard
+                          </Link>
+                        </DropdownMenuItem>
+                        <DropdownMenuItem asChild>
+                          <Link to="/admin/vendor-lock" className="flex items-center cursor-pointer">
+                            <Lock className="h-4 w-4 mr-2" />
+                            Vendor Lock Settings
+                          </Link>
+                        </DropdownMenuItem>
+                      </>
                     )}
                     <DropdownMenuSeparator />
                     <DropdownMenuItem onClick={logout} className="flex items-center cursor-pointer text-red-600 focus:text-red-600">

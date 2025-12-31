@@ -1706,6 +1706,122 @@ export type Database = {
         }
         Relationships: []
       }
+      vendor_lock_purchases: {
+        Row: {
+          chain_id: number
+          created_at: string
+          currency: string | null
+          id: string
+          lock_address: string
+          price_paid_wei: string | null
+          purchase_timestamp: string
+          purchaser_id: string
+          tx_hash: string
+          vendor_lock_id: string
+          wallet_address: string
+        }
+        Insert: {
+          chain_id: number
+          created_at?: string
+          currency?: string | null
+          id?: string
+          lock_address: string
+          price_paid_wei?: string | null
+          purchase_timestamp?: string
+          purchaser_id: string
+          tx_hash: string
+          vendor_lock_id: string
+          wallet_address: string
+        }
+        Update: {
+          chain_id?: number
+          created_at?: string
+          currency?: string | null
+          id?: string
+          lock_address?: string
+          price_paid_wei?: string | null
+          purchase_timestamp?: string
+          purchaser_id?: string
+          tx_hash?: string
+          vendor_lock_id?: string
+          wallet_address?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "vendor_lock_purchases_vendor_lock_id_fkey"
+            columns: ["vendor_lock_id"]
+            isOneToOne: false
+            referencedRelation: "vendor_lock_settings"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      vendor_lock_settings: {
+        Row: {
+          benefits: Json | null
+          chain_id: number
+          created_at: string
+          created_by: string | null
+          currency: string
+          currency_address: string
+          description: string | null
+          expiration_duration_seconds: number | null
+          id: string
+          image_url: string | null
+          is_active: boolean
+          is_transferable: boolean
+          key_price_display: number
+          key_price_wei: string
+          lock_address: string
+          lock_name: string
+          lock_symbol: string | null
+          max_keys_per_address: number | null
+          updated_at: string
+        }
+        Insert: {
+          benefits?: Json | null
+          chain_id: number
+          created_at?: string
+          created_by?: string | null
+          currency: string
+          currency_address: string
+          description?: string | null
+          expiration_duration_seconds?: number | null
+          id?: string
+          image_url?: string | null
+          is_active?: boolean
+          is_transferable?: boolean
+          key_price_display: number
+          key_price_wei: string
+          lock_address: string
+          lock_name: string
+          lock_symbol?: string | null
+          max_keys_per_address?: number | null
+          updated_at?: string
+        }
+        Update: {
+          benefits?: Json | null
+          chain_id?: number
+          created_at?: string
+          created_by?: string | null
+          currency?: string
+          currency_address?: string
+          description?: string | null
+          expiration_duration_seconds?: number | null
+          id?: string
+          image_url?: string | null
+          is_active?: boolean
+          is_transferable?: boolean
+          key_price_display?: number
+          key_price_wei?: string
+          lock_address?: string
+          lock_name?: string
+          lock_symbol?: string | null
+          max_keys_per_address?: number | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
       vendor_payout_accounts: {
         Row: {
           account_holder_name: string | null

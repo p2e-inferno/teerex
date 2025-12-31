@@ -19,7 +19,11 @@
       "Bash(npm run typecheck:*)",
       "Bash(grep:*)",
       "Bash(find:*)",
-      "Bash(npm run lint:*)"
+      "Bash(npm run lint:*)",
+      "Bash(npx supabase migration:*)",
+      "Bash(npx supabase:*)",
+      "Bash(cat:*)",
+      "Bash(curl:*)"
     ],
     "deny": [],
     "ask": []

@@ -1058,3 +1058,78 @@ export const updateLockTransferability = async (
     return { success: false, error: errorMessage };
   }
 };
+
+/**
+ * Get current key price from a lock contract
+ * Used to sync price with vendor lock settings
+ *
+ * @param lockAddress - Lock contract address
+ * @param chainId - Blockchain chain ID
+ * @returns Key price in wei as string
+ */
+export async function getKeyPrice(
+  lockAddress: string,
+  chainId: number
+): Promise<string> {
+  try {
+    const rpcUrl = getRpcUrl(chainId);
+    const provider = new ethers.JsonRpcProvider(rpcUrl);
+    const lock = new ethers.Contract(lockAddress, PublicLockABI, provider);
+    const price = await lock.keyPrice();
+    return price.toString();
+  } catch (error) {
+    console.error('[getKeyPrice] Error fetching key price:', error);
+    throw error;
+  }
+}
+
+/**
+ * Update key price on a lock contract (requires lock manager permissions)
+ * Used by admin to update vendor lock pricing
+ *
+ * @param lockAddress - Lock contract address
+ * @param newPriceWei - New price in wei (as string)
+ * @param signer - Ethers signer with lock manager permissions
+ * @returns Success status and transaction hash or error
+ */
+export async function updateKeyPrice(
+  lockAddress: string,
+  newPriceWei: string,
+  signer: ethers.Signer
+): Promise<{ success: boolean; txHash?: string; error?: string }> {
+  try {
+    const lock = new ethers.Contract(lockAddress, PublicLockABI, signer);
+
+    // updateKeyPricing(newKeyPrice, tokenAddress)
+    // Using 0x0 for tokenAddress maintains current token
+    const tx = await lock.updateKeyPricing(
+      newPriceWei,
+      '0x0000000000000000000000000000000000000000'
+    );
+
+    const receipt = await tx.wait();
+
+    if (!receipt || receipt.status === 0) {
+      throw new Error('Transaction failed while updating key price');
+    }
+
+    return { success: true, txHash: receipt.hash };
+  } catch (error) {
+    console.error('[updateKeyPrice] Error:', error);
+
+    let errorMessage = 'Failed to update key price';
+    if (error instanceof Error) {
+      if (error.message.toLowerCase().includes('user rejected')) {
+        errorMessage = 'Transaction was cancelled';
+      } else if (error.message.toLowerCase().includes('insufficient funds')) {
+        errorMessage = 'Insufficient funds for transaction';
+      } else if (error.message.toLowerCase().includes('not lock manager')) {
+        errorMessage = 'Only lock manager can update price';
+      } else {
+        errorMessage = error.message;
+      }
+    }
+
+    return { success: false, error: errorMessage };
+  }
+}
