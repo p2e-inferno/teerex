@@ -38,6 +38,7 @@ serve(async (req) => {
     const bundleAddress = String(body.bundle_address || "").trim().toLowerCase();
     const imageUrl = body.image_url ? String(body.image_url).trim() : null;
     const keyExpirationDurationSeconds = Number(body.key_expiration_duration_seconds || DEFAULT_EXPIRATION_SECONDS);
+    const metadataSet = body.metadata_set !== undefined ? Boolean(body.metadata_set) : false;
     const isActive = body.is_active !== undefined ? Boolean(body.is_active) : true;
 
     if (!title || !description || !bundleType || !unitLabel || !location) {
@@ -89,6 +90,7 @@ serve(async (req) => {
         bundle_address: bundleAddress,
         key_expiration_duration_seconds: keyExpirationDurationSeconds,
         image_url: imageUrl,
+        metadata_set: metadataSet,
         is_active: isActive,
       })
       .select("*")

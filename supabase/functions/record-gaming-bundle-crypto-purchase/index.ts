@@ -88,7 +88,33 @@ serve(async (req) => {
       });
     }
 
-    return new Response(JSON.stringify({ ok: true, order }), {
+    // Query token ID from transaction receipt
+    let tokenId: string | null = null;
+    try {
+      const { JsonRpcProvider } = await import("https://esm.sh/ethers@6.14.4");
+      const { getRpcUrl } = await import("../_shared/network-helpers.ts");
+      const { getTokenIdFromTxHash } = await import("../_shared/nft-helpers.ts");
+
+      const rpcUrl = await getRpcUrl(supabase, bundle.chain_id);
+      if (rpcUrl) {
+        const provider = new JsonRpcProvider(rpcUrl);
+        tokenId = await getTokenIdFromTxHash(txHash, provider, bundle.bundle_address, walletAddress);
+
+        if (tokenId) {
+          console.log(`[CRYPTO PURCHASE] Extracted token ID: ${tokenId}`);
+          // Update order with token ID
+          await supabase
+            .from("gaming_bundle_orders")
+            .update({ token_id: tokenId })
+            .eq("id", order.id);
+        }
+      }
+    } catch (error: any) {
+      console.warn(`[CRYPTO PURCHASE] Failed to extract token ID:`, error.message || error);
+      // Don't fail the entire request if token ID extraction fails
+    }
+
+    return new Response(JSON.stringify({ ok: true, order: { ...order, token_id: tokenId } }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
       status: 200,
     });

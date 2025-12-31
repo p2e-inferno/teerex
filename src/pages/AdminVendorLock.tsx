@@ -11,6 +11,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { useToast } from '@/hooks/use-toast';
 import { Loader2, Plus, Edit, Trash2, Lock, CheckCircle, AlertTriangle, RefreshCw, ExternalLink } from 'lucide-react';
 import { usePrivy } from '@privy-io/react-auth';
+import { ImageCropper } from '@/components/ui/ImageCropper';
+import { uploadEventImage } from '@/utils/supabaseDraftStorage';
+import { ImageUploadField } from '@/components/ui/ImageUploadField';
 
 interface VendorLockSettings {
   id: string;
@@ -48,7 +51,7 @@ interface EditLockFormData {
 }
 
 const AdminVendorLock: React.FC = () => {
-  const { getAccessToken } = usePrivy();
+  const { getAccessToken, user, authenticated } = usePrivy();
   const { toast } = useToast();
   const [currentLock, setCurrentLock] = useState<VendorLockSettings | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -59,6 +62,13 @@ const AdminVendorLock: React.FC = () => {
   const [purchaseCount, setPurchaseCount] = useState<number>(0);
   const [onChainPrice, setOnChainPrice] = useState<string | null>(null);
   const [isSyncing, setIsSyncing] = useState(false);
+
+  // Image upload state
+  const [previewUrl, setPreviewUrl] = useState('');
+  const [displayImageUrl, setDisplayImageUrl] = useState('');
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [showCropper, setShowCropper] = useState(false);
+  const [isUploading, setIsUploading] = useState(false);
 
   const [createFormData, setCreateFormData] = useState<CreateLockFormData>({
     lock_address: '',
@@ -125,6 +135,184 @@ const AdminVendorLock: React.FC = () => {
     loadCurrentLock();
   }, []);
 
+  // Cleanup blob URLs on unmount
+  useEffect(() => {
+    return () => {
+      if (previewUrl) {
+        URL.revokeObjectURL(previewUrl);
+      }
+    };
+  }, [previewUrl]);
+
+  const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+
+    if (!authenticated || !user?.id) {
+      toast({
+        title: "Authentication Required",
+        description: "Please make sure you're logged in to upload images.",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    if (file) {
+      // Check file size (5MB limit)
+      if (file.size > 5 * 1024 * 1024) {
+        toast({
+          title: "File Too Large",
+          description: "Please select an image smaller than 5MB.",
+          variant: "destructive"
+        });
+        return;
+      }
+
+      // Check file type
+      if (!file.type.startsWith('image/')) {
+        toast({
+          title: "Invalid File Type",
+          description: "Please select an image file.",
+          variant: "destructive"
+        });
+        return;
+      }
+
+      // Create preview URL and show cropper
+      const url = URL.createObjectURL(file);
+      setPreviewUrl(url);
+      setSelectedFile(file);
+      setShowCropper(true);
+    }
+  };
+
+  const handleCropComplete = async (croppedFile: File) => {
+    if (!user?.id) return;
+
+    setShowCropper(false);
+    setIsUploading(true);
+
+    // Create blob URL for immediate preview
+    const croppedBlobUrl = URL.createObjectURL(croppedFile);
+    setDisplayImageUrl(croppedBlobUrl);
+
+    try {
+      console.log('Starting cropped image upload for user:', user.id);
+      console.log('Cropped file details:', {
+        name: croppedFile.name,
+        size: croppedFile.size,
+        type: croppedFile.type
+      });
+
+      const imageUrl = await uploadEventImage(croppedFile, user.id);
+
+      if (imageUrl) {
+        // Update form data based on which dialog is open
+        if (createDialogOpen) {
+          setCreateFormData({ ...createFormData, image_url: imageUrl });
+        } else if (editDialogOpen) {
+          setEditFormData({ ...editFormData, image_url: imageUrl });
+        }
+
+        console.log('Cropped image uploaded successfully, preloading remote URL:', imageUrl);
+
+        // Preload remote URL before switching display
+        const img = new Image();
+        img.onload = () => {
+          console.log('Remote URL loaded successfully, switching from blob to remote');
+          setDisplayImageUrl(imageUrl); // Switch to remote
+
+          // Now safe to clean up blob URLs
+          URL.revokeObjectURL(croppedBlobUrl);
+          if (previewUrl) {
+            URL.revokeObjectURL(previewUrl);
+            setPreviewUrl('');
+          }
+        };
+        img.onerror = () => {
+          console.warn('Remote URL failed to load, keeping local blob preview');
+          toast({
+            title: "Image Upload Warning",
+            description: "Image uploaded but preview may be delayed. It will appear after saving.",
+            variant: "default"
+          });
+          // Keep blob preview visible since remote failed
+        };
+        img.src = imageUrl;
+
+        toast({
+          title: "Image Uploaded",
+          description: "Your vendor lock image has been cropped and uploaded successfully.",
+        });
+      } else {
+        // Upload returned null/empty
+        console.error('Upload failed: no URL returned');
+        toast({
+          title: "Upload Failed",
+          description: "Could not upload image to storage. Please check your connection and try again.",
+          variant: "destructive"
+        });
+
+        // Revert to no image
+        setDisplayImageUrl('');
+        URL.revokeObjectURL(croppedBlobUrl);
+        if (previewUrl) {
+          URL.revokeObjectURL(previewUrl);
+          setPreviewUrl('');
+        }
+      }
+    } catch (error) {
+      console.error('Error uploading image:', error);
+
+      const errorMessage = error instanceof Error
+        ? error.message
+        : "An unknown error occurred";
+
+      toast({
+        title: "Upload Error",
+        description: errorMessage,
+        variant: "destructive"
+      });
+
+      // Clean up blob URLs on error
+      setDisplayImageUrl('');
+      URL.revokeObjectURL(croppedBlobUrl);
+      if (previewUrl) {
+        URL.revokeObjectURL(previewUrl);
+        setPreviewUrl('');
+      }
+    } finally {
+      setIsUploading(false);
+    }
+  };
+
+  const removeImage = () => {
+    // Update form data based on which dialog is open
+    if (createDialogOpen) {
+      setCreateFormData({ ...createFormData, image_url: '' });
+    } else if (editDialogOpen) {
+      setEditFormData({ ...editFormData, image_url: '' });
+    }
+
+    setDisplayImageUrl('');
+
+    // Clean up any blob URLs
+    if (previewUrl) {
+      URL.revokeObjectURL(previewUrl);
+      setPreviewUrl('');
+    }
+    if (displayImageUrl && displayImageUrl.startsWith('blob:')) {
+      URL.revokeObjectURL(displayImageUrl);
+    }
+  };
+
+  const handleAdjustCrop = () => {
+    if (displayImageUrl) {
+      setPreviewUrl(displayImageUrl);
+      setSelectedFile(new File([], 'existing-image.jpg')); // Dummy file to indicate we're re-cropping
+      setShowCropper(true);
+    }
+  };
+
   // Update edit form when current lock changes
   useEffect(() => {
     if (currentLock) {
@@ -133,8 +321,28 @@ const AdminVendorLock: React.FC = () => {
         image_url: currentLock.image_url || '',
         benefits: currentLock.benefits || [],
       });
+      // Set display image URL when editing existing lock
+      if (currentLock.image_url) {
+        setDisplayImageUrl(currentLock.image_url);
+      }
     }
   }, [currentLock]);
+
+  // Reset display image when dialogs are closed
+  useEffect(() => {
+    if (!createDialogOpen && !editDialogOpen) {
+      setDisplayImageUrl('');
+      setSelectedFile(null);
+      setShowCropper(false);
+      if (previewUrl) {
+        URL.revokeObjectURL(previewUrl);
+        setPreviewUrl('');
+      }
+    } else if (editDialogOpen && currentLock?.image_url) {
+      // Re-initialize display image when opening edit dialog
+      setDisplayImageUrl(currentLock.image_url);
+    }
+  }, [createDialogOpen, editDialogOpen, currentLock, previewUrl]);
 
   const handleCreateLock = async () => {
     if (!createFormData.lock_address || !createFormData.chain_id) {
@@ -401,15 +609,17 @@ const AdminVendorLock: React.FC = () => {
                   rows={3}
                 />
               </div>
-              <div>
-                <Label htmlFor="image_url">Image URL</Label>
-                <Input
-                  id="image_url"
-                  value={createFormData.image_url}
-                  onChange={(e) => setCreateFormData({ ...createFormData, image_url: e.target.value })}
-                  placeholder="https://..."
-                />
-              </div>
+              <ImageUploadField
+                imageUrl={displayImageUrl}
+                isUploading={isUploading}
+                authenticated={authenticated}
+                onFileSelect={handleFileUpload}
+                onRemove={removeImage}
+                onAdjustCrop={handleAdjustCrop}
+                label="Vendor Lock Image"
+                helperText="Recommended: Square format (1:1 aspect ratio)"
+                previewAlt="Vendor lock preview"
+              />
               <div>
                 <Label>Benefits</Label>
                 <div className="space-y-2">
@@ -445,6 +655,22 @@ const AdminVendorLock: React.FC = () => {
           </DialogContent>
         </Dialog>
       </div>
+
+      {/* Image Cropper Modal */}
+      {showCropper && previewUrl && (
+        <ImageCropper
+          imageUrl={previewUrl}
+          isOpen={showCropper}
+          onClose={() => {
+            setShowCropper(false);
+            setSelectedFile(null);
+            URL.revokeObjectURL(previewUrl);
+            setPreviewUrl('');
+          }}
+          onCropComplete={handleCropComplete}
+          fileName={selectedFile?.name || 'vendor-lock-image.jpg'}
+        />
+      )}
 
       {currentLock ? (
         <div className="space-y-6">
@@ -563,14 +789,17 @@ const AdminVendorLock: React.FC = () => {
                           rows={3}
                         />
                       </div>
-                      <div>
-                        <Label htmlFor="edit_image_url">Image URL</Label>
-                        <Input
-                          id="edit_image_url"
-                          value={editFormData.image_url}
-                          onChange={(e) => setEditFormData({ ...editFormData, image_url: e.target.value })}
-                        />
-                      </div>
+                      <ImageUploadField
+                        imageUrl={displayImageUrl}
+                        isUploading={isUploading}
+                        authenticated={authenticated}
+                        onFileSelect={handleFileUpload}
+                        onRemove={removeImage}
+                        onAdjustCrop={handleAdjustCrop}
+                        label="Vendor Lock Image"
+                        helperText="Recommended: Square format (1:1 aspect ratio)"
+                        previewAlt="Vendor lock preview"
+                      />
                       <div>
                         <Label>Benefits</Label>
                         <div className="space-y-2">

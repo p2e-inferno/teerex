@@ -28,8 +28,8 @@ serve(async (req) => {
     const consoleFilter = body.console || url.searchParams.get("console");
     const locationFilter = body.location || url.searchParams.get("location");
     const search = body.q || url.searchParams.get("q");
-    const limit = Math.min(Number(body.limit ?? url.searchParams.get("limit") || 50), 200);
-    const offset = Math.max(Number(body.offset ?? url.searchParams.get("offset") || 0), 0);
+    const limit = Math.min(Number((body.limit ?? url.searchParams.get("limit")) || 50), 200);
+    const offset = Math.max(Number((body.offset ?? url.searchParams.get("offset")) || 0), 0);
 
     const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 

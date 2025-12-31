@@ -34,11 +34,21 @@ serve(async (req) => {
     const body = await req.json().catch(() => ({}));
     const orderId = body.order_id || body.orderId;
     const claimCode = body.claim_code || body.claimCode;
+    const tokenId = body.token_id || body.tokenId;
+    const bundleAddress = body.bundle_address || body.bundleAddress;
     const redeemerAddress = body.redeemer_address ? String(body.redeemer_address).trim().toLowerCase() : null;
     const redemptionLocation = body.redemption_location ? String(body.redemption_location).trim() : null;
 
-    if (!orderId && !claimCode) {
-      return new Response(JSON.stringify({ ok: false, error: "order_id or claim_code is required" }), {
+    if (!orderId && !claimCode && !tokenId) {
+      return new Response(JSON.stringify({ ok: false, error: "order_id, claim_code, or token_id is required" }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        status: 400,
+      });
+    }
+
+    // Validate token_id format if provided
+    if (tokenId && !/^\d+$/.test(String(tokenId))) {
+      return new Response(JSON.stringify({ ok: false, error: "Invalid token_id format (must be numeric)" }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
         status: 400,
       });
@@ -51,6 +61,12 @@ serve(async (req) => {
 
     if (orderId) {
       orderQuery = orderQuery.eq("id", orderId);
+    } else if (tokenId) {
+      // Use bundle_address (Web3 primitive) to avoid token_id ambiguity across different bundles
+      orderQuery = orderQuery.eq("token_id", tokenId);
+      if (bundleAddress) {
+        orderQuery = orderQuery.eq("bundle_address", String(bundleAddress).trim().toLowerCase());
+      }
     } else {
       const normalized = normalizeClaimCode(String(claimCode));
       const hash = await sha256Hex(normalized);

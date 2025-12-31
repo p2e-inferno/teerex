@@ -4,7 +4,8 @@ import { ethers } from "https://esm.sh/ethers@6.14.4";
 import { corsHeaders, buildPreflightHeaders } from "../_shared/cors.ts";
 import { SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY } from "../_shared/constants.ts";
 import { ensureAdmin } from "../_shared/admin-check.ts";
-import PublicLockABI from "../_shared/abi/PublicLockV15.json" with { type: "json" };
+import { retryWithBackoff } from "../_shared/retry-helper.ts";
+import PublicLockABI from "../_shared/abi/PublicLockV15.json" assert { type: "json" };
 
 /**
  * Admin Manage Vendor Lock
@@ -59,7 +60,7 @@ async function handleGet(supabase: any) {
   }
 
   // If settings exist, fetch on-chain price for comparison
-  let onChainPrice = null;
+  let onChainPrice: string | null = null;
   if (settings) {
     try {
       const { data: networkConfig } = await supabase
@@ -71,8 +72,35 @@ async function handleGet(supabase: any) {
 
       if (networkConfig?.rpc_url) {
         const provider = new ethers.JsonRpcProvider(networkConfig.rpc_url);
-        const lock = new ethers.Contract(settings.lock_address, PublicLockABI, provider);
-        const price = await lock.keyPrice();
+
+        // Extend ABI with keyPrice function (already in minimal ABI, but being explicit)
+        const extendedABI = [
+          ...PublicLockABI as any[],
+          "function keyPrice() view returns (uint256)"
+        ];
+
+        const lock = new ethers.Contract(settings.lock_address, extendedABI, provider);
+
+        // Fetch with retry logic
+        const price = await retryWithBackoff(
+          async () => {
+            const timeout = new Promise((_, reject) =>
+              setTimeout(() => reject(new Error("Timeout fetching on-chain price")), 10000)
+            );
+            return await Promise.race([lock.keyPrice(), timeout]) as bigint;
+          },
+          {
+            maxAttempts: 2,
+            initialDelay: 500,
+            backoffMultiplier: 2,
+            maxDelay: 2000,
+            shouldRetry: (error: any) => {
+              const errorMessage = error.message?.toLowerCase() || '';
+              return errorMessage.includes('timeout') || errorMessage.includes('network');
+            }
+          },
+          `fetching on-chain price for ${settings.lock_address}`
+        );
         onChainPrice = price.toString();
       }
     } catch (err) {
@@ -123,15 +151,52 @@ async function handleCreate(supabase: any, req: Request, adminUserId: string) {
   }
 
   const provider = new ethers.JsonRpcProvider(networkConfig.rpc_url);
-  const lock = new ethers.Contract(lock_address, PublicLockABI, provider);
 
-  const [name, symbol, keyPrice, expirationDuration, tokenAddress] = await Promise.all([
-    lock.name(),
-    lock.symbol(),
-    lock.keyPrice(),
-    lock.expirationDuration(),
-    lock.tokenAddress(),
-  ]);
+  // Extend ABI with ERC721Metadata functions that aren't in the minimal PublicLockV15 ABI
+  const extendedABI = [
+    ...PublicLockABI as any[],
+    "function name() view returns (string)",
+    "function symbol() view returns (string)",
+    "function expirationDuration() view returns (uint256)",
+    "function tokenAddress() view returns (address)"
+  ];
+
+  const lock = new ethers.Contract(lock_address, extendedABI, provider);
+
+  // Fetch contract data with retry logic (handles transient RPC errors)
+  const [name, symbol, keyPrice, expirationDuration, tokenAddress] = await retryWithBackoff(
+    async () => {
+      // Add timeout to contract calls (30 seconds)
+      const timeout = new Promise((_, reject) =>
+        setTimeout(() => reject(new Error("Contract call timeout - check lock address and RPC")), 30000)
+      );
+
+      const contractCalls = Promise.all([
+        lock.name(),
+        lock.symbol(),
+        lock.keyPrice(),
+        lock.expirationDuration(),
+        lock.tokenAddress(),
+      ]);
+
+      return await Promise.race([contractCalls, timeout]) as [string, string, bigint, bigint, string];
+    },
+    {
+      maxAttempts: 3,
+      initialDelay: 1000,
+      backoffMultiplier: 2,
+      maxDelay: 5000,
+      shouldRetry: (error: any) => {
+        const errorMessage = error.message?.toLowerCase() || '';
+        // Retry on timeout and network errors, but not on invalid address or contract errors
+        return errorMessage.includes('timeout') ||
+               errorMessage.includes('network') ||
+               errorMessage.includes('econnreset') ||
+               errorMessage.includes('etimedout');
+      }
+    },
+    `fetching lock details for ${lock_address}`
+  );
 
   const keyPriceWei = keyPrice.toString();
   const keyPriceDisplay = Number(ethers.formatEther(keyPrice));
