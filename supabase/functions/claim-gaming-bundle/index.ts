@@ -216,6 +216,7 @@ serve(async (req) => {
     const hasKey: boolean = await lock.getHasValidKey(recipientAddress).catch(() => false);
 
     let grantTxHash: string | undefined;
+    let tokenId: string | null = null;
     if (!hasKey) {
       const expirationSeconds = Number(bundle.key_expiration_duration_seconds || 60 * 60 * 24 * 30);
       const expirationTimestamp = Math.floor(Date.now() / 1000) + expirationSeconds;
@@ -226,8 +227,16 @@ serve(async (req) => {
       const calldata = lock.interface.encodeFunctionData("grantKeys", [recipients, expirations, keyManagers]);
       const taggedData = await appendDivviTagToCalldataAsync({ data: calldata, user: serviceUser });
       const txSend = await signer.sendTransaction({ to: bundle.bundle_address, data: taggedData });
-      await txSend.wait();
-      grantTxHash = txSend.hash;
+      const receipt = await txSend.wait();
+      grantTxHash = receipt.hash;
+
+      // Extract token ID from receipt
+      const { extractTokenIdFromReceipt } = await import("../_shared/nft-helpers.ts");
+      tokenId = await extractTokenIdFromReceipt(receipt, bundle.bundle_address, recipientAddress);
+      if (tokenId) {
+        console.log(`[CLAIM BUNDLE] Extracted token ID: ${tokenId}`);
+      }
+
       if (Number.isFinite(bundle.chain_id) && grantTxHash) {
         await submitDivviReferralBestEffort({ txHash: grantTxHash, chainId: Number(bundle.chain_id) });
       }
@@ -240,6 +249,7 @@ serve(async (req) => {
         nft_recipient_address: recipientAddress,
         txn_hash: grantTxHash || order.txn_hash,
         buyer_address: recipientAddress,
+        token_id: tokenId,
       })
       .eq("id", order.id);
 

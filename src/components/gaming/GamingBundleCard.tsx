@@ -2,8 +2,9 @@ import { Card, CardContent, CardFooter, CardHeader, CardTitle } from '@/componen
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Link } from 'react-router-dom';
-import { MapPin } from 'lucide-react';
+import { MapPin, AlertCircle } from 'lucide-react';
 import type { GamingBundle } from '@/types/gaming';
+import { useLockManagerVerification } from '@/components/interactions/hooks/useLockManagerVerification';
 
 type GamingBundleCardProps = {
   bundle: GamingBundle;
@@ -11,6 +12,7 @@ type GamingBundleCardProps = {
 };
 
 export const GamingBundleCard = ({ bundle, showActions = true }: GamingBundleCardProps) => {
+  const { isLockManager } = useLockManagerVerification(bundle.bundle_address, bundle.chain_id);
   return (
     <Card className="border border-gray-200 shadow-sm overflow-hidden">
       {/* Bundle Image */}
@@ -40,11 +42,21 @@ export const GamingBundleCard = ({ bundle, showActions = true }: GamingBundleCar
               </Badge>
             )}
           </div>
-          {!bundle.is_active && (
-            <Badge variant="destructive" className="text-xs">
-              Inactive
-            </Badge>
-          )}
+          <div className="flex items-center gap-2">
+            {!bundle.is_active && (
+              <Badge variant="destructive" className="text-xs">
+                Inactive
+              </Badge>
+            )}
+            {isLockManager && !bundle.metadata_set && (
+              <Link to={`/gaming-bundles/${bundle.id}`}>
+                <Badge variant="outline" className="text-xs text-amber-600 border-amber-300 hover:bg-amber-50 cursor-pointer flex items-center gap-1">
+                  <AlertCircle className="w-3 h-3" />
+                  Fix Metadata
+                </Badge>
+              </Link>
+            )}
+          </div>
         </div>
         <CardTitle className="text-lg">{bundle.title}</CardTitle>
         {/* Location */}

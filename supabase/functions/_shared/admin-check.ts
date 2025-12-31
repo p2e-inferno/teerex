@@ -1,22 +1,12 @@
 /* deno-lint-ignore-file no-explicit-any */
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.50.0";
-import { JsonRpcProvider, Contract } from "https://esm.sh/ethers@6.14.4";
 import { verifyPrivyToken, getUserWalletAddresses } from "./privy.ts";
 import { SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY } from "./constants.ts";
 import { validateChain } from "./network-helpers.ts";
-
-const LOCK_MANAGER_ABI = [
-  {
-    inputs: [{ internalType: "address", name: "_account", type: "address" }],
-    name: "isLockManager",
-    outputs: [{ internalType: "bool", name: "", type: "bool" }],
-    stateMutability: "view",
-    type: "function",
-  },
-] as const;
+import { isAnyUserWalletHasValidKeyParallel } from "./unlock.ts";
 
 /**
- * Ensures the caller is an admin (lock manager on ADMIN_LOCK_ADDRESS).
+ * Ensures the caller is an admin (has valid key to ADMIN_LOCK_ADDRESS).
  * Throws an error if unauthorized or configuration is missing.
  */
 export async function ensureAdmin(headers: Headers): Promise<string> {
@@ -25,6 +15,11 @@ export async function ensureAdmin(headers: Headers): Promise<string> {
   const ADMIN_LOCK_ADDRESS = Deno.env.get("ADMIN_LOCK_ADDRESS");
   if (!ADMIN_LOCK_ADDRESS) {
     throw new Error("admin_lock_not_configured");
+  }
+
+  const userWallets = await getUserWalletAddresses(privyUserId);
+  if (!userWallets || userWallets.length === 0) {
+    throw new Error("no_wallets_found");
   }
 
   const primaryChainIdStr = Deno.env.get("VITE_PRIMARY_CHAIN_ID");
@@ -37,24 +32,17 @@ export async function ensureAdmin(headers: Headers): Promise<string> {
   }
   const rpcUrl = networkConfig.rpc_url;
 
-  const wallets = await getUserWalletAddresses(privyUserId);
-  if (!wallets || wallets.length === 0) {
-    throw new Error("no_wallets_found");
+  // Check if any user wallet has a valid key to the admin lock (parallel check)
+  const { anyHasKey } = await isAnyUserWalletHasValidKeyParallel(
+    ADMIN_LOCK_ADDRESS,
+    userWallets,
+    rpcUrl
+  );
+
+  if (anyHasKey) {
+    return privyUserId;
   }
 
-  const provider = new JsonRpcProvider(rpcUrl);
-  const lock = new Contract(ADMIN_LOCK_ADDRESS, LOCK_MANAGER_ABI, provider);
-
-  for (const addr of wallets) {
-    try {
-      const isManager = await lock.isLockManager(addr);
-      if (isManager) {
-        return privyUserId;
-      }
-    } catch (_) {
-      // ignore and continue
-    }
-  }
-
-  throw new Error("unauthorized");
+  const walletInfo = userWallets[0] ? ` Your wallet: ${userWallets[0]}` : '';
+  throw new Error(`unauthorized${walletInfo}`);
 }

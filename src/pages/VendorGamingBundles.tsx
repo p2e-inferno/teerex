@@ -16,8 +16,9 @@ import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import { Badge } from '@/components/ui/badge';
-import { Loader2, Upload, MapPin } from 'lucide-react';
+import { Loader2, MapPin } from 'lucide-react';
 import { GamingBundleCard } from '@/components/gaming/GamingBundleCard';
+import { ImageUploadField } from '@/components/ui/ImageUploadField';
 import { ImageCropper } from '@/components/ui/ImageCropper';
 
 type BundleFormState = {
@@ -35,6 +36,7 @@ type BundleFormState = {
   chainId: number;
   bundleAddress: string;
   expirationDays: number;
+  isUnlimitedExpiration: boolean;
   isActive: boolean;
 };
 
@@ -64,10 +66,10 @@ const VendorGamingBundles = () => {
     chainId: DEFAULT_CHAIN_ID,
     bundleAddress: '',
     expirationDays: 30,
+    isUnlimitedExpiration: false,
     isActive: true,
   });
 
-  const [isDeploying, setIsDeploying] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
   const [isUploadingImage, setIsUploadingImage] = useState(false);
   const [tempImageUrl, setTempImageUrl] = useState('');
@@ -128,84 +130,30 @@ const VendorGamingBundles = () => {
     }
   };
 
-  const handleDeployLock = async () => {
-    if (!form.title.trim()) {
-      toast({ title: 'Title required', description: 'Provide a bundle title before deploying.', variant: 'destructive' });
-      return;
+  const removeImage = () => {
+    setForm(prev => ({ ...prev, imageUrl: '' }));
+    if (tempImageUrl) {
+      URL.revokeObjectURL(tempImageUrl);
+      setTempImageUrl('');
     }
+  };
 
-    if (!form.location.trim()) {
-      toast({ title: 'Location required', description: 'Provide a gaming center location before deploying.', variant: 'destructive' });
-      return;
-    }
-
-    const wallet = wallets[0];
-    if (!wallet) {
-      toast({ title: 'Wallet required', description: 'Connect a wallet to deploy a bundle NFT.', variant: 'destructive' });
-      return;
-    }
-
-    setIsDeploying(true);
-    try {
-      const lockConfig = {
-        name: form.title,
-        symbol: `${form.title.slice(0, 3).toUpperCase()}BND`,
-        keyPrice: form.priceDg > 0 ? String(form.priceDg) : '0',
-        maxNumberOfKeys: 100000,
-        expirationDuration: form.expirationDays * 24 * 60 * 60,
-        currency: form.priceDg > 0 ? 'DG' : 'FREE',
-        price: form.priceDg > 0 ? form.priceDg : 0,
-        maxKeysPerAddress: 100, // Allow users to purchase multiple bundles
-        transferable: true, // Gaming bundles can be transferred/gifted
-      };
-
-      const result = await deployLock(lockConfig, wallet, form.chainId);
-      if (!result.success || !result.lockAddress) {
-        throw new Error(result.error || 'Failed to deploy lock');
-      }
-
-      // Set gaming bundle-specific metadata baseURI
-      try {
-        const { setLockMetadata } = await import('@/utils/lockMetadata');
-        const { ethers } = await import('ethers');
-        const provider = await wallet.getEthereumProvider();
-        const ethersSigner = await new ethers.BrowserProvider(provider).getSigner();
-
-        const bundleMetadataURI = getGamingBundleMetadataBaseURI(result.lockAddress);
-        await setLockMetadata(
-          result.lockAddress,
-          form.title,
-          'BUNDLE', // Symbol for gaming bundles
-          bundleMetadataURI,
-          ethersSigner
-        );
-        console.log('[Bundle Deploy] Set metadata URI:', bundleMetadataURI);
-      } catch (metadataError) {
-        console.warn('[Bundle Deploy] Failed to set metadata (non-critical):', metadataError);
-        // Don't fail deployment - metadata can be set later
-      }
-
-      setForm(prev => ({ ...prev, bundleAddress: result.lockAddress! }));
-      toast({ title: 'Bundle contract deployed', description: `Lock: ${result.lockAddress}` });
-    } catch (error) {
-      toast({
-        title: 'Deployment failed',
-        description: error instanceof Error ? error.message : String(error),
-        variant: 'destructive',
-      });
-    } finally {
-      setIsDeploying(false);
+  const handleAdjustCrop = () => {
+    if (form.imageUrl) {
+      setTempImageUrl(form.imageUrl);
+      setShowCropper(true);
     }
   };
 
   const handleCreateBundle = async () => {
+    // Validation
     if (!authenticated) {
       toast({ title: 'Sign in required', description: 'Connect your account to create bundles.', variant: 'destructive' });
       return;
     }
 
-    if (!form.bundleAddress.trim()) {
-      toast({ title: 'Missing lock address', description: 'Deploy a bundle contract first.', variant: 'destructive' });
+    if (!form.title.trim()) {
+      toast({ title: 'Title required', description: 'Provide a bundle title.', variant: 'destructive' });
       return;
     }
 
@@ -214,8 +162,86 @@ const VendorGamingBundles = () => {
       return;
     }
 
+    const wallet = wallets[0];
+    if (!wallet) {
+      toast({ title: 'Wallet required', description: 'Connect a wallet to create a bundle.', variant: 'destructive' });
+      return;
+    }
+
     setIsCreating(true);
     try {
+      // Calculate expiration duration - use max value for unlimited
+      const expirationDuration = form.isUnlimitedExpiration
+        ? 999999999 // ~31 years (effectively unlimited, matching event creation)
+        : form.expirationDays * 24 * 60 * 60;
+
+      // Step 1: Deploy the lock contract
+      toast({ title: 'Deploying contract...', description: 'Please confirm the transaction in your wallet.' });
+
+      const lockConfig = {
+        name: form.title,
+        symbol: `${form.title.slice(0, 3).toUpperCase()}BND`,
+        keyPrice: form.priceDg > 0 ? String(form.priceDg) : '0',
+        maxNumberOfKeys: 100000,
+        expirationDuration,
+        currency: form.priceDg > 0 ? 'DG' : 'FREE',
+        price: form.priceDg > 0 ? form.priceDg : 0,
+        maxKeysPerAddress: 100, // Allow users to purchase multiple bundles
+        transferable: true, // Gaming bundles can be transferred/gifted
+      };
+
+      const deployResult = await deployLock(lockConfig, wallet, form.chainId);
+      if (!deployResult.success || !deployResult.lockAddress) {
+        throw new Error(deployResult.error || 'Failed to deploy lock contract');
+      }
+
+      const lockAddress = deployResult.lockAddress;
+
+      toast({ title: 'Contract deployed!', description: 'Setting NFT metadata...' });
+
+      // Step 1.5: Set gaming bundle-specific metadata baseURI with retry logic
+      let metadataSet = false;
+      try {
+        const { ethers } = await import('ethers');
+        const provider = await wallet.getEthereumProvider();
+        const ethersSigner = await new ethers.BrowserProvider(provider).getSigner();
+
+        const bundleMetadataURI = getGamingBundleMetadataBaseURI(lockAddress);
+        const PublicLockABI = (await import('../../supabase/functions/_shared/abi/PublicLockV15.json')).default;
+        const lock = new ethers.Contract(lockAddress, PublicLockABI, ethersSigner);
+
+        // Retry logic for setLockMetadata (2 attempts max)
+        let lastError: any;
+        for (let attempt = 1; attempt <= 2; attempt++) {
+          try {
+            console.log(`[Bundle Deploy] Attempt ${attempt}/2: Setting metadata URI`);
+            const tx = await lock.setLockMetadata(form.title, 'BUNDLE', bundleMetadataURI);
+            await tx.wait();
+            console.log('[Bundle Deploy] Metadata URI set successfully:', bundleMetadataURI);
+            metadataSet = true;
+            break;
+          } catch (error: any) {
+            lastError = error;
+            console.warn(`[Bundle Deploy] Attempt ${attempt}/2 failed:`, error.message);
+            if (attempt < 2) {
+              // Wait 1 second before retry
+              await new Promise(resolve => setTimeout(resolve, 1000));
+            }
+          }
+        }
+
+        if (!metadataSet) {
+          throw lastError;
+        }
+      } catch (metadataError: any) {
+        console.error('[Bundle Deploy] Failed to set metadata after retries:', metadataError);
+        // Don't fail deployment - we'll track this and let user fix it later
+        metadataSet = false;
+      }
+
+      toast({ title: metadataSet ? 'Metadata set!' : 'Contract deployed!', description: 'Creating bundle in database...' });
+
+      // Step 2: Save bundle to database
       const token = await getAccessToken?.();
       const { data, error } = await supabase.functions.invoke('create-gaming-bundle', {
         body: {
@@ -232,8 +258,9 @@ const VendorGamingBundles = () => {
           fiat_symbol: 'NGN',
           price_dg: form.priceDg || null,
           chain_id: form.chainId,
-          bundle_address: form.bundleAddress,
-          key_expiration_duration_seconds: form.expirationDays * 24 * 60 * 60,
+          bundle_address: lockAddress,
+          key_expiration_duration_seconds: expirationDuration,
+          metadata_set: metadataSet,
           is_active: form.isActive,
         },
         headers: token ? { 'X-Privy-Authorization': `Bearer ${token}` } : undefined,
@@ -243,20 +270,30 @@ const VendorGamingBundles = () => {
         throw new Error(error?.message || data?.error || 'Failed to create bundle');
       }
 
-      toast({ title: 'Bundle created', description: 'Your gaming bundle is now live.' });
+      toast({ title: 'Bundle created!', description: 'Your gaming bundle is now live.' });
       queryClient.invalidateQueries({ queryKey: ['gaming-bundles'] });
+
       // Reset form
-      setForm(prev => ({
-        ...prev,
+      setForm({
         title: '',
         description: '',
         gameTitle: '',
         console: '',
         location: '',
         imageUrl: '',
+        bundleType: 'TIME',
+        quantityUnits: 60,
+        unitLabel: 'minutes',
+        priceFiat: 0,
+        priceDg: 0,
+        chainId: form.chainId, // Keep selected network
         bundleAddress: '',
-      }));
+        expirationDays: 30,
+        isUnlimitedExpiration: false,
+        isActive: true,
+      });
     } catch (error) {
+      console.error('Error creating bundle:', error);
       toast({
         title: 'Create failed',
         description: error instanceof Error ? error.message : String(error),
@@ -340,42 +377,17 @@ const VendorGamingBundles = () => {
                 placeholder="Describe what the bundle includes."
               />
             </div>
-            <div className="space-y-3 md:col-span-2">
-              <Label>Bundle Image</Label>
-              <div className="flex items-center gap-4">
-                {form.imageUrl ? (
-                  <img src={form.imageUrl} alt="Bundle" className="w-24 h-24 object-cover rounded-lg border" />
-                ) : (
-                  <div className="w-24 h-24 bg-gray-100 rounded-lg flex items-center justify-center text-gray-400 border">
-                    No image
-                  </div>
-                )}
-                <div className="flex flex-col gap-2">
-                  <input
-                    type="file"
-                    accept="image/*"
-                    onChange={handleImageSelect}
-                    className="hidden"
-                    id="bundle-image-input"
-                  />
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={() => document.getElementById('bundle-image-input')?.click()}
-                    disabled={isUploadingImage}
-                  >
-                    {isUploadingImage ? (
-                      <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Uploading...</>
-                    ) : (
-                      <><Upload className="w-4 h-4 mr-2" />Upload Image</>
-                    )}
-                  </Button>
-                  <p className="text-xs text-muted-foreground">
-                    Image will be used for NFT metadata on marketplaces.
-                  </p>
-                </div>
-              </div>
-            </div>
+            <ImageUploadField
+              imageUrl={form.imageUrl}
+              isUploading={isUploadingImage}
+              authenticated={authenticated}
+              onFileSelect={handleImageSelect}
+              onRemove={removeImage}
+              onAdjustCrop={handleAdjustCrop}
+              label="Bundle Image"
+              helperText="Image will be used for NFT metadata on marketplaces."
+              previewAlt="Bundle preview"
+            />
             <div className="space-y-3">
               <Label>Bundle Type</Label>
               <Select
@@ -429,13 +441,28 @@ const VendorGamingBundles = () => {
               {form.priceDg > 0 && <Badge variant="secondary">DG on-chain price</Badge>}
             </div>
             <div className="space-y-3">
-              <Label>Expiration (days)</Label>
-              <Input
-                type="number"
-                value={form.expirationDays}
-                onChange={(e) => setForm(prev => ({ ...prev, expirationDays: Number(e.target.value) }))}
-                min={1}
-              />
+              <Label>Bundle Expiration</Label>
+              <div className="flex items-center gap-3 mb-2">
+                <Switch
+                  checked={form.isUnlimitedExpiration}
+                  onCheckedChange={(checked) => setForm(prev => ({ ...prev, isUnlimitedExpiration: checked }))}
+                />
+                <span className="text-sm">Unlimited</span>
+              </div>
+              {!form.isUnlimitedExpiration && (
+                <div className="flex items-center gap-2">
+                  <Input
+                    type="number"
+                    value={form.expirationDays}
+                    onChange={(e) => setForm(prev => ({ ...prev, expirationDays: Number(e.target.value) }))}
+                    min={1}
+                  />
+                  <span className="text-sm text-muted-foreground whitespace-nowrap">days</span>
+                </div>
+              )}
+              <p className="text-xs text-muted-foreground">
+                How long after purchase will the bundle remain valid?
+              </p>
             </div>
             <div className="space-y-3">
               <Label>Network</Label>
@@ -455,28 +482,6 @@ const VendorGamingBundles = () => {
                 </SelectContent>
               </Select>
             </div>
-            <div className="space-y-3 md:col-span-2">
-              <Label htmlFor="bundle-lock-address">Bundle Contract Address *</Label>
-              <div className="flex flex-col md:flex-row gap-3">
-                <Input
-                  id="bundle-lock-address"
-                  value={form.bundleAddress}
-                  placeholder={form.bundleAddress ? form.bundleAddress : "Deploy to get address..."}
-                  disabled
-                  className="bg-gray-50"
-                />
-                <Button
-                  variant="outline"
-                  onClick={handleDeployLock}
-                  disabled={isDeploying || !form.title.trim() || !form.location.trim()}
-                >
-                  {isDeploying ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Deploy Bundle Contract'}
-                </Button>
-              </div>
-              <p className="text-xs text-muted-foreground">
-                You must deploy a bundle contract before creating the bundle. Fill in title and location first.
-              </p>
-            </div>
             <div className="flex items-center gap-3">
               <Switch
                 checked={form.isActive}
@@ -487,14 +492,14 @@ const VendorGamingBundles = () => {
             <div className="md:col-span-2">
               <Button
                 onClick={handleCreateBundle}
-                disabled={isCreating || !form.bundleAddress || !form.location.trim()}
+                disabled={isCreating || !form.title.trim() || !form.location.trim()}
                 className="w-full md:w-auto"
               >
                 {isCreating ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Create Bundle'}
               </Button>
-              {!form.bundleAddress && (
-                <p className="text-xs text-amber-600 mt-2">
-                  Deploy a bundle contract first to enable creation.
+              {(!form.title.trim() || !form.location.trim()) && (
+                <p className="text-xs text-muted-foreground mt-2">
+                  Fill in title and location to create a bundle.
                 </p>
               )}
             </div>

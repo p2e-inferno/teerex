@@ -64,7 +64,7 @@ export const Header: React.FC = () => {
                       <ChevronDown className="h-4 w-4 ml-2" />
                     </Button>
                   </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end" className="w-48 bg-white border border-gray-200 shadow-lg">
+                  <DropdownMenuContent align="end" className="w-48 max-h-[600px] overflow-y-auto bg-white border border-gray-200 shadow-lg">
                     <DropdownMenuItem asChild>
                       <Link to="/profile" className="flex items-center cursor-pointer">
                         <User className="h-4 w-4 mr-2" />

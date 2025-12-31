@@ -10,6 +10,7 @@ function isUuid(value: string): boolean {
 }
 
 serve(async (req) => {
+  console.log(`[DEBUG] list-gaming-bundle-orders received request: ${req.method} ${req.url}`);
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: buildPreflightHeaders(req) });
   }
@@ -31,8 +32,8 @@ serve(async (req) => {
     const status = body.status || url.searchParams.get("status");
     const paymentProvider = body.payment_provider || body.paymentProvider || url.searchParams.get("payment_provider");
     const fulfillmentMethod = body.fulfillment_method || body.fulfillmentMethod || url.searchParams.get("fulfillment_method");
-    const limit = Math.min(Number(body.limit ?? url.searchParams.get("limit") || 50), 200);
-    const offset = Math.max(Number(body.offset ?? url.searchParams.get("offset") || 0), 0);
+    const limit = Math.min(Number((body.limit ?? url.searchParams.get("limit")) || 50), 200);
+    const offset = Math.max(Number((body.offset ?? url.searchParams.get("offset")) || 0), 0);
 
     const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
@@ -54,6 +55,8 @@ serve(async (req) => {
       const clauses: string[] = [];
       if (isUuid(q)) clauses.push(`id.eq.${q}`);
       if (/^0x[0-9a-f]{40}$/i.test(q)) clauses.push(`buyer_address.eq.${q.toLowerCase()}`);
+      // Check if query is numeric (potential token ID)
+      if (/^\d+$/.test(q)) clauses.push(`token_id.eq.${q}`);
       clauses.push(`buyer_phone.ilike.%${q}%`);
       clauses.push(`buyer_display_name.ilike.%${q}%`);
       query = query.or(clauses.join(","));

@@ -2,6 +2,7 @@ import type { Database } from '@/integrations/supabase/types';
 
 export type GamingBundle = Database['public']['Tables']['gaming_bundles']['Row'] & {
   sold_count?: number;
+  metadata_set?: boolean;
 };
 
 export type GamingBundleOrder = Database['public']['Tables']['gaming_bundle_orders']['Row'];

@@ -140,13 +140,22 @@ serve(async (req) => {
 
       let granted = false;
       let grantTxHash: string | undefined;
+      let tokenId: string | null = null;
       if (!hasKey) {
         const serviceUser = (await signer.getAddress()) as `0x${string}`;
         const calldata = lock.interface.encodeFunctionData('grantKeys', [recipients, expirations, keyManagers]);
         const taggedData = await appendDivviTagToCalldataAsync({ data: calldata, user: serviceUser });
         const txSend = await signer.sendTransaction({ to: lockAddress, data: taggedData });
-        await txSend.wait();
-        grantTxHash = txSend.hash as string | undefined;
+        const receipt = await txSend.wait();
+        grantTxHash = receipt.hash as string | undefined;
+
+        // Extract token ID from receipt
+        const { extractTokenIdFromReceipt } = await import("../_shared/nft-helpers.ts");
+        tokenId = await extractTokenIdFromReceipt(receipt, lockAddress, recipient);
+        if (tokenId) {
+          console.log(`[PAYSTACK WEBHOOK] Extracted token ID: ${tokenId}`);
+        }
+
         if (Number.isFinite(chainId) && grantTxHash) {
           await submitDivviReferralBestEffort({ txHash: grantTxHash, chainId });
         }
@@ -163,6 +172,7 @@ serve(async (req) => {
           fulfillment_method: "NFT",
           txn_hash: grantTxHash || (bundleOrder as any)?.txn_hash,
           nft_recipient_address: recipient,
+          token_id: tokenId,
         })
         .eq("id", (bundleOrder as any).id);
 
@@ -224,13 +234,22 @@ serve(async (req) => {
 
     let granted = false;
     let grantTxHash: string | undefined;
+    let tokenId: string | null = null;
     if (!hasKey) {
       const serviceUser = (await signer.getAddress()) as `0x${string}`;
       const calldata = lock.interface.encodeFunctionData('grantKeys', [recipients, expirations, keyManagers]);
       const taggedData = await appendDivviTagToCalldataAsync({ data: calldata, user: serviceUser });
       const txSend = await signer.sendTransaction({ to: lockAddress, data: taggedData });
-      await txSend.wait();
-      grantTxHash = txSend.hash as string | undefined;
+      const receipt = await txSend.wait();
+      grantTxHash = receipt.hash as string | undefined;
+
+      // Extract token ID from receipt
+      const { extractTokenIdFromReceipt } = await import("../_shared/nft-helpers.ts");
+      tokenId = await extractTokenIdFromReceipt(receipt, lockAddress, recipient);
+      if (tokenId) {
+        console.log(`[PAYSTACK WEBHOOK - EVENT TICKET] Extracted token ID: ${tokenId}`);
+      }
+
       if (typeof chainId === 'number' && grantTxHash) {
         await submitDivviReferralBestEffort({ txHash: grantTxHash, chainId });
       }
@@ -258,6 +277,18 @@ serve(async (req) => {
         verified_at: new Date().toISOString(),
       })
       .eq('reference', reference);
+
+    // Store ticket record with token_id if key was granted
+    if (granted && grantTxHash) {
+      await supabase.from('tickets').insert({
+        event_id: txEvent?.id,
+        owner_wallet: recipient.toLowerCase(),
+        payment_transaction_id: (tx as any).id,
+        grant_tx_hash: grantTxHash,
+        token_id: tokenId,
+        status: 'active',
+      });
+    }
 
     console.log(" [WEBHOOK] Webhook processed successfully");
 
