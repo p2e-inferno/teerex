@@ -5,7 +5,7 @@ import { AlertTriangle, Home } from 'lucide-react';
 import { Link } from 'react-router-dom';
 
 interface NotAuthorizedProps {
-  details?: string;
+  details?: React.ReactNode;
 }
 
 const NotAuthorized: React.FC<NotAuthorizedProps> = ({ details }) => {
