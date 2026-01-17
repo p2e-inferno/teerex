@@ -9,7 +9,7 @@ import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
-import { Loader2, Plus, Edit, Trash2, Lock, CheckCircle, AlertTriangle, RefreshCw, ExternalLink } from 'lucide-react';
+import { Loader2, Plus, Edit, Trash2, Lock, CheckCircle, AlertTriangle, RefreshCw } from 'lucide-react';
 import { usePrivy } from '@privy-io/react-auth';
 import { ImageCropper } from '@/components/ui/ImageCropper';
 import { uploadEventImage } from '@/utils/supabaseDraftStorage';

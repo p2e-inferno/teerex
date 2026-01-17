@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
+import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { usePrivy, useWallets } from '@privy-io/react-auth';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
@@ -28,7 +28,7 @@ export default function BecomeVendor() {
   const { getAccessToken } = usePrivy();
   const { toast } = useToast();
 
-  const { data: settings, isLoading: settingsLoading, error: settingsError } = useVendorLockSettings();
+  const { data: settings, isLoading: settingsLoading } = useVendorLockSettings();
   const { isVendor, loading: vendorCheckLoading, vendorLockConfigured } = useIsVendor();
 
   const [isPurchasing, setIsPurchasing] = useState(false);
@@ -88,7 +88,7 @@ export default function BecomeVendor() {
             throw new Error('Invalid lock configuration: missing currency address');
           }
 
-          const { data: purchaseData, error: purchaseError } = await supabase.functions.invoke('record-vendor-purchase', {
+          const { error: purchaseError } = await supabase.functions.invoke('record-vendor-purchase', {
             body: {
               vendor_lock_id: settings.id,
               wallet_address: wallet.address.toLowerCase(),

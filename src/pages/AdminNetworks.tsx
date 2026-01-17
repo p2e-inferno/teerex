@@ -54,7 +54,6 @@ const AdminNetworks: React.FC = () => {
   const { user, getAccessToken } = usePrivy();
   const [networks, setNetworks] = useState<NetworkConfig[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [isRefreshing, setIsRefreshing] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [togglingNetworkId, setTogglingNetworkId] = useState<string | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -81,7 +80,7 @@ const AdminNetworks: React.FC = () => {
 
     try {
       if (isBackground) {
-        setIsRefreshing(true);
+        // No-op for background if we don't have a separate refreshing state
       } else {
         setIsLoading(true);
       }
@@ -110,7 +109,6 @@ const AdminNetworks: React.FC = () => {
       });
     } finally {
       setIsLoading(false);
-      setIsRefreshing(false);
     }
   };
 
@@ -401,7 +399,7 @@ const AdminNetworks: React.FC = () => {
 
         {/* Action Bar */}
         <div className="flex justify-between items-center mb-8">
-          <Button onClick={loadNetworks} variant="outline" disabled={isLoading}>
+          <Button onClick={() => loadNetworks()} variant="outline" disabled={isLoading}>
             <RefreshCw className={`h-4 w-4 mr-2 ${isLoading ? 'animate-spin' : ''}`} />
             Refresh
           </Button>
