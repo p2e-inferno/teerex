@@ -8,10 +8,11 @@ import { Plus, Calendar, TrendingUp, Users, DollarSign, AlertTriangle } from 'lu
 import { EventCard } from '@/components/events/EventCard';
 import { EventManagementDialog } from '@/components/events/EventManagementDialog';
 import { getUserEvents } from '@/utils/eventUtils';
-import type { PublishedEvent } from '@/types/event';
+import { PublishedEvent } from '@/types/event';
 import { useToast } from '@/hooks/use-toast';
 import { WalletConnectionGate } from '@/components/WalletConnectionGate';
 import { isFreeEvent } from '@/lib/events/paymentMethods';
+import { useMultiEventTicketRealtime } from '@/hooks/useMultiEventTicketRealtime';
 
 const MyEvents = () => {
   const { authenticated, user } = usePrivy();
@@ -21,6 +22,9 @@ const MyEvents = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [selectedEvent, setSelectedEvent] = useState<PublishedEvent | null>(null);
   const [isManagementDialogOpen, setIsManagementDialogOpen] = useState(false);
+
+  // Real-time ticket counts for all displayed events
+  const { keysSoldMap } = useMultiEventTicketRealtime(events);
 
   const loadUserEvents = async () => {
     try {
@@ -94,7 +98,7 @@ const MyEvents = () => {
             <h1 className="text-3xl font-bold text-gray-900 mb-2">My Events</h1>
             <p className="text-gray-600">Manage your Web3 events and track performance</p>
           </div>
-          <Button 
+          <Button
             onClick={() => navigate('/create')}
             className="bg-purple-600 hover:bg-purple-700 text-white"
           >
@@ -177,7 +181,7 @@ const MyEvents = () => {
               <p className="text-gray-600 mb-6">
                 Create your first Web3 event with blockchain-verified tickets.
               </p>
-              <Button 
+              <Button
                 onClick={() => navigate('/create')}
                 className="bg-purple-600 hover:bg-purple-700 text-white"
               >
@@ -207,8 +211,8 @@ const MyEvents = () => {
                 return (
                   <div key={event.id} className="relative">
                     {needsAttention && (
-                      <Badge 
-                        variant="outline" 
+                      <Badge
+                        variant="outline"
                         className="absolute -top-2 -right-2 z-10 border-orange-200 bg-orange-50 text-orange-600"
                       >
                         <AlertTriangle className="w-3 h-3 mr-1" />
@@ -217,6 +221,7 @@ const MyEvents = () => {
                     )}
                     <EventCard
                       event={event}
+                      keysSold={keysSoldMap[event.id]}
                       onEdit={handleEditEvent}
                       onManage={handleManageEvent}
                       showShareButton={true}
