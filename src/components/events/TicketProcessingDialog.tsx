@@ -45,8 +45,20 @@ export const TicketProcessingDialog: React.FC<TicketProcessingDialogProps> = ({
   const [status, setStatus] = useState<ProcessingStatus>("processing");
   const [progressMessage, setProgressMessage] = useState("Processing your payment...");
   const [transactionHash, setTransactionHash] = useState<string | null>(null);
+  const [explorerUrl, setExplorerUrl] = useState<string>('#');
   // Track if we've already called onPurchaseSuccess to prevent multiple calls
   const hasCalledSuccessRef = useRef(false);
+
+  useEffect(() => {
+    const resolveExplorerUrl = async () => {
+      if (transactionHash && event?.chain_id) {
+        const { getExplorerTxUrl } = await import("@/lib/config/network-config");
+        const url = await getExplorerTxUrl(event.chain_id, transactionHash);
+        setExplorerUrl(url);
+      }
+    };
+    resolveExplorerUrl();
+  }, [transactionHash, event?.chain_id]);
 
   useEffect(() => {
     if (isOpen && paymentData) {
@@ -265,9 +277,18 @@ export const TicketProcessingDialog: React.FC<TicketProcessingDialogProps> = ({
 
             {transactionHash && (
               <div className="bg-green-50 p-3 rounded-lg">
-                <p className="text-sm text-green-700">
-                  <strong>Transaction Hash:</strong> {transactionHash}
-                </p>
+                <div className="text-sm text-green-700 space-y-1">
+                  <p><strong>Transaction Hash:</strong></p>
+                  <p className="font-mono break-all text-xs opacity-70">{transactionHash}</p>
+                  <a
+                    href={explorerUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1 text-green-800 hover:text-green-900 underline font-medium pt-1"
+                  >
+                    View on Explorer <ExternalLink className="h-3.5 w-3.5" />
+                  </a>
+                </div>
               </div>
             )}
 
