@@ -5,6 +5,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useToast } from '@/hooks/use-toast';
 import { getDivviBrowserProvider, getDivviEip1193Provider } from '@/lib/wallet/provider';
 import { getTokenAddressAsync, getExplorerTxUrl } from '@/lib/config/network-config';
+import { ExternalLink } from 'lucide-react';
 import type { CryptoCurrency } from '@/types/currency';
 
 /**
@@ -107,20 +108,6 @@ export interface UseTokenTransferResult {
  * - User-friendly error messages
  *
  * @returns Transfer function and state
- *
- * @example
- * ```tsx
- * const { transferToken, isTransferring, error } = useTokenTransfer();
- *
- * const handleTransfer = async () => {
- *   await transferToken({
- *     recipient: '0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb',
- *     amount: '1.5',
- *     tokenSymbol: 'ETH',
- *     chainId: 8453,
- *   });
- * };
- * ```
  */
 export function useTokenTransfer(): UseTokenTransferResult {
   const [isTransferring, setIsTransferring] = useState(false);
@@ -207,7 +194,19 @@ export function useTokenTransfer(): UseTokenTransferResult {
       const explorerUrl = await getExplorerTxUrl(chainId, tx.hash);
       toast({
         title: 'Transfer Successful!',
-        description: `Sent ${amount} ${tokenSymbol} to ${recipient.slice(0, 6)}...${recipient.slice(-4)}. View transaction: ${explorerUrl}`,
+        description: (
+          <div className="flex flex-col gap-1">
+            <p>Sent {amount} {tokenSymbol} to {recipient.slice(0, 6)}...{recipient.slice(-4)}.</p>
+            <a
+              href={explorerUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-violet-600 hover:text-violet-700 underline flex items-center gap-1 font-medium"
+            >
+              View transaction <ExternalLink className="h-3.5 w-3.5" />
+            </a>
+          </div>
+        ),
       });
 
       // Invalidate balance caches
