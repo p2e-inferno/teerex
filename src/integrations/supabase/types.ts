@@ -939,6 +939,7 @@ export type Database = {
           price_dg: number | null
           price_fiat: number
           quantity_units: number
+          service_manager_added: boolean
           title: string
           unit_label: string
           updated_at: string
@@ -962,6 +963,7 @@ export type Database = {
           price_dg?: number | null
           price_fiat?: number
           quantity_units: number
+          service_manager_added?: boolean
           title: string
           unit_label: string
           updated_at?: string
@@ -985,6 +987,7 @@ export type Database = {
           price_dg?: number | null
           price_fiat?: number
           quantity_units?: number
+          service_manager_added?: boolean
           title?: string
           unit_label?: string
           updated_at?: string
@@ -2137,4 +2140,3 @@ export const Constants = {
     Enums: {},
   },
 } as const
-

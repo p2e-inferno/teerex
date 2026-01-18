@@ -225,6 +225,7 @@ serve(async (req) => {
       if ("metadata_set" in formData) bundleData.metadata_set = !!formData.metadata_set;
       if ("quantity_units" in formData) bundleData.quantity_units = formData.quantity_units;
       if ("unit_label" in formData) bundleData.unit_label = formData.unit_label;
+      if ("service_manager_added" in formData) bundleData.service_manager_added = !!formData.service_manager_added;
     }
 
     console.log("Updating bundle with data:", bundleData);

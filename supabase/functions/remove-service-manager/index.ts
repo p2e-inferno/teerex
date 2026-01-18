@@ -1,38 +1,19 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.50.0";
-import { ethers } from "https://esm.sh/ethers@6.14.4";
 import { corsHeaders, buildPreflightHeaders } from "../_shared/cors.ts";
 import {
   createRemoteJWKSet,
   jwtVerify,
   importSPKI,
 } from "https://deno.land/x/jose@v4.14.4/index.ts";
-import { validateChain } from "../_shared/network-helpers.ts";
-import { appendDivviTagToCalldataAsync, submitDivviReferralBestEffort } from "../_shared/divvi.ts";
+import { getUserWalletAddresses } from "../_shared/privy.ts";
+import { renounceServiceManager } from "../_shared/service-manager.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-const UNLOCK_SERVICE_PRIVATE_KEY = Deno.env.get("UNLOCK_SERVICE_PRIVATE_KEY")!;
 const PRIVY_APP_ID = Deno.env.get("VITE_PRIVY_APP_ID")!;
 const PRIVY_VERIFICATION_KEY = Deno.env.get("PRIVY_VERIFICATION_KEY");
 
-// PublicLock ABI for renounceLockManager
-const PublicLockABI = [
-  {
-    inputs: [],
-    name: "renounceLockManager",
-    outputs: [],
-    stateMutability: "nonpayable",
-    type: "function",
-  },
-  {
-    inputs: [{ internalType: "address", name: "_account", type: "address" }],
-    name: "isLockManager",
-    outputs: [{ internalType: "bool", name: "", type: "bool" }],
-    stateMutability: "view",
-    type: "function",
-  },
-];
 
 serve(async (req) => {
   // Handle CORS preflight requests
@@ -147,70 +128,15 @@ serve(async (req) => {
       throw new Error("Only the event creator can remove the service manager");
     }
 
-    // Get the service wallet
-    const serviceWallet = new ethers.Wallet(UNLOCK_SERVICE_PRIVATE_KEY);
-    console.log("Service wallet address:", serviceWallet.address);
-
-    // Validate chain and get network configuration
-    const networkConfig = await validateChain(supabaseAdmin, event.chain_id);
-    if (!networkConfig) {
-      return new Response(
-        JSON.stringify({ success: false, error: "Chain not supported or not active" }),
-        {
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-          status: 400,
-        }
-      );
-    }
-
-    if (!networkConfig.rpc_url) {
-      return new Response(
-        JSON.stringify({ success: false, error: "Network not fully configured (missing RPC URL)" }),
-        {
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-          status: 500,
-        }
-      );
-    }
-
-    // Connect using DB-driven RPC URL
-    const provider = new ethers.JsonRpcProvider(networkConfig.rpc_url);
-    const connectedWallet = serviceWallet.connect(provider);
-
-    // Create lock contract instance
-    const lockContract = new ethers.Contract(
-      event.lock_address,
-      PublicLockABI,
-      connectedWallet
-    );
-
-    // Verify service wallet is currently a lock manager
-    const isManager = await lockContract.isLockManager(serviceWallet.address);
-    if (!isManager) {
-      throw new Error("Service wallet is not a lock manager for this event");
-    }
-
-    // Verify the user's wallet is also a lock manager (security check)
-    // We need to get user's wallet address - for now we'll trust the creator_id check
-    // In production, you might want additional verification
-
     console.log("Renouncing lock manager role for lock:", event.lock_address);
-
-    // Call renounceLockManager
-    const calldata = lockContract.interface.encodeFunctionData("renounceLockManager", []);
-    const tagged = await appendDivviTagToCalldataAsync({ data: calldata, user: serviceWallet.address as `0x${string}` });
-    const tx = await connectedWallet.sendTransaction({ to: event.lock_address, data: tagged });
-    console.log("Transaction sent:", tx.hash);
-
-    const receipt = await tx.wait();
-    console.log("Transaction confirmed:", receipt.transactionHash);
-
-    if (receipt.status !== 1) {
-      throw new Error("Transaction failed");
-    }
-    if (tx?.hash && typeof event.chain_id === 'number') {
-      await submitDivviReferralBestEffort({ txHash: tx.hash, chainId: event.chain_id });
-    }
+    const userWallets = await getUserWalletAddresses(privyUserId);
+    const { transactionHash } = await renounceServiceManager({
+      supabase: supabaseAdmin,
+      lockAddress: event.lock_address,
+      chainId: event.chain_id,
+      userWallets,
+      requireUserManager: false,
+    });
 
     // Update the database
     const { error: updateError } = await supabaseAdmin
@@ -226,7 +152,7 @@ serve(async (req) => {
     return new Response(
       JSON.stringify({
         success: true,
-        transactionHash: receipt.transactionHash,
+        transactionHash,
         message: "Service manager removed successfully",
       }),
       {

@@ -8,6 +8,8 @@ import { formatEventDate } from "../_shared/date-utils.ts";
 import { validateChain } from "../_shared/network-helpers.ts";
 import { appendDivviTagToCalldataAsync, submitDivviReferralBestEffort } from "../_shared/divvi.ts";
 
+const PAYSTACK_SUCCESS_EVENT = "charge.success";
+
 function json(data: any, status = 200) {
   return new Response(JSON.stringify(data), {
     status,
@@ -16,6 +18,43 @@ function json(data: any, status = 200) {
       "Access-Control-Allow-Origin": "*",
     },
   });
+}
+
+function asNumber(value: unknown): number | null {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  const parsed = Number(String(value ?? ""));
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function sanitizePaystackWebhookPayload(body: any) {
+  const data = body?.data ?? {};
+  return {
+    event: body?.event,
+    data: {
+      id: data?.id,
+      status: data?.status,
+      reference: data?.reference,
+      amount: data?.amount,
+      currency: data?.currency,
+      paid_at: data?.paid_at,
+      channel: data?.channel,
+      gateway_response: data?.gateway_response,
+      customer: data?.customer?.email ? { email: data.customer.email } : undefined,
+    },
+  };
+}
+
+function readMetadataField(metadata: any, key: string): string | null {
+  const direct = metadata?.[key];
+  if (typeof direct === "string" && direct.trim()) return direct.trim();
+  const fields = Array.isArray(metadata?.custom_fields) ? metadata.custom_fields : [];
+  for (const f of fields) {
+    if (String(f?.variable_name || "").toLowerCase() === key.toLowerCase()) {
+      const v = String(f?.value || "").trim();
+      if (v) return v;
+    }
+  }
+  return null;
 }
 
 async function hmacSha512Hex(secret: string, data: Uint8Array): Promise<string> {
@@ -45,6 +84,11 @@ serve(async (req) => {
     });
   }
 
+  let auditReference: string | undefined;
+  let auditBody: any;
+  let bundleIssuanceLockId: string | undefined;
+  let ticketIssuanceLockId: string | undefined;
+
   try {
     // 1) Verify Paystack signature over raw body
     const secret = Deno.env.get("PAYSTACK_SECRET_KEY");
@@ -62,19 +106,26 @@ serve(async (req) => {
 
     const bodyText = new TextDecoder().decode(raw);
     const body = bodyText ? JSON.parse(bodyText) : {};
-
-    const verificationLog = {
-      reference: body?.data?.reference ?? body.reference,
-      amount: body?.data?.amount ?? body.amount,
-      email: body?.data?.customer?.email ?? body.email,
-      status: body?.data?.status ?? body.status,
-      paid_at: body?.data?.paid_at ?? body.paid_at,
-    };
-    console.log(`🎉 [VERIFICATION] Payment verified successfully: ${JSON.stringify(verificationLog, null, 2)}`);
-
-    const md = (body?.data?.metadata ?? body.metadata ?? {}) as Record<string, any>;
+    auditBody = body;
+    const paystackEvent = String(body?.event || "").trim();
+    const paystackStatus = String(body?.data?.status || "").toLowerCase();
     const reference: string | undefined = body?.data?.reference ?? body.reference;
     if (!reference) throw new Error("Missing reference in webhook payload");
+    auditReference = reference;
+
+    if (paystackEvent !== PAYSTACK_SUCCESS_EVENT) {
+      return json({ ok: true, skipped: true, reason: "event_ignored", event: paystackEvent }, 200);
+    }
+
+    if (paystackStatus !== "success") {
+      return json({ ok: true, skipped: true, reason: "status_not_success", status: paystackStatus }, 200);
+    }
+
+    const paystackAmount = asNumber(body?.data?.amount);
+    const paystackCurrency = String(body?.data?.currency || "").toUpperCase();
+    if (paystackAmount === null || !paystackCurrency) {
+      return json({ ok: true, skipped: true, reason: "missing_amount_or_currency" }, 200);
+    }
 
     // Supabase: fetch transaction and event to get canonical lock_address and chain_id
     const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
@@ -82,31 +133,160 @@ serve(async (req) => {
     const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
     const { data: tx } = await supabase
       .from("paystack_transactions")
-      .select("reference, status, user_email, gateway_response, events:events(id, title, date, lock_address, chain_id)")
+      .select("id, reference, status, amount, currency, user_email, gateway_response, verified_at, issuance_lock_id, issuance_locked_at, issuance_attempts, events:events(id, title, date, lock_address, chain_id)")
       .eq("reference", reference)
       .maybeSingle();
 
     if (!tx) {
-      const { data: bundleOrder } = await supabase
+      let { data: bundleOrder } = await supabase
         .from("gaming_bundle_orders")
-        .select("id, status, txn_hash, nft_recipient_address, payment_reference, bundle_address, chain_id, gaming_bundles(bundle_address, chain_id, key_expiration_duration_seconds)")
+        .select("id, status, txn_hash, token_id, amount_fiat, fiat_symbol, buyer_address, nft_recipient_address, payment_reference, bundle_address, chain_id, gateway_response, verified_at, issuance_lock_id, issuance_locked_at, issuance_attempts, gaming_bundles(bundle_address, chain_id, key_expiration_duration_seconds, price_fiat, fiat_symbol)")
         .eq("payment_reference", reference)
         .maybeSingle();
 
       if (!bundleOrder) {
-        console.warn("[WEBHOOK] No pending transaction found for reference:", reference);
-        return json({ ok: true, skipped: true, reason: "transaction_not_found" }, 200);
+        // Recoverability: webhook can arrive before client-side init creates the order record.
+        // If Paystack metadata contains bundle + recipient info, create the order and proceed.
+        const metadata = body?.data?.metadata ?? {};
+        const bundleId = readMetadataField(metadata, "bundle_id");
+        const buyerWallet = readMetadataField(metadata, "user_wallet_address");
+        const buyerEmail =
+          normalizeEmail(readMetadataField(metadata, "user_email") || body?.data?.customer?.email || "") || null;
+
+        if (!bundleId || !buyerWallet) {
+          console.warn("[WEBHOOK] No pending transaction found for reference:", reference);
+          return json({ ok: true, skipped: true, reason: "transaction_not_found" }, 200);
+        }
+
+        const { data: bundle } = await supabase
+          .from("gaming_bundles")
+          .select("id,vendor_id,vendor_address,bundle_address,chain_id,price_fiat,fiat_symbol,is_active,key_expiration_duration_seconds")
+          .eq("id", bundleId)
+          .maybeSingle();
+
+        if (!bundle || !bundle.is_active) {
+          return json({ ok: true, skipped: true, reason: "bundle_not_found_or_inactive" }, 200);
+        }
+
+        const expectedFiat = asNumber(bundle.price_fiat) ?? 0;
+        const expectedCurrency = String(bundle.fiat_symbol || "NGN").toUpperCase();
+        const expectedAmount = Math.round(expectedFiat * 100);
+        const verificationIssues = [
+          expectedCurrency !== paystackCurrency ? "currency_mismatch" : null,
+          expectedAmount !== paystackAmount ? "amount_mismatch" : null,
+        ].filter(Boolean);
+
+        const status = verificationIssues.length ? "FAILED" : "PAID";
+
+        await supabase
+          .from("gaming_bundle_orders")
+          .upsert({
+            bundle_id: bundle.id,
+            vendor_id: bundle.vendor_id,
+            vendor_address: String(bundle.vendor_address || "").toLowerCase(),
+            buyer_email: buyerEmail,
+            buyer_address: String(buyerWallet).toLowerCase(),
+            payment_provider: "paystack",
+            payment_reference: reference,
+            amount_fiat: paystackAmount / 100,
+            fiat_symbol: paystackCurrency,
+            chain_id: bundle.chain_id,
+            bundle_address: bundle.bundle_address,
+            status,
+            fulfillment_method: "NFT",
+            nft_recipient_address: String(buyerWallet).toLowerCase(),
+            gateway_response: {
+              paystack_webhook: sanitizePaystackWebhookPayload(body),
+              ...(verificationIssues.length ? { verification_issues: verificationIssues } : {}),
+            },
+            verified_at: new Date().toISOString(),
+          } as any, { onConflict: "payment_reference" });
+
+        if (verificationIssues.length) {
+          return json({ ok: true, skipped: true, reason: "verification_failed" }, 200);
+        }
+
+        const refetch = await supabase
+          .from("gaming_bundle_orders")
+          .select("id, status, txn_hash, token_id, amount_fiat, fiat_symbol, buyer_address, nft_recipient_address, payment_reference, bundle_address, chain_id, gateway_response, verified_at, issuance_lock_id, issuance_locked_at, issuance_attempts, gaming_bundles(bundle_address, chain_id, key_expiration_duration_seconds, price_fiat, fiat_symbol)")
+          .eq("payment_reference", reference)
+          .maybeSingle();
+        bundleOrder = refetch.data as any;
+
+        if (!bundleOrder) {
+          return json({ ok: true, skipped: true, reason: "transaction_not_found" }, 200);
+        }
       }
+
+      const expectedFiat = asNumber((bundleOrder as any)?.gaming_bundles?.price_fiat) ??
+        asNumber((bundleOrder as any)?.amount_fiat) ?? 0;
+      const expectedCurrency = String((bundleOrder as any)?.fiat_symbol || (bundleOrder as any)?.gaming_bundles?.fiat_symbol || "NGN").toUpperCase();
+      const expectedAmount = Math.round(expectedFiat * 100);
+      if (expectedCurrency !== paystackCurrency || expectedAmount !== paystackAmount) {
+        await supabase
+          .from("gaming_bundle_orders")
+          .update({
+            status: "FAILED",
+            gateway_response: {
+              ...((bundleOrder as any)?.gateway_response || {}),
+              paystack_webhook: sanitizePaystackWebhookPayload(body),
+              verification_issues: [
+                expectedCurrency !== paystackCurrency ? "currency_mismatch" : null,
+                expectedAmount !== paystackAmount ? "amount_mismatch" : null,
+              ].filter(Boolean),
+            },
+            verified_at: new Date().toISOString(),
+          } as any)
+          .eq("id", (bundleOrder as any).id);
+        return json({ ok: true, skipped: true, reason: "verification_failed" }, 200);
+      }
+
+      // Mark payment as confirmed (even if issuance later fails)
+      await supabase
+        .from("gaming_bundle_orders")
+        .update({
+          status: "PAID",
+          gateway_response: {
+            ...((bundleOrder as any)?.gateway_response || {}),
+            paystack_webhook: sanitizePaystackWebhookPayload(body),
+          },
+          verified_at: new Date().toISOString(),
+        } as any)
+        .eq("id", (bundleOrder as any).id);
 
       const bundle = (bundleOrder as any)?.gaming_bundles;
       const lockAddress: string | undefined = bundle?.bundle_address || (bundleOrder as any)?.bundle_address;
-      const recipient: string | undefined = (bundleOrder as any)?.nft_recipient_address;
+      const recipient: string | undefined = ((bundleOrder as any)?.nft_recipient_address || (bundleOrder as any)?.buyer_address || "").toLowerCase();
       const chainId = Number(bundle?.chain_id || (bundleOrder as any)?.chain_id);
       const expirationSeconds = Number(bundle?.key_expiration_duration_seconds || 60 * 60 * 24 * 30);
 
       if ((bundleOrder as any)?.status === "PAID" && (bundleOrder as any)?.txn_hash) {
         console.log("[WEBHOOK] Bundle order already processed and key granted. Skipping.");
         return json({ ok: true, granted: true, reference }, 200);
+      }
+
+      // Acquire issuance lock (best-effort; avoid double issuance)
+      const lockId = crypto.randomUUID();
+      bundleIssuanceLockId = lockId;
+      const nowIso = new Date().toISOString();
+      const staleBefore = new Date(Date.now() - 15 * 60 * 1000).toISOString();
+      const attempts = ((bundleOrder as any)?.issuance_attempts ?? 0) + 1;
+
+      const { data: lockedOrder } = await supabase
+        .from("gaming_bundle_orders")
+        .update({
+          issuance_lock_id: lockId,
+          issuance_locked_at: nowIso,
+          issuance_attempts: attempts,
+          issuance_last_error: null,
+        } as any)
+        .eq("id", (bundleOrder as any).id)
+        .or(`issuance_lock_id.is.null,issuance_locked_at.lt.${staleBefore}`)
+        .select("id,issuance_lock_id")
+        .maybeSingle();
+
+      if (!lockedOrder || (lockedOrder as any).issuance_lock_id !== lockId) {
+        return json({ ok: true, processing: true, reason: "issuance_already_in_progress" }, 200);
       }
 
       // Determine RPC URL from network config
@@ -172,9 +352,18 @@ serve(async (req) => {
           fulfillment_method: "NFT",
           txn_hash: grantTxHash || (bundleOrder as any)?.txn_hash,
           nft_recipient_address: recipient,
-          token_id: tokenId,
+          token_id: tokenId || (bundleOrder as any)?.token_id,
+          gateway_response: {
+            ...((bundleOrder as any)?.gateway_response || {}),
+            key_granted: true,
+            ...(grantTxHash ? { key_grant_tx_hash: grantTxHash } : {}),
+          },
+          issuance_lock_id: null,
+          issuance_locked_at: null,
+          issuance_last_error: null,
         })
-        .eq("id", (bundleOrder as any).id);
+        .eq("id", (bundleOrder as any).id)
+        .eq("issuance_lock_id", lockId);
 
       return json({ ok: true, granted, reference, txHash: grantTxHash });
     }
@@ -184,6 +373,64 @@ serve(async (req) => {
     if (alreadyGranted) {
       console.log("[WEBHOOK] Transaction already processed and key granted. Skipping.");
       return json({ ok: true, granted: true, reference }, 200);
+    }
+
+    const expectedAmount = asNumber((tx as any)?.amount);
+    const expectedCurrency = String((tx as any)?.currency || "NGN").toUpperCase();
+    if (expectedAmount === null || expectedCurrency !== paystackCurrency || expectedAmount !== paystackAmount) {
+      await supabase
+        .from("paystack_transactions")
+        .update({
+          status: "failed",
+          issuance_last_error: "verification_failed",
+          gateway_response: {
+            ...((tx as any)?.gateway_response || {}),
+            paystack_webhook: sanitizePaystackWebhookPayload(body),
+            verification_issues: [
+              expectedCurrency !== paystackCurrency ? "currency_mismatch" : null,
+              expectedAmount !== paystackAmount ? "amount_mismatch" : null,
+            ].filter(Boolean),
+          },
+          verified_at: new Date().toISOString(),
+        } as any)
+        .eq("reference", reference);
+      return json({ ok: true, skipped: true, reason: "verification_failed" }, 200);
+    }
+
+    // Mark payment as confirmed (even if issuance later fails)
+    await supabase
+      .from("paystack_transactions")
+      .update({
+        status: "success",
+        gateway_response: {
+          ...((tx as any)?.gateway_response || {}),
+          status: "success",
+          paystack_webhook: sanitizePaystackWebhookPayload(body),
+        },
+        verified_at: new Date().toISOString(),
+      } as any)
+      .eq("reference", reference);
+
+    // Acquire issuance lock (best-effort; avoid double issuance)
+    const txLockId = crypto.randomUUID();
+    ticketIssuanceLockId = txLockId;
+    const txNowIso = new Date().toISOString();
+    const txStaleBefore = new Date(Date.now() - 15 * 60 * 1000).toISOString();
+    const txAttempts = ((tx as any)?.issuance_attempts ?? 0) + 1;
+    const { data: lockedTx } = await supabase
+      .from("paystack_transactions")
+      .update({
+        issuance_lock_id: txLockId,
+        issuance_locked_at: txNowIso,
+        issuance_attempts: txAttempts,
+        issuance_last_error: null,
+      } as any)
+      .eq("id", (tx as any).id)
+      .or(`issuance_lock_id.is.null,issuance_locked_at.lt.${txStaleBefore}`)
+      .select("id,issuance_lock_id")
+      .maybeSingle();
+    if (!lockedTx || (lockedTx as any).issuance_lock_id !== txLockId) {
+      return json({ ok: true, processing: true, reason: "issuance_already_in_progress" }, 200);
     }
 
     const txEvent = (tx as any)?.events;
@@ -272,11 +519,16 @@ serve(async (req) => {
         status: 'success',
         gateway_response: {
           ...(tx as any)?.gateway_response,
+          paystack_webhook: sanitizePaystackWebhookPayload(body),
           ...gatewayPatch,
         },
         verified_at: new Date().toISOString(),
+        issuance_lock_id: null,
+        issuance_locked_at: null,
+        issuance_last_error: null,
       })
-      .eq('reference', reference);
+      .eq('reference', reference)
+      .eq("issuance_lock_id", txLockId);
 
     // Store ticket record with token_id if key was granted
     if (granted && grantTxHash) {
@@ -313,10 +565,42 @@ serve(async (req) => {
       });
     }
 
-    return json({ ok: true, granted, reference: verificationLog.reference, txHash: grantTxHash });
+    return json({ ok: true, granted, reference, txHash: grantTxHash });
   } catch (err) {
     console.error(" [KEY GRANT] Payment was successful but key granting failed");
     console.error(" [KEY GRANT] Failed to grant key:", (err as Error).message);
+    // Best-effort persistence for post-mortem + retries (don't overwrite existing gateway_response).
+    if (auditReference) {
+      try {
+        const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
+        const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+        const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+        if (ticketIssuanceLockId) {
+          await supabase
+            .from("paystack_transactions")
+            .update({
+              issuance_last_error: (err as Error).message,
+              issuance_lock_id: null,
+              issuance_locked_at: null,
+            } as any)
+            .eq("reference", auditReference)
+            .eq("issuance_lock_id", ticketIssuanceLockId);
+        }
+        if (bundleIssuanceLockId) {
+          await supabase
+            .from("gaming_bundle_orders")
+            .update({
+              issuance_last_error: (err as Error).message,
+              issuance_lock_id: null,
+              issuance_locked_at: null,
+            } as any)
+            .eq("payment_reference", auditReference)
+            .eq("issuance_lock_id", bundleIssuanceLockId);
+        }
+      } catch (_) {
+        // ignore
+      }
+    }
     return json({ ok: false, error: (err as Error).message }, 200);
   }
 });

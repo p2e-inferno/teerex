@@ -73,6 +73,29 @@ export interface PaystackAccountResolveResponse {
   data: PaystackAccountResolveData;
 }
 
+export interface PaystackTransactionVerifyData {
+  id: number;
+  domain: string;
+  status: string;
+  reference: string;
+  amount: number;
+  currency: string;
+  paid_at?: string | null;
+  created_at?: string | null;
+  channel?: string | null;
+  gateway_response?: string | null;
+  message?: string | null;
+  customer?: { email?: string | null } | null;
+  authorization?: Record<string, unknown> | null;
+  metadata?: Record<string, unknown> | null;
+}
+
+export interface PaystackTransactionVerifyResponse {
+  status: boolean;
+  message: string;
+  data: PaystackTransactionVerifyData;
+}
+
 // ============================================================================
 // Helper Functions
 // ============================================================================
@@ -210,6 +233,34 @@ export async function verifyAccountNumber(
   }
 
   return data as PaystackAccountResolveResponse;
+}
+
+// ============================================================================
+// Transaction API
+// ============================================================================
+
+/**
+ * Verify a Paystack transaction by reference.
+ * @see https://paystack.com/docs/api/transaction/#verify
+ */
+export async function verifyPaystackTransaction(
+  reference: string
+): Promise<PaystackTransactionVerifyResponse> {
+  const ref = String(reference || "").trim();
+  if (!ref) throw new Error("reference_required");
+
+  const response = await fetch(`${PAYSTACK_BASE_URL}/transaction/verify/${encodeURIComponent(ref)}`, {
+    method: "GET",
+    headers: getPaystackHeaders(),
+  });
+
+  const data = await response.json();
+
+  if (!response.ok || !data.status) {
+    throw new Error(data.message || "Failed to verify Paystack transaction");
+  }
+
+  return data as PaystackTransactionVerifyResponse;
 }
 
 // ============================================================================

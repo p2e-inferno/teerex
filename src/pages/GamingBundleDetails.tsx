@@ -12,6 +12,7 @@ import { Loader2, MapPin, AlertCircle, RefreshCw, Edit } from 'lucide-react';
 import type { GamingBundle } from '@/types/gaming';
 import { GamingBundlePaystackDialog } from '@/components/gaming/GamingBundlePaystackDialog';
 import { GamingBundleProcessingDialog } from '@/components/gaming/GamingBundleProcessingDialog';
+import { ServiceManagerControls } from '@/components/shared/ServiceManagerControls';
 import { getGamingBundleMetadataBaseURI } from '@/utils/gamingBundleNftMetadata';
 import { useQueryClient } from '@tanstack/react-query';
 import { useLockManagerVerification } from '@/components/interactions/hooks/useLockManagerVerification';
@@ -37,9 +38,14 @@ const GamingBundleDetails = () => {
 
   const { data: bundles = [], isLoading } = useGamingBundles({ bundle_id: id || '' }, { enabled: !!id });
   const bundle = useMemo(() => bundles[0] as GamingBundle | undefined, [bundles]);
+  const fiatEnabled = useMemo(() => {
+    const raw = (import.meta as any).env?.VITE_ENABLE_FIAT;
+    if (raw === undefined || raw === null || raw === '') return false;
+    return String(raw).toLowerCase() === 'true';
+  }, []);
 
-  const [isPaystackOpen, setIsPaystackOpen] = useState(false);
-  const [isProcessingOpen, setIsProcessingOpen] = useState(false);
+  type PurchaseModalState = 'none' | 'paystack' | 'processing';
+  const [purchaseModal, setPurchaseModal] = useState<PurchaseModalState>('none');
   const [paymentData, setPaymentData] = useState<any | null>(null);
   const [isCryptoPurchasing, setIsCryptoPurchasing] = useState(false);
   const [isSettingMetadata, setIsSettingMetadata] = useState(false);
@@ -342,10 +348,9 @@ const GamingBundleDetails = () => {
               </div>
               {isLockManager && (
                 <Button
-                  variant="outline"
                   size="sm"
                   onClick={() => setIsEditOpen(true)}
-                  className="flex-shrink-0"
+                  className="flex-shrink-0 bg-blue-600 text-white hover:bg-blue-700"
                 >
                   <Edit className="w-4 h-4 mr-2" />
                   Edit
@@ -396,10 +401,35 @@ const GamingBundleDetails = () => {
               </div>
             )}
 
+            {isLockManager && (
+              <ServiceManagerControls
+                entityType="bundle"
+                entityId={bundle.id}
+                lockAddress={bundle.bundle_address}
+                chainId={bundle.chain_id}
+                canManage={isLockManager}
+                initialAdded={bundle.service_manager_added}
+                onUpdated={() => queryClient.invalidateQueries({ queryKey: ['gaming-bundles'] })}
+              />
+            )}
+
             <div className="border-t pt-4">
               <div className="flex flex-col sm:flex-row gap-4">
                 {bundle.price_fiat > 0 && (
-                  <Button onClick={() => setIsPaystackOpen(true)} className="flex-1">
+                  <Button
+                    onClick={() => {
+                      if (!fiatEnabled) {
+                        toast({
+                          title: 'Fiat payments disabled',
+                          description: 'Card/Bank payments are currently disabled.',
+                          variant: 'destructive',
+                        });
+                        return;
+                      }
+                      setPurchaseModal('paystack');
+                    }}
+                    className="flex-1"
+                  >
                     Pay NGN {Number(bundle.price_fiat).toLocaleString()}
                   </Button>
                 )}
@@ -415,19 +445,19 @@ const GamingBundleDetails = () => {
 
         <GamingBundlePaystackDialog
           bundle={bundle}
-          isOpen={isPaystackOpen}
-          onClose={() => setIsPaystackOpen(false)}
+          isOpen={purchaseModal === 'paystack'}
+          onClose={() => setPurchaseModal('none')}
           onSuccess={(data) => {
             setPaymentData(data);
-            setIsProcessingOpen(true);
+            setPurchaseModal('processing');
           }}
         />
 
         <GamingBundleProcessingDialog
           bundle={bundle}
-          isOpen={isProcessingOpen}
+          isOpen={purchaseModal === 'processing'}
           paymentData={paymentData}
-          onClose={() => setIsProcessingOpen(false)}
+          onClose={() => setPurchaseModal('none')}
         />
 
         {/* Edit Bundle Dialog - Lock Manager Only */}

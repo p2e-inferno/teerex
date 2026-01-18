@@ -83,6 +83,12 @@ export const Header: React.FC = () => {
                           My Tickets
                         </Link>
                       </DropdownMenuItem>
+                      <DropdownMenuItem asChild>
+                        <Link to="/my-bundles" className="flex items-center cursor-pointer py-2 px-2 hover:bg-gray-50 rounded-md transition-colors">
+                          <Gamepad2 className="h-4 w-4 mr-2 text-gray-500" />
+                          My Bundles
+                        </Link>
+                      </DropdownMenuItem>
                     </DropdownMenuGroup>
 
                     <DropdownMenuSeparator className="my-1 mx-1 bg-gray-100" />

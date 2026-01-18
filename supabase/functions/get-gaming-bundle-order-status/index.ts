@@ -38,7 +38,7 @@ serve(async (req) => {
 
     let query = supabase
       .from("gaming_bundle_orders")
-      .select("status, fulfillment_method, txn_hash, eas_uid, nft_recipient_address")
+      .select("status, fulfillment_method, txn_hash, token_id, eas_uid, nft_recipient_address, gateway_response")
       .limit(1);
 
     if (orderId) {
@@ -72,8 +72,10 @@ serve(async (req) => {
       status: order.status,
       fulfillment_method: order.fulfillment_method,
       txn_hash: order.txn_hash || null,
+      token_id: (order as any).token_id || null,
       eas_uid: order.eas_uid || null,
       nft_recipient_address: order.nft_recipient_address || null,
+      key_granted: Boolean((order as any)?.gateway_response?.key_granted),
     }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
       status: 200,
