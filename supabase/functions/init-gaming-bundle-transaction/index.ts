@@ -27,6 +27,14 @@ serve(async (req) => {
     const walletAddress: string | undefined = body.wallet_address || body.walletAddress;
     const amountKobo: number | undefined = typeof body.amount === "number" ? body.amount : undefined;
 
+    console.log("[init-gaming-bundle-transaction] request", {
+      bundleId,
+      reference,
+      hasEmail: Boolean(email),
+      hasWalletAddress: Boolean(walletAddress),
+      amountKobo,
+    });
+
     if (!bundleId || !reference || !email || !walletAddress) {
       return new Response(JSON.stringify({ ok: false, error: "Missing required fields: bundle_id, reference, email, wallet_address" }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -76,6 +84,15 @@ serve(async (req) => {
       if (vendorPayoutAccount?.provider_account_code) {
         subaccountCode = vendorPayoutAccount.provider_account_code;
       }
+    }
+
+    const expectedFiat = typeof bundle.price_fiat === "number" ? bundle.price_fiat : null;
+    const expectedAmountKobo = expectedFiat !== null ? Math.round(expectedFiat * 100) : null;
+    if (typeof amountKobo === "number" && expectedAmountKobo !== null && amountKobo !== expectedAmountKobo) {
+      return new Response(JSON.stringify({ ok: false, error: "amount_mismatch" }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        status: 400,
+      });
     }
 
     const amountFiat = typeof amountKobo === "number" ? amountKobo / 100 : (bundle.price_fiat ?? null);

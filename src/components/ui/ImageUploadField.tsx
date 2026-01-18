@@ -36,7 +36,7 @@ export const ImageUploadField: React.FC<ImageUploadFieldProps> = ({
         </p>
       )}
       {imageUrl ? (
-        <div className="space-y-2 w-[70%]">
+        <div className="space-y-2 w-[30%]">
           <div className="relative">
             <img
               src={imageUrl}

@@ -9,9 +9,10 @@ import { useLockManagerVerification } from '@/components/interactions/hooks/useL
 type GamingBundleCardProps = {
   bundle: GamingBundle;
   showActions?: boolean;
+  onEdit?: (bundle: GamingBundle) => void;
 };
 
-export const GamingBundleCard = ({ bundle, showActions = true }: GamingBundleCardProps) => {
+export const GamingBundleCard = ({ bundle, showActions = true, onEdit }: GamingBundleCardProps) => {
   const { isLockManager } = useLockManagerVerification(bundle.bundle_address, bundle.chain_id);
   return (
     <Card className="border border-gray-200 shadow-sm overflow-hidden">
@@ -86,9 +87,25 @@ export const GamingBundleCard = ({ bundle, showActions = true }: GamingBundleCar
       </CardContent>
       {showActions ? (
         <CardFooter>
-          <Button asChild className="w-full">
-            <Link to={`/gaming-bundles/${bundle.id}`}>View Bundle</Link>
-          </Button>
+          {onEdit ? (
+            <div className="flex w-full gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                className="flex-1"
+                onClick={() => onEdit(bundle)}
+              >
+                Edit
+              </Button>
+              <Button asChild className="flex-1">
+                <Link to={`/gaming-bundles/${bundle.id}`}>View</Link>
+              </Button>
+            </div>
+          ) : (
+            <Button asChild className="w-full">
+              <Link to={`/gaming-bundles/${bundle.id}`}>View Bundle</Link>
+            </Button>
+          )}
         </CardFooter>
       ) : null}
     </Card>

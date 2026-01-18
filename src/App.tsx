@@ -11,6 +11,7 @@ import Explore from "./pages/Explore";
 import CreateEvent from "./pages/CreateEvent";
 import MyEvents from "./pages/MyEvents";
 import MyTickets from "./pages/MyTickets";
+import MyBundles from "./pages/MyBundles";
 import Attestations from "./pages/Attestations";
 import Drafts from "./pages/Drafts";
 import Profile from "./pages/Profile";
@@ -56,6 +57,7 @@ const App = () => {
                 <Route path="/events" element={<MyEvents />} />
                 <Route path="/my-events" element={<MyEvents />} />
                 <Route path="/my-tickets" element={<MyTickets />} />
+                <Route path="/my-bundles" element={<MyBundles />} />
                 <Route path="/attestations" element={<Attestations />} />
                 <Route path="/drafts" element={<Drafts />} />
                 <Route path="/profile" element={<Profile />} />

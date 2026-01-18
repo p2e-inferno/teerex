@@ -13,7 +13,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Switch } from '@/components/ui/switch';
 import { useToast } from '@/hooks/use-toast';
 import type { PublishedEvent } from '@/types/event';
-import { checkIfLockManager, addLockManager } from '@/utils/lockUtils';
+import { checkIfLockManager } from '@/utils/lockUtils';
 import { supabase } from '@/integrations/supabase/client';
 import {
   CheckCircle2,
@@ -22,7 +22,6 @@ import {
   Copy,
   AlertTriangle,
   Loader2,
-  Shield,
   CreditCard,
   Users,
   UserCheck,
@@ -33,6 +32,7 @@ import {
 } from 'lucide-react';
 import { AllowListManager } from './AllowListManager';
 import { WaitlistManager } from './WaitlistManager';
+import { ServiceManagerControls } from '@/components/shared/ServiceManagerControls';
 import { useNetworkConfigs } from '@/hooks/useNetworkConfigs';
 import { base, baseSepolia } from 'wagmi/chains';
 import { getDivviBrowserProvider } from '@/lib/wallet/provider';
@@ -54,12 +54,6 @@ export const EventManagementDialog: React.FC<EventManagementDialogProps> = ({
   const { wallets } = useWallets();
   const { toast } = useToast();
 
-  const [serviceWalletAddress, setServiceWalletAddress] = useState<string>('');
-  const [isServiceManager, setIsServiceManager] = useState<boolean>(false);
-  const [isCheckingStatus, setIsCheckingStatus] = useState(false);
-  const [isAddingManager, setIsAddingManager] = useState(false);
-  const [isRemovingManager, setIsRemovingManager] = useState(false);
-  const [localServiceManagerAdded, setLocalServiceManagerAdded] = useState(event.service_manager_added);
   const [allowListManagerOpen, setAllowListManagerOpen] = useState(false);
   const [waitlistManagerOpen, setWaitlistManagerOpen] = useState(false);
   const [localAllowWaitlist, setLocalAllowWaitlist] = useState(event.allow_waitlist);
@@ -79,50 +73,6 @@ export const EventManagementDialog: React.FC<EventManagementDialogProps> = ({
       : event.chain_id === baseSepolia.id
       ? 'https://sepolia.basescan.org'
       : undefined);
-
-  // Fetch service wallet address
-  useEffect(() => {
-    const fetchServiceAddress = async () => {
-      try {
-        const { data, error } = await supabase.functions.invoke('get-service-address');
-        if (error || !data?.address) {
-          console.error('Failed to get service address:', error);
-        } else {
-          setServiceWalletAddress(data.address);
-        }
-      } catch (error) {
-        console.error('Error fetching service address:', error);
-      }
-    };
-
-    if (open) {
-      fetchServiceAddress();
-    }
-  }, [open]);
-
-  // Check on-chain manager status
-  useEffect(() => {
-    const checkManagerStatus = async () => {
-      if (!serviceWalletAddress || !open) return;
-      
-      setIsCheckingStatus(true);
-      try {
-        const isManager = await checkIfLockManager(event.lock_address, serviceWalletAddress, event.chain_id);
-        setIsServiceManager(isManager);
-        
-        // If on-chain status doesn't match database, update local state
-        if (isManager !== localServiceManagerAdded) {
-          setLocalServiceManagerAdded(isManager);
-        }
-      } catch (error) {
-        console.error('Error checking manager status:', error);
-      } finally {
-        setIsCheckingStatus(false);
-      }
-    };
-
-    checkManagerStatus();
-  }, [serviceWalletAddress, event.lock_address, open]);
 
   // Check if current user is a lock manager
   useEffect(() => {
@@ -148,101 +98,6 @@ export const EventManagementDialog: React.FC<EventManagementDialogProps> = ({
   useEffect(() => {
     setLocalAllowWaitlist(event.allow_waitlist);
   }, [event.allow_waitlist]);
-
-  const handleAddServiceManager = async () => {
-    if (!wallets[0]) {
-      toast({
-        title: "Wallet Not Connected",
-        description: "Please connect your wallet to continue.",
-        variant: "destructive"
-      });
-      return;
-    }
-
-    setIsAddingManager(true);
-    try {
-      const result = await addLockManager(event.lock_address, serviceWalletAddress, wallets[0]);
-      
-      if (result.success) {
-        // Update database
-        const accessToken = await getAccessToken();
-        const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
-        const { error } = await supabase.functions.invoke('update-event', {
-          body: { 
-            eventId: event.id, 
-            formData: { service_manager_added: true }
-          },
-          headers: {
-            Authorization: `Bearer ${anonKey}`,
-            'X-Privy-Authorization': `Bearer ${accessToken}`,
-          },
-        });
-
-        if (error) {
-          console.error('Failed to update database:', error);
-        }
-
-        setIsServiceManager(true);
-        setLocalServiceManagerAdded(true);
-        
-        toast({
-          title: "Service Manager Added",
-          description: "Fiat payments are now enabled for this event.",
-        });
-        
-        onEventUpdated();
-      } else {
-        throw new Error(result.error || 'Failed to add service manager');
-      }
-    } catch (error) {
-      console.error('Error adding service manager:', error);
-      toast({
-        title: "Failed to Add Service Manager",
-        description: error instanceof Error ? error.message : "An error occurred",
-        variant: "destructive"
-      });
-    } finally {
-      setIsAddingManager(false);
-    }
-  };
-
-  const handleRemoveServiceManager = async () => {
-    setIsRemovingManager(true);
-    try {
-      const accessToken = await getAccessToken();
-      const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
-      const { data, error } = await supabase.functions.invoke('remove-service-manager', {
-        body: { eventId: event.id },
-        headers: {
-          Authorization: `Bearer ${anonKey}`,
-          'X-Privy-Authorization': `Bearer ${accessToken}`,
-        },
-      });
-
-      if (error || !data?.success) {
-        throw new Error(data?.error || 'Failed to remove service manager');
-      }
-
-      setIsServiceManager(false);
-      setLocalServiceManagerAdded(false);
-      
-      toast({
-        title: "Service Manager Removed",
-        description: "Fiat payments are now disabled for this event.",
-      });
-      
-      onEventUpdated();
-    } catch (error) {
-      console.error('Error removing service manager:', error);
-      toast({
-        title: "Failed to Remove Service Manager",
-        description: error instanceof Error ? error.message : "An error occurred",
-        variant: "destructive"
-      });
-    } finally {
-      setIsRemovingManager(false);
-    }
-  };
 
   const handleUpdateMetadata = async () => {
     if (!wallets[0]) {
@@ -368,7 +223,7 @@ export const EventManagementDialog: React.FC<EventManagementDialogProps> = ({
   };
 
   const hasFiatPayment = event.payment_methods?.includes('fiat');
-  const showWarning = hasFiatPayment && !localServiceManagerAdded;
+  const showWarning = hasFiatPayment && !event.service_manager_added;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -468,75 +323,15 @@ export const EventManagementDialog: React.FC<EventManagementDialogProps> = ({
             </CardContent>
           </Card>
 
-          {/* Service Manager Status */}
-          <Card>
-            <CardContent className="pt-6">
-              <div className="flex items-center gap-2 mb-4">
-                <Shield className="w-5 h-5 text-gray-600" />
-                <h3 className="font-semibold text-gray-900">Service Manager Status</h3>
-              </div>
-              
-              <div className="space-y-3">
-                <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                  <span className="text-sm text-gray-600">Current Status:</span>
-                  {isCheckingStatus ? (
-                    <Loader2 className="w-4 h-4 animate-spin text-gray-400" />
-                  ) : isServiceManager ? (
-                    <Badge variant="default" className="bg-green-600">
-                      <CheckCircle2 className="w-3 h-3 mr-1" />
-                      Added
-                    </Badge>
-                  ) : (
-                    <Badge variant="secondary" className="bg-gray-200">
-                      <XCircle className="w-3 h-3 mr-1" />
-                      Not Added
-                    </Badge>
-                  )}
-                </div>
-
-                {serviceWalletAddress && (
-                  <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                    <span className="text-sm text-gray-600">Service Wallet:</span>
-                    <div className="flex items-center gap-2">
-                      <code className="text-xs bg-white px-2 py-1 rounded border">
-                        {serviceWalletAddress.slice(0, 6)}...{serviceWalletAddress.slice(-4)}
-                      </code>
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        onClick={() => copyToClipboard(serviceWalletAddress)}
-                      >
-                        <Copy className="w-3 h-3" />
-                      </Button>
-                    </div>
-                  </div>
-                )}
-
-                <div className="flex gap-2 pt-2">
-                  {!isServiceManager ? (
-                    <Button
-                      onClick={handleAddServiceManager}
-                      disabled={isAddingManager || isCheckingStatus}
-                      className="flex-1"
-                    >
-                      {isAddingManager && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
-                      Add Service Manager
-                    </Button>
-                  ) : (
-                    <Button
-                      onClick={handleRemoveServiceManager}
-                      disabled={isRemovingManager || isCheckingStatus}
-                      variant="destructive"
-                      className="flex-1"
-                    >
-                      {isRemovingManager && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
-                      Remove Service Manager
-                    </Button>
-                  )}
-                </div>
-              </div>
-            </CardContent>
-          </Card>
+          <ServiceManagerControls
+            entityType="event"
+            entityId={event.id}
+            lockAddress={event.lock_address}
+            chainId={event.chain_id}
+            canManage={isLockManager}
+            initialAdded={event.service_manager_added}
+            onUpdated={onEventUpdated}
+          />
 
           {/* Payment Methods */}
           <Card>
@@ -561,7 +356,7 @@ export const EventManagementDialog: React.FC<EventManagementDialogProps> = ({
                   )}
                 </div>
 
-                {hasFiatPayment && !localServiceManagerAdded && (
+                {hasFiatPayment && !event.service_manager_added && (
                   <p className="text-xs text-orange-600 mt-2">
                     ⚠️ Add service manager to activate fiat payments
                   </p>

@@ -40,6 +40,7 @@ serve(async (req) => {
     const keyExpirationDurationSeconds = Number(body.key_expiration_duration_seconds || DEFAULT_EXPIRATION_SECONDS);
     const metadataSet = body.metadata_set !== undefined ? Boolean(body.metadata_set) : false;
     const isActive = body.is_active !== undefined ? Boolean(body.is_active) : true;
+    const serviceManagerAdded = body.service_manager_added !== undefined ? Boolean(body.service_manager_added) : false;
 
     if (!title || !description || !bundleType || !unitLabel || !location) {
       return new Response(JSON.stringify({ ok: false, error: "Missing required fields (title, description, bundle_type, unit_label, location)" }), {
@@ -92,6 +93,7 @@ serve(async (req) => {
         image_url: imageUrl,
         metadata_set: metadataSet,
         is_active: isActive,
+        service_manager_added: serviceManagerAdded,
       })
       .select("*")
       .single();

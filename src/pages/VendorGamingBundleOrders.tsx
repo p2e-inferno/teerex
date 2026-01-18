@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { usePrivy } from '@privy-io/react-auth';
 import { useQueryClient } from '@tanstack/react-query';
 import { QRCodeCanvas } from 'qrcode.react';
-import { Copy, Loader2, RotateCcw } from 'lucide-react';
+import { Copy, ExternalLink, Loader2, RefreshCw, RotateCcw, Search } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import { useDebounce } from '@/hooks/useDebounce';
@@ -24,6 +24,14 @@ function shorten(value: string, start = 6, end = 4) {
   return `${value.slice(0, start)}...${value.slice(-end)}`;
 }
 
+function getExplorerTxUrl(chainId: number, txHash: string): string | null {
+  const normalized = txHash?.trim();
+  if (!normalized) return null;
+  if (chainId === 8453) return `https://basescan.org/tx/${normalized}`;
+  if (chainId === 84532) return `https://sepolia.basescan.org/tx/${normalized}`;
+  return null;
+}
+
 const VendorGamingBundleOrders = () => {
   const { authenticated, getAccessToken } = usePrivy();
   const { toast } = useToast();
@@ -32,6 +40,7 @@ const VendorGamingBundleOrders = () => {
   const [q, setQ] = useState('');
   const qDebounced = useDebounce(q, 250);
   const [rotatingOrderId, setRotatingOrderId] = useState<string | null>(null);
+  const [retryingOrderId, setRetryingOrderId] = useState<string | null>(null);
   const [receipt, setReceipt] = useState<ReissueReceipt | null>(null);
 
   const { data: orders = [], isLoading, error } = useGamingBundleOrders(
@@ -80,6 +89,35 @@ const VendorGamingBundleOrders = () => {
     }
   };
 
+  const handleRetryIssuance = async (orderId: string) => {
+    setRetryingOrderId(orderId);
+    try {
+      const token = await getAccessToken?.();
+      const { data, error: invokeError } = await supabase.functions.invoke('retry-gaming-bundle-issuance', {
+        body: { order_id: orderId },
+        headers: token ? { 'X-Privy-Authorization': `Bearer ${token}` } : undefined,
+      });
+
+      if (invokeError || !data?.ok) {
+        throw new Error(invokeError?.message || data?.error || 'Failed to retry issuance');
+      }
+
+      toast({
+        title: 'Issuance retried',
+        description: data?.txHash ? `Tx: ${shorten(String(data.txHash), 10, 8)}` : 'Order will update shortly.',
+      });
+      queryClient.invalidateQueries({ queryKey: ['gaming-bundle-orders'] });
+    } catch (err) {
+      toast({
+        title: 'Retry failed',
+        description: err instanceof Error ? err.message : String(err),
+        variant: 'destructive',
+      });
+    } finally {
+      setRetryingOrderId(null);
+    }
+  };
+
   if (!authenticated) {
     return (
       <div className="min-h-screen bg-gray-50 py-8">
@@ -100,127 +138,254 @@ const VendorGamingBundleOrders = () => {
       <div className="container mx-auto px-6 max-w-5xl space-y-6">
         <div>
           <h1 className="text-3xl font-bold text-gray-900">Bundle Orders</h1>
-          <p className="text-gray-600 mt-1">Search and reissue offline claim receipts (hash-only storage).</p>
+          <p className="text-gray-600 mt-1">Monitor online and offline orders, reissue receipts, and retry Paystack issuance.</p>
         </div>
 
-        <Card className="border border-gray-200 shadow-sm">
-          <CardHeader className="space-y-4">
-            <div className="flex items-center justify-between gap-4">
-              <CardTitle className="text-lg">Order History</CardTitle>
-              <div className="w-full max-w-sm">
+        <Card className="border border-gray-200 shadow-sm overflow-hidden bg-white">
+          <CardHeader className="px-6 py-5 bg-white border-b border-gray-100">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div>
+                <CardTitle className="text-lg font-bold text-gray-900">Order History</CardTitle>
+                <p className="text-xs text-gray-400 mt-0.5 font-medium">Manage and track your gaming bundle transactions</p>
+              </div>
+              <div className="relative w-full sm:max-w-xs group">
+                <div className="absolute inset-y-0 left-3 flex items-center pointer-events-none">
+                  <Search className="w-4 h-4 text-gray-400 group-focus-within:text-purple-600 transition-colors" />
+                </div>
                 <Input
                   value={q}
                   onChange={(e) => setQ(e.target.value)}
-                  placeholder="Search by order id, buyer name, phone, or address..."
+                  placeholder="Search orders..."
+                  className="pl-9 h-9 text-sm bg-gray-50 border-gray-200 focus:bg-white focus:ring-purple-500/10 focus:border-purple-500 transition-all rounded-lg"
                 />
               </div>
             </div>
             {error && (
-              <p className="text-sm text-red-600">
+              <p className="text-sm text-red-600 mt-2">
                 {error instanceof Error ? error.message : 'Failed to load orders'}
               </p>
             )}
           </CardHeader>
-          <CardContent>
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Order</TableHead>
-                  <TableHead>Bundle</TableHead>
-                  <TableHead>Buyer</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead>Redeemed</TableHead>
-                  <TableHead className="text-right">Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {isLoading ? (
-                  <TableRow>
-                    <TableCell colSpan={6}>
-                      <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                        <Loader2 className="w-4 h-4 animate-spin" />
-                        Loading orders...
-                      </div>
-                    </TableCell>
+          <CardContent className="p-0">
+            <div className="w-full overflow-x-auto">
+              <Table className="min-w-[1300px]">
+                <TableHeader className="bg-gray-50/50 border-y border-gray-100">
+                  <TableRow className="hover:bg-transparent">
+                    <TableHead className="h-11 px-6 text-[11px] font-bold uppercase tracking-wider text-gray-400 whitespace-nowrap">Order</TableHead>
+                    <TableHead className="h-11 px-4 text-[11px] font-bold uppercase tracking-wider text-gray-400 whitespace-nowrap">Bundle</TableHead>
+                    <TableHead className="h-11 px-4 text-[11px] font-bold uppercase tracking-wider text-gray-400 whitespace-nowrap">Payment</TableHead>
+                    <TableHead className="h-11 px-4 text-[11px] font-bold uppercase tracking-wider text-gray-400 whitespace-nowrap">Reference</TableHead>
+                    <TableHead className="h-11 px-4 text-[11px] font-bold uppercase tracking-wider text-gray-400 whitespace-nowrap">Buyer</TableHead>
+                    <TableHead className="h-11 px-4 text-[11px] font-bold uppercase tracking-wider text-gray-400 whitespace-nowrap">Status</TableHead>
+                    <TableHead className="h-11 px-4 text-[11px] font-bold uppercase tracking-wider text-gray-400 whitespace-nowrap">Issuance</TableHead>
+                    <TableHead className="h-11 px-4 text-[11px] font-bold uppercase tracking-wider text-gray-400 whitespace-nowrap">Redeemed</TableHead>
+                    <TableHead className="h-11 px-6 text-right text-[11px] font-bold uppercase tracking-wider text-gray-400 whitespace-nowrap">Actions</TableHead>
                   </TableRow>
-                ) : orders.length === 0 ? (
-                  <TableRow>
-                    <TableCell colSpan={6} className="text-sm text-muted-foreground">
-                      No orders found.
-                    </TableCell>
-                  </TableRow>
-                ) : (
-                  orders.map((order) => (
-                    <TableRow key={order.id}>
-                      <TableCell className="font-mono text-xs">
-                        <div className="flex items-center gap-2">
-                          <span title={order.id}>{shorten(order.id, 8, 6)}</span>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            onClick={() => copyText(order.id)}
-                            aria-label={`Copy order id ${order.id}`}
-                          >
-                            <Copy className="w-4 h-4" />
-                          </Button>
+                </TableHeader>
+                <TableBody>
+                  {isLoading ? (
+                    <TableRow>
+                      <TableCell colSpan={9} className="py-12">
+                        <div className="flex flex-col items-center justify-center gap-3 text-sm text-muted-foreground">
+                          <Loader2 className="w-6 h-6 animate-spin text-purple-600" />
+                          <span>Loading order history...</span>
                         </div>
-                      </TableCell>
-                      <TableCell>
-                        <div className="space-y-1">
-                          <div className="font-medium">{order.gaming_bundles?.title || 'Bundle'}</div>
-                          <div className="text-xs text-muted-foreground">
-                            {order.gaming_bundles?.quantity_units} {order.gaming_bundles?.unit_label}
-                          </div>
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <div className="space-y-1">
-                          <div className="text-sm">{order.buyer_display_name || 'Guest'}</div>
-                          <div className="text-xs text-muted-foreground">
-                            {order.buyer_phone || order.buyer_address ? (
-                              <span>
-                                {order.buyer_phone || ''}{order.buyer_phone && order.buyer_address ? ' · ' : ''}
-                                {order.buyer_address ? shorten(order.buyer_address, 6, 4) : ''}
-                              </span>
-                            ) : (
-                              <span>No contact info</span>
-                            )}
-                          </div>
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex items-center gap-2">
-                          <Badge variant={order.status === 'PAID' ? 'default' : 'secondary'}>{order.status}</Badge>
-                          <Badge variant="outline">{order.fulfillment_method}</Badge>
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        {order.redeemed_at ? (
-                          <span className="text-xs text-muted-foreground" title={order.redeemed_at}>Yes</span>
-                        ) : (
-                          <span className="text-xs text-muted-foreground">No</span>
-                        )}
-                      </TableCell>
-                      <TableCell className="text-right">
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          disabled={!order.can_reissue || rotatingOrderId === order.id}
-                          onClick={() => handleReissue(order.id)}
-                        >
-                          {rotatingOrderId === order.id ? (
-                            <Loader2 className="w-4 h-4 animate-spin" />
-                          ) : (
-                            <RotateCcw className="w-4 h-4 mr-2" />
-                          )}
-                          Reissue
-                        </Button>
                       </TableCell>
                     </TableRow>
-                  ))
-                )}
-              </TableBody>
-            </Table>
+                  ) : orders.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={9} className="py-12 text-center text-sm text-muted-foreground">
+                        No orders found.
+                      </TableCell>
+                    </TableRow>
+                  ) : (
+                    orders.map((order) => (
+                      <TableRow key={order.id} className="group border-b border-gray-50 hover:bg-gray-50/50 transition-colors">
+                        <TableCell className="py-6 px-6 align-top">
+                          <div className="flex items-center gap-1.5 whitespace-nowrap">
+                            <code className="px-2 py-1 bg-gray-100 rounded text-[10px] font-medium text-gray-600">
+                              {shorten(order.id, 6, 4)}
+                            </code>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-7 w-7 opacity-0 group-hover:opacity-100 transition-opacity"
+                              onClick={() => copyText(order.id)}
+                            >
+                              <Copy className="w-3.5 h-3.5 text-gray-400" />
+                            </Button>
+                          </div>
+                        </TableCell>
+                        <TableCell className="py-6 px-4 align-top">
+                          <div className="space-y-1 min-w-[150px]">
+                            <div className="text-sm font-semibold text-gray-900 leading-tight">
+                              {order.gaming_bundles?.title || 'Bundle'}
+                            </div>
+                            <div className="text-[10px] font-medium text-gray-500 uppercase tracking-tight">
+                              {order.gaming_bundles?.quantity_units} {order.gaming_bundles?.unit_label}
+                            </div>
+                          </div>
+                        </TableCell>
+                        <TableCell className="py-6 px-4 align-top">
+                          <div className="flex flex-col gap-1.5">
+                            <span className="text-sm font-bold text-gray-900 whitespace-nowrap">
+                              {order.payment_provider === 'paystack'
+                                ? `${order.fiat_symbol || 'NGN'} ${Number(order.amount_fiat || 0).toLocaleString()}`
+                                : order.payment_provider === 'crypto'
+                                  ? `DG ${Number(order.amount_dg || 0).toLocaleString()}`
+                                  : 'Cash Payment'}
+                            </span>
+                            {order.payment_provider !== 'cash' && (
+                              <Badge variant="secondary" className="w-fit px-1.5 py-0 text-[10px] h-4 font-normal bg-gray-100 text-gray-600 border-none capitalize">
+                                {order.payment_provider}
+                              </Badge>
+                            )}
+                          </div>
+                        </TableCell>
+                        <TableCell className="py-6 px-4 align-top">
+                          {order.payment_reference ? (
+                            <div className="flex items-center gap-1.5 whitespace-nowrap">
+                              <code className="px-2 py-1 bg-gray-50 rounded text-[10px] font-mono text-gray-500">
+                                {shorten(order.payment_reference, 8, 6)}
+                              </code>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-7 w-7 opacity-0 group-hover:opacity-100 transition-opacity"
+                                onClick={() => copyText(order.payment_reference!)}
+                              >
+                                <Copy className="w-3.5 h-3.5 text-gray-400" />
+                              </Button>
+                            </div>
+                          ) : (
+                            <span className="text-[10px] text-gray-300 italic">No reference</span>
+                          )}
+                        </TableCell>
+                        <TableCell className="py-6 px-4 align-top">
+                          <div className="space-y-1">
+                            <div className="text-sm font-medium text-gray-900 leading-none whitespace-nowrap">
+                              {order.buyer_display_name || 'Guest User'}
+                            </div>
+                            <div className="text-[10px] text-gray-500 tabular-nums whitespace-nowrap">
+                              {order.buyer_phone || order.buyer_address ? (
+                                <span className="flex items-center gap-1.5 mt-1">
+                                  {order.buyer_phone || ''}
+                                  {order.buyer_phone && order.buyer_address && <span className="w-1 h-1 rounded-full bg-gray-300" />}
+                                  {order.buyer_address ? shorten(order.buyer_address, 4, 4) : ''}
+                                </span>
+                              ) : (
+                                <span className="italic opacity-60">No contact info</span>
+                              )}
+                            </div>
+                          </div>
+                        </TableCell>
+                        <TableCell className="py-6 px-4 align-top">
+                          <div className="flex flex-col gap-2">
+                            <Badge
+                              className={`w-fit shadow-none text-[10px] px-2 py-0 h-5 font-bold transition-colors ${order.status === 'PAID'
+                                ? 'bg-emerald-50 text-emerald-700 border-emerald-100 hover:bg-emerald-100'
+                                : 'bg-amber-50 text-amber-700 border-amber-100 hover:bg-amber-100'
+                                }`}
+                              variant="outline"
+                            >
+                              {order.status}
+                            </Badge>
+                            <div className="text-[10px] font-bold text-gray-400 uppercase tracking-tighter">
+                              via {order.fulfillment_method === 'EAS' ? 'POS' : order.fulfillment_method}
+                            </div>
+                          </div>
+                        </TableCell>
+                        <TableCell className="py-6 px-4 align-top">
+                          <div className="space-y-2 min-w-[140px]">
+                            {order.fulfillment_method === 'NFT' ? (
+                              <>
+                                <div className="text-[11px] font-bold text-gray-700 whitespace-nowrap">
+                                  {order.token_id ? `Token #${order.token_id}` : 'Token pending...'}
+                                </div>
+                                {order.txn_hash && (
+                                  (() => {
+                                    const txUrl = getExplorerTxUrl(order.chain_id, order.txn_hash);
+                                    return (
+                                      <a
+                                        className="inline-flex items-center gap-1.5 text-[10px] font-mono text-purple-600 hover:text-purple-700 bg-purple-50 px-1.5 py-0.5 rounded transition-colors whitespace-nowrap"
+                                        href={txUrl || '#'}
+                                        target="_blank"
+                                        rel="noreferrer"
+                                      >
+                                        <span>{shorten(order.txn_hash, 6, 4)}</span>
+                                        <ExternalLink className="w-2.5 h-2.5" />
+                                      </a>
+                                    );
+                                  })()
+                                )}
+                              </>
+                            ) : (
+                              <>
+                                <div className={`text-[11px] font-bold whitespace-nowrap ${order.eas_uid ? 'text-gray-700' : 'text-amber-600 flex items-center gap-1.5'}`}>
+                                  {!order.eas_uid && <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />}
+                                  {order.eas_uid ? 'EAS issued' : 'EAS pending'}
+                                </div>
+                                {order.eas_uid && (
+                                  <div className="text-[10px] font-mono text-gray-400 bg-gray-50 px-1.5 py-0.5 rounded w-fit whitespace-nowrap mt-1">
+                                    {shorten(order.eas_uid, 6, 4)}
+                                  </div>
+                                )}
+                              </>
+                            )}
+                          </div>
+                        </TableCell>
+                        <TableCell className="py-6 px-4 align-top">
+                          <div className={`text-[10px] font-black px-2 py-0.5 rounded-sm w-fit whitespace-nowrap ${order.redeemed_at
+                            ? 'bg-blue-50 text-blue-600 border border-blue-100'
+                            : 'bg-gray-100 text-gray-400 border border-gray-200'
+                            }`}>
+                            {order.redeemed_at ? 'REDEEMED' : 'PENDING'}
+                          </div>
+                        </TableCell>
+                        <TableCell className="py-6 px-6 align-top text-right">
+                          <div className="flex justify-end gap-1.5">
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="h-8 px-2 text-[11px] font-medium border-gray-200 hover:bg-gray-50 hover:text-gray-900 transition-all disabled:opacity-30"
+                              disabled={
+                                order.payment_provider !== 'paystack' ||
+                                order.fulfillment_method !== 'NFT' ||
+                                !order.payment_reference ||
+                                Boolean(order.txn_hash) ||
+                                retryingOrderId === order.id
+                              }
+                              onClick={() => handleRetryIssuance(order.id)}
+                            >
+                              {retryingOrderId === order.id ? (
+                                <Loader2 className="w-3 h-3 animate-spin mr-1.5" />
+                              ) : (
+                                <RefreshCw className="w-3 h-3 mr-1.5" />
+                              )}
+                              Retry
+                            </Button>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="h-8 px-2 text-[11px] font-medium border-gray-200 hover:bg-gray-50 hover:text-gray-900 transition-all disabled:opacity-30"
+                              disabled={!order.can_reissue || rotatingOrderId === order.id}
+                              onClick={() => handleReissue(order.id)}
+                            >
+                              {rotatingOrderId === order.id ? (
+                                <Loader2 className="w-3 h-3 animate-spin mr-1.5" />
+                              ) : (
+                                <RotateCcw className="w-3 h-3 mr-1.5" />
+                              )}
+                              Reissue
+                            </Button>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    ))
+                  )}
+                </TableBody>
+              </Table>
+            </div>
           </CardContent>
         </Card>
 

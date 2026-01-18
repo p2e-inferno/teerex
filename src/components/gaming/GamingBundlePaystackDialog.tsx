@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { usePrivy, useWallets } from '@privy-io/react-auth';
 import { usePaystackPayment } from 'react-paystack';
 import {
@@ -43,15 +43,31 @@ export const GamingBundlePaystackDialog: React.FC<GamingBundlePaystackDialogProp
   const { toast } = useToast();
   const [isLoading, setIsLoading] = useState(false);
   const [paymentHandled, setPaymentHandled] = useState(false);
-  const [isPaystackOpen, setIsPaystackOpen] = useState(false);
   const [userEmail, setUserEmail] = useState(user?.email?.address || '');
   const [userWalletAddress, setUserWalletAddress] = useState(wallets[0]?.address || '');
   const [subaccountCode, setSubaccountCode] = useState<string | null>(null);
+  const [reference, setReference] = useState<string>('');
+  const [shouldLaunchPaystack, setShouldLaunchPaystack] = useState(false);
 
   const paystackPublicKey = (import.meta as any).env?.VITE_PAYSTACK_PUBLIC_KEY as string | undefined;
+  const fiatEnabled = useMemo(() => {
+    const raw = (import.meta as any).env?.VITE_ENABLE_FIAT;
+    if (raw === undefined || raw === null || raw === '') return false;
+    return String(raw).toLowerCase() === 'true';
+  }, []);
+
+  useEffect(() => {
+    if (isOpen) return;
+    // Parent closed the dialog; reset transient state so reopening works reliably.
+    setIsLoading(false);
+    setShouldLaunchPaystack(false);
+    setPaymentHandled(false);
+    setSubaccountCode(null);
+    setReference('');
+  }, [isOpen]);
 
   const config = {
-    reference: `TeeRex-Bundle-${bundle?.id}-${Date.now()}`,
+    reference: reference || `TeeRex-Bundle-${bundle?.id}-${Date.now()}`,
     email: userEmail,
     amount: Math.round((bundle?.price_fiat || 0) * 100),
     publicKey: paystackPublicKey || '',
@@ -83,7 +99,7 @@ export const GamingBundlePaystackDialog: React.FC<GamingBundlePaystackDialogProp
 
   const initializePayment = usePaystackPayment(config);
 
-  const ensureTransactionRecord = async (): Promise<string | null> => {
+  const ensureTransactionRecord = async (paymentReference: string): Promise<string | null> => {
     if (!bundle) return null;
     try {
       const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
@@ -91,7 +107,7 @@ export const GamingBundlePaystackDialog: React.FC<GamingBundlePaystackDialogProp
       const { data, error } = await supabase.functions.invoke('init-gaming-bundle-transaction', {
         body: {
           bundle_id: bundle.id,
-          reference: config.reference,
+          reference: paymentReference,
           email: userEmail,
           wallet_address: userWalletAddress,
           amount: config.amount,
@@ -103,26 +119,22 @@ export const GamingBundlePaystackDialog: React.FC<GamingBundlePaystackDialogProp
       });
 
       if (error) {
-        console.warn('[PAYSTACK INIT] Failed to create bundle transaction', error?.message);
-        return null;
+        throw new Error(error?.message || 'Failed to create bundle order');
       }
 
       if (data && !data.ok) {
-        console.warn('[PAYSTACK INIT] Failed to create bundle transaction', data?.error);
-        return null;
+        throw new Error(data?.error || 'Failed to create bundle order');
       }
 
       return data?.subaccount_code || null;
     } catch (e: any) {
-      console.warn('[PAYSTACK INIT] Error ensuring bundle transaction', e?.message || e);
-      return null;
+      throw new Error(e?.message || 'Failed to create bundle order');
     }
   };
 
-  const handlePaymentSuccess = (reference: { reference: string }) => {
+  const handlePaymentSuccess = useCallback((reference: { reference: string }) => {
     if (!bundle) return;
     setPaymentHandled(true);
-    setIsPaystackOpen(false);
 
     const paymentData: PaymentData = {
       reference: reference.reference,
@@ -134,22 +146,41 @@ export const GamingBundlePaystackDialog: React.FC<GamingBundlePaystackDialogProp
 
     onSuccess(paymentData);
     setIsLoading(false);
-  };
+  }, [bundle, userEmail, userWalletAddress, onSuccess]);
 
-  const handlePaymentClose = () => {
+  const handlePaymentClose = useCallback(() => {
     setIsLoading(false);
-    setIsPaystackOpen(false);
     if (paymentHandled) return;
     toast({
       title: 'Payment Window Closed',
       description: 'If you completed payment, your bundle will be issued shortly.',
     });
-  };
+  }, [paymentHandled, toast]);
+
+  useEffect(() => {
+    if (!shouldLaunchPaystack) return;
+    initializePayment({
+      onSuccess: handlePaymentSuccess,
+      onClose: handlePaymentClose,
+    });
+    setShouldLaunchPaystack(false);
+    // At this point we've handed off to the Paystack modal, so stop blocking UI and close our dialog.
+    setIsLoading(false);
+    onClose();
+  }, [shouldLaunchPaystack, initializePayment, handlePaymentClose, handlePaymentSuccess, onClose]);
 
   const handlePayment = async (e?: React.MouseEvent) => {
     e?.preventDefault();
     setPaymentHandled(false);
-    setIsPaystackOpen(true);
+
+    if (!fiatEnabled) {
+      toast({
+        title: 'Fiat payments disabled',
+        description: 'Card/Bank payments are currently disabled.',
+        variant: 'destructive',
+      });
+      return;
+    }
 
     if (!userEmail.trim()) {
       toast({
@@ -178,27 +209,31 @@ export const GamingBundlePaystackDialog: React.FC<GamingBundlePaystackDialogProp
       return;
     }
 
-    const dialogElement = document.querySelector('[role="none"]');
-    if (dialogElement) {
-      (dialogElement as HTMLElement).style.display = 'none';
-    }
-
     setIsLoading(true);
-    const vendorSubaccount = await ensureTransactionRecord();
-    if (vendorSubaccount) {
-      setSubaccountCode(vendorSubaccount);
+
+    const paymentReference = `TeeRex-Bundle-${bundle?.id}-${Date.now()}`;
+    setReference(paymentReference);
+
+    try {
+      const vendorSubaccount = await ensureTransactionRecord(paymentReference);
+      if (vendorSubaccount) setSubaccountCode(vendorSubaccount);
+    } catch (err) {
+      setIsLoading(false);
+      toast({
+        title: 'Could not start checkout',
+        description: err instanceof Error ? err.message : String(err),
+        variant: 'destructive',
+      });
+      return;
     }
-    initializePayment({
-      onSuccess: handlePaymentSuccess,
-      onClose: handlePaymentClose,
-    });
+    setShouldLaunchPaystack(true);
   };
 
   if (!bundle) return null;
 
   return (
     <Dialog
-      open={isOpen && !isPaystackOpen}
+      open={isOpen}
       onOpenChange={(open) => {
         if (!open) onClose();
       }}
@@ -254,7 +289,7 @@ export const GamingBundlePaystackDialog: React.FC<GamingBundlePaystackDialogProp
           <Button variant="outline" onClick={onClose} disabled={isLoading}>
             Cancel
           </Button>
-          <Button onClick={handlePayment} disabled={isLoading} className="w-32">
+          <Button onClick={handlePayment} disabled={isLoading || !fiatEnabled} className="w-32">
             {isLoading ? <Loader2 className="animate-spin" /> : 'Pay Now'}
           </Button>
         </DialogFooter>
