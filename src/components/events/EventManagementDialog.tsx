@@ -16,8 +16,6 @@ import type { PublishedEvent } from '@/types/event';
 import { checkIfLockManager } from '@/utils/lockUtils';
 import { supabase } from '@/integrations/supabase/client';
 import {
-  CheckCircle2,
-  XCircle,
   ExternalLink,
   Copy,
   AlertTriangle,

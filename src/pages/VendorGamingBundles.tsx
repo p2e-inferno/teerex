@@ -8,7 +8,6 @@ import { useGamingBundles } from '@/hooks/useGamingBundles';
 import { useNetworkConfigs } from '@/hooks/useNetworkConfigs';
 import { addLockManager, deployLock } from '@/utils/lockUtils';
 import { uploadEventImage } from '@/utils/supabaseDraftStorage';
-import { getGamingBundleMetadataBaseURI } from '@/utils/gamingBundleNftMetadata';
 import { getTokenAddressAsync } from '@/lib/config/network-config';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -117,18 +116,17 @@ const VendorGamingBundles = () => {
   // Transaction Stepper State
   const [showProgress, setShowProgress] = useState(false);
   const { steps, currentStepIndex, executeStep, setSteps } = useTransactionStepper([]);
-  const pendingDataRef = useRef<{
+  type PendingBundleData = {
     lockAddress?: string;
     metadataSet: boolean;
     serviceManagerAdded: boolean;
-  }>({ metadataSet: false, serviceManagerAdded: false });
+  };
+  const pendingDataRef = useRef<PendingBundleData>({ metadataSet: false, serviceManagerAdded: false });
 
-  // Synchronize state with ref for UI purposes
-  const [pendingBundleData, setPendingBundleDataState] = useState(pendingDataRef.current);
-  const setPendingBundleData = (update: any) => {
-    const next = typeof update === 'function' ? update(pendingDataRef.current) : update;
-    pendingDataRef.current = next;
-    setPendingBundleDataState(next);
+  const updatePendingBundleData = (
+    update: PendingBundleData | ((prev: PendingBundleData) => PendingBundleData)
+  ) => {
+    pendingDataRef.current = typeof update === 'function' ? update(pendingDataRef.current) : update;
   };
 
   useEffect(() => {
@@ -288,7 +286,7 @@ const VendorGamingBundles = () => {
     }
 
     setIsCreating(true);
-    setPendingBundleData({ lockAddress: undefined, metadataSet: false, serviceManagerAdded: false });
+    updatePendingBundleData({ lockAddress: undefined, metadataSet: false, serviceManagerAdded: false });
 
     const expirationDuration = form.isUnlimitedExpiration
       ? UNLIMITED_EXPIRATION_SECONDS
@@ -315,7 +313,7 @@ const VendorGamingBundles = () => {
           if (!result.success || !result.lockAddress) {
             throw new Error(result.error || 'Deployment failed');
           }
-          setPendingBundleData(prev => ({ ...prev, lockAddress: result.lockAddress }));
+          updatePendingBundleData(prev => ({ ...prev, lockAddress: result.lockAddress }));
           return result;
         }
       },
@@ -342,7 +340,7 @@ const VendorGamingBundles = () => {
           const result = await slm(finalLockAddr, form.title, 'BUNDLE', bundleMetadataURI, ethersSigner);
           if (!result.success) throw new Error(result.error || "Metadata setup failed");
 
-          setPendingBundleData(prev => ({ ...prev, metadataSet: true }));
+          updatePendingBundleData(prev => ({ ...prev, metadataSet: true }));
           return { transactionHash: result.txHash };
         }
       }
@@ -364,7 +362,7 @@ const VendorGamingBundles = () => {
           const result = await addLockManager(finalLockAddr, serviceAddress, wallet);
           if (!result.success) throw new Error(result.error || "Failed to add service manager");
 
-          setPendingBundleData(prev => ({ ...prev, serviceManagerAdded: true }));
+          updatePendingBundleData(prev => ({ ...prev, serviceManagerAdded: true }));
           return result;
         }
       });

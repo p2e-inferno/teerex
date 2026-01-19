@@ -14,6 +14,7 @@ export const mapEventRow = (event: any): MappedEvent => ({
   starts_at: event.starts_at || null,
   currency: event.currency,
   ngn_price: event.ngn_price || 0,
+  ngn_price_kobo: event.ngn_price_kobo || 0,
   payment_methods: event.payment_methods || [],
   paystack_public_key: event.paystack_public_key,
   isHidden: event.is_public === false,

@@ -8,7 +8,7 @@ import { SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY } from "../_shared/constants.ts
 import { verifyPrivyToken, validateUserWallet } from "../_shared/privy.ts";
 import { validateChain } from "../_shared/network-helpers.ts";
 import PublicLockV15 from "../_shared/abi/PublicLockV15.json" assert { type: "json" };
-import { GAMING_BUNDLE_SCHEMA_DEFINITION } from "../_shared/gaming-bundles.ts";
+import { GAMING_BUNDLE_SCHEMA_DEFINITION, sha256Hex, normalizeClaimCode } from "../_shared/gaming-bundles.ts";
 import { appendDivviTagToCalldataAsync, submitDivviReferralBestEffort } from "../_shared/divvi.ts";
 
 const EAS_ADDRESS_BY_CHAIN: Record<number, string> = {
@@ -16,17 +16,6 @@ const EAS_ADDRESS_BY_CHAIN: Record<number, string> = {
   84532: "0x4200000000000000000000000000000000000021",
 };
 
-async function sha256Hex(input: string): Promise<string> {
-  const data = new TextEncoder().encode(input);
-  const digest = await crypto.subtle.digest("SHA-256", data);
-  return Array.from(new Uint8Array(digest))
-    .map((b) => b.toString(16).padStart(2, "0"))
-    .join("");
-}
-
-function normalizeClaimCode(input: string): string {
-  return input.trim().replace(/[^0-9a-fA-F]/g, "").toUpperCase();
-}
 
 serve(async (req) => {
   if (req.method === "OPTIONS") {

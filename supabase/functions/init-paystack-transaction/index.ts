@@ -25,7 +25,7 @@ serve(async (req) => {
     const reference: string | undefined = body.reference;
     const email: string | undefined = body.email;
     const walletAddress: string | undefined = body.wallet_address || body.walletAddress;
-    const amountKobo: number | undefined = typeof body.amount === 'number' ? body.amount : undefined;
+    const requestedAmountKobo: number | undefined = typeof body.amount === 'number' ? body.amount : undefined;
 
     if (!eventId || !reference || !email || !walletAddress) {
       return new Response(JSON.stringify({ error: 'Missing required fields: event_id, reference, email, wallet_address' }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 400 });
@@ -34,7 +34,7 @@ serve(async (req) => {
     // Validate event exists and get creator info
     const { data: ev, error: evErr } = await supabase
       .from('events')
-      .select('id, paystack_public_key, creator_id')
+      .select('id, paystack_public_key, creator_id, ngn_price, ngn_price_kobo')
       .eq('id', eventId)
       .maybeSingle();
     if (evErr || !ev) {
@@ -84,7 +84,7 @@ serve(async (req) => {
         },
       },
     };
-    if (typeof amountKobo === 'number') insertPayload.amount = amountKobo;
+    insertPayload.amount = amountKobo;
 
     const { error } = await supabase
       .from('paystack_transactions')
@@ -96,9 +96,20 @@ serve(async (req) => {
     // Return subaccount_code for frontend to pass to Paystack
     return new Response(JSON.stringify({
       ok: true,
+      amount_kobo: amountKobo,
       subaccount_code: subaccountCode, // Frontend uses this in Paystack config
     }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 200 });
   } catch (e: any) {
     return new Response(JSON.stringify({ error: e?.message || 'Internal error' }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 200 });
   }
 });
+    const amountKobo = typeof (ev as any).ngn_price_kobo === 'number'
+      ? (ev as any).ngn_price_kobo
+      : Math.round(Number((ev as any).ngn_price ?? 0) * 100);
+
+    if (typeof requestedAmountKobo === 'number' && requestedAmountKobo !== amountKobo) {
+      return new Response(JSON.stringify({ error: 'amount_mismatch' }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        status: 400,
+      });
+    }

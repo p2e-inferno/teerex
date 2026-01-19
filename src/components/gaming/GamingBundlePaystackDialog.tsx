@@ -48,6 +48,7 @@ export const GamingBundlePaystackDialog: React.FC<GamingBundlePaystackDialogProp
   const [subaccountCode, setSubaccountCode] = useState<string | null>(null);
   const [reference, setReference] = useState<string>('');
   const [shouldLaunchPaystack, setShouldLaunchPaystack] = useState(false);
+  const [amountKobo, setAmountKobo] = useState<number | null>(null);
 
   const paystackPublicKey = (import.meta as any).env?.VITE_PAYSTACK_PUBLIC_KEY as string | undefined;
   const fiatEnabled = useMemo(() => {
@@ -64,12 +65,13 @@ export const GamingBundlePaystackDialog: React.FC<GamingBundlePaystackDialogProp
     setPaymentHandled(false);
     setSubaccountCode(null);
     setReference('');
+    setAmountKobo(null);
   }, [isOpen]);
 
   const config = {
     reference: reference || `TeeRex-Bundle-${bundle?.id}-${Date.now()}`,
     email: userEmail,
-    amount: Math.round((bundle?.price_fiat || 0) * 100),
+    amount: amountKobo ?? 0,
     publicKey: paystackPublicKey || '',
     currency: bundle?.fiat_symbol || 'NGN',
     ...(subaccountCode && { subaccount: subaccountCode }),
@@ -99,8 +101,10 @@ export const GamingBundlePaystackDialog: React.FC<GamingBundlePaystackDialogProp
 
   const initializePayment = usePaystackPayment(config);
 
-  const ensureTransactionRecord = async (paymentReference: string): Promise<string | null> => {
-    if (!bundle) return null;
+  const ensureTransactionRecord = async (
+    paymentReference: string
+  ): Promise<{ subaccountCode: string | null; amountKobo: number }> => {
+    if (!bundle) throw new Error('Missing bundle');
     try {
       const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
       const accessToken = await getAccessToken?.();
@@ -110,7 +114,9 @@ export const GamingBundlePaystackDialog: React.FC<GamingBundlePaystackDialogProp
           reference: paymentReference,
           email: userEmail,
           wallet_address: userWalletAddress,
-          amount: config.amount,
+          ...(typeof (bundle as any)?.price_fiat_kobo === 'number' || typeof amountKobo === 'number'
+            ? { amount: (amountKobo ?? (bundle as any)?.price_fiat_kobo) }
+            : {}),
         },
         headers: {
           ...(anonKey ? { Authorization: `Bearer ${anonKey}` } : {}),
@@ -126,7 +132,11 @@ export const GamingBundlePaystackDialog: React.FC<GamingBundlePaystackDialogProp
         throw new Error(data?.error || 'Failed to create bundle order');
       }
 
-      return data?.subaccount_code || null;
+      if (typeof data?.amount_kobo !== 'number' || Number.isNaN(data.amount_kobo)) {
+        throw new Error('Missing amount from server');
+      }
+
+      return { subaccountCode: data?.subaccount_code || null, amountKobo: data.amount_kobo };
     } catch (e: any) {
       throw new Error(e?.message || 'Failed to create bundle order');
     }
@@ -159,6 +169,16 @@ export const GamingBundlePaystackDialog: React.FC<GamingBundlePaystackDialogProp
 
   useEffect(() => {
     if (!shouldLaunchPaystack) return;
+    if (typeof amountKobo !== 'number' || Number.isNaN(amountKobo) || amountKobo <= 0) {
+      setShouldLaunchPaystack(false);
+      setIsLoading(false);
+      toast({
+        title: 'Could not start checkout',
+        description: 'Missing amount from server',
+        variant: 'destructive',
+      });
+      return;
+    }
     initializePayment({
       onSuccess: handlePaymentSuccess,
       onClose: handlePaymentClose,
@@ -167,7 +187,15 @@ export const GamingBundlePaystackDialog: React.FC<GamingBundlePaystackDialogProp
     // At this point we've handed off to the Paystack modal, so stop blocking UI and close our dialog.
     setIsLoading(false);
     onClose();
-  }, [shouldLaunchPaystack, initializePayment, handlePaymentClose, handlePaymentSuccess, onClose]);
+  }, [
+    shouldLaunchPaystack,
+    amountKobo,
+    initializePayment,
+    handlePaymentClose,
+    handlePaymentSuccess,
+    onClose,
+    toast,
+  ]);
 
   const handlePayment = async (e?: React.MouseEvent) => {
     e?.preventDefault();
@@ -215,8 +243,9 @@ export const GamingBundlePaystackDialog: React.FC<GamingBundlePaystackDialogProp
     setReference(paymentReference);
 
     try {
-      const vendorSubaccount = await ensureTransactionRecord(paymentReference);
-      if (vendorSubaccount) setSubaccountCode(vendorSubaccount);
+      const init = await ensureTransactionRecord(paymentReference);
+      setAmountKobo(init.amountKobo);
+      if (init.subaccountCode) setSubaccountCode(init.subaccountCode);
     } catch (err) {
       setIsLoading(false);
       toast({

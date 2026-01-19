@@ -267,6 +267,57 @@ export async function verifyPaystackTransaction(
 // Utility Functions
 // ============================================================================
 
+function asNumber(value: unknown): number | null {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  const parsed = Number(String(value ?? ""));
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+/**
+ * Computes expected Paystack amount in minor units (eg kobo) from a fiat amount in major units.
+ * Prefer `priceFiat` when available, fall back to `amountFiat`.
+ */
+export function getExpectedPaystackAmountKobo(params: {
+  priceFiatKobo?: unknown;
+  amountFiatKobo?: unknown;
+  priceFiat?: unknown;
+  amountFiat?: unknown;
+}): number {
+  const direct = asNumber(params.priceFiatKobo) ?? asNumber(params.amountFiatKobo);
+  if (direct !== null) return direct;
+  const expectedFiat = asNumber(params.priceFiat) ?? asNumber(params.amountFiat) ?? 0;
+  return Math.round(expectedFiat * 100);
+}
+
+/**
+ * Resolves expected fiat currency (uppercased) from order/bundle fields.
+ */
+export function getExpectedFiatCurrency(params: {
+  orderCurrency?: unknown;
+  bundleCurrency?: unknown;
+  defaultCurrency?: string;
+}): string {
+  return String(params.orderCurrency || params.bundleCurrency || params.defaultCurrency || "NGN").toUpperCase();
+}
+
+/**
+ * Validates Paystack amount/currency against expected values.
+ * `paystackAmountKobo` is the amount in minor units (eg kobo), as returned by Paystack.
+ */
+export function verifyPaystackAmountAndCurrency(params: {
+  paystackAmountKobo: unknown;
+  paystackCurrency: unknown;
+  expectedAmountKobo: number;
+  expectedCurrency: string;
+}): string[] {
+  const amount = asNumber(params.paystackAmountKobo);
+  const currency = String(params.paystackCurrency || "").toUpperCase();
+  const issues: string[] = [];
+  if (!currency || currency !== params.expectedCurrency) issues.push("currency_mismatch");
+  if (amount === null || amount !== params.expectedAmountKobo) issues.push("amount_mismatch");
+  return issues;
+}
+
 /**
  * Mask account number for display (show last 4 digits)
  * e.g., "0123456789" -> "****6789"

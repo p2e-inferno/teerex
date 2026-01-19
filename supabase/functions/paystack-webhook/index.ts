@@ -1,12 +1,14 @@
 /* deno-lint-ignore-file no-explicit-any */
-import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
-import { Contract, JsonRpcProvider, Wallet } from "https://esm.sh/ethers@6.14.4";
+import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { ethers } from "https://esm.sh/ethers@6.14.4";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.50.0";
 import PublicLockV15 from "../_shared/abi/PublicLockV15.json" assert { type: "json" };
 import { sendEmail, getTicketEmail, normalizeEmail } from "../_shared/email-utils.ts";
 import { formatEventDate } from "../_shared/date-utils.ts";
 import { validateChain } from "../_shared/network-helpers.ts";
 import { appendDivviTagToCalldataAsync, submitDivviReferralBestEffort } from "../_shared/divvi.ts";
+import { getExpectedFiatCurrency, getExpectedPaystackAmountKobo, verifyPaystackAmountAndCurrency } from "../_shared/paystack.ts";
+import { grantLockKey } from "../_shared/unlock.ts";
 
 const PAYSTACK_SUCCESS_EVENT = "charge.success";
 
@@ -140,7 +142,7 @@ serve(async (req) => {
     if (!tx) {
       let { data: bundleOrder } = await supabase
         .from("gaming_bundle_orders")
-        .select("id, status, txn_hash, token_id, amount_fiat, fiat_symbol, buyer_address, nft_recipient_address, payment_reference, bundle_address, chain_id, gateway_response, verified_at, issuance_lock_id, issuance_locked_at, issuance_attempts, gaming_bundles(bundle_address, chain_id, key_expiration_duration_seconds, price_fiat, fiat_symbol)")
+        .select("id, status, txn_hash, token_id, amount_fiat, fiat_symbol, buyer_address, nft_recipient_address, payment_reference, bundle_address, chain_id, gateway_response, verified_at, issuance_lock_id, issuance_locked_at, issuance_attempts, gaming_bundles(bundle_address, chain_id, key_expiration_duration_seconds, price_fiat, price_fiat_kobo, fiat_symbol)")
         .eq("payment_reference", reference)
         .maybeSingle();
 
@@ -160,7 +162,7 @@ serve(async (req) => {
 
         const { data: bundle } = await supabase
           .from("gaming_bundles")
-          .select("id,vendor_id,vendor_address,bundle_address,chain_id,price_fiat,fiat_symbol,is_active,key_expiration_duration_seconds")
+          .select("id,vendor_id,vendor_address,bundle_address,chain_id,price_fiat,price_fiat_kobo,fiat_symbol,is_active,key_expiration_duration_seconds")
           .eq("id", bundleId)
           .maybeSingle();
 
@@ -170,7 +172,10 @@ serve(async (req) => {
 
         const expectedFiat = asNumber(bundle.price_fiat) ?? 0;
         const expectedCurrency = String(bundle.fiat_symbol || "NGN").toUpperCase();
-        const expectedAmount = Math.round(expectedFiat * 100);
+        const expectedAmount = getExpectedPaystackAmountKobo({
+          priceFiatKobo: (bundle as any).price_fiat_kobo,
+          priceFiat: expectedFiat,
+        });
         const verificationIssues = [
           expectedCurrency !== paystackCurrency ? "currency_mismatch" : null,
           expectedAmount !== paystackAmount ? "amount_mismatch" : null,
@@ -208,7 +213,7 @@ serve(async (req) => {
 
         const refetch = await supabase
           .from("gaming_bundle_orders")
-          .select("id, status, txn_hash, token_id, amount_fiat, fiat_symbol, buyer_address, nft_recipient_address, payment_reference, bundle_address, chain_id, gateway_response, verified_at, issuance_lock_id, issuance_locked_at, issuance_attempts, gaming_bundles(bundle_address, chain_id, key_expiration_duration_seconds, price_fiat, fiat_symbol)")
+          .select("id, status, txn_hash, token_id, amount_fiat, fiat_symbol, buyer_address, nft_recipient_address, payment_reference, bundle_address, chain_id, gateway_response, verified_at, issuance_lock_id, issuance_locked_at, issuance_attempts, gaming_bundles(bundle_address, chain_id, key_expiration_duration_seconds, price_fiat, price_fiat_kobo, fiat_symbol)")
           .eq("payment_reference", reference)
           .maybeSingle();
         bundleOrder = refetch.data as any;
@@ -218,11 +223,23 @@ serve(async (req) => {
         }
       }
 
-      const expectedFiat = asNumber((bundleOrder as any)?.gaming_bundles?.price_fiat) ??
-        asNumber((bundleOrder as any)?.amount_fiat) ?? 0;
-      const expectedCurrency = String((bundleOrder as any)?.fiat_symbol || (bundleOrder as any)?.gaming_bundles?.fiat_symbol || "NGN").toUpperCase();
-      const expectedAmount = Math.round(expectedFiat * 100);
-      if (expectedCurrency !== paystackCurrency || expectedAmount !== paystackAmount) {
+      const expectedCurrency = getExpectedFiatCurrency({
+        orderCurrency: (bundleOrder as any)?.fiat_symbol,
+        bundleCurrency: (bundleOrder as any)?.gaming_bundles?.fiat_symbol,
+        defaultCurrency: "NGN",
+      });
+        const expectedAmount = getExpectedPaystackAmountKobo({
+          priceFiatKobo: (bundleOrder as any)?.gaming_bundles?.price_fiat_kobo,
+          priceFiat: (bundleOrder as any)?.gaming_bundles?.price_fiat,
+          amountFiat: (bundleOrder as any)?.amount_fiat,
+        });
+      const verificationIssues = verifyPaystackAmountAndCurrency({
+        paystackAmountKobo: paystackAmount,
+        paystackCurrency,
+        expectedAmountKobo: expectedAmount,
+        expectedCurrency,
+      });
+      if (verificationIssues.length) {
         await supabase
           .from("gaming_bundle_orders")
           .update({
@@ -230,10 +247,7 @@ serve(async (req) => {
             gateway_response: {
               ...((bundleOrder as any)?.gateway_response || {}),
               paystack_webhook: sanitizePaystackWebhookPayload(body),
-              verification_issues: [
-                expectedCurrency !== paystackCurrency ? "currency_mismatch" : null,
-                expectedAmount !== paystackAmount ? "amount_mismatch" : null,
-              ].filter(Boolean),
+              verification_issues: verificationIssues,
             },
             verified_at: new Date().toISOString(),
           } as any)
@@ -289,61 +303,30 @@ serve(async (req) => {
         return json({ ok: true, processing: true, reason: "issuance_already_in_progress" }, 200);
       }
 
-      // Determine RPC URL from network config
-      let rpcUrl: string | undefined;
-      if (Number.isFinite(chainId)) {
-        const networkConfig = await validateChain(supabase, chainId);
-        if (!networkConfig?.rpc_url) {
-          throw new Error(`RPC URL not configured for chain ${chainId}`);
-        }
-        rpcUrl = networkConfig.rpc_url;
-      }
-
       const serviceWalletPrivateKey: string | undefined = (Deno.env.get("UNLOCK_SERVICE_PRIVATE_KEY") ?? Deno.env.get("SERVICE_WALLET_PRIVATE_KEY") ?? Deno.env.get("SERVICE_PK")) as string | undefined;
 
-      if (!rpcUrl) throw new Error("Missing RPC_URL");
       if (!serviceWalletPrivateKey) throw new Error("Missing service wallet private key");
       if (!lockAddress || !recipient) throw new Error("Missing lockAddress or recipient");
 
-      const provider = new JsonRpcProvider(rpcUrl);
-      const signer = new Wallet(serviceWalletPrivateKey, provider);
-      const lock = new Contract(lockAddress, PublicLockV15 as any, signer);
-
-      const hasKey: boolean = await lock.getHasValidKey(recipient).catch(() => false);
-
-      const expirationTimestamp: number = Number(
-        Math.floor(Date.now() / 1000) + expirationSeconds,
-      );
-      const recipients = [recipient];
-      const expirations = [BigInt(expirationTimestamp)];
-      const keyManagers = [recipient];
-
-      let granted = false;
-      let grantTxHash: string | undefined;
-      let tokenId: string | null = null;
-      if (!hasKey) {
-        const serviceUser = (await signer.getAddress()) as `0x${string}`;
-        const calldata = lock.interface.encodeFunctionData('grantKeys', [recipients, expirations, keyManagers]);
-        const taggedData = await appendDivviTagToCalldataAsync({ data: calldata, user: serviceUser });
-        const txSend = await signer.sendTransaction({ to: lockAddress, data: taggedData });
-        const receipt = await txSend.wait();
-        grantTxHash = receipt.hash as string | undefined;
-
-        // Extract token ID from receipt
-        const { extractTokenIdFromReceipt } = await import("../_shared/nft-helpers.ts");
-        tokenId = await extractTokenIdFromReceipt(receipt, lockAddress, recipient);
-        if (tokenId) {
-          console.log(`[PAYSTACK WEBHOOK] Extracted token ID: ${tokenId}`);
-        }
-
-        if (Number.isFinite(chainId) && grantTxHash) {
-          await submitDivviReferralBestEffort({ txHash: grantTxHash, chainId });
-        }
-        granted = true;
-      } else {
-        console.log(" [KEY GRANT] Recipient already has valid key; skipping grant");
-        granted = true;
+      const networkConfig = await validateChain(supabase, chainId);
+      if (!networkConfig?.rpc_url) {
+        throw new Error(`RPC URL not configured for chain ${chainId}`);
       }
+
+      const grantResult = await grantLockKey({
+        rpcUrl: networkConfig.rpc_url,
+        chainId,
+        lockAddress,
+        serviceWalletPrivateKey,
+        recipient,
+        expirationSeconds,
+        keyManager: recipient,
+        requireTokenId: true,
+      });
+
+      const granted = true;
+      const grantTxHash = grantResult.alreadyHasKey ? undefined : grantResult.txHash;
+      const tokenId = grantResult.alreadyHasKey ? null : (grantResult.tokenId ?? null);
 
       await supabase
         .from("gaming_bundle_orders")
@@ -462,9 +445,9 @@ serve(async (req) => {
 
     console.log(` [KEY GRANT] Network config found: ${JSON.stringify({ chain_name: "Base Sepolia", rpc_url: "SET" })}`);
 
-    const provider = new JsonRpcProvider(rpcUrl);
-    const signer = new Wallet(serviceWalletPrivateKey, provider);
-    const lock = new Contract(lockAddress, PublicLockV15 as any, signer);
+    const provider = new ethers.JsonRpcProvider(rpcUrl);
+    const signer = new ethers.Wallet(serviceWalletPrivateKey, provider);
+    const lock = new ethers.Contract(lockAddress, PublicLockV15 as any, signer);
 
     const hasKey: boolean = await lock.getHasValidKey(recipient).catch(() => false);
 

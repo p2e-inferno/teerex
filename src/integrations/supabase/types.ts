@@ -427,6 +427,7 @@ export type Database = {
           is_public: boolean | null
           location: string
           ngn_price: number | null
+          ngn_price_kobo: number
           payment_methods: string[] | null
           paystack_public_key: string | null
           price: number
@@ -457,6 +458,7 @@ export type Database = {
           is_public?: boolean | null
           location?: string
           ngn_price?: number | null
+          ngn_price_kobo?: number
           payment_methods?: string[] | null
           paystack_public_key?: string | null
           price?: number
@@ -487,6 +489,7 @@ export type Database = {
           is_public?: boolean | null
           location?: string
           ngn_price?: number | null
+          ngn_price_kobo?: number
           payment_methods?: string[] | null
           paystack_public_key?: string | null
           price?: number
@@ -637,6 +640,7 @@ export type Database = {
           nft_base_uri: string | null
           nft_metadata_set: boolean | null
           ngn_price: number | null
+          ngn_price_kobo: number
           payment_methods: string[] | null
           paystack_public_key: string | null
           price: number
@@ -678,6 +682,7 @@ export type Database = {
           nft_base_uri?: string | null
           nft_metadata_set?: boolean | null
           ngn_price?: number | null
+          ngn_price_kobo?: number
           payment_methods?: string[] | null
           paystack_public_key?: string | null
           price?: number
@@ -719,6 +724,7 @@ export type Database = {
           nft_base_uri?: string | null
           nft_metadata_set?: boolean | null
           ngn_price?: number | null
+          ngn_price_kobo?: number
           payment_methods?: string[] | null
           paystack_public_key?: string | null
           price?: number
@@ -791,7 +797,12 @@ export type Database = {
           eas_uid: string | null
           fiat_symbol: string | null
           fulfillment_method: string
+          gateway_response: Json | null
           id: string
+          issuance_attempts: number
+          issuance_last_error: string | null
+          issuance_lock_id: string | null
+          issuance_locked_at: string | null
           nft_recipient_address: string | null
           payment_provider: string
           payment_reference: string | null
@@ -801,6 +812,7 @@ export type Database = {
           updated_at: string
           vendor_address: string
           vendor_id: string
+          verified_at: string | null
         }
         Insert: {
           amount_dg?: number | null
@@ -817,7 +829,12 @@ export type Database = {
           eas_uid?: string | null
           fiat_symbol?: string | null
           fulfillment_method?: string
+          gateway_response?: Json | null
           id?: string
+          issuance_attempts?: number
+          issuance_last_error?: string | null
+          issuance_lock_id?: string | null
+          issuance_locked_at?: string | null
           nft_recipient_address?: string | null
           payment_provider?: string
           payment_reference?: string | null
@@ -827,6 +844,7 @@ export type Database = {
           updated_at?: string
           vendor_address: string
           vendor_id: string
+          verified_at?: string | null
         }
         Update: {
           amount_dg?: number | null
@@ -843,7 +861,12 @@ export type Database = {
           eas_uid?: string | null
           fiat_symbol?: string | null
           fulfillment_method?: string
+          gateway_response?: Json | null
           id?: string
+          issuance_attempts?: number
+          issuance_last_error?: string | null
+          issuance_lock_id?: string | null
+          issuance_locked_at?: string | null
           nft_recipient_address?: string | null
           payment_provider?: string
           payment_reference?: string | null
@@ -853,6 +876,7 @@ export type Database = {
           updated_at?: string
           vendor_address?: string
           vendor_id?: string
+          verified_at?: string | null
         }
         Relationships: [
           {
@@ -936,8 +960,10 @@ export type Database = {
           is_active: boolean
           key_expiration_duration_seconds: number
           location: string
+          metadata_set: boolean
           price_dg: number | null
           price_fiat: number
+          price_fiat_kobo: number
           quantity_units: number
           service_manager_added: boolean
           title: string
@@ -960,8 +986,10 @@ export type Database = {
           is_active?: boolean
           key_expiration_duration_seconds?: number
           location: string
+          metadata_set?: boolean
           price_dg?: number | null
           price_fiat?: number
+          price_fiat_kobo?: number
           quantity_units: number
           service_manager_added?: boolean
           title: string
@@ -984,8 +1012,10 @@ export type Database = {
           is_active?: boolean
           key_expiration_duration_seconds?: number
           location?: string
+          metadata_set?: boolean
           price_dg?: number | null
           price_fiat?: number
+          price_fiat_kobo?: number
           quantity_units?: number
           service_manager_added?: boolean
           title?: string
@@ -1383,6 +1413,10 @@ export type Database = {
           event_id: string
           gateway_response: Json | null
           id: string
+          issuance_attempts: number
+          issuance_last_error: string | null
+          issuance_lock_id: string | null
+          issuance_locked_at: string | null
           payout_account_id: string | null
           reference: string
           status: string
@@ -1397,6 +1431,10 @@ export type Database = {
           event_id: string
           gateway_response?: Json | null
           id?: string
+          issuance_attempts?: number
+          issuance_last_error?: string | null
+          issuance_lock_id?: string | null
+          issuance_locked_at?: string | null
           payout_account_id?: string | null
           reference: string
           status?: string
@@ -1411,6 +1449,10 @@ export type Database = {
           event_id?: string
           gateway_response?: Json | null
           id?: string
+          issuance_attempts?: number
+          issuance_last_error?: string | null
+          issuance_lock_id?: string | null
+          issuance_locked_at?: string | null
           payout_account_id?: string | null
           reference?: string
           status?: string
@@ -2140,3 +2182,4 @@ export const Constants = {
     Enums: {},
   },
 } as const
+
