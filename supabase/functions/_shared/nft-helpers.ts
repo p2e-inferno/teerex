@@ -1,4 +1,4 @@
-import { TransactionReceipt } from "https://esm.sh/ethers@6.14.4";
+import { ethers } from "https://esm.sh/ethers@6.14.4";
 
 /**
  * Extract token ID from transaction receipt by parsing Transfer events
@@ -18,7 +18,7 @@ import { TransactionReceipt } from "https://esm.sh/ethers@6.14.4";
  * @returns Token ID as string, or null if not found
  */
 export async function extractTokenIdFromReceipt(
-  receipt: TransactionReceipt,
+  receipt: ethers.TransactionReceipt,
   lockAddress: string,
   recipient: string
 ): Promise<string | null> {

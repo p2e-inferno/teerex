@@ -42,3 +42,24 @@ export function encodeGamingBundlePurchase(input: GamingBundleAttestationInput):
     { name: "issuedAt", value: input.issuedAt, type: "uint256" },
   ]);
 }
+
+export function generateClaimCode(): string {
+  // 16 bytes => 128 bits of entropy; safe even if only the hash leaks.
+  const bytes = crypto.getRandomValues(new Uint8Array(16));
+  return Array.from(bytes)
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("")
+    .toUpperCase();
+}
+
+export async function sha256Hex(input: string): Promise<string> {
+  const data = new TextEncoder().encode(input);
+  const digest = await crypto.subtle.digest("SHA-256", data);
+  return Array.from(new Uint8Array(digest))
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
+}
+
+export function normalizeClaimCode(input: string): string {
+  return input.trim().replace(/[^0-9a-fA-F]/g, "").toUpperCase();
+}

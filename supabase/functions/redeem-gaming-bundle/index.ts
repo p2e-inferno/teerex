@@ -4,18 +4,8 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.50.0";
 import { corsHeaders, buildPreflightHeaders } from "../_shared/cors.ts";
 import { SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY } from "../_shared/constants.ts";
 import { requireVendor } from "../_shared/vendor.ts";
+import { sha256Hex, normalizeClaimCode } from "../_shared/gaming-bundles.ts";
 
-async function sha256Hex(input: string): Promise<string> {
-  const data = new TextEncoder().encode(input);
-  const digest = await crypto.subtle.digest("SHA-256", data);
-  return Array.from(new Uint8Array(digest))
-    .map((b) => b.toString(16).padStart(2, "0"))
-    .join("");
-}
-
-function normalizeClaimCode(input: string): string {
-  return input.trim().replace(/[^0-9a-fA-F]/g, "").toUpperCase();
-}
 
 serve(async (req) => {
   if (req.method === "OPTIONS") {

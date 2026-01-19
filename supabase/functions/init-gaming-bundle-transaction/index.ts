@@ -25,14 +25,14 @@ serve(async (req) => {
     const reference: string | undefined = body.reference;
     const email: string | undefined = body.email;
     const walletAddress: string | undefined = body.wallet_address || body.walletAddress;
-    const amountKobo: number | undefined = typeof body.amount === "number" ? body.amount : undefined;
+    const requestedAmountKobo: number | undefined = typeof body.amount === "number" ? body.amount : undefined;
 
     console.log("[init-gaming-bundle-transaction] request", {
       bundleId,
       reference,
       hasEmail: Boolean(email),
       hasWalletAddress: Boolean(walletAddress),
-      amountKobo,
+      amountKobo: requestedAmountKobo,
     });
 
     if (!bundleId || !reference || !email || !walletAddress) {
@@ -53,7 +53,7 @@ serve(async (req) => {
     const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
     const { data: bundle, error: bundleError } = await supabase
       .from("gaming_bundles")
-      .select("id, vendor_id, vendor_address, bundle_address, chain_id, price_fiat, fiat_symbol, is_active")
+      .select("id, vendor_id, vendor_address, bundle_address, chain_id, price_fiat, price_fiat_kobo, fiat_symbol, is_active")
       .eq("id", bundleId)
       .maybeSingle();
 
@@ -86,16 +86,17 @@ serve(async (req) => {
       }
     }
 
-    const expectedFiat = typeof bundle.price_fiat === "number" ? bundle.price_fiat : null;
-    const expectedAmountKobo = expectedFiat !== null ? Math.round(expectedFiat * 100) : null;
-    if (typeof amountKobo === "number" && expectedAmountKobo !== null && amountKobo !== expectedAmountKobo) {
+    const expectedAmountKobo = typeof (bundle as any).price_fiat_kobo === "number"
+      ? (bundle as any).price_fiat_kobo
+      : Math.round(Number((bundle as any).price_fiat ?? 0) * 100);
+    if (typeof requestedAmountKobo === "number" && requestedAmountKobo !== expectedAmountKobo) {
       return new Response(JSON.stringify({ ok: false, error: "amount_mismatch" }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
         status: 400,
       });
     }
 
-    const amountFiat = typeof amountKobo === "number" ? amountKobo / 100 : (bundle.price_fiat ?? null);
+    const amountFiat = expectedAmountKobo / 100;
 
     const { error: insertError } = await supabase
       .from("gaming_bundle_orders")
@@ -123,7 +124,7 @@ serve(async (req) => {
       });
     }
 
-    return new Response(JSON.stringify({ ok: true, subaccount_code: subaccountCode }), {
+    return new Response(JSON.stringify({ ok: true, amount_kobo: expectedAmountKobo, subaccount_code: subaccountCode }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
       status: 200,
     });

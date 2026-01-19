@@ -7,29 +7,13 @@ import { corsHeaders, buildPreflightHeaders } from "../_shared/cors.ts";
 import { SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY } from "../_shared/constants.ts";
 import { requireVendor } from "../_shared/vendor.ts";
 import { validateChain } from "../_shared/network-helpers.ts";
-import { encodeGamingBundlePurchase, ZERO_UID } from "../_shared/gaming-bundles.ts";
+import { encodeGamingBundlePurchase, ZERO_UID, generateClaimCode, sha256Hex } from "../_shared/gaming-bundles.ts";
 
 const EAS_ADDRESS_BY_CHAIN: Record<number, string> = {
   8453: "0x4200000000000000000000000000000000000021",
   84532: "0x4200000000000000000000000000000000000021",
 };
 
-function generateClaimCode(): string {
-  // 16 bytes => 128 bits of entropy; safe even if only the hash leaks.
-  const bytes = crypto.getRandomValues(new Uint8Array(16));
-  return Array.from(bytes)
-    .map((b) => b.toString(16).padStart(2, "0"))
-    .join("")
-    .toUpperCase();
-}
-
-async function sha256Hex(input: string): Promise<string> {
-  const data = new TextEncoder().encode(input);
-  const digest = await crypto.subtle.digest("SHA-256", data);
-  return Array.from(new Uint8Array(digest))
-    .map((b) => b.toString(16).padStart(2, "0"))
-    .join("");
-}
 
 serve(async (req) => {
   if (req.method === "OPTIONS") {
