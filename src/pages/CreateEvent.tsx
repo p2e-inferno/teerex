@@ -12,16 +12,20 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
-import { deployLock, updateLockTransferability } from '@/utils/lockUtils';
-import { savePublishedEvent } from '@/utils/eventUtils';
-import { saveDraft, updateDraft, getDraft, deleteDraft, getPublishedEvent } from '@/utils/supabaseDraftStorage';
+import { updateLockTransferability } from '@/utils/lockUtils';
+import { getPublishedEvent } from '@/utils/supabaseDraftStorage';
+import {
+  saveDraftViaEdge,
+  updateDraftViaEdge,
+  getDraftViaEdge,
+} from '@/utils/edgeFunctionStorage';
 import { supabase } from '@/integrations/supabase/client';
-import { addLockManager } from '@/utils/lockUtils';
 import { EventCreationSuccessModal } from '@/components/events/EventCreationSuccessModal';
 import { WalletConnectionGate } from '@/components/WalletConnectionGate';
-import { useGaslessFallback } from '@/hooks/useGasless';
 import { isCryptoPriceValid } from '@/utils/priceUtils';
 import type { CryptoCurrency } from '@/types/currency';
+import { useEventPublisher } from '@/hooks/useEventPublisher';
+import { getDefaultChainId } from '@/lib/config/network-config';
 
 export interface EventFormData {
   title: string;
@@ -43,7 +47,7 @@ export interface EventFormData {
   imageUrl: string;
   imageCropX?: number;
   imageCropY?: number;
-  chainId?: number;
+  chainId: number;
   // Ticket validity duration
   ticketDuration: 'event' | '30' | '365' | 'unlimited' | 'custom';
   customDurationDays?: number;
@@ -86,6 +90,7 @@ const CreateEvent = () => {
     paymentMethod: 'free',
     category: '',
     imageUrl: '',
+    chainId: getDefaultChainId(),
     ticketDuration: 'event',
     customDurationDays: undefined,
     isPublic: true,
@@ -94,61 +99,18 @@ const CreateEvent = () => {
     transferable: false
   });
 
-  // Gasless deployment fallback hook
-  const deployLockWithGasless = useGaslessFallback(
-    'gasless-deploy-lock',
-    async (lockConfig: any) => {
-      // Fallback: client-side deployment
-      toast({
-        title: "Deploying with wallet",
-        description: "Please confirm the transaction in your wallet...",
-      });
-      return await deployLock(lockConfig, wallets[0], lockConfig.chainId);
-    },
-    true // enabled by default
-  );
-
-  const validateRequiredFields = () => {
-    const parsed = EventCreateSchema.safeParse({
-      title: formData.title,
-      date: formData.date,
-      time: formData.time,
-    });
-    if (!parsed.success) {
-      // Surface first issue only to keep UX simple
-      const first = parsed.error.issues[0];
-      toast({
-        title: 'Missing or invalid fields',
-        description: first?.message || 'Please check your inputs',
-        variant: 'destructive',
-      });
-      return false;
-    }
-    return true;
-  };
-
-  const validateDates = () => {
-    if (!formData.date) {
-      return false;
-    }
-
-    if (formData.endDate && formData.endDate < formData.date) {
-      toast({
-        title: 'Invalid Date Range',
-        description: 'End date must be on or after start date',
-        variant: 'destructive',
-      });
-      return false;
-    }
-
-    return true;
-  };
-
+  // Shared event publisher hook
+  const { publishEvent, isPublishing: isPublishingEvent } = useEventPublisher();
 
   useEffect(() => {
     if (draftId && user?.id) {
       const loadDraft = async () => {
-        const draft = await getDraft(draftId, user.id);
+        const accessToken = await getAccessToken();
+        if (!accessToken) {
+          console.error('No access token available for loading draft');
+          return;
+        }
+        const draft = await getDraftViaEdge(draftId, user.id, accessToken);
         if (draft) {
           setFormData({
             title: draft.title,
@@ -207,6 +169,7 @@ const CreateEvent = () => {
             ngnPrice: event.ngn_price || 0,
             category: event.category,
             imageUrl: event.image_url || '',
+            chainId: event.chain_id || getDefaultChainId(),
             ticketDuration: (event.ticket_duration as 'event' | '30' | '365' | 'unlimited' | 'custom') || 'event',
             customDurationDays: event.custom_duration_days,
             isPublic: (event as any).is_public ?? true,
@@ -232,7 +195,7 @@ const CreateEvent = () => {
       };
       loadEvent();
     }
-  }, [draftId, eventId, user?.id, navigate, toast]);
+  }, [draftId, eventId, user?.id, navigate, toast, getAccessToken]);
 
   const steps = [
     { number: 1, title: 'Basic Info', component: EventBasicInfo },
@@ -299,20 +262,38 @@ const CreateEvent = () => {
     }
   };
 
-  const getExpirationDuration = (duration: string, customDays?: number): number => {
-    switch (duration) {
-      case '30':
-        return 30 * 24 * 60 * 60;      // 30 days in seconds
-      case '365':
-        return 365 * 24 * 60 * 60;    // 1 year in seconds
-      case 'unlimited':
-        return 999999999;              // ~31 years (effectively unlimited)
-      case 'custom':
-        return (customDays || 1) * 24 * 60 * 60; // Custom days in seconds
-      case 'event':
-      default:
-        return 86400;                  // 1 day (valid until event)
+  // Simple validation helpers for updateEvent (not needed for createEvent - handled by shared hook)
+  const validateRequiredFields = (): boolean => {
+    const parsed = EventCreateSchema.safeParse({
+      title: formData.title,
+      date: formData.date,
+      time: formData.time,
+    });
+    if (!parsed.success) {
+      const first = parsed.error.issues[0];
+      toast({
+        title: 'Missing or invalid fields',
+        description: first?.message || 'Please check your inputs',
+        variant: 'destructive',
+      });
+      return false;
     }
+    return true;
+  };
+
+  const validateDates = (): boolean => {
+    if (!formData.date) {
+      return false;
+    }
+    if (formData.endDate && formData.endDate < formData.date) {
+      toast({
+        title: 'Invalid Date Range',
+        description: 'End date must be on or after start date',
+        variant: 'destructive',
+      });
+      return false;
+    }
+    return true;
   };
 
   const saveAsDraft = async () => {
@@ -327,27 +308,22 @@ const CreateEvent = () => {
       console.log('Form data:', formData);
 
       // Refresh access token to prevent expiration issues
-      try {
-        const accessToken = await getAccessToken();
-        if (!accessToken) {
-          throw new Error('Authentication session expired. Please refresh the page.');
-        }
-        console.log('Access token refreshed successfully');
-      } catch (tokenError) {
-        console.error('Error refreshing access token:', tokenError);
-        throw new Error('Authentication session expired. Please refresh the page and try again.');
+      const accessToken = await getAccessToken();
+      if (!accessToken) {
+        throw new Error('Authentication session expired. Please refresh the page.');
       }
+      console.log('Access token refreshed successfully');
 
       if (currentDraftId) {
         console.log('Updating existing draft:', currentDraftId);
-        await updateDraft(currentDraftId, formData, user.id);
+        await updateDraftViaEdge(currentDraftId, formData, user.id, accessToken);
         toast({
           title: "Draft Updated",
           description: "Your event draft has been updated successfully.",
         });
       } else {
         console.log('Creating new draft');
-        const newDraftId = await saveDraft(formData, user.id);
+        const newDraftId = await saveDraftViaEdge(formData, user.id, accessToken);
         if (newDraftId) {
           setCurrentDraftId(newDraftId);
           console.log('Draft created successfully:', newDraftId);
@@ -387,239 +363,60 @@ const CreateEvent = () => {
 
   const createEvent = async () => {
     console.log('Creating event with data:', formData);
-    setIsCreating(true);
-    
-    try {
-      // Validate required fields before proceeding
-      if (!validateRequiredFields()) {
-        setIsCreating(false);
-        return;
-      }
-      if (!validateDates()) {
-        setIsCreating(false);
-        return;
-      }
-      const wallet = wallets[0];
-      if (!wallet) {
-        throw new Error('Please connect a wallet to create your event.');
-      }
 
-      if (!user?.id) {
-        throw new Error('User not authenticated');
-      }
-
-      console.log('Using wallet:', wallet);
-
-      const lockConfig = {
-        name: formData.title,
-        symbol: `${formData.title.slice(0, 3).toUpperCase()}TIX`,
-        keyPrice: formData.paymentMethod === 'crypto' ? formData.price.toString() : '0',
-        maxNumberOfKeys: formData.capacity,
-        expirationDuration: getExpirationDuration(formData.ticketDuration, formData.customDurationDays),
-        currency: formData.paymentMethod === 'crypto' ? formData.currency : 'FREE',
-        price: formData.paymentMethod === 'crypto' ? formData.price : (formData.paymentMethod === 'fiat' ? formData.ngnPrice : 0),
-        chainId: ((formData as any).chainId || 0) as number
-      };
-
-      if (!lockConfig.chainId) {
-        throw new Error('Please select a network for deployment.');
-      }
-
-      // Try gasless deployment first, fallback to client-side if it fails
-      const result: any = await deployLockWithGasless({
-        ...lockConfig,
-        chain_id: lockConfig.chainId,
-        maxKeysPerAddress: 1,
-        transferable: formData.transferable ?? false,
-        requiresApproval: false,
-        creator_address: wallet.address?.toLowerCase(),
-        // Fields for idempotency hash
-        eventDate: formData.date?.toISOString() || null,
-        eventTime: formData.time,
-        eventLocation: formData.location,
-        paymentMethod: formData.paymentMethod,
-      });
-
-      // Normalize response format (gasless returns {ok, lock_address, tx_hash}, client returns {success, lockAddress, transactionHash})
-      const deploymentResult = result.ok
-        ? { success: true, lockAddress: result.lock_address, transactionHash: result.tx_hash }
-        : result;
-
-      // Show success message for gasless
-      if (result.ok) {
-        toast({
-          title: "Lock deployed!",
-          description: "Gas sponsored by TeeRex ✨",
-        });
-      }
-
-      if (deploymentResult.success && deploymentResult.transactionHash && deploymentResult.lockAddress) {
-        // Track if service manager was successfully added
-        let serviceManagerAdded = false;
-        
-        // If fiat payment is enabled, add the service wallet as a lock manager
-        if (formData.paymentMethod === 'fiat') {
-          toast({
-            title: "Adding Service Manager",
-            description: "Adding unlock service as lock manager for fiat payments...",
-          });
-
-          try {
-            // Get the service public key from the private key
-            const { data: serviceData, error: serviceError } = await supabase.functions.invoke('get-service-address');
-
-            if (serviceError) {
-              console.error('Failed to get service address (network error):', serviceError);
-              toast({
-                title: "Warning",
-                description: "Event created but fiat payments may not work. Service manager not added.",
-                variant: "default"
-              });
-            } else if (!serviceData?.ok) {
-              console.error('Failed to get service address (application error):', serviceData?.error);
-              toast({
-                title: "Warning",
-                description: "Event created but fiat payments may not work. Service manager not added.",
-                variant: "default"
-              });
-            } else if (!serviceData.address) {
-              console.error('Service address not returned');
-              toast({
-                title: "Warning",
-                description: "Event created but fiat payments may not work. Service manager not added.",
-                variant: "default"
-              });
-            } else {
-              const managerResult = await addLockManager(deploymentResult.lockAddress, serviceData.address, wallet);
-
-              if (!managerResult.success) {
-                console.error('Failed to add service manager:', managerResult.error);
-                toast({
-                  title: "Warning",
-                  description: "Event created but fiat payments may not work. Service manager not added.",
-                  variant: "default"
-                });
-              } else {
-                console.log('Service manager added successfully:', managerResult.transactionHash);
-                serviceManagerAdded = true;
-              }
-            }
-          } catch (error) {
-            console.error('Error adding service manager:', error);
-            toast({
-              title: "Warning",
-              description: "Event created but fiat payments may not work. Service manager not added.",
-              variant: "default"
-            });
-          }
-        }
-        // Save event to Supabase with service manager status
-        const savedEvent = await savePublishedEvent(formData, deploymentResult.lockAddress, deploymentResult.transactionHash, user.id, serviceManagerAdded);
-
-        if (currentDraftId && user?.id) {
-          await deleteDraft(currentDraftId, user.id);
-        }
-
+    const result = await publishEvent(formData, {
+      currentDraftId,
+      autoSaveOnError: true,
+      onSuccess: (savedEvent) => {
         // Show success modal instead of navigating immediately
         setCreatedEvent(savedEvent);
         setShowSuccessModal(true);
-      } else {
-        throw new Error(deploymentResult.error || 'Failed to deploy smart contract');
       }
-    } catch (error) {
-      console.error('Error creating event:', error);
+    });
 
-      // Handle duplicate event detection
-      if (error instanceof Error && error.message === 'DUPLICATE_EVENT') {
-        const lockAddress = (error as any).lockAddress;
-        const eventTitle = (error as any).eventTitle;
+    // Handle auto-saved draft ID
+    if (!result.success && result.autoSavedDraftId) {
+      setCurrentDraftId(result.autoSavedDraftId);
+    }
 
-        const { dismiss } = toast({
-          title: "Event Already Exists",
-          description: (
-            <div className="space-y-2">
-              <p className="text-sm">An event with these core details already exists:</p>
-              <p className="font-medium text-sm">"{eventTitle}"</p>
-              <p className="text-xs text-gray-600 mt-2">
-                If you want to update the description, image, or other details, please view the existing event.
-              </p>
-              <div className="flex gap-2 mt-3">
-                <Button
-                  size="sm"
-                  onClick={() => {
-                    dismiss();
-                    navigate(`/event/${lockAddress}`);
-                  }}
-                >
-                  View Event
-                </Button>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={() => {
-                    dismiss();
-                    navigate('/my-events');
-                  }}
-                >
-                  My Events
-                </Button>
-              </div>
+    // Handle duplicate event detection
+    if (!result.success && result.error === 'DUPLICATE_EVENT' && result.duplicateEvent) {
+      const { lockAddress, eventTitle } = result.duplicateEvent;
+
+      const { dismiss } = toast({
+        title: "Event Already Exists",
+        description: (
+          <div className="space-y-2">
+            <p className="text-sm">An event with these core details already exists:</p>
+            <p className="font-medium text-sm">"{eventTitle}"</p>
+            <p className="text-xs text-gray-600 mt-2">
+              If you want to update the description, image, or other details, please view the existing event.
+            </p>
+            <div className="flex gap-2 mt-3">
+              <Button
+                size="sm"
+                onClick={() => {
+                  dismiss();
+                  navigate(`/event/${lockAddress}`);
+                }}
+              >
+                View Event
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => {
+                  dismiss();
+                  navigate('/my-events');
+                }}
+              >
+                My Events
+              </Button>
             </div>
-          ),
-          duration: 15000, // 15 seconds to give time to read
-        });
-
-        setIsCreating(false);
-        return;
-      }
-
-      let errorMessage = 'There was an error creating your event. Please try again.';
-      let shouldAutoSaveDraft = false;
-
-      if (error instanceof Error) {
-        if (error.message.includes('User rejected')) {
-          errorMessage = 'Transaction was cancelled. Your work has been automatically saved as a draft.';
-          shouldAutoSaveDraft = true;
-        } else if (error.message.includes('insufficient funds')) {
-          errorMessage = 'Insufficient funds to deploy the smart contract. Your work has been saved as a draft.';
-          shouldAutoSaveDraft = true;
-        } else {
-          errorMessage = error.message;
-          // Auto-save for any deployment error to prevent data loss
-          shouldAutoSaveDraft = true;
-        }
-      }
-
-      // Automatically save as draft on deployment failure
-      if (shouldAutoSaveDraft && user?.id) {
-        console.log('Auto-saving draft after deployment error');
-        try {
-          if (currentDraftId) {
-            await updateDraft(currentDraftId, formData, user.id);
-            console.log('Draft auto-updated successfully');
-          } else {
-            const newDraftId = await saveDraft(formData, user.id);
-            if (newDraftId) {
-              setCurrentDraftId(newDraftId);
-              console.log('Draft auto-saved successfully:', newDraftId);
-            }
-          }
-        } catch (draftError) {
-          console.error('Failed to auto-save draft:', draftError);
-          errorMessage += ' Unable to auto-save draft - please save manually.';
-        }
-      }
-
-      toast({
-        title: "Error Creating Event",
-        description: errorMessage,
-        variant: "destructive",
-        duration: 7000
+          </div>
+        ),
+        duration: 15000,
       });
-
-      setIsCreating(false);
-    } finally {
-      setIsCreating(false);
     }
   };
 
@@ -730,6 +527,7 @@ const CreateEvent = () => {
       paymentMethod: 'free',
       category: '',
       imageUrl: '',
+      chainId: getDefaultChainId(),
       ticketDuration: 'event',
       customDurationDays: undefined,
       isPublic: true,
@@ -763,11 +561,17 @@ const CreateEvent = () => {
         return <EventDetails {...commonProps} />;
       case 3:
         if (editingEventId) {
-          return <TicketSettingsDisplay formData={formData} />;
+          return (
+            <TicketSettingsDisplay
+              formData={formData}
+              lockAddress={editingMeta?.lockAddress}
+              eventId={editingEventId}
+            />
+          );
         }
         return <TicketSettings {...commonProps} />;
       case 4:
-        return <EventPreview {...commonProps} onSaveAsDraft={editingEventId ? undefined : saveAsDraft} isSavingDraft={isSavingDraft} isPublishing={isCreating} />;
+        return <EventPreview {...commonProps} onSaveAsDraft={editingEventId ? undefined : saveAsDraft} isSavingDraft={isSavingDraft} isPublishing={isCreating || isPublishingEvent} />;
       default:
         return <EventBasicInfo {...commonProps} />;
     }
@@ -870,10 +674,10 @@ const CreateEvent = () => {
           ) : (
             <Button
               onClick={editingEventId ? updateEvent : createEvent}
-              disabled={!canContinue || isCreating}
+              disabled={!canContinue || isCreating || isPublishingEvent}
               className="bg-purple-600 hover:bg-purple-700 text-white disabled:bg-gray-300 disabled:cursor-not-allowed"
             >
-              {isCreating ? (editingEventId ? 'Updating Event...' : 'Deploying Smart Contract...') : (editingEventId ? 'Update Event' : 'Publish Event')}
+              {(isCreating || isPublishingEvent) ? (editingEventId ? 'Updating Event...' : 'Deploying Smart Contract...') : (editingEventId ? 'Update Event' : 'Publish Event')}
             </Button>
           )}
         </div>

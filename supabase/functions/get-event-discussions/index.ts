@@ -76,14 +76,8 @@ serve(async (req) => {
 
     const userWallets = await getUserWalletAddresses(privyUserId);
     const normalizedWallets = (userWallets || []).map((addr) => addr.toLowerCase());
-    const creatorAddress = (event as any).creator_address ? (event as any).creator_address.toLowerCase() : undefined;
-    if (!creatorAddress) {
-      console.warn('[get-event-discussions] missing creator_address on event; gating will rely on creator_id/manager/key', {
-        requestId,
-        eventId: event.id,
-      });
-    }
-    const isCreatorByWallet = creatorAddress ? normalizedWallets.includes(creatorAddress) : false;
+
+    // const isCreatorByWallet = creatorAddress ? normalizedWallets.includes(creatorAddress) : false;
     const isCreatorById = event.creator_id ? event.creator_id === privyUserId : false;
 
     const networkConfig = await validateChain(supabase, event.chain_id);
@@ -95,11 +89,10 @@ serve(async (req) => {
       isAnyUserWalletHasValidKeyParallel(event.lock_address, normalizedWallets, networkConfig.rpc_url),
     ]);
 
-    const allowed = Boolean(isCreatorByWallet || isCreatorById || anyIsManager || anyHasKey);
+    const allowed = Boolean(isCreatorById || anyIsManager || anyHasKey);
     console.log('[get-event-discussions] gating result', {
       requestId,
       walletCount: normalizedWallets.length,
-      isCreatorByWallet,
       isCreatorById,
       anyIsManager,
       anyHasKey,

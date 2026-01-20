@@ -12,6 +12,7 @@ import { RATE_LIMITS, SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, SERVICE_PK } from
 import { validateChain } from '../_shared/network-helpers.ts';
 import { retryWithBackoff, isRetryableTransactionError } from '../_shared/retry-helper.ts';
 import { appendDivviTagToCalldataAsync, submitDivviReferralBestEffort } from '../_shared/divvi.ts';
+import { resolveTokenInfo } from '../_shared/unlock.ts';
 
 // Retry configuration for addLockManager transaction
 const RETRY_CONFIG = {
@@ -195,20 +196,22 @@ serve(async (req) => {
     }
     const unlock = new Contract(networkConfig.unlock_factory_address, UnlockABI, signer);
 
-    // 7. Compute token address and price
-    let tokenAddress = ethers.ZeroAddress;
-    let keyPrice = 0n;
+    // 7. Resolve token address, decimals, and price dynamically
+    // This mirrors client-side logic and supports all tokens: ETH, USDC, DG, G, UP, FREE
+    const { tokenAddress, decimals, keyPrice } = await resolveTokenInfo(
+      currency,
+      price,
+      chain_id,
+      networkConfig,
+      provider
+    );
 
-    if (currency === 'USDC' && networkConfig.usdc_token_address) {
-      tokenAddress = networkConfig.usdc_token_address;
-      keyPrice = ethers.parseUnits(String(price), 6); // USDC has 6 decimals
-    } else if (currency === 'ETH') {
-      tokenAddress = ethers.ZeroAddress;
-      keyPrice = ethers.parseEther(String(price));
-    } else if (currency === 'FREE') {
-      tokenAddress = ethers.ZeroAddress;
-      keyPrice = 0n;
-    }
+    console.log(`Resolved token info for ${currency}:`, {
+      tokenAddress,
+      decimals,
+      keyPrice: keyPrice.toString(),
+      humanReadablePrice: price,
+    });
 
     // 9. Encode initialize calldata (following lockUtils.ts pattern)
     const lockInterface = new ethers.Interface(PublicLockABI);

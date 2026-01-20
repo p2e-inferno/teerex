@@ -30,14 +30,28 @@ const MyBundles = () => {
   const queryClient = useQueryClient();
   const [checkingOrderId, setCheckingOrderId] = useState<string | null>(null);
 
-  const { data: orders = [], isLoading, error, refetch } = useMyGamingBundleOrders(
+  const { data: orders = [], isLoading, isFetching, error, refetch } = useMyGamingBundleOrders(
     { limit: 100 },
     { enabled: authenticated }
   );
 
   const hasOrders = orders.length > 0;
+  const isRefreshing = isFetching && !isLoading;
 
   const rows = useMemo(() => orders, [orders]);
+
+  const refreshOrders = async () => {
+    try {
+      await queryClient.invalidateQueries({ queryKey: ['my-gaming-bundle-orders'] });
+      await refetch();
+    } catch (err) {
+      toast({
+        title: 'Refresh failed',
+        description: err instanceof Error ? err.message : String(err),
+        variant: 'destructive',
+      });
+    }
+  };
 
   const checkStatus = async (orderId: string) => {
     console.log(`[MyBundles] Check button clicked for order: ${orderId}`);
@@ -109,8 +123,8 @@ const MyBundles = () => {
             <h1 className="text-3xl font-bold text-gray-900 mb-2">My Bundles</h1>
             <p className="text-gray-600">Recover and track your gaming bundle purchases.</p>
           </div>
-          <Button variant="outline" onClick={() => refetch()} disabled={isLoading}>
-            <RefreshCw className="w-4 h-4 mr-2" />
+          <Button variant="outline" onClick={refreshOrders} disabled={isLoading || isRefreshing}>
+            <RefreshCw className={`w-4 h-4 mr-2 ${isRefreshing ? 'animate-spin' : ''}`} />
             Refresh
           </Button>
         </div>
@@ -255,4 +269,3 @@ const MyBundles = () => {
 };
 
 export default MyBundles;
-

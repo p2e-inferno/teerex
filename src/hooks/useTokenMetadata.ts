@@ -63,6 +63,8 @@ export const tokenMetadataQueryKeys = {
  *
  * Benefits: Auto-caching, deduplication, loading states
  */
+export { fetchTokenMetadata };
+
 export function useTokenMetadata(
   chainId: number | undefined,
   tokenAddress: string | undefined | null,

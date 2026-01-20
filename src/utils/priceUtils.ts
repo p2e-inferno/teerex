@@ -3,7 +3,7 @@
  * Supports dynamic networks with different native currencies
  */
 
-import { usesWholeNumberPricing, isNativeToken } from '@/types/currency';
+import { CryptoCurrency, usesWholeNumberPricing, isNativeToken } from '@/types/currency';
 
 export interface PriceValidationResult {
   isValid: boolean;
@@ -14,7 +14,7 @@ export interface PriceValidationResult {
  * Minimum price thresholds based on token pricing rules
  */
 // ERC20 tokens with whole-number pricing (USDC, DG, G, UP)
-export const MIN_WHOLE_NUMBER_PRICE = 1;        // $1 minimum
+export const MIN_WHOLE_NUMBER_PRICE = 1;        // Default $1 minimum (fallback)
 // Native tokens with fractional pricing (ETH, etc.)
 export const MIN_NATIVE_TOKEN_PRICE = 0.0001;   // 0.0001 minimum
 
@@ -29,7 +29,10 @@ export const MIN_STABLECOIN_PRICE = MIN_WHOLE_NUMBER_PRICE;
  * @returns Minimum price as a number
  */
 export function getMinimumPrice(currency: string): number {
-  return usesWholeNumberPricing(currency) ? MIN_WHOLE_NUMBER_PRICE : MIN_NATIVE_TOKEN_PRICE;
+  if (usesWholeNumberPricing(currency)) {
+    return getWholeNumberTokenMinimum(currency as CryptoCurrency);
+  }
+  return MIN_NATIVE_TOKEN_PRICE;
 }
 
 /**
@@ -40,7 +43,8 @@ export function getMinimumPrice(currency: string): number {
  */
 export function getMinimumPriceString(currency: string, nativeCurrencySymbol?: string): string {
   if (usesWholeNumberPricing(currency)) {
-    return `$${MIN_WHOLE_NUMBER_PRICE}`;
+    const min = getWholeNumberTokenMinimum(currency as CryptoCurrency);
+    return `${min} ${currency}`;
   }
   const symbol = nativeCurrencySymbol || 'native currency';
   return `${MIN_NATIVE_TOKEN_PRICE} ${symbol}`;
@@ -67,11 +71,14 @@ export function validateCryptoPrice(
   }
 
   // Check whole-number pricing tokens (ERC20: USDC, DG, G, UP)
-  if (usesWholeNumberPricing(currency) && price < MIN_WHOLE_NUMBER_PRICE) {
-    return {
-      isValid: false,
-      error: `Minimum price is $${MIN_WHOLE_NUMBER_PRICE} for ${currency}`,
-    };
+  if (usesWholeNumberPricing(currency)) {
+    const min = getWholeNumberTokenMinimum(currency as CryptoCurrency);
+    if (price < min) {
+      return {
+        isValid: false,
+        error: `Minimum price is ${min} ${currency}`,
+      };
+    }
   }
 
   // Check native token minimum (ETH, etc.)
@@ -115,5 +122,18 @@ export function getPriceStep(currency: string): string {
  * @returns Placeholder string for HTML input
  */
 export function getPricePlaceholder(currency: string): string {
-  return usesWholeNumberPricing(currency) ? '1.00' : '0.0001';
+  return usesWholeNumberPricing(currency)
+    ? `${getWholeNumberTokenMinimum(currency as CryptoCurrency)}`
+    : '0.0001';
+}
+
+const WHOLE_NUMBER_TOKEN_MINIMUMS: Partial<Record<CryptoCurrency, number>> = {
+  USDC: 1,
+  DG: 100,
+  G: 1000,
+  UP: 10,
+};
+
+export function getWholeNumberTokenMinimum(currency: CryptoCurrency): number {
+  return WHOLE_NUMBER_TOKEN_MINIMUMS[currency] ?? MIN_WHOLE_NUMBER_PRICE;
 }

@@ -12,12 +12,14 @@ import { Shield, Zap, Ticket, CreditCard, Info, Loader2, AlertCircle, AlertTrian
 import { EventFormData } from '@/pages/CreateEvent';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { useNetworkConfigs } from '@/hooks/useNetworkConfigs';
-import { useMultipleTokenMetadata } from '@/hooks/useTokenMetadata';
+import { useMultipleTokenMetadata, tokenMetadataQueryKeys, fetchTokenMetadata } from '@/hooks/useTokenMetadata';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { validateCryptoPrice, getPricePlaceholder, getPriceStep, MIN_WHOLE_NUMBER_PRICE, MIN_NATIVE_TOKEN_PRICE } from '@/utils/priceUtils';
+import { validateCryptoPrice, getPricePlaceholder, getPriceStep, MIN_NATIVE_TOKEN_PRICE, getWholeNumberTokenMinimum } from '@/utils/priceUtils';
 import type { CryptoCurrency } from '@/types/currency';
 import { usesWholeNumberPricing } from '@/types/currency';
 import { supabase } from '@/integrations/supabase/client';
+import { useQueries } from '@tanstack/react-query';
+import { CACHE_TIMES } from '@/lib/config/react-query-config';
 
 interface TicketSettingsProps {
   formData: EventFormData;
@@ -46,6 +48,48 @@ export const TicketSettings: React.FC<TicketSettingsProps> = ({
   }, [currentChainId, availableTokens, getTokenAddress]);
 
   const { metadataMap } = useMultipleTokenMetadata(currentChainId, tokenAddresses);
+
+  const tokensRequiringOnChainName = useMemo(() => {
+    if (!currentChainId) return [];
+
+    return availableTokens
+      .filter(token => token !== 'ETH')
+      .map(token => {
+        const address = getTokenAddress(currentChainId, token as 'USDC' | 'DG' | 'G' | 'UP');
+        return {
+          token,
+          address,
+        };
+      })
+      .filter(entry => typeof entry.address === 'string' && !metadataMap[entry.address.toLowerCase()]?.name) as {
+        token: string;
+        address: string;
+      }[];
+  }, [currentChainId, availableTokens, getTokenAddress, metadataMap]);
+
+  const onChainNameQueries = useQueries({
+    queries: tokensRequiringOnChainName.map(entry => ({
+      queryKey: tokenMetadataQueryKeys.byToken(currentChainId!, entry.address),
+      queryFn: () => fetchTokenMetadata(currentChainId!, entry.address),
+      enabled: Boolean(currentChainId && entry.address),
+      staleTime: CACHE_TIMES.TOKEN_METADATA.STALE_TIME_MS,
+      gcTime: CACHE_TIMES.TOKEN_METADATA.GARBAGE_COLLECTION_TIME_MS,
+      retry: 2,
+    })),
+  });
+
+  const onChainNameMap = useMemo(
+    () =>
+      Object.fromEntries(
+        tokensRequiringOnChainName
+        .map((entry, index) => [
+            entry.address.toLowerCase(),
+            onChainNameQueries[index].data?.name,
+          ])
+          .filter(([, name]) => Boolean(name))
+      ) as Record<string, string>,
+    [tokensRequiringOnChainName, onChainNameQueries]
+  );
 
   const fiatEnabled = useMemo(() => {
     const raw = (import.meta as any).env?.VITE_ENABLE_FIAT;
@@ -325,13 +369,15 @@ export const TicketSettings: React.FC<TicketSettingsProps> = ({
                     // For ERC20 tokens, fetch metadata from contracts
                     const tokenAddr = getTokenAddress(currentChainId, token as 'USDC' | 'DG' | 'G' | 'UP');
                     const metadata = tokenAddr ? metadataMap[tokenAddr.toLowerCase()] : null;
+                    const displayName =
+                      (tokenAddr && onChainNameMap[tokenAddr.toLowerCase()]) || metadata?.name;
 
                     return (
                       <SelectItem key={token} value={token}>
                         <div className="flex items-baseline gap-2">
                           <span>{metadata?.symbol || token}</span>
-                          {metadata?.name && (
-                            <span className="text-xs text-gray-500">{metadata.name}</span>
+                          {displayName && (
+                            <span className="text-xs text-gray-500">{displayName}</span>
                           )}
                         </div>
                       </SelectItem>
@@ -345,7 +391,7 @@ export const TicketSettings: React.FC<TicketSettingsProps> = ({
               <Label htmlFor="price">
                 Price
                 {usesWholeNumberPricing(formData.currency) && (
-                  <span className="text-xs text-gray-500 ml-2">(min: ${MIN_WHOLE_NUMBER_PRICE})</span>
+                  <span className="text-xs text-gray-500 ml-2">(min: {getWholeNumberTokenMinimum(formData.currency)} {formData.currency})</span>
                 )}
                 {!usesWholeNumberPricing(formData.currency) && (
                   <span className="text-xs text-gray-500 ml-2">(min: {MIN_NATIVE_TOKEN_PRICE} {getNetworkByChainId(currentChainId)?.native_currency_symbol || 'native'})</span>
@@ -368,7 +414,7 @@ export const TicketSettings: React.FC<TicketSettingsProps> = ({
                   const { error } = validateCryptoPrice(formData.price || 0, formData.currency, nativeCurrency);
                   setPriceError(error);
                 }}
-                min={usesWholeNumberPricing(formData.currency) ? MIN_WHOLE_NUMBER_PRICE.toString() : MIN_NATIVE_TOKEN_PRICE.toString()}
+                min={usesWholeNumberPricing(formData.currency) ? getWholeNumberTokenMinimum(formData.currency).toString() : MIN_NATIVE_TOKEN_PRICE.toString()}
                 step={getPriceStep(formData.currency)}
                 className={priceError ? 'border-red-500' : ''}
               />

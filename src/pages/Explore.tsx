@@ -18,6 +18,8 @@ import { TicketProcessingDialog } from '@/components/events/TicketProcessingDial
 import { PaymentMethodDialog } from '@/components/events/PaymentMethodDialog';
 import { fetchEventsPage, ExploreFilters } from '@/lib/explore/exploreData';
 import { useMultiEventTicketRealtime } from '@/hooks/useMultiEventTicketRealtime';
+import { useUserEventTickets } from '@/hooks/useUserEventTickets';
+import { useUserAddresses } from '@/hooks/useUserAddresses';
 import { hasMethod } from '@/lib/events/paymentMethods';
 
 const Explore = () => {
@@ -38,6 +40,11 @@ const Explore = () => {
 
   // Real-time ticket counts for all displayed events
   const { keysSoldMap } = useMultiEventTicketRealtime(events);
+
+  // Check which events the user owns tickets for
+  const userAddresses = useUserAddresses();
+  const eventIds = useMemo(() => events.map(e => e.id), [events]);
+  const userOwnedEventIds = useUserEventTickets(userAddresses, eventIds);
 
   const [filters, setFilters] = useState<ExploreFilters>({ sortBy: 'date-desc', isFree: null });
   const [filtersOpen, setFiltersOpen] = useState(false);
@@ -322,6 +329,7 @@ const Explore = () => {
                 keysSold={keysSoldMap[event.id]}
                 authenticated={authenticated}
                 onConnectWallet={login}
+                isUserTicketOwner={userOwnedEventIds.has(event.id)}
               />
             ))}
             {isLoadingMore && Array.from({ length: 3 }).map((_, i) => (
