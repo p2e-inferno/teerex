@@ -28,6 +28,54 @@ if (!Element.prototype.scrollIntoView) {
   };
 }
 
+// Polyfill for ResizeObserver (required for cmdk / Radix UI in JSDOM)
+if (!(globalThis as any).ResizeObserver) {
+  (globalThis as any).ResizeObserver = class ResizeObserver {
+    observe() {
+      // noop
+    }
+    unobserve() {
+      // noop
+    }
+    disconnect() {
+      // noop
+    }
+  };
+}
+
+// Polyfill for HTMLCanvasElement.getContext (required for qrcode.react in JSDOM)
+if (typeof HTMLCanvasElement !== "undefined") {
+  HTMLCanvasElement.prototype.getContext = function getContext() {
+    return {
+      canvas: this,
+      fillRect: () => {},
+      clearRect: () => {},
+      getImageData: () => ({ data: new Uint8ClampedArray() }),
+      putImageData: () => {},
+      createImageData: () => ({ data: new Uint8ClampedArray() }),
+      setTransform: () => {},
+      drawImage: () => {},
+      save: () => {},
+      restore: () => {},
+      beginPath: () => {},
+      moveTo: () => {},
+      lineTo: () => {},
+      closePath: () => {},
+      stroke: () => {},
+      translate: () => {},
+      scale: () => {},
+      rotate: () => {},
+      arc: () => {},
+      fill: () => {},
+      measureText: () => ({ width: 0 }),
+      transform: () => {},
+      rect: () => {},
+      clip: () => {},
+      fillText: () => {},
+    } as any;
+  };
+}
+
 beforeAll(() => {
   server.listen({ onUnhandledRequest: "error" });
 });
@@ -38,6 +86,15 @@ afterEach(() => {
 });
 
 afterAll(() => server.close());
+
+// Mock Deno global for Edge Function shared utils compatibility
+(global as any).Deno = {
+  env: {
+    get: (key: string) => process.env[key],
+    toObject: () => process.env,
+  },
+};
+
 
 vi.mock("@privy-io/react-auth", async () => {
   const React = await import("react");
@@ -62,9 +119,13 @@ vi.mock("@/integrations/supabase/client", async () => {
     // Call through to the current global fetch (MSW patches this in beforeAll)
     globalThis.fetch(...args);
 
-  const supabase = createClient("http://localhost:54321", "test-anon-key", {
-    global: { fetch: fetchProxy },
-  });
+  const supabase = createClient(
+    import.meta.env.VITE_SUPABASE_URL || "http://localhost:54321",
+    "test-anon-key",
+    {
+      global: { fetch: fetchProxy },
+    }
+  );
   return { supabase };
 });
 

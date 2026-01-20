@@ -25,6 +25,7 @@ interface EventCardProps {
   isTicketView?: boolean;
   authenticated?: boolean;
   onConnectWallet?: () => void;
+  isUserTicketOwner?: boolean;
 }
 
 export const EventCard: React.FC<EventCardProps> = ({
@@ -38,7 +39,8 @@ export const EventCard: React.FC<EventCardProps> = ({
   showShareButton = false,
   isTicketView = false,
   authenticated = false,
-  onConnectWallet
+  onConnectWallet,
+  isUserTicketOwner = false
 }) => {
   const [imgError, setImgError] = useState(false);
   const [waitlistDialogOpen, setWaitlistDialogOpen] = useState(false);
@@ -77,6 +79,11 @@ export const EventCard: React.FC<EventCardProps> = ({
       onConnectWallet?.();
       return;
     }
+    // If user owns ticket, navigate to event details page
+    if (isUserTicketOwner) {
+      navigate(`/event/${event.lock_address}`);
+      return;
+    }
     // If sold out and waitlist enabled, open waitlist dialog
     if (isSoldOut && event.allow_waitlist) {
       setWaitlistDialogOpen(true);
@@ -92,6 +99,7 @@ export const EventCard: React.FC<EventCardProps> = ({
     if (isTicketView) return 'View Ticket';
     if (actionType === 'edit') return 'Edit';
     if (actionType === 'manage') return 'Manage';
+    if (isUserTicketOwner) return 'View';
     if (isEventExpired) return 'Event Ended';
     if (isSoldOut && event.allow_waitlist) return 'Join Waitlist';
     if (isSoldOut) return 'Sold Out';
@@ -166,6 +174,11 @@ export const EventCard: React.FC<EventCardProps> = ({
           {((event as any).isAllowList ?? event.has_allow_list) && (
             <Badge variant="outline" className="text-xs border-blue-200 text-blue-700">
               Allow List
+            </Badge>
+          )}
+          {isUserTicketOwner && (
+            <Badge className="text-xs bg-green-100 text-green-700 border border-green-200">
+              You own this
             </Badge>
           )}
         </div>
@@ -264,7 +277,15 @@ export const EventCard: React.FC<EventCardProps> = ({
                   onClick={handleButtonClick}
                   disabled={isEventExpired || (isSoldOut && !event.allow_waitlist) || (!authenticated && !onConnectWallet)}
                   variant={getButtonVariant()}
-                  className={!authenticated ? "bg-purple-600 hover:bg-purple-700" : actionType === 'manage' ? '' : "bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"}
+                  className={
+                    !authenticated
+                      ? "bg-purple-600 hover:bg-purple-700"
+                      : isUserTicketOwner
+                      ? "bg-green-600 hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                      : actionType === 'manage'
+                      ? ''
+                      : "bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                  }
                 >
                   {getButtonText()}
                 </Button>

@@ -55,6 +55,7 @@ const AdminNetworks: React.FC = () => {
   const [networks, setNetworks] = useState<NetworkConfig[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
+  const [togglingNetworkId, setTogglingNetworkId] = useState<string | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingNetwork, setEditingNetwork] = useState<NetworkConfig | null>(null);
   const [formData, setFormData] = useState<NetworkFormData>({
@@ -74,13 +75,21 @@ const AdminNetworks: React.FC = () => {
     is_active: true,
   });
 
-  const loadNetworks = async () => {
+  const loadNetworks = async (opts?: { background?: boolean }) => {
+    const isBackground = opts?.background;
+
     try {
-      setIsLoading(true);
+      if (isBackground) {
+        // No-op for background if we don't have a separate refreshing state
+      } else {
+        setIsLoading(true);
+      }
+
       const token = await getAccessToken?.();
       const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
 
-      const { data, error } = await supabase.functions.invoke('manage-network-config/get', {
+      const { data, error } = await supabase.functions.invoke('manage-network-config', {
+        method: 'GET',
         headers: {
           Authorization: `Bearer ${anonKey}`,
           'X-Privy-Authorization': `Bearer ${token}`,
@@ -134,7 +143,8 @@ const AdminNetworks: React.FC = () => {
 
       if (editingNetwork) {
         // Update existing network
-        const { data, error } = await supabase.functions.invoke('manage-network-config/update', {
+        const { data, error } = await supabase.functions.invoke('manage-network-config', {
+          method: 'PUT',
           body: { id: editingNetwork.id, ...payload },
           headers: {
             Authorization: `Bearer ${anonKey}`,
@@ -155,7 +165,8 @@ const AdminNetworks: React.FC = () => {
         });
       } else {
         // Create new network
-        const { data, error } = await supabase.functions.invoke('manage-network-config/create', {
+        const { data, error } = await supabase.functions.invoke('manage-network-config', {
+          method: 'POST',
           body: payload,
           headers: {
             Authorization: `Bearer ${anonKey}`,
@@ -179,7 +190,7 @@ const AdminNetworks: React.FC = () => {
       setDialogOpen(false);
       setEditingNetwork(null);
       resetForm();
-      loadNetworks();
+      loadNetworks({ background: true });
     } catch (error: any) {
       console.error('Error saving network:', error);
       toast({
@@ -222,7 +233,8 @@ const AdminNetworks: React.FC = () => {
       const token = await getAccessToken?.();
       const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
 
-      const { data, error } = await supabase.functions.invoke('manage-network-config/delete', {
+      const { data, error } = await supabase.functions.invoke('manage-network-config', {
+        method: 'DELETE',
         body: { id: network.id },
         headers: {
           Authorization: `Bearer ${anonKey}`,
@@ -237,14 +249,21 @@ const AdminNetworks: React.FC = () => {
       clearAllNetworkCaches();
       clearNetworkConfigsCache();
 
+      // Optimistic update: remove from local state
+      setNetworks((prev) => prev.filter((n) => n.id !== network.id));
+
       toast({
         title: "Network Deleted",
         description: `${network.chain_name} has been deleted successfully. Cache cleared for all users.`,
       });
 
-      loadNetworks();
+      // Background refetch to reconcile
+      loadNetworks({ background: true });
     } catch (error: any) {
       console.error('Error deleting network:', error);
+
+      // Refetch on error to restore state
+      loadNetworks({ background: true });
       toast({
         title: "Error Deleting Network",
         description: error.message || "There was an error deleting the network.",
@@ -255,15 +274,27 @@ const AdminNetworks: React.FC = () => {
 
   const handleToggleActive = async (network: NetworkConfig) => {
     try {
+      setTogglingNetworkId(network.id);
+
+      // Optimistic update: update local state immediately
+      const newActiveState = !network.is_active;
+      setNetworks((prev) =>
+        prev.map((n) => (n.id === network.id ? { ...n, is_active: newActiveState } : n))
+      );
+
       const token = await getAccessToken?.();
       const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
 
-      const { data, error } = await supabase.functions.invoke('manage-network-config/update', {
+      const { data, error } = await supabase.functions.invoke('manage-network-config', {
+        method: 'PUT',
         body: {
           id: network.id,
           chain_id: network.chain_id,
           chain_name: network.chain_name,
           usdc_token_address: network.usdc_token_address,
+          dg_token_address: network.dg_token_address,
+          g_token_address: network.g_token_address,
+          up_token_address: network.up_token_address,
           unlock_factory_address: network.unlock_factory_address,
           native_currency_symbol: network.native_currency_symbol,
           native_currency_name: network.native_currency_name,
@@ -271,7 +302,7 @@ const AdminNetworks: React.FC = () => {
           rpc_url: network.rpc_url,
           block_explorer_url: network.block_explorer_url,
           is_mainnet: network.is_mainnet,
-          is_active: !network.is_active,
+          is_active: newActiveState,
         },
         headers: {
           Authorization: `Bearer ${anonKey}`,
@@ -291,14 +322,23 @@ const AdminNetworks: React.FC = () => {
         description: `${network.chain_name} has been ${network.is_active ? 'deactivated' : 'activated'}. Cache cleared for all users.`,
       });
 
-      loadNetworks();
+      // Background refetch to reconcile with server state
+      loadNetworks({ background: true });
     } catch (error: any) {
       console.error('Error toggling network status:', error);
+
+      // Revert optimistic update on error
+      setNetworks((prev) =>
+        prev.map((n) => (n.id === network.id ? { ...n, is_active: network.is_active } : n))
+      );
+
       toast({
         title: "Error Updating Network",
         description: error.message || "There was an error updating the network status.",
         variant: "destructive"
       });
+    } finally {
+      setTogglingNetworkId(null);
     }
   };
 
@@ -359,7 +399,7 @@ const AdminNetworks: React.FC = () => {
 
         {/* Action Bar */}
         <div className="flex justify-between items-center mb-8">
-          <Button onClick={loadNetworks} variant="outline" disabled={isLoading}>
+          <Button onClick={() => loadNetworks()} variant="outline" disabled={isLoading}>
             <RefreshCw className={`h-4 w-4 mr-2 ${isLoading ? 'animate-spin' : ''}`} />
             Refresh
           </Button>
@@ -547,10 +587,10 @@ const AdminNetworks: React.FC = () => {
         </div>
 
         {/* Networks Grid */}
-        {isLoading ? (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {Array.from({ length: 6 }).map((_, i) => (
-              <Card key={i} className="animate-pulse">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {isLoading ? (
+            Array.from({ length: 6 }).map((_, i) => (
+              <Card key={`skeleton-${i}`} className="animate-pulse">
                 <CardHeader>
                   <div className="h-4 bg-gray-200 rounded w-3/4"></div>
                   <div className="h-3 bg-gray-200 rounded w-1/2"></div>
@@ -562,11 +602,9 @@ const AdminNetworks: React.FC = () => {
                   </div>
                 </CardContent>
               </Card>
-            ))}
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {networks.map((network) => (
+            ))
+          ) : (
+            networks.map((network) => (
               <Card key={network.id} className="border-0 shadow-lg bg-gradient-to-br from-card/80 to-card/60 backdrop-blur-sm">
                 <CardHeader className="pb-4">
                   <div className="flex items-center justify-between">
@@ -616,8 +654,14 @@ const AdminNetworks: React.FC = () => {
                         size="sm"
                         variant="outline"
                         onClick={() => handleToggleActive(network)}
+                        disabled={togglingNetworkId === network.id}
                       >
-                        {network.is_active ? (
+                        {togglingNetworkId === network.id ? (
+                          <>
+                            <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+                            {network.is_active ? 'Deactivating...' : 'Activating...'}
+                          </>
+                        ) : network.is_active ? (
                           <>
                             <AlertTriangle className="h-3 w-3 mr-1" />
                             Deactivate
@@ -651,9 +695,9 @@ const AdminNetworks: React.FC = () => {
                   </div>
                 </CardContent>
               </Card>
-            ))}
-          </div>
-        )}
+            ))
+          )}
+        </div>
 
         {networks.length === 0 && !isLoading && (
           <Card className="border-0 shadow-lg bg-gradient-to-br from-card/80 to-card/60 backdrop-blur-sm">

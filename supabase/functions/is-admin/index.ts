@@ -1,7 +1,6 @@
 /* deno-lint-ignore-file no-explicit-any */
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.50.0";
-import { ethers } from "https://esm.sh/ethers@6.14.4";
 import { corsHeaders, buildPreflightHeaders } from "../_shared/cors.ts";
 import {
   createRemoteJWKSet,
@@ -10,6 +9,7 @@ import {
 } from "https://deno.land/x/jose@v4.14.4/index.ts";
 import { getUserWalletAddresses } from "../_shared/privy.ts";
 import { validateChain } from "../_shared/network-helpers.ts";
+import { isAnyUserWalletHasValidKeyParallel } from "../_shared/unlock.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -64,34 +64,19 @@ serve(async (req) => {
     }
     const rpcUrl = networkConfig.rpc_url;
 
-    // 3) Check if any user wallet is a lock manager
+    // 3) Check if any user wallet has a valid key to the admin lock
     const userWallets = await getUserWalletAddresses(privyUserId);
     if (!userWallets || userWallets.length === 0) {
       return new Response(JSON.stringify({ is_admin: false }), { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 200 });
     }
 
-    const lockManagerABI = [
-      {
-        inputs: [{ internalType: "address", name: "_account", type: "address" }],
-        name: "isLockManager",
-        outputs: [{ internalType: "bool", name: "", type: "bool" }],
-        stateMutability: "view",
-        type: "function",
-      },
-    ];
+    const { anyHasKey } = await isAnyUserWalletHasValidKeyParallel(
+      ADMIN_LOCK_ADDRESS,
+      userWallets,
+      rpcUrl
+    );
 
-    const provider = new ethers.JsonRpcProvider(rpcUrl);
-    const lock = new ethers.Contract(ADMIN_LOCK_ADDRESS, lockManagerABI, provider);
-    for (const addr of userWallets) {
-      try {
-        const ok = await lock.isLockManager(addr);
-        if (ok) {
-          return new Response(JSON.stringify({ is_admin: true }), { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 200 });
-        }
-      } catch (_) {}
-    }
-
-    return new Response(JSON.stringify({ is_admin: false }), { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 200 });
+    return new Response(JSON.stringify({ is_admin: anyHasKey }), { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 200 });
   } catch (e: any) {
     return new Response(JSON.stringify({ error: e?.message || "Internal error" }), { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 200 });
   }

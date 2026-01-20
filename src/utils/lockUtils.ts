@@ -131,6 +131,13 @@ const PublicLockABI = [
   },
   {
     "inputs": [],
+    "name": "tokenAddress",
+    "outputs": [{ "internalType": "address", "name": "", "type": "address" }],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
     "name": "totalSupply",
     "outputs": [{ "internalType": "uint256", "name": "", "type": "uint256" }],
     "stateMutability": "view",
@@ -376,7 +383,7 @@ export const checkIfLockManager = async (
     if (!lockAddress || !ethers.isAddress(lockAddress)) {
       throw new Error('Invalid lock address.');
     }
-    
+
     if (!ethers.isAddress(managerAddress)) {
       throw new Error('Invalid manager address.');
     }
@@ -400,10 +407,10 @@ export const checkIfLockManager = async (
     }
 
     const provider = new ethers.JsonRpcProvider(rpcUrl);
-    
+
     const lockContract = new ethers.Contract(lockAddress, PublicLockABI, provider);
     const isManager = await lockContract.isLockManager(managerAddress);
-    
+
     return isManager;
   } catch (error) {
     console.error('Error checking lock manager status:', error);
@@ -423,11 +430,11 @@ export const addLockManager = async (
     if (!lockAddress || lockAddress === 'Unknown' || !ethers.isAddress(lockAddress)) {
       throw new Error('Invalid lock address.');
     }
-    
+
     if (!ethers.isAddress(managerAddress)) {
       throw new Error('Invalid manager address.');
     }
-    
+
     if (!wallet || !wallet.address) {
       throw new Error('No wallet provided or not connected.');
     }
@@ -438,27 +445,34 @@ export const addLockManager = async (
     const lockContract = new ethers.Contract(lockAddress, PublicLockABI, signer);
 
     // Check if user is a lock manager
-    const isManager = await lockContract.isLockManager(wallet.address);
-    if (!isManager) {
+    const currentIsManager = await lockContract.isLockManager(wallet.address);
+    if (!currentIsManager) {
       throw new Error('You must be a lock manager to add another lock manager.');
+    }
+
+    // Check if the target is already a manager (idempotency)
+    const alreadyManager = await lockContract.isLockManager(managerAddress);
+    if (alreadyManager) {
+      console.log('Target address is already a lock manager:', managerAddress);
+      return { success: true };
     }
 
     // Add the new lock manager
     const tx = await lockContract.addLockManager(managerAddress);
     console.log('Add lock manager transaction sent:', tx.hash);
-    
+
     const receipt = await tx.wait();
     if (receipt.status !== 1) {
       throw new Error('Transaction failed. Please try again.');
     }
 
-    return { 
-      success: true, 
-      transactionHash: tx.hash 
+    return {
+      success: true,
+      transactionHash: tx.hash
     };
   } catch (error) {
     console.error('Error adding lock manager:', error);
-    
+
     let errorMessage = 'Failed to add lock manager.';
     if (error instanceof Error) {
       if (error.message.includes('User rejected') || error.message.includes('user rejected')) {
@@ -469,15 +483,20 @@ export const addLockManager = async (
         errorMessage = error.message;
       }
     }
-    
+
     return { success: false, error: errorMessage };
   }
 };
 
-export const deployLock = async (config: LockConfig, wallet: any, chainId: number): Promise<DeploymentResult> => {
+export const deployLock = async (
+  config: LockConfig,
+  wallet: any,
+  chainId: number,
+  skipExtraConfig: boolean = false
+): Promise<DeploymentResult> => {
   try {
     console.log('Deploying lock with config:', config);
-    
+
     if (!wallet) {
       throw new Error('No wallet provided. Please connect your wallet first.');
     }
@@ -545,14 +564,14 @@ export const deployLock = async (config: LockConfig, wallet: any, chainId: numbe
 
     // Extract lock address from the return value or logs
     let lockAddress = 'Unknown';
-    
+
     // First try to get it from the return value if available
     if (receipt.logs && receipt.logs.length > 0) {
       // Create an interface for the Unlock factory to parse logs
       const unlockInterface = new ethers.Interface([
         "event NewLock(address indexed lockOwner, address indexed newLockAddress)"
       ]);
-      
+
       // Parse all logs to find the NewLock event
       for (const log of receipt.logs) {
         try {
@@ -560,7 +579,7 @@ export const deployLock = async (config: LockConfig, wallet: any, chainId: numbe
             topics: log.topics,
             data: log.data
           });
-          
+
           if (parsedLog && parsedLog.name === 'NewLock') {
             lockAddress = parsedLog.args.newLockAddress;
             console.log('Found lock address from NewLock event:', lockAddress);
@@ -597,8 +616,9 @@ export const deployLock = async (config: LockConfig, wallet: any, chainId: numbe
       lockAddress: lockAddress
     });
 
-    // Configure transfer fee based on transferability setting
-    if (lockAddress && lockAddress !== 'Unknown' && ethers.isAddress(lockAddress)) {
+    // Configure transfer fee and metadata only if not skipped
+    if (!skipExtraConfig && lockAddress && lockAddress !== 'Unknown' && ethers.isAddress(lockAddress)) {
+      // Configure transfer fee based on transferability setting
       const lockContract = new ethers.Contract(lockAddress, PublicLockABI, signer);
       const isTransferable = config.transferable ?? false;
       const desiredFeeBps = isTransferable ? 0 : 10000; // 0% for transferable, 100% for soul-bound
@@ -616,18 +636,12 @@ export const deployLock = async (config: LockConfig, wallet: any, chainId: numbe
         console.warn('Failed to set transfer fee (non-critical):', error);
         // Don't fail deployment - transfer fee can be set later by lock manager
       }
-    } else {
-      console.warn('Skipping transfer fee configuration due to invalid lock address:', lockAddress);
-    }
 
-    // Set NFT metadata for marketplace visibility
-    if (!lockAddress || lockAddress === 'Unknown' || !ethers.isAddress(lockAddress)) {
-      console.warn('Skipping NFT metadata setup due to invalid lock address:', lockAddress);
-    } else {
+      // Set NFT metadata for marketplace visibility
       try {
         const { setLockMetadata, getBaseTokenURI, TEEREX_NFT_SYMBOL } = await import('./lockMetadata');
         const baseTokenURI = getBaseTokenURI(lockAddress);
-        
+
         console.log('Setting NFT metadata for lock:', lockAddress);
         const metadataResult = await setLockMetadata(
           lockAddress,
@@ -636,7 +650,7 @@ export const deployLock = async (config: LockConfig, wallet: any, chainId: numbe
           baseTokenURI,
           signer
         );
-        
+
         if (metadataResult.success) {
           console.log('NFT metadata set successfully:', metadataResult.txHash);
         } else {
@@ -647,6 +661,8 @@ export const deployLock = async (config: LockConfig, wallet: any, chainId: numbe
         console.warn('Error setting NFT metadata (non-critical):', error);
         // Don't fail deployment - metadata can be set later by lock manager
       }
+    } else if (!skipExtraConfig) {
+      console.warn('Skipping extra configuration due to invalid lock address:', lockAddress);
     }
 
     return {
@@ -656,9 +672,9 @@ export const deployLock = async (config: LockConfig, wallet: any, chainId: numbe
     };
   } catch (error) {
     console.error('Error deploying lock:', error);
-    
+
     let errorMessage = 'Failed to deploy lock';
-    
+
     if (error instanceof Error) {
       if (error.message.includes('User rejected') || error.message.includes('user rejected')) {
         errorMessage = 'Transaction was cancelled. Please try again when ready.';
@@ -668,7 +684,7 @@ export const deployLock = async (config: LockConfig, wallet: any, chainId: numbe
         errorMessage = error.message;
       }
     }
-    
+
     return {
       success: false,
       error: errorMessage
@@ -685,12 +701,12 @@ export const purchaseKey = async (
 ): Promise<PurchaseResult> => {
   try {
     console.log(`Purchasing key for lock: ${lockAddress}`);
-    
+
     // Validate lock address before proceeding
     if (!lockAddress || lockAddress === 'Unknown' || !ethers.isAddress(lockAddress)) {
       throw new Error('Invalid lock address. The event may not have been properly deployed.');
     }
-    
+
     if (!wallet || !wallet.address) {
       throw new Error('No wallet provided or not connected.');
     }
@@ -765,18 +781,18 @@ export const purchaseKey = async (
 
   } catch (error) {
     console.error('Error purchasing key:', error);
-    
+
     let errorMessage = 'Failed to purchase ticket.';
     if (error instanceof Error) {
-        if (error.message.includes('User rejected') || error.message.includes('user rejected')) {
-            errorMessage = 'Transaction was cancelled. Please try again when ready.';
-        } else if (error.message.includes('insufficient funds')) {
-            errorMessage = 'Insufficient funds to purchase the ticket. Please add more ETH to your wallet.';
-        } else {
-            errorMessage = error.message;
-        }
+      if (error.message.includes('User rejected') || error.message.includes('user rejected')) {
+        errorMessage = 'Transaction was cancelled. Please try again when ready.';
+      } else if (error.message.includes('insufficient funds')) {
+        errorMessage = 'Insufficient funds to purchase the ticket. Please add more ETH to your wallet.';
+      } else {
+        errorMessage = error.message;
+      }
     }
-    
+
     return {
       success: false,
       error: errorMessage,
@@ -840,12 +856,12 @@ export const checkKeyOwnership = async (lockAddress: string, userAddress: string
     if (!ethers.isAddress(lockAddress) || !ethers.isAddress(userAddress)) {
       return false;
     }
-    
+
     // Validate lock address before proceeding
     if (lockAddress === 'Unknown') {
       return false;
     }
-    
+
     const provider = await getReadOnlyProvider(chainId);
     const lockContract = new ethers.Contract(lockAddress, PublicLockABI, provider);
     return await lockContract.getHasValidKey(userAddress);
@@ -863,12 +879,12 @@ export const getUserKeyBalance = async (lockAddress: string, userAddress: string
     if (!ethers.isAddress(lockAddress) || !ethers.isAddress(userAddress)) {
       return 0;
     }
-    
+
     // Validate lock address before proceeding
     if (lockAddress === 'Unknown') {
       return 0;
     }
-    
+
     const provider = await getReadOnlyProvider(chainId);
     const lockContract = new ethers.Contract(lockAddress, PublicLockABI, provider);
     const balance = await lockContract.balanceOf(userAddress);
@@ -891,7 +907,7 @@ export const configureMaxKeysPerAddress = async (
     if (!lockAddress || lockAddress === 'Unknown' || !ethers.isAddress(lockAddress)) {
       throw new Error('Invalid lock address.');
     }
-    
+
     if (!wallet || !wallet.address) {
       throw new Error('No wallet provided or not connected.');
     }
@@ -919,12 +935,12 @@ export const configureMaxKeysPerAddress = async (
     return { success: true };
   } catch (error) {
     console.error('Error configuring max keys per address:', error);
-    
+
     let errorMessage = 'Failed to configure max keys per address.';
     if (error instanceof Error) {
       errorMessage = error.message;
     }
-    
+
     return { success: false, error: errorMessage };
   }
 };
@@ -937,10 +953,10 @@ export const getMaxKeysPerAddress = async (lockAddress: string, userAddress: str
     if (!lockAddress || lockAddress === 'Unknown' || !ethers.isAddress(lockAddress)) {
       return 1; // Default fallback
     }
-    
+
     const provider = await getReadOnlyProvider(chainId);
     const lockContract = new ethers.Contract(lockAddress, PublicLockABI, provider);
-    
+
     // Try user-specific limit first, then global limit
     if (userAddress && ethers.isAddress(userAddress)) {
       try {
@@ -952,7 +968,7 @@ export const getMaxKeysPerAddress = async (lockAddress: string, userAddress: str
         // Fall through to global limit
       }
     }
-    
+
     // Get global limit
     const globalLimit = await lockContract.maxKeysPerAddress();
     return Number(globalLimit) || 1; // Default to 1 if not set
@@ -1058,3 +1074,221 @@ export const updateLockTransferability = async (
     return { success: false, error: errorMessage };
   }
 };
+
+/**
+ * Check if a lock is free by querying its keyPrice on-chain
+ * Returns true if keyPrice is 0, false otherwise
+ *
+ * Useful for handling edge cases where price=0 but payment_methods doesn't include 'free'
+ * (e.g., when event creation bug resulted in mismatch between DB and chain state)
+ *
+ * @param lockAddress - Lock contract address
+ * @param chainId - Blockchain chain ID
+ * @returns true if lock keyPrice is 0, false otherwise
+ */
+export async function isFreeOnchain(
+  lockAddress: string,
+  chainId: number
+): Promise<boolean> {
+  try {
+    if (!lockAddress || lockAddress === 'Unknown' || !ethers.isAddress(lockAddress)) {
+      return false;
+    }
+
+    const provider = await getReadOnlyProvider(chainId);
+    const lock = new ethers.Contract(lockAddress, PublicLockABI, provider);
+    const keyPrice = await lock.keyPrice();
+
+    return keyPrice === 0n;
+  } catch (error) {
+    console.error(`[isFreeOnchain] Error checking if lock ${lockAddress} is free on chain ${chainId}:`, error);
+    return false;
+  }
+}
+
+/**
+ * Get current key price from a lock contract
+ * Used to sync price with vendor lock settings
+ *
+ * @param lockAddress - Lock contract address
+ * @param chainId - Blockchain chain ID
+ * @returns Key price in wei as string
+ */
+export async function getKeyPrice(
+  lockAddress: string,
+  chainId: number
+): Promise<string> {
+  try {
+    const rpcUrl = getRpcUrl(chainId);
+    const provider = new ethers.JsonRpcProvider(rpcUrl);
+    const lock = new ethers.Contract(lockAddress, PublicLockABI, provider);
+    const price = await lock.keyPrice();
+    return price.toString();
+  } catch (error) {
+    console.error('[getKeyPrice] Error fetching key price:', error);
+    throw error;
+  }
+}
+
+/**
+ * Phase 1: Get on-chain pricing from lock contract
+ * Queries the lock contract to get the current price, token address, and currency
+ * Used to detect mismatches between database and on-chain state
+ *
+ * @param lockAddress - Lock contract address
+ * @param chainId - Chain ID where the lock is deployed
+ * @returns On-chain pricing information including price, currency, and token address
+ */
+export async function getOnChainLockPricing(
+  lockAddress: string,
+  chainId: number
+): Promise<{ price: number; currency: string; tokenAddress: string }> {
+  try {
+    if (!lockAddress || lockAddress === 'Unknown' || !ethers.isAddress(lockAddress)) {
+      throw new Error('Invalid lock address');
+    }
+
+    const rpcUrl = await getRpcUrlForChain(chainId);
+    const provider = new ethers.JsonRpcProvider(rpcUrl);
+    const lockContract = new ethers.Contract(lockAddress, PublicLockABI, provider);
+
+    // Query on-chain data
+    const [keyPrice, tokenAddress] = await Promise.all([
+      lockContract.keyPrice(),
+      lockContract.tokenAddress(),
+    ]);
+
+    console.log(`[getOnChainLockPricing] Lock ${lockAddress}: keyPrice=${keyPrice.toString()}, tokenAddress=${tokenAddress}`);
+
+    // Handle FREE locks (price = 0)
+    if (keyPrice === 0n) {
+      return {
+        price: 0,
+        currency: tokenAddress === ZERO_ADDRESS ? 'ETH' : 'FREE',
+        tokenAddress: tokenAddress,
+      };
+    }
+
+    // Resolve currency from token address
+    const currency = await resolveCurrencyFromTokenAddress(tokenAddress, chainId);
+
+    // Get decimals for the token
+    let decimals = 18;
+    if (tokenAddress !== ZERO_ADDRESS) {
+      const tokenContract = new ethers.Contract(tokenAddress, ERC20_ABI, provider);
+      decimals = Number(await tokenContract.decimals());
+    }
+
+    // Convert to human-readable price
+    const humanPrice = parseFloat(ethers.formatUnits(keyPrice, decimals));
+
+    return {
+      price: humanPrice,
+      currency,
+      tokenAddress,
+    };
+  } catch (error) {
+    console.error(`[getOnChainLockPricing] Error for lock ${lockAddress} on chain ${chainId}:`, error);
+    throw error;
+  }
+}
+
+/**
+ * Phase 1: Resolve currency symbol from token address
+ * Maps token contract addresses to currency symbols (ETH, USDC, DG, G, UP)
+ *
+ * @param tokenAddress - Token contract address (or zero address for native token)
+ * @param chainId - Chain ID for network-specific token lookups
+ * @returns Currency symbol (ETH, USDC, DG, G, UP, or UNKNOWN)
+ */
+export async function resolveCurrencyFromTokenAddress(
+  tokenAddress: string,
+  chainId: number
+): Promise<string> {
+  try {
+    // Native token (ETH)
+    if (tokenAddress === ZERO_ADDRESS) {
+      return 'ETH';
+    }
+
+    // Get network config with token addresses
+    const networkConfig = await getNetworkConfigByChainId(chainId);
+    if (!networkConfig) {
+      console.warn(`[resolveCurrencyFromTokenAddress] No network config for chain ${chainId}`);
+      return 'UNKNOWN';
+    }
+
+    // Normalize addresses for comparison (lowercase)
+    const normalizedAddress = tokenAddress.toLowerCase();
+
+    if (networkConfig.usdc_token_address?.toLowerCase() === normalizedAddress) {
+      return 'USDC';
+    }
+    if (networkConfig.dg_token_address?.toLowerCase() === normalizedAddress) {
+      return 'DG';
+    }
+    if (networkConfig.g_token_address?.toLowerCase() === normalizedAddress) {
+      return 'G';
+    }
+    if (networkConfig.up_token_address?.toLowerCase() === normalizedAddress) {
+      return 'UP';
+    }
+
+    console.warn(`[resolveCurrencyFromTokenAddress] Unknown token address ${tokenAddress} on chain ${chainId}`);
+    return 'UNKNOWN';
+  } catch (error) {
+    console.error(`[resolveCurrencyFromTokenAddress] Error resolving currency for ${tokenAddress}:`, error);
+    return 'UNKNOWN';
+  }
+}
+
+/**
+ * Update key price on a lock contract (requires lock manager permissions)
+ * Used by admin to update vendor lock pricing
+ *
+ * @param lockAddress - Lock contract address
+ * @param newPriceWei - New price in wei (as string)
+ * @param signer - Ethers signer with lock manager permissions
+ * @returns Success status and transaction hash or error
+ */
+export async function updateKeyPrice(
+  lockAddress: string,
+  newPriceWei: string,
+  signer: ethers.Signer
+): Promise<{ success: boolean; txHash?: string; error?: string }> {
+  try {
+    const lock = new ethers.Contract(lockAddress, PublicLockABI, signer);
+
+    // updateKeyPricing(newKeyPrice, tokenAddress)
+    // Using 0x0 for tokenAddress maintains current token
+    const tx = await lock.updateKeyPricing(
+      newPriceWei,
+      '0x0000000000000000000000000000000000000000'
+    );
+
+    const receipt = await tx.wait();
+
+    if (!receipt || receipt.status === 0) {
+      throw new Error('Transaction failed while updating key price');
+    }
+
+    return { success: true, txHash: receipt.hash };
+  } catch (error) {
+    console.error('[updateKeyPrice] Error:', error);
+
+    let errorMessage = 'Failed to update key price';
+    if (error instanceof Error) {
+      if (error.message.toLowerCase().includes('user rejected')) {
+        errorMessage = 'Transaction was cancelled';
+      } else if (error.message.toLowerCase().includes('insufficient funds')) {
+        errorMessage = 'Insufficient funds for transaction';
+      } else if (error.message.toLowerCase().includes('not lock manager')) {
+        errorMessage = 'Only lock manager can update price';
+      } else {
+        errorMessage = error.message;
+      }
+    }
+
+    return { success: false, error: errorMessage };
+  }
+}

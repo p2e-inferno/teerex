@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { usePrivy, useWallets } from "@privy-io/react-auth";
 import { usePaystackPayment } from "react-paystack";
 import {
@@ -51,13 +51,31 @@ export const PaystackPaymentDialog: React.FC<PaystackPaymentDialogProps> = ({
   const [userWalletAddress, setUserWalletAddress] = useState(
     wallets[0]?.address || ""
   );
+  const [subaccountCode, setSubaccountCode] = useState<string | null>(null);
+  const [reference, setReference] = useState<string>("");
+  const [shouldLaunchPaystack, setShouldLaunchPaystack] = useState(false);
+  const [amountKobo, setAmountKobo] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (isOpen) return;
+    // Parent closed the dialog; reset transient state so reopening works reliably.
+    setIsPaystackOpen(false);
+    setIsLoading(false);
+    setShouldLaunchPaystack(false);
+    setPaymentHandled(false);
+    setSubaccountCode(null);
+    setReference("");
+    setAmountKobo(null);
+  }, [isOpen]);
 
   const config = {
-    reference: `TeeRex-${event?.id}-${Date.now()}`,
+    reference: reference || `TeeRex-${event?.id}-${Date.now()}`,
     email: userEmail,
-    amount: Math.round((event?.ngn_price || 0) * 100), // Paystack expects amount in kobo
+    amount: amountKobo ?? 0,
     publicKey: event?.paystack_public_key || "",
     currency: "NGN",
+    // Include subaccount for split payments to vendor
+    ...(subaccountCode && { subaccount: subaccountCode }),
     metadata: {
       lock_address: event?.lock_address || "",
       chain_id: event?.chain_id ?? undefined,
@@ -89,8 +107,17 @@ export const PaystackPaymentDialog: React.FC<PaystackPaymentDialogProps> = ({
 
   const initializePayment = usePaystackPayment(config);
 
-  const ensureTransactionRecord = async () => {
-    if (!event) return;
+  useEffect(() => {
+    // Prevent z-index conflicts between the shadcn Dialog overlay and Paystack's modal.
+    const dialogElement = document.querySelector('[role="none"]');
+    if (!dialogElement) return;
+    (dialogElement as HTMLElement).style.display = isPaystackOpen ? "none" : "";
+  }, [isPaystackOpen]);
+
+  const ensureTransactionRecord = async (
+    paymentReference: string
+  ): Promise<{ subaccountCode: string | null; amountKobo: number }> => {
+    if (!event) throw new Error("Missing event");
     try {
       const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
       const accessToken = await getAccessToken?.();
@@ -99,10 +126,12 @@ export const PaystackPaymentDialog: React.FC<PaystackPaymentDialogProps> = ({
         {
           body: {
             event_id: event.id,
-            reference: config.reference,
+            reference: paymentReference,
             email: userEmail,
             wallet_address: userWalletAddress,
-            amount: config.amount,
+            ...(typeof (event as any)?.ngn_price_kobo === 'number' || typeof amountKobo === 'number'
+              ? { amount: (amountKobo ?? (event as any)?.ngn_price_kobo) }
+              : {}),
           },
           headers: {
             ...(anonKey ? { Authorization: `Bearer ${anonKey}` } : {}),
@@ -111,12 +140,21 @@ export const PaystackPaymentDialog: React.FC<PaystackPaymentDialogProps> = ({
         }
       );
       if (error) {
-        console.warn("[PAYSTACK INIT] Failed to create transaction record", error?.message);
+        throw new Error(error?.message || "Failed to create transaction record");
       } else if (data && !data.ok) {
-        console.warn("[PAYSTACK INIT] Failed to create transaction record", data?.error);
+        throw new Error(data?.error || "Failed to create transaction record");
       }
+
+      if (typeof data?.amount_kobo !== "number" || Number.isNaN(data.amount_kobo)) {
+        throw new Error("Missing amount from server");
+      }
+
+      return {
+        subaccountCode: data?.subaccount_code ?? null,
+        amountKobo: data.amount_kobo,
+      };
     } catch (e: any) {
-      console.warn("[PAYSTACK INIT] Error ensuring transaction record", e?.message || e);
+      throw new Error(e?.message || "Failed to create transaction record");
     }
   };
 
@@ -158,10 +196,38 @@ export const PaystackPaymentDialog: React.FC<PaystackPaymentDialogProps> = ({
     });
   };
 
-  const handlePayment = (e?: React.MouseEvent) => {
+  useEffect(() => {
+    if (!shouldLaunchPaystack) return;
+    if (typeof amountKobo !== "number" || Number.isNaN(amountKobo) || amountKobo <= 0) {
+      setShouldLaunchPaystack(false);
+      setIsLoading(false);
+      setIsPaystackOpen(false);
+      toast({
+        title: "Could not start checkout",
+        description: "Missing amount from server",
+        variant: "destructive",
+      });
+      return;
+    }
+    initializePayment({
+      onSuccess: handlePaymentSuccess,
+      onClose: handlePaymentClose,
+    });
+    setShouldLaunchPaystack(false);
+    // At this point we've handed off to the Paystack modal, so stop blocking UI.
+    setIsLoading(false);
+  }, [
+    shouldLaunchPaystack,
+    amountKobo,
+    initializePayment,
+    handlePaymentClose,
+    handlePaymentSuccess,
+    toast,
+  ]);
+
+  const handlePayment = async (e?: React.MouseEvent) => {
     e?.preventDefault();
     setPaymentHandled(false);
-    setIsPaystackOpen(true);
     console.log("🚀 [PAYMENT INIT] User clicked Pay button");
     console.log(
       "📋 [PAYMENT INIT] Event:",
@@ -212,28 +278,35 @@ export const PaystackPaymentDialog: React.FC<PaystackPaymentDialogProps> = ({
       "✅ [PAYMENT INIT] Validation passed, launching Paystack modal..."
     );
 
-    // Keep dialog open but hide it to prevent z-index conflicts
-    // This maintains the component lifecycle while avoiding overlay issues
-    const dialogElement = document.querySelector('[role="none"]');
-    if (dialogElement) {
-      (dialogElement as HTMLElement).style.display = "none";
-    }
-
     console.log("🔄 [PAYMENT INIT] Initializing Paystack payment...");
     setIsLoading(true);
-    // Pre-create transaction so webhook can find it immediately
-    void ensureTransactionRecord();
-    initializePayment({
-      onSuccess: handlePaymentSuccess,
-      onClose: handlePaymentClose,
-    });
+    const paymentReference = `TeeRex-${event?.id}-${Date.now()}`;
+    setReference(paymentReference);
+    try {
+      const init = await ensureTransactionRecord(paymentReference);
+      setAmountKobo(init.amountKobo);
+      if (init.subaccountCode) {
+        setSubaccountCode(init.subaccountCode);
+        console.log("📍 [PAYMENT INIT] Using vendor subaccount:", init.subaccountCode);
+      }
+      setIsPaystackOpen(true);
+      setShouldLaunchPaystack(true);
+    } catch (err) {
+      setIsLoading(false);
+      setIsPaystackOpen(false);
+      toast({
+        title: "Could not start checkout",
+        description: err instanceof Error ? err.message : String(err),
+        variant: "destructive",
+      });
+    }
   };
 
   if (!event) return null;
 
   return (
     <Dialog
-      open={isOpen && !isPaystackOpen}
+      open={isOpen}
       onOpenChange={(open) => {
         if (!open) onClose();
       }}

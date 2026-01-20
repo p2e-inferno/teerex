@@ -12,6 +12,7 @@ import { validateChain } from '../_shared/network-helpers.ts';
 import { sendEmail, getTicketEmail, normalizeEmail } from '../_shared/email-utils.ts';
 import { formatEventDate } from '../_shared/date-utils.ts';
 import { appendDivviTagToCalldataAsync, submitDivviReferralBestEffort } from '../_shared/divvi.ts';
+import { isLockFreeOnchain } from '../_shared/unlock.ts';
 
 /**
  * Checks if recipient already owns keys and validates against max limits
@@ -164,7 +165,13 @@ serve(async (req) => {
       );
     }
 
-    if (event.currency !== 'FREE') {
+    // Validate event is FREE - check DB first, then on-chain as fallback (catches bug-affected events)
+    let isEffectivelyFree = event.currency === 'FREE';
+    if (!isEffectivelyFree) {
+      isEffectivelyFree = await isLockFreeOnchain(lock_address, networkConfig.rpc_url);
+    }
+
+    if (!isEffectivelyFree) {
       return new Response(
         JSON.stringify({ ok: false, error: 'only_free_tickets_supported' }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 200 }

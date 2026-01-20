@@ -12,6 +12,7 @@ export interface EventDraft {
   price: number;
   currency: string;
   ngn_price: number;
+  ngn_price_kobo?: number;
   payment_methods: string[];
   paystack_public_key: string | null;
   category: string;
@@ -49,6 +50,7 @@ export interface PublishedEvent {
   price: number;
   currency: string;
   ngn_price: number;
+  ngn_price_kobo?: number;
   payment_methods: string[];
   paystack_public_key: string | null;
   category: string;

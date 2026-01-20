@@ -17,7 +17,17 @@
       "Bash(npm run test:unit:*)",
       "Bash(npm run test:coverage:*)",
       "Bash(npm run typecheck:*)",
-      "Bash(grep:*)"
+      "Bash(grep:*)",
+      "Bash(find:*)",
+      "Bash(npm run lint:*)",
+      "Bash(npx supabase migration:*)",
+      "Bash(npx supabase:*)",
+      "Bash(cat:*)",
+      "Bash(curl:*)",
+      "Bash(npm run type-check:*)",
+      "Bash(npm test:*)",
+      "Bash(__NEW_LINE_d825018cb53cb1a9__ cp src/__tests__/pricing-sync-integration.test.tsx tests/integration/)",
+      "Bash(__NEW_LINE_8782ac4c1dabd9d6__ rm -rf src/__tests__ src/hooks/__tests__ src/components/create-event/__tests__)"
     ],
     "deny": [],
     "ask": []

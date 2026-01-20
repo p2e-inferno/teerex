@@ -18,7 +18,10 @@
         "test:edge": "deno test supabase/functions/_shared",
         "test:e2e": "cypress run --config-file synpress.json",
         "test:e2e:open": "cypress open --config-file synpress.json",
-        "audit": "npm audit --audit-level=high"
+        "audit": "npm audit --audit-level=high",
+        "functions:serve": "supabase functions serve --env-file .env",
+        "functions:serve:debug": "supabase functions serve --env-file .env --debug",
+        "functions:list": "supabase functions list"
     },
     "dependencies": {
         "@divvi/referral-sdk": "^2.3.0",
@@ -62,6 +65,7 @@
         "@tiptap/starter-kit": "^3.10.5",
         "@types/dompurify": "^3.0.5",
         "@wagmi/core": "^2.17.3",
+        "buffer": "^6.0.3",
         "class-variance-authority": "^0.7.1",
         "clsx": "^2.1.1",
         "cmdk": "^1.0.0",
@@ -72,6 +76,7 @@
         "input-otp": "^1.2.4",
         "lucide-react": "^0.462.0",
         "next-themes": "^0.3.0",
+        "qrcode.react": "^4.2.0",
         "react": "^18.3.1",
         "react-day-picker": "^8.10.1",
         "react-dom": "^18.3.1",
@@ -88,7 +93,6 @@
         "vaul": "^0.9.3",
         "wagmi": "^2.15.6",
         "web3": "^4.16.0",
-        "buffer": "^6.0.3",
         "zod": "^3.23.8"
     },
     "devDependencies": {

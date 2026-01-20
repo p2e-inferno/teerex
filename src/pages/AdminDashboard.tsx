@@ -13,7 +13,8 @@ import {
   Database,
   Zap,
   ExternalLink,
-  Network
+  Network,
+  Building2
 } from 'lucide-react';
 
 const AdminDashboard: React.FC = () => {
@@ -60,6 +61,14 @@ const AdminDashboard: React.FC = () => {
       color: "bg-orange-500/10 border-orange-500/20",
       iconColor: "text-orange-600",
       path: "/admin/analytics"
+    },
+    {
+      title: "Payout Accounts",
+      description: "Manage vendor payout accounts and subaccounts",
+      icon: Building2,
+      color: "bg-violet-500/10 border-violet-500/20",
+      iconColor: "text-violet-600",
+      path: "/admin/payout-accounts"
     }
   ];
 

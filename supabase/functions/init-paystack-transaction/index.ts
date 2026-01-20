@@ -25,20 +25,38 @@ serve(async (req) => {
     const reference: string | undefined = body.reference;
     const email: string | undefined = body.email;
     const walletAddress: string | undefined = body.wallet_address || body.walletAddress;
-    const amountKobo: number | undefined = typeof body.amount === 'number' ? body.amount : undefined;
+    const requestedAmountKobo: number | undefined = typeof body.amount === 'number' ? body.amount : undefined;
 
     if (!eventId || !reference || !email || !walletAddress) {
       return new Response(JSON.stringify({ error: 'Missing required fields: event_id, reference, email, wallet_address' }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 400 });
     }
 
-    // Validate event exists
+    // Validate event exists and get creator info
     const { data: ev, error: evErr } = await supabase
       .from('events')
-      .select('id, paystack_public_key')
+      .select('id, paystack_public_key, creator_id, ngn_price, ngn_price_kobo')
       .eq('id', eventId)
       .maybeSingle();
     if (evErr || !ev) {
       return new Response(JSON.stringify({ error: 'Event not found' }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 404 });
+    }
+
+    // Fetch vendor's verified payout account for subaccount routing
+    let subaccountCode: string | null = null;
+    let payoutAccountId: string | null = null;
+    if (ev.creator_id) {
+      const { data: vendorPayoutAccount } = await supabase
+        .from('vendor_payout_accounts')
+        .select('id, provider_account_code')
+        .eq('vendor_id', ev.creator_id)
+        .eq('provider', 'paystack')
+        .eq('status', 'verified')
+        .maybeSingle();
+
+      if (vendorPayoutAccount?.provider_account_code) {
+        subaccountCode = vendorPayoutAccount.provider_account_code;
+        payoutAccountId = vendorPayoutAccount.id;
+      }
     }
 
     const normalizedEmail = normalizeEmail(email);
@@ -52,9 +70,11 @@ serve(async (req) => {
       reference,
       currency: 'NGN',
       status: 'pending',
+      payout_account_id: payoutAccountId, // Link to vendor's payout account
       gateway_response: {
         reference,
         status: 'initialized',
+        subaccount_code: subaccountCode, // Store for reference
         metadata: {
           custom_fields: [
             { display_name: 'Wallet Address', variable_name: 'user_wallet_address', value: walletAddress },
@@ -64,7 +84,7 @@ serve(async (req) => {
         },
       },
     };
-    if (typeof amountKobo === 'number') insertPayload.amount = amountKobo;
+    insertPayload.amount = amountKobo;
 
     const { error } = await supabase
       .from('paystack_transactions')
@@ -73,8 +93,23 @@ serve(async (req) => {
       return new Response(JSON.stringify({ error: error.message }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 400 });
     }
 
-    return new Response(JSON.stringify({ ok: true }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 200 });
+    // Return subaccount_code for frontend to pass to Paystack
+    return new Response(JSON.stringify({
+      ok: true,
+      amount_kobo: amountKobo,
+      subaccount_code: subaccountCode, // Frontend uses this in Paystack config
+    }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 200 });
   } catch (e: any) {
     return new Response(JSON.stringify({ error: e?.message || 'Internal error' }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 200 });
   }
 });
+    const amountKobo = typeof (ev as any).ngn_price_kobo === 'number'
+      ? (ev as any).ngn_price_kobo
+      : Math.round(Number((ev as any).ngn_price ?? 0) * 100);
+
+    if (typeof requestedAmountKobo === 'number' && requestedAmountKobo !== amountKobo) {
+      return new Response(JSON.stringify({ error: 'amount_mismatch' }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        status: 400,
+      });
+    }

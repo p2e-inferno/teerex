@@ -39,6 +39,8 @@ export default defineConfig({
         'src/components/create-event/TicketSettings.tsx',
         'src/utils/lockUtils.ts',
         'src/pages/AdminNetworks.tsx',
+        'src/**/*.{ts,tsx}',
+        'supabase/functions/_shared/**/*.ts',
       ],
     },
   },
