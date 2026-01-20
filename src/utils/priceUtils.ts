@@ -44,7 +44,7 @@ export function getMinimumPrice(currency: string): number {
 export function getMinimumPriceString(currency: string, nativeCurrencySymbol?: string): string {
   if (usesWholeNumberPricing(currency)) {
     const min = getWholeNumberTokenMinimum(currency as CryptoCurrency);
-    return `${min} ${currency}`;
+    return `$${min}`;
   }
   const symbol = nativeCurrencySymbol || 'native currency';
   return `${MIN_NATIVE_TOKEN_PRICE} ${symbol}`;
@@ -76,7 +76,7 @@ export function validateCryptoPrice(
     if (price < min) {
       return {
         isValid: false,
-        error: `Minimum price is ${min} ${currency}`,
+        error: `Minimum price is $${min} for ${currency}`,
       };
     }
   }
@@ -123,7 +123,7 @@ export function getPriceStep(currency: string): string {
  */
 export function getPricePlaceholder(currency: string): string {
   return usesWholeNumberPricing(currency)
-    ? `${getWholeNumberTokenMinimum(currency as CryptoCurrency)}`
+    ? `${getWholeNumberTokenMinimum(currency as CryptoCurrency).toFixed(2)}`
     : '0.0001';
 }
 
