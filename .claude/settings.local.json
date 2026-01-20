@@ -23,7 +23,9 @@
       "Bash(npx supabase migration:*)",
       "Bash(npx supabase:*)",
       "Bash(cat:*)",
-      "Bash(curl:*)"
+      "Bash(curl:*)",
+      "Bash(npm run type-check:*)",
+      "Bash(npm test:*)"
     ],
     "deny": [],
     "ask": []

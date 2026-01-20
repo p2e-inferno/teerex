@@ -11,7 +11,7 @@ import {
 } from "../_shared/paystack.ts";
 import { validateChain } from "../_shared/network-helpers.ts";
 import { grantLockKey } from "../_shared/unlock.ts";
-import { sha256Hex, normalizeClaimCode } from "../_shared/gaming-bundles.ts";
+import { sha256Hex, normalizeClaimCode } from "../_shared/utilities.ts";
 
 const DEFAULT_KEY_EXPIRATION_SECONDS = 60 * 60 * 24 * 30;
 const LOCK_STALE_THRESHOLD_MS = 15 * 60 * 1000;

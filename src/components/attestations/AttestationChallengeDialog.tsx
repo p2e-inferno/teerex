@@ -4,7 +4,7 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/integrations/supabase/client';
-import { useWallets } from '@privy-io/react-auth';
+import { useWallets, usePrivy } from '@privy-io/react-auth';
 import {
   Dialog,
   DialogContent,
@@ -31,6 +31,7 @@ export const AttestationChallengeDialog: React.FC<AttestationChallengeDialogProp
   children
 }) => {
   const { wallets } = useWallets();
+  const { getAccessToken } = usePrivy();
   const wallet = wallets[0];
   const { toast } = useToast();
   
@@ -60,36 +61,34 @@ export const AttestationChallengeDialog: React.FC<AttestationChallengeDialogProp
     }
 
     setIsSubmitting(true);
-    
+
     try {
-      // Insert challenge into database
-      const { error } = await supabase
-        .from('attestation_challenges')
-        .insert({
+      const accessToken = await getAccessToken();
+      const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
+
+      const { data, error } = await supabase.functions.invoke('create-attestation-challenge', {
+        body: {
           attestation_id: attestationId,
-          challenger_address: wallet.address,
           challenged_address: challengedUserAddress,
           challenge_reason: challengeReason.trim(),
-          evidence_description: evidenceDescription.trim() || null,
-          evidence_url: evidenceUrl.trim() || null,
-          stake_amount: 10 // Fixed stake amount for now
-        });
+          evidence_description: evidenceDescription.trim() || undefined,
+          evidence_url: evidenceUrl.trim() || undefined,
+          challenger_wallet: wallet.address,
+        },
+        headers: {
+          Authorization: `Bearer ${anonKey}`,
+          'X-Privy-Authorization': `Bearer ${accessToken}`,
+        },
+      });
 
       if (error) throw error;
-
-      // Update challenger's reputation (small penalty for challenging)
-      await supabase.rpc('update_reputation_score', {
-        user_addr: wallet.address,
-        score_change: -2,
-        attestation_type: 'challenge'
-      });
+      if (data?.ok === false) throw new Error(data.error || 'Challenge failed');
 
       toast({
         title: '🚨 Challenge Submitted',
         description: `Your challenge has been submitted for review. The community will evaluate the evidence.`,
       });
 
-      // Reset form and close dialog
       setChallengeReason('');
       setEvidenceDescription('');
       setEvidenceUrl('');
@@ -99,7 +98,7 @@ export const AttestationChallengeDialog: React.FC<AttestationChallengeDialogProp
       console.error('Error submitting challenge:', error);
       toast({
         title: 'Challenge Failed',
-        description: 'There was an error submitting your challenge. Please try again.',
+        description: error instanceof Error ? error.message : 'There was an error submitting your challenge. Please try again.',
         variant: 'destructive'
       });
     } finally {

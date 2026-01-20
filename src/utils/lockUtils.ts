@@ -131,6 +131,13 @@ const PublicLockABI = [
   },
   {
     "inputs": [],
+    "name": "tokenAddress",
+    "outputs": [{ "internalType": "address", "name": "", "type": "address" }],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
     "name": "totalSupply",
     "outputs": [{ "internalType": "uint256", "name": "", "type": "uint256" }],
     "stateMutability": "view",
@@ -1069,6 +1076,37 @@ export const updateLockTransferability = async (
 };
 
 /**
+ * Check if a lock is free by querying its keyPrice on-chain
+ * Returns true if keyPrice is 0, false otherwise
+ *
+ * Useful for handling edge cases where price=0 but payment_methods doesn't include 'free'
+ * (e.g., when event creation bug resulted in mismatch between DB and chain state)
+ *
+ * @param lockAddress - Lock contract address
+ * @param chainId - Blockchain chain ID
+ * @returns true if lock keyPrice is 0, false otherwise
+ */
+export async function isFreeOnchain(
+  lockAddress: string,
+  chainId: number
+): Promise<boolean> {
+  try {
+    if (!lockAddress || lockAddress === 'Unknown' || !ethers.isAddress(lockAddress)) {
+      return false;
+    }
+
+    const provider = await getReadOnlyProvider(chainId);
+    const lock = new ethers.Contract(lockAddress, PublicLockABI, provider);
+    const keyPrice = await lock.keyPrice();
+
+    return keyPrice === 0n;
+  } catch (error) {
+    console.error(`[isFreeOnchain] Error checking if lock ${lockAddress} is free on chain ${chainId}:`, error);
+    return false;
+  }
+}
+
+/**
  * Get current key price from a lock contract
  * Used to sync price with vendor lock settings
  *
@@ -1089,6 +1127,118 @@ export async function getKeyPrice(
   } catch (error) {
     console.error('[getKeyPrice] Error fetching key price:', error);
     throw error;
+  }
+}
+
+/**
+ * Phase 1: Get on-chain pricing from lock contract
+ * Queries the lock contract to get the current price, token address, and currency
+ * Used to detect mismatches between database and on-chain state
+ *
+ * @param lockAddress - Lock contract address
+ * @param chainId - Chain ID where the lock is deployed
+ * @returns On-chain pricing information including price, currency, and token address
+ */
+export async function getOnChainLockPricing(
+  lockAddress: string,
+  chainId: number
+): Promise<{ price: number; currency: string; tokenAddress: string }> {
+  try {
+    if (!lockAddress || lockAddress === 'Unknown' || !ethers.isAddress(lockAddress)) {
+      throw new Error('Invalid lock address');
+    }
+
+    const rpcUrl = await getRpcUrlForChain(chainId);
+    const provider = new ethers.JsonRpcProvider(rpcUrl);
+    const lockContract = new ethers.Contract(lockAddress, PublicLockABI, provider);
+
+    // Query on-chain data
+    const [keyPrice, tokenAddress] = await Promise.all([
+      lockContract.keyPrice(),
+      lockContract.tokenAddress(),
+    ]);
+
+    console.log(`[getOnChainLockPricing] Lock ${lockAddress}: keyPrice=${keyPrice.toString()}, tokenAddress=${tokenAddress}`);
+
+    // Handle FREE locks (price = 0)
+    if (keyPrice === 0n) {
+      return {
+        price: 0,
+        currency: tokenAddress === ZERO_ADDRESS ? 'ETH' : 'FREE',
+        tokenAddress: tokenAddress,
+      };
+    }
+
+    // Resolve currency from token address
+    const currency = await resolveCurrencyFromTokenAddress(tokenAddress, chainId);
+
+    // Get decimals for the token
+    let decimals = 18;
+    if (tokenAddress !== ZERO_ADDRESS) {
+      const tokenContract = new ethers.Contract(tokenAddress, ERC20_ABI, provider);
+      decimals = Number(await tokenContract.decimals());
+    }
+
+    // Convert to human-readable price
+    const humanPrice = parseFloat(ethers.formatUnits(keyPrice, decimals));
+
+    return {
+      price: humanPrice,
+      currency,
+      tokenAddress,
+    };
+  } catch (error) {
+    console.error(`[getOnChainLockPricing] Error for lock ${lockAddress} on chain ${chainId}:`, error);
+    throw error;
+  }
+}
+
+/**
+ * Phase 1: Resolve currency symbol from token address
+ * Maps token contract addresses to currency symbols (ETH, USDC, DG, G, UP)
+ *
+ * @param tokenAddress - Token contract address (or zero address for native token)
+ * @param chainId - Chain ID for network-specific token lookups
+ * @returns Currency symbol (ETH, USDC, DG, G, UP, or UNKNOWN)
+ */
+export async function resolveCurrencyFromTokenAddress(
+  tokenAddress: string,
+  chainId: number
+): Promise<string> {
+  try {
+    // Native token (ETH)
+    if (tokenAddress === ZERO_ADDRESS) {
+      return 'ETH';
+    }
+
+    // Get network config with token addresses
+    const networkConfig = await getNetworkConfigByChainId(chainId);
+    if (!networkConfig) {
+      console.warn(`[resolveCurrencyFromTokenAddress] No network config for chain ${chainId}`);
+      return 'UNKNOWN';
+    }
+
+    // Normalize addresses for comparison (lowercase)
+    const normalizedAddress = tokenAddress.toLowerCase();
+
+    if (networkConfig.usdc_token_address?.toLowerCase() === normalizedAddress) {
+      return 'USDC';
+    }
+    if (networkConfig.dg_token_address?.toLowerCase() === normalizedAddress) {
+      return 'DG';
+    }
+    if (networkConfig.g_token_address?.toLowerCase() === normalizedAddress) {
+      return 'G';
+    }
+    if (networkConfig.up_token_address?.toLowerCase() === normalizedAddress) {
+      return 'UP';
+    }
+
+    console.warn(`[resolveCurrencyFromTokenAddress] Unknown token address ${tokenAddress} on chain ${chainId}`);
+    return 'UNKNOWN';
+  } catch (error) {
+    console.error(`[resolveCurrencyFromTokenAddress] Error resolving currency for ${tokenAddress}:`, error);
+    return 'UNKNOWN';
   }
 }
 

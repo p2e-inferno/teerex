@@ -14,7 +14,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
 import type { PublishedEvent } from '@/types/event';
-import { purchaseKey, getBlockExplorerUrl } from '@/utils/lockUtils';
+import { purchaseKey, getBlockExplorerUrl, isFreeOnchain } from '@/utils/lockUtils';
 import { Loader2, ExternalLink } from 'lucide-react';
 import { format } from 'date-fns';
 import { supabase } from '@/integrations/supabase/client';
@@ -40,6 +40,20 @@ export const EventPurchaseDialog: React.FC<EventPurchaseDialogProps> = ({
   const { toast } = useToast();
   const [isPurchasing, setIsPurchasing] = useState(false);
   const [email, setEmail] = useState('');
+  const [isOnchainFree, setIsOnchainFree] = useState(false);
+
+  // Check if event is free on-chain (catches bug-affected events)
+  useEffect(() => {
+    const checkOnchainStatus = async () => {
+      if (!event?.lock_address || !event?.chain_id) {
+        setIsOnchainFree(false);
+        return;
+      }
+      const isFree = await isFreeOnchain(event.lock_address, event.chain_id);
+      setIsOnchainFree(isFree);
+    };
+    checkOnchainStatus();
+  }, [event?.lock_address, event?.chain_id]);
 
   // Load email from previous tickets (prefill if user has bought before)
   useEffect(() => {
@@ -69,10 +83,11 @@ export const EventPurchaseDialog: React.FC<EventPurchaseDialogProps> = ({
   };
 
   // Use shared hook for gasless FREE purchase (with auto-fallback)
+  // Enabled if marked as free in DB OR detected as free on-chain (catches bug-affected events)
   const purchaseFreeTicketWithGasless = useGaslessFallback<GaslessPurchaseArgs, any>(
     'gasless-purchase',
     async (args) => await handleClientSidePurchase(args.user_email, { currency: 'FREE', price: 0 }),
-    isFreeEvent(event)
+    isFreeEvent(event) || isOnchainFree
   );
 
   // Client-side purchase handler (ALL currencies: FREE, ETH, USDC)
@@ -107,17 +122,20 @@ export const EventPurchaseDialog: React.FC<EventPurchaseDialogProps> = ({
       );
 
       if (result.success && result.transactionHash) {
-        // Store ticket record with email in database
-        const { error: insertError } = await supabase.from('tickets').insert({
-          event_id: event.id,
-          owner_wallet: wallet.address.toLowerCase(),
-          grant_tx_hash: result.transactionHash,
-          status: 'active',
-          user_email: userEmail || null,
+        // Register ticket via edge function (service_role bypasses RLS)
+        const accessToken = await getAccessToken?.();
+        const { error: registerError } = await supabase.functions.invoke('register-ticket', {
+          body: {
+            event_id: event.id,
+            owner_wallet: wallet.address.toLowerCase(),
+            grant_tx_hash: result.transactionHash,
+            user_email: userEmail || null,
+          },
+          headers: accessToken ? { 'X-Privy-Authorization': `Bearer ${accessToken}` } : undefined,
         });
 
-        if (insertError) {
-          console.error('Failed to store ticket record:', insertError);
+        if (registerError) {
+          console.error('Failed to register ticket:', registerError);
           // Don't fail the purchase - ticket is already on-chain
         }
 
@@ -258,8 +276,10 @@ export const EventPurchaseDialog: React.FC<EventPurchaseDialogProps> = ({
       }
     }
 
-    // FREE tickets: try gasless first, fallback to client-side
-    if (isFreeEvent(event)) {
+    // FREE tickets: hook is enabled if marked as free in DB OR detected as free on-chain
+    const isEffectivelyFree = isFreeEvent(event) || isOnchainFree;
+
+    if (isEffectivelyFree) {
       if (!walletAddress) {
         toast({
           title: 'Wallet not connected',
@@ -439,6 +459,7 @@ export const EventPurchaseDialog: React.FC<EventPurchaseDialogProps> = ({
             ) : (
               'Purchase'
             )}
+            {/* On-chain free check happens during handlePurchase */}
           </Button>
         </DialogFooter>
       </DialogContent>

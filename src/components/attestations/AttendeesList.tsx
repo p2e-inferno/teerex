@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { supabase } from '@/integrations/supabase/client';
-import { useWallets } from '@privy-io/react-auth';
+import { useWallets, usePrivy } from '@privy-io/react-auth';
 import { AttestationChallengeDialog } from './AttestationChallengeDialog';
 import { ReputationBadge } from './ReputationBadge';
 import {
@@ -44,6 +44,7 @@ export const AttendeesList: React.FC<AttendeesListProps> = ({
   refreshToken,
 }) => {
   const { wallets } = useWallets();
+  const { getAccessToken } = usePrivy();
   const wallet = wallets[0];
 
   const [attendees, setAttendees] = useState<Attendee[]>([]);
@@ -147,20 +148,26 @@ export const AttendeesList: React.FC<AttendeesListProps> = ({
     if (!wallet?.address) return;
 
     try {
-      const { error } = await supabase
-        .from('attestation_votes')
-        .insert({
-          attestation_id: attestationId,
-          voter_address: wallet.address,
-          vote_type: voteType,
-          weight: 1
-        });
+      const accessToken = await getAccessToken();
+      const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
 
-      if (error && error.code !== '23505') { // Ignore duplicate constraint
-        throw error;
+      const { data, error } = await supabase.functions.invoke('create-attestation-vote', {
+        body: {
+          attestation_id: attestationId,
+          vote_type: voteType,
+          voter_address: wallet.address,
+        },
+        headers: {
+          Authorization: `Bearer ${anonKey}`,
+          'X-Privy-Authorization': `Bearer ${accessToken}`,
+        },
+      });
+
+      if (error) throw error;
+      if (data?.ok === false && !data?.duplicate) {
+        throw new Error(data.error || 'Vote failed');
       }
 
-      // Refresh the list to show updated vote counts
       loadAttendees();
     } catch (error) {
       console.error('Error voting:', error);
