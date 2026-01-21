@@ -8,18 +8,34 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Card, CardContent, CardDescription, CardHeader } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
-import { Shield, Zap, Ticket, CreditCard, Info, Loader2, AlertCircle, AlertTriangle } from 'lucide-react';
+import { Shield, Zap, Ticket, CreditCard, Info, Loader2, AlertCircle, AlertTriangle, Eye, EyeOff, CheckCircle2 } from 'lucide-react';
 import { EventFormData } from '@/pages/CreateEvent';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { useNetworkConfigs } from '@/hooks/useNetworkConfigs';
 import { useMultipleTokenMetadata, tokenMetadataQueryKeys, fetchTokenMetadata } from '@/hooks/useTokenMetadata';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { validateCryptoPrice, getPricePlaceholder, getPriceStep, MIN_NATIVE_TOKEN_PRICE, getWholeNumberTokenMinimum } from '@/utils/priceUtils';
+import { validateCryptoPrice, validateFiatPrice, getPricePlaceholder, getPriceStep, MIN_NATIVE_TOKEN_PRICE, MIN_NGN_PRICE, getWholeNumberTokenMinimum } from '@/utils/priceUtils';
 import type { CryptoCurrency } from '@/types/currency';
 import { usesWholeNumberPricing } from '@/types/currency';
 import { supabase } from '@/integrations/supabase/client';
 import { useQueries } from '@tanstack/react-query';
 import { CACHE_TIMES } from '@/lib/config/react-query-config';
+
+interface PayoutAccountInfo {
+  id: string;
+  provider: string;
+  business_name: string;
+  account_holder_name?: string;
+  settlement_bank_code: string;
+  settlement_bank_name?: string;
+  account_number: string; // Already masked from server
+  currency: string;
+  percentage_charge: number;
+  status: string;
+  is_verified: boolean;
+  verified_at?: string;
+  has_subaccount: boolean;
+}
 
 interface TicketSettingsProps {
   formData: EventFormData;
@@ -98,23 +114,36 @@ export const TicketSettings: React.FC<TicketSettingsProps> = ({
   }, []);
 
   // Check if user has verified payout account for fiat payments
+  const [payoutAccount, setPayoutAccount] = useState<PayoutAccountInfo | null>(null);
   const [hasPayoutAccount, setHasPayoutAccount] = useState<boolean | null>(null);
   const [payoutAccountLoading, setPayoutAccountLoading] = useState(false);
+  const [showPayoutDetails, setShowPayoutDetails] = useState(false);
 
   const checkPayoutAccount = useCallback(async () => {
     if (!authenticated || !fiatEnabled) return;
     setPayoutAccountLoading(true);
     try {
       const token = await getAccessToken();
-      const { data } = await supabase.functions.invoke('get-vendor-payout-account', {
+      const { data, error } = await supabase.functions.invoke('get-vendor-payout-account', {
+        method: 'GET',
         headers: {
           Authorization: `Bearer ${anonKey}`,
           'X-Privy-Authorization': `Bearer ${token}`,
         },
       });
+
+      if (error) throw error;
+
       setHasPayoutAccount(data?.can_receive_fiat_payments === true);
+
+      if (data?.payout_account) {
+        setPayoutAccount(data.payout_account as PayoutAccountInfo);
+      } else {
+        setPayoutAccount(null);
+      }
     } catch {
       setHasPayoutAccount(false);
+      setPayoutAccount(null);
     } finally {
       setPayoutAccountLoading(false);
     }
@@ -133,6 +162,7 @@ export const TicketSettings: React.FC<TicketSettingsProps> = ({
 
   // Validation state for real-time feedback
   const [priceError, setPriceError] = useState<string>('');
+  const [fiatPriceError, setFiatPriceError] = useState<string>('');
 
   useEffect(() => {
     // If selected currency is not available on current network, switch to ETH
@@ -435,22 +465,47 @@ export const TicketSettings: React.FC<TicketSettingsProps> = ({
           
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="space-y-2">
-              <Label htmlFor="ngn-price">Price (NGN)</Label>
+              <Label htmlFor="ngn-price">
+                Price (NGN)
+                <span className="text-xs text-gray-500 ml-2">(min: ₦{MIN_NGN_PRICE.toLocaleString()})</span>
+              </Label>
               <Input
                 id="ngn-price"
                 type="number"
-                placeholder="0"
+                placeholder={MIN_NGN_PRICE.toString()}
                 value={formData.ngnPrice}
-                onChange={(e) => updateFormData({ ngnPrice: parseFloat(e.target.value) || 0 })}
-                min="0"
+                onChange={(e) => {
+                  const newPrice = parseFloat(e.target.value) || 0;
+                  updateFormData({ ngnPrice: newPrice });
+                  if (fiatPriceError) setFiatPriceError('');
+                }}
+                onBlur={() => {
+                  const { error } = validateFiatPrice(formData.ngnPrice || 0);
+                  setFiatPriceError(error);
+                }}
+                min={MIN_NGN_PRICE}
                 step="100"
+                className={fiatPriceError ? 'border-red-500' : ''}
               />
+              {fiatPriceError && (
+                <p className="text-xs text-red-600">
+                  {fiatPriceError}
+                </p>
+              )}
             </div>
 
             {/* Paystack key is provided via env; no input */}
           </div>
 
-          {/* Payout Account Warning */}
+          {/* Payout Account Status */}
+          {payoutAccountLoading && (
+            <div className="flex items-center gap-2 text-sm text-gray-500">
+              <Loader2 className="w-4 h-4 animate-spin" />
+              Checking payout account status...
+            </div>
+          )}
+
+          {/* Payout Account Warning - No verified account */}
           {hasPayoutAccount === false && !payoutAccountLoading && (
             <Alert className="bg-amber-50 border-amber-200">
               <AlertTriangle className="h-4 w-4 text-amber-600" />
@@ -468,10 +523,67 @@ export const TicketSettings: React.FC<TicketSettingsProps> = ({
             </Alert>
           )}
 
-          {payoutAccountLoading && (
-            <div className="flex items-center gap-2 text-sm text-gray-500">
-              <Loader2 className="w-4 h-4 animate-spin" />
-              Checking payout account status...
+          {/* Payout Account Info - Verified account */}
+          {hasPayoutAccount === true && payoutAccount && !payoutAccountLoading && (
+            <div className="bg-green-50 border border-green-200 rounded-lg p-4">
+              <div className="flex items-start justify-between">
+                <div className="flex items-start gap-3">
+                  <CheckCircle2 className="w-5 h-5 text-green-600 mt-0.5 flex-shrink-0" />
+                  <div className="min-w-0">
+                    <h4 className="font-medium text-green-900 flex items-center gap-2">
+                      Payout Account Verified
+                      <Badge variant="secondary" className="bg-green-100 text-green-800 text-xs">
+                        {payoutAccount.provider.toUpperCase()}
+                      </Badge>
+                    </h4>
+                    <div className="mt-2 text-sm text-green-800 space-y-1">
+                      <p className="flex items-center gap-2">
+                        <span className="text-green-600 font-medium">Account:</span>
+                        <span className="font-mono">{payoutAccount.account_number}</span>
+                      </p>
+                      {payoutAccount.settlement_bank_name && (
+                        <p className="flex items-center gap-2">
+                          <span className="text-green-600 font-medium">Bank:</span>
+                          <span>{payoutAccount.settlement_bank_name}</span>
+                        </p>
+                      )}
+                      {showPayoutDetails && (
+                        <>
+                          {payoutAccount.account_holder_name && (
+                            <p className="flex items-center gap-2">
+                              <span className="text-green-600 font-medium">Name:</span>
+                              <span>{payoutAccount.account_holder_name}</span>
+                            </p>
+                          )}
+                          <p className="flex items-center gap-2">
+                            <span className="text-green-600 font-medium">Business:</span>
+                            <span>{payoutAccount.business_name}</span>
+                          </p>
+                          <p className="flex items-center gap-2">
+                            <span className="text-green-600 font-medium">Commission:</span>
+                            <span>{payoutAccount.percentage_charge}% platform fee</span>
+                          </p>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowPayoutDetails(!showPayoutDetails)}
+                  className="p-1.5 text-green-600 hover:text-green-800 hover:bg-green-100 rounded-md transition-colors"
+                  aria-label={showPayoutDetails ? 'Hide details' : 'Show details'}
+                >
+                  {showPayoutDetails ? (
+                    <EyeOff className="w-4 h-4" />
+                  ) : (
+                    <Eye className="w-4 h-4" />
+                  )}
+                </button>
+              </div>
+              <p className="mt-3 text-xs text-green-700">
+                Fiat payments for this event will be deposited to this account after platform fees.
+              </p>
             </div>
           )}
 

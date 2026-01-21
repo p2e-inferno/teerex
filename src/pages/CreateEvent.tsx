@@ -22,7 +22,7 @@ import {
 import { supabase } from '@/integrations/supabase/client';
 import { EventCreationSuccessModal } from '@/components/events/EventCreationSuccessModal';
 import { WalletConnectionGate } from '@/components/WalletConnectionGate';
-import { isCryptoPriceValid } from '@/utils/priceUtils';
+import { isCryptoPriceValid, isFiatPriceValid } from '@/utils/priceUtils';
 import type { CryptoCurrency } from '@/types/currency';
 import { useEventPublisher } from '@/hooks/useEventPublisher';
 import { getDefaultChainId } from '@/lib/config/network-config';
@@ -250,8 +250,9 @@ const CreateEvent = () => {
           return isCryptoPriceValid(formData.price, formData.currency);
         }
         if (formData.paymentMethod === 'fiat') {
-          const pk = (import.meta as any).env?.VITE_PAYSTACK_PUBLIC_KEY as string | undefined;
-          return !!pk && formData.ngnPrice > 0;
+          // Fiat is only available if VITE_ENABLE_FIAT is true (checked by TicketSettings)
+          // Validate price meets minimum requirement
+          return isFiatPriceValid(formData.ngnPrice);
         }
         // free
         return true;

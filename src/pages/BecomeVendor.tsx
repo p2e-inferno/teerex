@@ -222,7 +222,7 @@ export default function BecomeVendor() {
       <div className="text-center mb-8">
         <h1 className="text-4xl font-bold mb-4">Become a Vendor</h1>
         <p className="text-lg text-muted-foreground max-w-2xl mx-auto">
-          Purchase vendor access to sell gaming bundles on TeeRex. One-time purchase for lifetime access.
+          Purchase vendor access to sell gaming bundles on TeeRex.
         </p>
       </div>
 

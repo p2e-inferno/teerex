@@ -17,6 +17,8 @@ export interface PriceValidationResult {
 export const MIN_WHOLE_NUMBER_PRICE = 1;        // Default $1 minimum (fallback)
 // Native tokens with fractional pricing (ETH, etc.)
 export const MIN_NATIVE_TOKEN_PRICE = 0.0001;   // 0.0001 minimum
+// Fiat currency minimums (NGN via Paystack)
+export const MIN_NGN_PRICE = 500;               // ₦500 minimum for Paystack
 
 /**
  * @deprecated Use MIN_WHOLE_NUMBER_PRICE instead
@@ -136,4 +138,39 @@ const WHOLE_NUMBER_TOKEN_MINIMUMS: Partial<Record<CryptoCurrency, number>> = {
 
 export function getWholeNumberTokenMinimum(currency: CryptoCurrency): number {
   return WHOLE_NUMBER_TOKEN_MINIMUMS[currency] ?? MIN_WHOLE_NUMBER_PRICE;
+}
+
+/**
+ * Validate fiat price (NGN)
+ * @param price - The price to validate in NGN
+ * @returns Validation result with error message if invalid
+ */
+export function validateFiatPrice(price: number): PriceValidationResult {
+  if (!price || price <= 0) {
+    return {
+      isValid: false,
+      error: 'Please enter a valid price',
+    };
+  }
+
+  if (price < MIN_NGN_PRICE) {
+    return {
+      isValid: false,
+      error: `Minimum price is ₦${MIN_NGN_PRICE.toLocaleString()}`,
+    };
+  }
+
+  return {
+    isValid: true,
+    error: '',
+  };
+}
+
+/**
+ * Check if fiat price is valid (boolean helper)
+ * @param price - The price to validate in NGN
+ * @returns True if price is valid, false otherwise
+ */
+export function isFiatPriceValid(price: number): boolean {
+  return validateFiatPrice(price).isValid;
 }

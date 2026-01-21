@@ -1,10 +1,11 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { TransactionRow } from './TransactionRow';
-import { useTransactionHistory } from '@/hooks/useTransactionHistory';
+import { TransactionRange, useTransactionHistory } from '@/hooks/useTransactionHistory';
 import { History, RefreshCw, Loader2, AlertCircle, Inbox } from 'lucide-react';
 
 interface TransactionHistoryCardProps {
@@ -12,10 +13,11 @@ interface TransactionHistoryCardProps {
 }
 
 /**
- * Transaction history card with infinite scroll pagination
+ * Transaction history card with range selection and load-more pagination
  * Shows both sent and received transfers across all active networks
  */
 export const TransactionHistoryCard: React.FC<TransactionHistoryCardProps> = ({ address }) => {
+  const [range, setRange] = useState<TransactionRange>('12h');
   const {
     transactions,
     isLoading,
@@ -23,8 +25,15 @@ export const TransactionHistoryCard: React.FC<TransactionHistoryCardProps> = ({ 
     hasMore,
     error,
     refetch,
-    loadMoreRef,
-  } = useTransactionHistory(address);
+    fetchNextPage,
+    canFetchMore,
+  } = useTransactionHistory(address, range);
+
+  const handleLoadMore = () => {
+    if (canFetchMore) {
+      fetchNextPage();
+    }
+  };
 
   const handleRefresh = () => {
     refetch();
@@ -46,6 +55,30 @@ export const TransactionHistoryCard: React.FC<TransactionHistoryCardProps> = ({ 
                   Your recent transfers across all networks
                 </CardDescription>
               </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <Select value={range} onValueChange={(value) => setRange(value as TransactionRange)} disabled>
+                <SelectTrigger className="h-8 w-[120px] text-xs">
+                  <SelectValue placeholder="Range" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="1h">Last 1 hour</SelectItem>
+                  <SelectItem value="12h">Last 12 hours</SelectItem>
+                  <SelectItem value="1d">Last 1 day</SelectItem>
+                  <SelectItem value="7d">Last 7 days</SelectItem>
+                  <SelectItem value="30d">Last 30 days</SelectItem>
+                </SelectContent>
+              </Select>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={handleRefresh}
+                className="h-8 w-8 p-0"
+                aria-label="Refresh transactions"
+                disabled
+              >
+                <RefreshCw className="h-4 w-4" />
+              </Button>
             </div>
           </div>
         </CardHeader>
@@ -88,15 +121,29 @@ export const TransactionHistoryCard: React.FC<TransactionHistoryCardProps> = ({ 
                 </CardDescription>
               </div>
             </div>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={handleRefresh}
-              className="h-8 w-8 p-0"
-              aria-label="Refresh transactions"
-            >
-              <RefreshCw className="h-4 w-4" />
-            </Button>
+            <div className="flex items-center gap-2">
+              <Select value={range} onValueChange={(value) => setRange(value as TransactionRange)}>
+                <SelectTrigger className="h-8 w-[120px] text-xs">
+                  <SelectValue placeholder="Range" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="1h">Last 1 hour</SelectItem>
+                  <SelectItem value="12h">Last 12 hours</SelectItem>
+                  <SelectItem value="1d">Last 1 day</SelectItem>
+                  <SelectItem value="7d">Last 7 days</SelectItem>
+                  <SelectItem value="30d">Last 30 days</SelectItem>
+                </SelectContent>
+              </Select>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={handleRefresh}
+                className="h-8 w-8 p-0"
+                aria-label="Refresh transactions"
+              >
+                <RefreshCw className="h-4 w-4" />
+              </Button>
+            </div>
           </div>
         </CardHeader>
 
@@ -142,15 +189,29 @@ export const TransactionHistoryCard: React.FC<TransactionHistoryCardProps> = ({ 
                 </CardDescription>
               </div>
             </div>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={handleRefresh}
-              className="h-8 w-8 p-0"
-              aria-label="Refresh transactions"
-            >
-              <RefreshCw className="h-4 w-4" />
-            </Button>
+            <div className="flex items-center gap-2">
+              <Select value={range} onValueChange={(value) => setRange(value as TransactionRange)}>
+                <SelectTrigger className="h-8 w-[120px] text-xs">
+                  <SelectValue placeholder="Range" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="1h">Last 1 hour</SelectItem>
+                  <SelectItem value="12h">Last 12 hours</SelectItem>
+                  <SelectItem value="1d">Last 1 day</SelectItem>
+                  <SelectItem value="7d">Last 7 days</SelectItem>
+                  <SelectItem value="30d">Last 30 days</SelectItem>
+                </SelectContent>
+              </Select>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={handleRefresh}
+                className="h-8 w-8 p-0"
+                aria-label="Refresh transactions"
+              >
+                <RefreshCw className="h-4 w-4" />
+              </Button>
+            </div>
           </div>
         </CardHeader>
 
@@ -189,15 +250,29 @@ export const TransactionHistoryCard: React.FC<TransactionHistoryCardProps> = ({ 
               </CardDescription>
             </div>
           </div>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={handleRefresh}
-            className="h-8 w-8 p-0"
-            aria-label="Refresh transactions"
-          >
-            <RefreshCw className="h-4 w-4" />
-          </Button>
+          <div className="flex items-center gap-2">
+            <Select value={range} onValueChange={(value) => setRange(value as TransactionRange)}>
+              <SelectTrigger className="h-8 w-[120px] text-xs">
+                <SelectValue placeholder="Range" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="1h">Last 1 hour</SelectItem>
+                <SelectItem value="12h">Last 12 hours</SelectItem>
+                <SelectItem value="1d">Last 1 day</SelectItem>
+                <SelectItem value="7d">Last 7 days</SelectItem>
+                <SelectItem value="30d">Last 30 days</SelectItem>
+              </SelectContent>
+            </Select>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={handleRefresh}
+              className="h-8 w-8 p-0"
+              aria-label="Refresh transactions"
+            >
+              <RefreshCw className="h-4 w-4" />
+            </Button>
+          </div>
         </div>
       </CardHeader>
 
@@ -209,14 +284,25 @@ export const TransactionHistoryCard: React.FC<TransactionHistoryCardProps> = ({ 
               <TransactionRow key={`${tx.hash}-${tx.tokenAddress}`} transaction={tx} />
             ))}
 
-            {/* Intersection Observer Sentinel */}
-            <div ref={loadMoreRef} className="h-4" />
-
             {/* Loading more indicator */}
             {isLoadingMore && (
               <div className="py-4 flex items-center justify-center border-t border-slate-100 dark:border-slate-800">
                 <Loader2 className="h-5 w-5 animate-spin text-slate-400 mr-2" />
                 <span className="text-sm text-slate-500">Loading more...</span>
+              </div>
+            )}
+
+            {/* Load more button */}
+            {hasMore && !isLoadingMore && (
+              <div className="py-4 flex items-center justify-center border-t border-slate-100 dark:border-slate-800">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleLoadMore}
+                  disabled={!canFetchMore}
+                >
+                  Load more
+                </Button>
               </div>
             )}
 
