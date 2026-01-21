@@ -119,15 +119,6 @@ export const TicketProcessingDialog: React.FC<TicketProcessingDialogProps> = ({
           );
         }
 
-        if (!data?.ok) {
-          console.warn("[WEBHOOK MONITOR] Transaction status check failed:", data?.error);
-          if (attempts < maxAttempts) return setTimeout(pollForStatus, pollInterval);
-          setStatus("timeout");
-          return setProgressMessage(
-            "Processing is taking longer than expected. Please go to My Tickets for manual issuance/reconciliation."
-          );
-        }
-
         if (!data.found) {
           console.log("[WEBHOOK MONITOR] Transaction not found yet");
           if (attempts < maxAttempts) return setTimeout(pollForStatus, pollInterval);
@@ -139,7 +130,11 @@ export const TicketProcessingDialog: React.FC<TicketProcessingDialogProps> = ({
 
         const gatewayResponse: any = data.gateway_response;
         const isKeyGranted = gatewayResponse?.key_granted;
-        const txHash = gatewayResponse?.txHash || gatewayResponse?.transactionHash || gatewayResponse?.key_grant_tx_hash;
+        const txHash =
+          gatewayResponse?.tx_hash ||
+          gatewayResponse?.txHash ||
+          gatewayResponse?.transactionHash ||
+          gatewayResponse?.key_grant_tx_hash;
 
         if (isKeyGranted) {
           setTransactionHash(txHash || null);
