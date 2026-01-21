@@ -18,14 +18,11 @@ export const savePublishedEvent = async (
     const isCrypto = formData.paymentMethod === 'crypto';
     const isFiat = formData.paymentMethod === 'fiat';
 
-    // Require Paystack public key for fiat
+    // Pass Paystack public key if available (server can provide if client doesn't have it)
     let paystackPublicKey: string | null = null;
     if (isFiat) {
       const pk = (import.meta as any).env?.VITE_PAYSTACK_PUBLIC_KEY as string | undefined;
-      if (!pk) {
-        throw new Error('PAYSTACK public key is not configured. Please set VITE_PAYSTACK_PUBLIC_KEY.');
-      }
-      paystackPublicKey = pk;
+      paystackPublicKey = pk || null; // Server will use PAYSTACK_PUBLIC_KEY env if this is null
     }
 
     // Generate idempotency hash from event properties

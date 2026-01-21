@@ -27,7 +27,8 @@
       "Bash(npm run type-check:*)",
       "Bash(npm test:*)",
       "Bash(__NEW_LINE_d825018cb53cb1a9__ cp src/__tests__/pricing-sync-integration.test.tsx tests/integration/)",
-      "Bash(__NEW_LINE_8782ac4c1dabd9d6__ rm -rf src/__tests__ src/hooks/__tests__ src/components/create-event/__tests__)"
+      "Bash(__NEW_LINE_8782ac4c1dabd9d6__ rm -rf src/__tests__ src/hooks/__tests__ src/components/create-event/__tests__)",
+      "mcp__supabase__apply_migration"
     ],
     "deny": [],
     "ask": []

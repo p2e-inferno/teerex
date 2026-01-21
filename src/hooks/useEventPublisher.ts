@@ -242,62 +242,67 @@ export function useEventPublisher() {
       // 5. Add service manager for fiat payments
       let serviceManagerAdded = false;
       if (formData.paymentMethod === 'fiat') {
-        toast({
-          title: "Adding Service Manager",
-          description: "Adding unlock service as lock manager for fiat payments...",
-        });
+        if (result.ok) {
+          // Gasless deployment already uses the service wallet as lock creator/manager.
+          serviceManagerAdded = true;
+        } else {
+          toast({
+            title: "Adding Service Manager",
+            description: "Adding unlock service as lock manager for fiat payments...",
+          });
 
-        try {
-          // Get the service public key
-          const { data: serviceData, error: serviceError } = await supabase.functions.invoke('get-service-address');
+          try {
+            // Get the service public key
+            const { data: serviceData, error: serviceError } = await supabase.functions.invoke('get-service-address');
 
-          if (serviceError) {
-            console.error('Failed to get service address (network error):', serviceError);
-            toast({
-              title: "Warning",
-              description: "Event created but fiat payments may not work. Service manager not added.",
-              variant: "default"
-            });
-          } else if (!serviceData?.ok) {
-            console.error('Failed to get service address (application error):', serviceData?.error);
-            toast({
-              title: "Warning",
-              description: "Event created but fiat payments may not work. Service manager not added.",
-              variant: "default"
-            });
-          } else if (!serviceData.address) {
-            console.error('Service address not returned');
-            toast({
-              title: "Warning",
-              description: "Event created but fiat payments may not work. Service manager not added.",
-              variant: "default"
-            });
-          } else {
-            const managerResult = await addLockManager(
-              deploymentResult.lockAddress,
-              serviceData.address,
-              wallet
-            );
-
-            if (!managerResult.success) {
-              console.error('Failed to add service manager:', managerResult.error);
+            if (serviceError) {
+              console.error('Failed to get service address (network error):', serviceError);
+              toast({
+                title: "Warning",
+                description: "Event created but fiat payments may not work. Service manager not added.",
+                variant: "default"
+              });
+            } else if (!serviceData?.ok) {
+              console.error('Failed to get service address (application error):', serviceData?.error);
+              toast({
+                title: "Warning",
+                description: "Event created but fiat payments may not work. Service manager not added.",
+                variant: "default"
+              });
+            } else if (!serviceData.address) {
+              console.error('Service address not returned');
               toast({
                 title: "Warning",
                 description: "Event created but fiat payments may not work. Service manager not added.",
                 variant: "default"
               });
             } else {
-              console.log('Service manager added successfully:', managerResult.transactionHash);
-              serviceManagerAdded = true;
+              const managerResult = await addLockManager(
+                deploymentResult.lockAddress,
+                serviceData.address,
+                wallet
+              );
+
+              if (!managerResult.success) {
+                console.error('Failed to add service manager:', managerResult.error);
+                toast({
+                  title: "Warning",
+                  description: "Event created but fiat payments may not work. Service manager not added.",
+                  variant: "default"
+                });
+              } else {
+                console.log('Service manager added successfully:', managerResult.transactionHash);
+                serviceManagerAdded = true;
+              }
             }
+          } catch (error) {
+            console.error('Error adding service manager:', error);
+            toast({
+              title: "Warning",
+              description: "Event created but fiat payments may not work. Service manager not added.",
+              variant: "default"
+            });
           }
-        } catch (error) {
-          console.error('Error adding service manager:', error);
-          toast({
-            title: "Warning",
-            description: "Event created but fiat payments may not work. Service manager not added.",
-            variant: "default"
-          });
         }
       }
 

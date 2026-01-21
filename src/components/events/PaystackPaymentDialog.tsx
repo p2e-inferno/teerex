@@ -45,7 +45,6 @@ export const PaystackPaymentDialog: React.FC<PaystackPaymentDialogProps> = ({
   const { toast } = useToast();
   const [isLoading, setIsLoading] = useState(false);
   const [paymentHandled, setPaymentHandled] = useState(false);
-  const [isPaystackOpen, setIsPaystackOpen] = useState(false);
   const [userEmail, setUserEmail] = useState(user?.email?.address || "");
   const [userPhone, setUserPhone] = useState("");
   const [userWalletAddress, setUserWalletAddress] = useState(
@@ -59,7 +58,6 @@ export const PaystackPaymentDialog: React.FC<PaystackPaymentDialogProps> = ({
   useEffect(() => {
     if (isOpen) return;
     // Parent closed the dialog; reset transient state so reopening works reliably.
-    setIsPaystackOpen(false);
     setIsLoading(false);
     setShouldLaunchPaystack(false);
     setPaymentHandled(false);
@@ -106,13 +104,6 @@ export const PaystackPaymentDialog: React.FC<PaystackPaymentDialogProps> = ({
   };
 
   const initializePayment = usePaystackPayment(config);
-
-  useEffect(() => {
-    // Prevent z-index conflicts between the shadcn Dialog overlay and Paystack's modal.
-    const dialogElement = document.querySelector('[role="none"]');
-    if (!dialogElement) return;
-    (dialogElement as HTMLElement).style.display = isPaystackOpen ? "none" : "";
-  }, [isPaystackOpen]);
 
   const ensureTransactionRecord = async (
     paymentReference: string
@@ -161,7 +152,6 @@ export const PaystackPaymentDialog: React.FC<PaystackPaymentDialogProps> = ({
   const handlePaymentSuccess = (reference: { reference: string }) => {
     if (!event || !user?.id) return;
     setPaymentHandled(true);
-    setIsPaystackOpen(false);
 
     console.log("🎉 [PAYMENT SUCCESS] Payment completed successfully");
     console.log("📝 [PAYMENT SUCCESS] Reference:", reference);
@@ -187,7 +177,6 @@ export const PaystackPaymentDialog: React.FC<PaystackPaymentDialogProps> = ({
   const handlePaymentClose = () => {
     // Paystack closes after success too; avoid misleading cancel toasts
     setIsLoading(false);
-    setIsPaystackOpen(false);
     if (paymentHandled) return;
     toast({
       title: "Payment Window Closed",
@@ -201,7 +190,6 @@ export const PaystackPaymentDialog: React.FC<PaystackPaymentDialogProps> = ({
     if (typeof amountKobo !== "number" || Number.isNaN(amountKobo) || amountKobo <= 0) {
       setShouldLaunchPaystack(false);
       setIsLoading(false);
-      setIsPaystackOpen(false);
       toast({
         title: "Could not start checkout",
         description: "Missing amount from server",
@@ -216,6 +204,7 @@ export const PaystackPaymentDialog: React.FC<PaystackPaymentDialogProps> = ({
     setShouldLaunchPaystack(false);
     // At this point we've handed off to the Paystack modal, so stop blocking UI.
     setIsLoading(false);
+    setTimeout(() => onClose(), 1000);
   }, [
     shouldLaunchPaystack,
     amountKobo,
@@ -289,11 +278,9 @@ export const PaystackPaymentDialog: React.FC<PaystackPaymentDialogProps> = ({
         setSubaccountCode(init.subaccountCode);
         console.log("📍 [PAYMENT INIT] Using vendor subaccount:", init.subaccountCode);
       }
-      setIsPaystackOpen(true);
       setShouldLaunchPaystack(true);
     } catch (err) {
       setIsLoading(false);
-      setIsPaystackOpen(false);
       toast({
         title: "Could not start checkout",
         description: err instanceof Error ? err.message : String(err),

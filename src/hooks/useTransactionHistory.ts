@@ -1,31 +1,38 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useMemo } from 'react';
+import { type InfiniteData, useInfiniteQuery } from '@tanstack/react-query';
 import { ethers, EventLog } from 'ethers';
 import { useNetworkConfigs } from './useNetworkConfigs';
 import type { NetworkConfig as DbNetworkConfig } from '@/lib/config/network-config';
 
-const PAGE_SIZE = 20;
+const PAGE_BLOCK_SIZE = 500;
+const LOG_CHUNK_SIZE = 10;
 
-// Conservative block range limits per network to avoid RPC errors
-// Base: 10,000 max, Polygon: 2,000 safe, Ethereum: 2,000 safe
-const NETWORK_BLOCK_LIMITS: Record<number, number> = {
-  1: 800,       // Ethereum Mainnet - strict RPC limits (max 1k)
-  8453: 5000,   // Base Mainnet - 10k max, use 5k for safety
-  84532: 5000,  // Base Sepolia - same as Base Mainnet
-  137: 5,       // Polygon Mainnet - extreme limit for Alchemy
-  42220: 2000,  // Celo Mainnet - conservative
+export type TransactionRange = '1h' | '12h' | '1d' | '7d' | '30d';
+
+const RANGE_SECONDS: Record<TransactionRange, number> = {
+  '1h': 60 * 60,
+  '12h': 12 * 60 * 60,
+  '1d': 24 * 60 * 60,
+  '7d': 7 * 24 * 60 * 60,
+  '30d': 30 * 24 * 60 * 60,
 };
 
-const DEFAULT_BLOCK_LIMIT = 2000; // Safe default for unknown networks
+const AVG_BLOCK_TIME_SECONDS: Record<number, number> = {
+  1: 12,      // Ethereum Mainnet
+  8453: 2,    // Base Mainnet
+  84532: 2,   // Base Sepolia
+  137: 2,     // Polygon Mainnet
+  42220: 5,   // Celo Mainnet
+};
+
+const DEFAULT_BLOCK_TIME_SECONDS = 12;
 
 // Cache decimals to avoid repeated contract calls
 const decimalsCache = new Map<string, number>();
 
-/**
- * Get safe block range limit for a network
- */
-function getBlockLimit(chainId: number): number {
-  return NETWORK_BLOCK_LIMITS[chainId] || DEFAULT_BLOCK_LIMIT;
+function getRangeBlockCount(chainId: number, range: TransactionRange): number {
+  const avgBlockTime = AVG_BLOCK_TIME_SECONDS[chainId] || DEFAULT_BLOCK_TIME_SECONDS;
+  return Math.max(1, Math.ceil(RANGE_SECONDS[range] / avgBlockTime));
 }
 
 export interface TransactionRecord {
@@ -41,6 +48,17 @@ export interface TransactionRecord {
   blockNumber: number;
   explorerUrl: string;
   direction: 'sent' | 'received';
+}
+
+interface TransactionHistoryPage {
+  transactions: TransactionRecord[];
+  hasMore: boolean;
+  anchors: Record<number, number>;
+}
+
+interface TransactionHistoryPageParam {
+  pageIndex: number;
+  anchors?: Record<number, number>;
 }
 
 interface NetworkConfig {
@@ -68,16 +86,21 @@ const ERC20_ABI = [
 ];
 
 /**
- * Fetches transaction history for a given address across all active networks
+ * Fetches a single block window of transaction history for a given address
  * Queries ERC-20 token transfers (USDC, DG, G, UP)
  */
-async function fetchTransactionHistory(
+async function fetchTransactionHistoryPage(
   address: string,
   networks: NetworkConfig[],
-  dbNetworks: DbNetworkConfig[]
-): Promise<TransactionRecord[]> {
+  dbNetworks: DbNetworkConfig[],
+  range: TransactionRange,
+  pageIndex: number,
+  anchors?: Record<number, number>
+): Promise<TransactionHistoryPage> {
   const allTransactions: TransactionRecord[] = [];
   const processedHashes = new Set<string>(); // Deduplication by hash + token
+  let hasMore = false;
+  const resolvedAnchors: Record<number, number> = anchors ? { ...anchors } : {};
 
   // Process each network in parallel
   await Promise.all(
@@ -87,11 +110,17 @@ async function fetchTransactionHistory(
         if (!dbNetwork) return;
 
         const provider = new ethers.JsonRpcProvider(network.rpcUrl);
-        const currentBlock = await provider.getBlockNumber();
+        const anchorBlock =
+          resolvedAnchors[network.chainId] ?? (await provider.getBlockNumber());
+        resolvedAnchors[network.chainId] = anchorBlock;
 
-        // Use network-specific block limit to avoid RPC errors
-        const blockLimit = getBlockLimit(network.chainId);
-        const fromBlock = Math.max(0, currentBlock - blockLimit);
+        const rangeBlockCount = getRangeBlockCount(network.chainId, range);
+        const rangeStart = Math.max(0, anchorBlock - rangeBlockCount + 1);
+        const pageEnd = anchorBlock - pageIndex * PAGE_BLOCK_SIZE;
+        const pageStart = Math.max(rangeStart, pageEnd - PAGE_BLOCK_SIZE + 1);
+
+        if (pageEnd < rangeStart || pageStart > pageEnd) return;
+        if (pageStart > rangeStart) hasMore = true;
 
         // Fetch ERC-20 token transfers
         const tokenSymbols: Array<'USDC' | 'DG' | 'G' | 'UP'> = ['USDC', 'DG', 'G', 'UP'];
@@ -105,8 +134,8 @@ async function fetchTransactionHistory(
             address,
             network,
             { symbol, address: tokenAddress },
-            fromBlock,
-            currentBlock,
+            pageStart,
+            pageEnd,
             processedHashes
           );
           allTransactions.push(...tokenTransactions);
@@ -119,7 +148,11 @@ async function fetchTransactionHistory(
   );
 
   // Sort by timestamp descending (newest first)
-  return allTransactions.sort((a, b) => b.timestamp - a.timestamp);
+  return {
+    transactions: allTransactions.sort((a, b) => b.timestamp - a.timestamp),
+    hasMore,
+    anchors: resolvedAnchors,
+  };
 }
 
 /**
@@ -174,20 +207,48 @@ async function fetchERC20Transfers(
     const sentFilter = contract.filters.Transfer(address, null);
     const receivedFilter = contract.filters.Transfer(null, address);
 
-    const [sentEvents, receivedEvents] = await Promise.all([
-      contract.queryFilter(sentFilter, fromBlock, toBlock),
-      contract.queryFilter(receivedFilter, fromBlock, toBlock),
-    ]);
+    const sentEvents: EventLog[] = [];
+    const receivedEvents: EventLog[] = [];
+
+    for (let start = fromBlock; start <= toBlock; start += LOG_CHUNK_SIZE) {
+      const end = Math.min(start + LOG_CHUNK_SIZE - 1, toBlock);
+
+      try {
+        const [sentChunk, receivedChunk] = await Promise.all([
+          contract.queryFilter(sentFilter, start, end),
+          contract.queryFilter(receivedFilter, start, end),
+        ]);
+
+        sentEvents.push(...(sentChunk.filter((log): log is EventLog => log instanceof EventLog)));
+        receivedEvents.push(...(receivedChunk.filter((log): log is EventLog => log instanceof EventLog)));
+      } catch (chunkError: any) {
+        if (
+          chunkError?.message?.includes('range') ||
+          chunkError?.code === -32614 ||
+          chunkError?.code === -32062
+        ) {
+          console.error(
+            `Block range error for ${tokenConfig.symbol} on ${network.chainName}:`,
+            `Attempted ${start} to ${end}.`,
+            chunkError.message
+          );
+          break;
+        }
+
+        console.error(
+          `Error fetching ${tokenConfig.symbol} transfers for ${network.chainName} (blocks ${start}-${end}):`,
+          chunkError
+        );
+      }
+    }
 
     // Filter to EventLogs only and remove duplicates
-    const allLogs = [...sentEvents, ...receivedEvents]
-      .filter((log): log is EventLog => log instanceof EventLog)
-      .filter((log) => {
-        const dedupeKey = `${log.transactionHash}-${tokenConfig.address}`;
-        if (processedHashes.has(dedupeKey)) return false;
-        processedHashes.add(dedupeKey);
-        return true;
-      });
+    const allLogs = [...sentEvents, ...receivedEvents].filter((log) => {
+      const dedupeKey = `${log.transactionHash}-${tokenConfig.address}`;
+      if (processedHashes.has(dedupeKey)) return false;
+      processedHashes.add(dedupeKey);
+      return true;
+    });
 
     if (allLogs.length === 0) return transactions;
 
@@ -238,7 +299,7 @@ async function fetchERC20Transfers(
     if (error?.message?.includes('range') || error?.code === -32614 || error?.code === -32062) {
       console.error(
         `Block range error for ${tokenConfig.symbol} on ${network.chainName}:`,
-        `Attempted ${fromBlock} to ${toBlock}. Consider reducing NETWORK_BLOCK_LIMITS for chain ${network.chainId}.`,
+        `Attempted ${fromBlock} to ${toBlock}. Consider reducing the selected range or page size for chain ${network.chainId}.`,
         error.message
       );
     } else {
@@ -251,15 +312,10 @@ async function fetchERC20Transfers(
 
 /**
  * Hook for fetching and paginating transaction history with React Query
- * Features infinite scroll pagination and caching to minimize RPC calls
+ * Uses block-window pagination to keep RPC calls within provider limits
  */
-export function useTransactionHistory(address: string | undefined) {
+export function useTransactionHistory(address: string | undefined, range: TransactionRange) {
   const { networks: dbNetworks } = useNetworkConfigs();
-  const [displayedTransactions, setDisplayedTransactions] = useState<TransactionRecord[]>([]);
-  const [currentPage, setCurrentPage] = useState(0);
-  const [isLoadingMore, setIsLoadingMore] = useState(false);
-  const allTxCache = useRef<TransactionRecord[]>([]);
-  const loadMoreRef = useRef<HTMLDivElement>(null);
 
   // Prepare network configs (filter out networks with no RPC URL)
   const networks: NetworkConfig[] = (dbNetworks || [])
@@ -274,13 +330,33 @@ export function useTransactionHistory(address: string | undefined) {
 
   // React Query for fetching transactions
   const {
-    data: allTransactions,
+    data,
     isLoading,
     error,
     refetch,
-  } = useQuery({
-    queryKey: ['transaction-history', address, networks.map((n) => n.chainId).join(',')],
-    queryFn: () => fetchTransactionHistory(address!, networks, dbNetworks || []),
+    fetchNextPage,
+    hasNextPage,
+    isFetchingNextPage,
+  } = useInfiniteQuery<
+    TransactionHistoryPage,
+    Error,
+    InfiniteData<TransactionHistoryPage, TransactionHistoryPageParam>,
+    (string | undefined)[],
+    TransactionHistoryPageParam
+  >({
+    queryKey: ['transaction-history', address, networks.map((n) => n.chainId).join(','), range],
+    initialPageParam: { pageIndex: 0, anchors: undefined },
+    queryFn: ({ pageParam }) =>
+      fetchTransactionHistoryPage(
+        address!,
+        networks,
+        dbNetworks || [],
+        range,
+        pageParam.pageIndex,
+        pageParam.anchors
+      ),
+    getNextPageParam: (lastPage, pages) =>
+      lastPage.hasMore ? { pageIndex: pages.length, anchors: lastPage.anchors } : undefined,
     staleTime: 5 * 60 * 1000, // 5 minutes - data rarely changes
     gcTime: 30 * 60 * 1000, // 30 minutes - keep in cache
     enabled: !!address && networks.length > 0,
@@ -288,68 +364,24 @@ export function useTransactionHistory(address: string | undefined) {
     refetchOnWindowFocus: false, // Don't hammer RPC on tab switch
   });
 
-  // Initialize cache and displayed transactions when data loads
-  useEffect(() => {
-    if (allTransactions) {
-      allTxCache.current = allTransactions;
-      setDisplayedTransactions(allTransactions.slice(0, PAGE_SIZE));
-      setCurrentPage(0);
-    }
-  }, [allTransactions]);
+  const transactions: TransactionRecord[] = useMemo(() => {
+    if (!data?.pages) return [];
+    const allTransactions = data.pages.flatMap((page) => page.transactions);
+    return allTransactions.sort((a, b) => b.timestamp - a.timestamp);
+  }, [data]);
 
-  // Load more transactions
-  const loadMore = useCallback(() => {
-    if (isLoadingMore) return;
-
-    const nextPage = currentPage + 1;
-    const startIndex = 0;
-    const endIndex = (nextPage + 1) * PAGE_SIZE;
-    const nextBatch = allTxCache.current.slice(startIndex, endIndex);
-
-    if (nextBatch.length > displayedTransactions.length) {
-      setIsLoadingMore(true);
-
-      // Simulate slight delay for UX (shows loading indicator)
-      setTimeout(() => {
-        setDisplayedTransactions(nextBatch);
-        setCurrentPage(nextPage);
-        setIsLoadingMore(false);
-      }, 300);
-    }
-  }, [currentPage, displayedTransactions.length, isLoadingMore]);
-
-  // Intersection Observer for infinite scroll
-  useEffect(() => {
-    const observer = new IntersectionObserver(
-      (entries) => {
-        if (entries[0].isIntersecting && !isLoadingMore && !isLoading) {
-          loadMore();
-        }
-      },
-      { threshold: 0.1 }
-    );
-
-    const currentRef = loadMoreRef.current;
-    if (currentRef) {
-      observer.observe(currentRef);
-    }
-
-    return () => {
-      if (currentRef) {
-        observer.unobserve(currentRef);
-      }
-    };
-  }, [loadMore, isLoadingMore, isLoading]);
-
-  const hasMore = displayedTransactions.length < allTxCache.current.length;
+  const canFetchMore = !!hasNextPage && !isFetchingNextPage && !isLoading;
+  const hasMore = !!hasNextPage;
 
   return {
-    transactions: displayedTransactions,
+    transactions,
     isLoading,
-    isLoadingMore,
+    isLoadingMore: isFetchingNextPage,
     hasMore,
     error: error as Error | null,
     refetch,
-    loadMoreRef,
+    fetchNextPage,
+    canFetchMore,
+    range,
   };
 }

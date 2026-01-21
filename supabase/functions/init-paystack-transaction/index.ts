@@ -24,22 +24,29 @@ serve(async (req) => {
     const eventId: string | undefined = body.event_id || body.eventId;
     const reference: string | undefined = body.reference;
     const email: string | undefined = body.email;
-    const walletAddress: string | undefined = body.wallet_address || body.walletAddress;
+    const walletAddressRaw: string | undefined = body.wallet_address || body.walletAddress;
     const requestedAmountKobo: number | undefined = typeof body.amount === 'number' ? body.amount : undefined;
 
-    if (!eventId || !reference || !email || !walletAddress) {
+    if (!eventId || !reference || !email || !walletAddressRaw) {
       return new Response(JSON.stringify({ error: 'Missing required fields: event_id, reference, email, wallet_address' }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 400 });
     }
 
     // Validate event exists and get creator info
     const { data: ev, error: evErr } = await supabase
       .from('events')
-      .select('id, paystack_public_key, creator_id, ngn_price, ngn_price_kobo')
+      .select('id, paystack_public_key, creator_id, ngn_price, ngn_price_kobo, payment_methods')
       .eq('id', eventId)
       .maybeSingle();
     if (evErr || !ev) {
       return new Response(JSON.stringify({ error: 'Event not found' }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 404 });
     }
+
+    const hasFiat = Array.isArray((ev as any).payment_methods) && (ev as any).payment_methods.includes('fiat');
+    if (!hasFiat || Number((ev as any).ngn_price || 0) <= 0) {
+      return new Response(JSON.stringify({ error: 'fiat_not_enabled' }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 400 });
+    }
+
+    const walletAddress = walletAddressRaw.toLowerCase();
 
     // Fetch vendor's verified payout account for subaccount routing
     let subaccountCode: string | null = null;
@@ -53,15 +60,28 @@ serve(async (req) => {
         .eq('status', 'verified')
         .maybeSingle();
 
-      if (vendorPayoutAccount?.provider_account_code) {
-        subaccountCode = vendorPayoutAccount.provider_account_code;
+      if (vendorPayoutAccount) {
         payoutAccountId = vendorPayoutAccount.id;
+        if (vendorPayoutAccount.provider_account_code) {
+          subaccountCode = vendorPayoutAccount.provider_account_code;
+        }
       }
     }
 
     const normalizedEmail = normalizeEmail(email);
     if (!normalizedEmail) {
       return new Response(JSON.stringify({ error: 'Invalid email' }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 400 });
+    }
+
+    const amountKobo = typeof (ev as any).ngn_price_kobo === 'number'
+      ? (ev as any).ngn_price_kobo
+      : Math.round(Number((ev as any).ngn_price ?? 0) * 100);
+
+    if (typeof requestedAmountKobo === 'number' && requestedAmountKobo !== amountKobo) {
+      return new Response(JSON.stringify({ error: 'amount_mismatch' }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        status: 400,
+      });
     }
 
     const insertPayload: any = {
@@ -103,13 +123,3 @@ serve(async (req) => {
     return new Response(JSON.stringify({ error: e?.message || 'Internal error' }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 200 });
   }
 });
-    const amountKobo = typeof (ev as any).ngn_price_kobo === 'number'
-      ? (ev as any).ngn_price_kobo
-      : Math.round(Number((ev as any).ngn_price ?? 0) * 100);
-
-    if (typeof requestedAmountKobo === 'number' && requestedAmountKobo !== amountKobo) {
-      return new Response(JSON.stringify({ error: 'amount_mismatch' }), {
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        status: 400,
-      });
-    }

@@ -190,3 +190,5 @@ cypress/
 e2e/videos/
 e2e/screenshots/
 .synpress/
+
+.mcp.json
