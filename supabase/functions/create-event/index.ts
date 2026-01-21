@@ -5,10 +5,12 @@ import { verifyPrivyToken, getUserWalletAddresses } from "../_shared/privy.ts";
 import { validateChain } from "../_shared/network-helpers.ts";
 import { handleError } from "../_shared/error-handler.ts";
 import { isAnyUserWalletIsLockManagerParallel } from "../_shared/unlock.ts";
+import { Wallet } from "https://esm.sh/ethers@6.14.4";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const PAYSTACK_PUBLIC_KEY = Deno.env.get("VITE_PAYSTACK_PUBLIC_KEY")!;
+const UNLOCK_SERVICE_PRIVATE_KEY = Deno.env.get("UNLOCK_SERVICE_PRIVATE_KEY")!;
 
 serve(async (req: Request) => {
     if (req.method === "OPTIONS") {
@@ -112,6 +114,22 @@ serve(async (req: Request) => {
         // For fiat events, use server-side Paystack public key if client didn't provide one
         const isFiatEvent = payment_methods?.includes('fiat');
         const resolvedPaystackPublicKey = isFiatEvent ? PAYSTACK_PUBLIC_KEY : null;
+        let resolvedServiceManagerAdded = Boolean(service_manager_added);
+
+        if (isFiatEvent && UNLOCK_SERVICE_PRIVATE_KEY) {
+            try {
+                const serviceWallet = new Wallet(UNLOCK_SERVICE_PRIVATE_KEY);
+                const serviceAddress = serviceWallet.address;
+                const { anyIsManager } = await isAnyUserWalletIsLockManagerParallel(
+                    lock_address,
+                    [serviceAddress],
+                    networkConfig.rpc_url
+                );
+                resolvedServiceManagerAdded = Boolean(anyIsManager);
+            } catch (error) {
+                console.error("[create-event] Failed to verify service manager on-chain:", error);
+            }
+        }
 
         const eventData = {
             creator_id: privyUserId,
@@ -135,7 +153,7 @@ serve(async (req: Request) => {
             lock_address,
             transaction_hash,
             chain_id,
-            service_manager_added,
+            service_manager_added: resolvedServiceManagerAdded,
             idempotency_hash,
             ticket_duration,
             custom_duration_days,
