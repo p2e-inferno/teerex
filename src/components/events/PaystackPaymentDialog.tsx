@@ -204,7 +204,7 @@ export const PaystackPaymentDialog: React.FC<PaystackPaymentDialogProps> = ({
     setShouldLaunchPaystack(false);
     // At this point we've handed off to the Paystack modal, so stop blocking UI.
     setIsLoading(false);
-    onClose();
+    setTimeout(() => onClose(), 1000);
   }, [
     shouldLaunchPaystack,
     amountKobo,

@@ -187,17 +187,18 @@ const EventDetailsContent = () => {
       try {
         const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
         const accessToken = await getAccessToken?.();
+        const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string;
 
-        // Use query params for GET request by appending to function name
-        const functionName = `get-vendor-payout-account?vendor_id=${encodeURIComponent(event.creator_id)}`;
-
-        const { data } = await supabase.functions.invoke(functionName, {
+        const functionUrl = `${supabaseUrl}/functions/v1/get-vendor-payout-account?vendor_id=${encodeURIComponent(event.creator_id)}`;
+        const response = await fetch(functionUrl, {
+          method: 'GET',
           headers: {
             ...(anonKey ? { Authorization: `Bearer ${anonKey}` } : {}),
             ...(accessToken ? { 'X-Privy-Authorization': `Bearer ${accessToken}` } : {}),
           },
         });
 
+        const data = await response.json();
         setVendorHasPayoutAccount(data?.can_receive_fiat_payments === true);
       } catch (error) {
         console.error('Error checking vendor payout account:', error);
