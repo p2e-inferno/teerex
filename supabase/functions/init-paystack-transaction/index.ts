@@ -60,9 +60,11 @@ serve(async (req) => {
         .eq('status', 'verified')
         .maybeSingle();
 
-      if (vendorPayoutAccount?.provider_account_code) {
-        subaccountCode = vendorPayoutAccount.provider_account_code;
+      if (vendorPayoutAccount) {
         payoutAccountId = vendorPayoutAccount.id;
+        if (vendorPayoutAccount.provider_account_code) {
+          subaccountCode = vendorPayoutAccount.provider_account_code;
+        }
       }
     }
 
