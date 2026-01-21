@@ -190,21 +190,14 @@ export const TicketProcessingDialog: React.FC<TicketProcessingDialogProps> = ({
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="sm:max-w-[500px]">
+      <DialogContent
+        className="sm:max-w-[500px]"
+        onInteractOutside={(event) => event.preventDefault()}
+        onPointerDownOutside={(event) => event.preventDefault()}
+        onEscapeKeyDown={(event) => event.preventDefault()}
+      >
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            {status === "success" && (
-              <CheckCircle className="w-5 h-5 text-green-600" />
-            )}
-            {status === "error" && (
-              <AlertCircle className="w-5 h-5 text-red-600" />
-            )}
-            {status === "processing" && (
-              <Loader2 className="w-5 h-5 animate-spin text-blue-600" />
-            )}
-            {status === "timeout" && (
-              <AlertCircle className="w-5 h-5 text-yellow-600" />
-            )}
             {status === "success" && "Ticket Issued Successfully!"}
             {status === "error" && "Processing Error"}
             {status === "processing" && "Processing Your Ticket"}
