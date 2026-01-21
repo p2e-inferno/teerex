@@ -19,6 +19,7 @@
         "test:e2e": "cypress run --config-file synpress.json",
         "test:e2e:open": "cypress open --config-file synpress.json",
         "audit": "npm audit --audit-level=high",
+        "types:supabase:local": "supabase gen types typescript --local > /tmp/supabase.database.types.ts && cp /tmp/supabase.database.types.ts supabase/functions/_shared/database.types.ts && cp /tmp/supabase.database.types.ts src/integrations/supabase/types.ts",
         "functions:serve": "supabase functions serve --env-file .env",
         "functions:serve:debug": "supabase functions serve --env-file .env --debug",
         "functions:list": "supabase functions list"
