@@ -2,6 +2,7 @@ import { useQueries, useQueryClient } from '@tanstack/react-query';
 import { useMemo } from 'react';
 import { useNetworkConfigs } from '@/hooks/useNetworkConfigs';
 import { fetchNativeBalance, fetchERC20Balance, formatNativeBalance, formatERC20Balance } from '@/utils/balanceHelpers';
+import { fetchTokenMetadata, tokenMetadataQueryKeys } from '@/hooks/useTokenMetadata';
 import type { CryptoCurrency } from '@/types/currency';
 
 const BALANCE_STALE_TIME_MS = 30 * 1000; // 30 seconds
@@ -24,6 +25,7 @@ const BASE_MAINNET_FALLBACK = {
  * Token balance data for a single token on a network
  */
 export interface TokenBalance {
+  name: string;
   symbol: CryptoCurrency;
   address: string;
   balance: bigint;
@@ -38,6 +40,7 @@ export interface NativeBalance {
   balance: bigint;
   formatted: string;
   symbol: string;
+  name: string;
 }
 
 /**
@@ -116,6 +119,7 @@ export function useMultiNetworkBalances(
             balance,
             formatted: formatNativeBalance(balance, network.native_currency_symbol),
             symbol: network.native_currency_symbol,
+            name: network.native_currency_name || network.native_currency_symbol,
           };
         },
         staleTime: BALANCE_STALE_TIME_MS,
@@ -138,20 +142,22 @@ export function useMultiNetworkBalances(
             queryFn: async () => {
               const balance = await fetchERC20Balance(tokenAddress, address, network.chain_id);
 
-              // Get metadata from cache (should be pre-fetched)
-              const metadata = queryClient.getQueryData<{ decimals: number; symbol: string }>([
-                'token-metadata',
-                network.chain_id,
-                tokenAddress.toLowerCase(),
-              ]);
+              const metadata = await queryClient.ensureQueryData({
+                queryKey: tokenMetadataQueryKeys.byToken(network.chain_id, tokenAddress),
+                queryFn: () => fetchTokenMetadata(network.chain_id, tokenAddress),
+                staleTime: BALANCE_STALE_TIME_MS,
+                gcTime: BALANCE_GC_TIME_MS,
+              });
 
-              const decimals = metadata?.decimals || 18; // Fallback to 18
-              const tokenSymbol = metadata?.symbol || symbol;
+              const decimals = metadata?.decimals || 18;
+              const tokenSymbol = (metadata?.symbol || symbol) as CryptoCurrency;
+              const tokenName = metadata?.name || tokenSymbol;
 
               return {
                 type: 'token' as const,
                 chainId: network.chain_id,
-                symbol,
+                symbol: tokenSymbol,
+                name: tokenName,
                 address: tokenAddress,
                 balance,
                 formatted: formatERC20Balance(balance, tokenSymbol, decimals),
@@ -194,6 +200,7 @@ export function useMultiNetworkBalances(
             balance: 0n,
             formatted: '0',
             symbol: network.native_currency_symbol,
+            name: network.native_currency_name || network.native_currency_symbol,
           },
           tokens: [],
         };
@@ -204,10 +211,12 @@ export function useMultiNetworkBalances(
           balance: result.data.balance,
           formatted: result.data.formatted,
           symbol: result.data.symbol,
+          name: result.data.name || result.data.symbol,
         };
       } else if (result.data.type === 'token') {
         byChain[chainId].tokens.push({
           symbol: result.data.symbol,
+          name: result.data.name,
           address: result.data.address,
           balance: result.data.balance,
           formatted: result.data.formatted,

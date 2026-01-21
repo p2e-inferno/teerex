@@ -5,7 +5,6 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import { useMultiNetworkBalances } from '@/hooks/useMultiNetworkBalances';
 import { RefreshCw, Wallet2, Coins } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { ethers } from 'ethers';
 
 interface TokenBalancesCardProps {
   address: string;
@@ -25,15 +24,6 @@ export const TokenBalancesCard: React.FC<TokenBalancesCardProps> = ({ address })
   }, [chainIds, selectedChain]);
 
   const currentNetwork = balancesByChain[selectedChain];
-
-  // Format balance for display
-  const formatBalance = (balance: bigint, decimals: number): string => {
-    const formatted = ethers.formatUnits(balance, decimals);
-    const num = parseFloat(formatted);
-    if (num === 0) return '0';
-    if (num < 0.0001) return '<0.0001';
-    return num.toLocaleString(undefined, { maximumFractionDigits: 6 });
-  };
 
   if (!address) {
     return (
@@ -113,7 +103,8 @@ export const TokenBalancesCard: React.FC<TokenBalancesCardProps> = ({ address })
             {/* Native Token */}
             <TokenRow
               symbol={currentNetwork.native.symbol}
-              balance={formatBalance(currentNetwork.native.balance, 18)}
+              name={currentNetwork.native.name}
+              balance={currentNetwork.native.formatted}
               isNative
               isLoading={isLoading}
             />
@@ -123,7 +114,8 @@ export const TokenBalancesCard: React.FC<TokenBalancesCardProps> = ({ address })
               <TokenRow
                 key={token.address}
                 symbol={token.symbol}
-                balance={formatBalance(token.balance, token.decimals)}
+                name={token.name}
+                balance={token.formatted}
                 isLoading={isLoading}
               />
             ))}
@@ -157,12 +149,13 @@ export const TokenBalancesCard: React.FC<TokenBalancesCardProps> = ({ address })
 // Token Row Component
 interface TokenRowProps {
   symbol: string;
+  name: string;
   balance: string;
   isNative?: boolean;
   isLoading?: boolean;
 }
 
-const TokenRow: React.FC<TokenRowProps> = ({ symbol, balance, isNative, isLoading }) => {
+const TokenRow: React.FC<TokenRowProps> = ({ symbol, name, balance, isNative, isLoading }) => {
   return (
     <div className="flex items-center justify-between p-4 rounded-xl bg-slate-50/50 dark:bg-slate-800/30 border border-slate-100 dark:border-slate-700/50 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
       <div className="flex items-center gap-3">
@@ -178,8 +171,10 @@ const TokenRow: React.FC<TokenRowProps> = ({ symbol, balance, isNative, isLoadin
         </div>
         <div>
           <div className="font-medium text-slate-900 dark:text-white">{symbol}</div>
-          {isNative && (
+          {isNative ? (
             <div className="text-xs text-slate-400">Native token</div>
+          ) : (
+            <div className="text-xs text-slate-400">{name}</div>
           )}
         </div>
       </div>
