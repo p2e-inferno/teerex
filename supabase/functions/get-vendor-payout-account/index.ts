@@ -115,8 +115,11 @@ serve(async (req) => {
     }
 
     // 6. Determine if vendor can receive fiat payments
+    // A vendor can receive fiat if their account status is "verified" and a subaccount exists.
+    // Note: is_verified comes from Paystack and may be false initially even after successful
+    // subaccount creation. The presence of provider_account_code confirms the subaccount exists.
     const canReceiveFiatPayments =
-      payoutAccount.status === "verified" && payoutAccount.is_verified === true;
+      payoutAccount.status === "verified" && !!payoutAccount.provider_account_code;
 
     // 7. Build response with masked sensitive data
     const response = {

@@ -8,8 +8,7 @@ import { isAnyUserWalletIsLockManagerParallel } from "../_shared/unlock.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-
-
+const PAYSTACK_PUBLIC_KEY = Deno.env.get("VITE_PAYSTACK_PUBLIC_KEY")!;
 
 serve(async (req: Request) => {
     if (req.method === "OPTIONS") {
@@ -38,7 +37,6 @@ serve(async (req: Request) => {
             currency,
             ngn_price,
             payment_methods,
-            paystack_public_key,
             category,
             image_url,
             image_crop_x,
@@ -111,6 +109,10 @@ serve(async (req: Request) => {
         }
 
         // 6. Insert Event
+        // For fiat events, use server-side Paystack public key if client didn't provide one
+        const isFiatEvent = payment_methods?.includes('fiat');
+        const resolvedPaystackPublicKey = isFiatEvent ? PAYSTACK_PUBLIC_KEY : null;
+
         const eventData = {
             creator_id: privyUserId,
             title,
@@ -125,7 +127,7 @@ serve(async (req: Request) => {
             currency,
             ngn_price,
             payment_methods,
-            paystack_public_key,
+            paystack_public_key: resolvedPaystackPublicKey,
             category,
             image_url,
             image_crop_x,
