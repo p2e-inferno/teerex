@@ -148,9 +148,23 @@ export function useTokenTransfer(): UseTokenTransferResult {
         // Native token transfer
         const parsedAmount = ethers.parseEther(amount);
 
+        // Estimate gas with 20% buffer for Base network reliability
+        let gasLimit: bigint;
+        try {
+          const estimated = await signer.estimateGas({
+            to: recipient,
+            value: parsedAmount,
+          });
+          gasLimit = (estimated * 120n) / 100n; // Add 20% buffer
+        } catch (estimateError) {
+          console.warn('Gas estimation failed, using fallback:', estimateError);
+          gasLimit = 21000n; // Standard ETH transfer gas limit
+        }
+
         tx = await signer.sendTransaction({
           to: recipient,
           value: parsedAmount,
+          gasLimit,
         });
       } else {
         // ERC-20 token transfer
@@ -177,8 +191,18 @@ export function useTokenTransfer(): UseTokenTransferResult {
           signer
         );
 
-        // Execute transfer
-        tx = await transferContract.transfer(recipient, parsedAmount);
+        // Estimate gas with 20% buffer for Base network reliability
+        let gasLimit: bigint;
+        try {
+          const estimated = await transferContract.transfer.estimateGas(recipient, parsedAmount);
+          gasLimit = (estimated * 120n) / 100n; // Add 20% buffer
+        } catch (estimateError) {
+          console.warn('Gas estimation failed, using fallback:', estimateError);
+          gasLimit = 65000n; // Standard ERC20 transfer fallback
+        }
+
+        // Execute transfer with explicit gas limit
+        tx = await transferContract.transfer(recipient, parsedAmount, { gasLimit });
       }
 
       // Wait for confirmation
@@ -218,10 +242,18 @@ export function useTokenTransfer(): UseTokenTransferResult {
 
       let errorMessage = 'Failed to transfer tokens';
 
-      if (err.message?.includes('User rejected') || err.message?.includes('user rejected')) {
+      // Handle user rejection (various error codes and messages)
+      if (
+        err.message?.includes('User rejected') ||
+        err.message?.includes('user rejected') ||
+        err.code === 4001 ||
+        err.code === 'ACTION_REJECTED'
+      ) {
         errorMessage = 'Transfer cancelled';
       } else if (err.message?.includes('insufficient funds')) {
         errorMessage = 'Insufficient funds to complete transfer';
+      } else if (err.message?.includes('gas required exceeds allowance')) {
+        errorMessage = 'Insufficient ETH for gas fees. Please add more ETH to your wallet.';
       } else if (err.message) {
         errorMessage = err.message;
       }
@@ -233,7 +265,7 @@ export function useTokenTransfer(): UseTokenTransferResult {
         variant: 'destructive',
       });
 
-      throw err;
+      // Don't re-throw - error is already handled and UI state will reset via finally
     } finally {
       setIsTransferring(false);
     }
