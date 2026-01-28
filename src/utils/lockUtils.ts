@@ -741,10 +741,21 @@ export const purchaseKey = async (
       const allowance = await token.allowance(owner, lockAddress);
       if (allowance < onChainKeyPrice) {
         try {
-          const approveTx = await token.approve(lockAddress, onChainKeyPrice);
+          // Estimate gas for approval with 20% buffer for Base network
+          let approveGasLimit: bigint;
+          try {
+            const estimated = await token.approve.estimateGas(lockAddress, onChainKeyPrice);
+            approveGasLimit = (estimated * 120n) / 100n;
+          } catch (estimateError) {
+            console.warn('Approve gas estimation failed, using fallback:', estimateError);
+            approveGasLimit = 50000n; // Standard ERC20 approve fallback
+          }
+
+          const approveTx = await token.approve(lockAddress, onChainKeyPrice, { gasLimit: approveGasLimit });
           await approveTx.wait();
         } catch (e: any) {
           if (String(e?.message || '').toLowerCase().includes('must be zero')) {
+            // Some tokens require resetting allowance to 0 first
             const resetTx = await token.approve(lockAddress, 0);
             await resetTx.wait();
             const approveTx2 = await token.approve(lockAddress, onChainKeyPrice);
@@ -754,26 +765,60 @@ export const purchaseKey = async (
           }
         }
       }
+
+      // Estimate gas for purchase with 20% buffer for Base network
+      let purchaseGasLimit: bigint;
+      try {
+        const estimated = await lockContract.purchase.estimateGas(
+          [onChainKeyPrice],
+          [owner],
+          ['0x0000000000000000000000000000000000000000'],
+          ['0x0000000000000000000000000000000000000000'],
+          ['0x']
+        );
+        purchaseGasLimit = (estimated * 120n) / 100n;
+      } catch (estimateError) {
+        console.warn('Purchase gas estimation failed, using fallback:', estimateError);
+        purchaseGasLimit = 150000n; // Fallback for ERC20 purchase
+      }
+
       const tx = await lockContract.purchase(
         [onChainKeyPrice],
         [owner],
         ['0x0000000000000000000000000000000000000000'],
         ['0x0000000000000000000000000000000000000000'],
-        ['0x']
+        ['0x'],
+        { gasLimit: purchaseGasLimit }
       );
       const receipt = await tx.wait();
       if (receipt.status !== 1) throw new Error('Transaction failed.');
       return { success: true, transactionHash: tx.hash };
     }
 
-    // ETH path
+    // ETH path - estimate gas with 20% buffer for Base network
+    let purchaseGasLimit: bigint;
+    try {
+      const estimated = await lockContract.purchase.estimateGas(
+        [onChainKeyPrice],
+        [wallet.address],
+        ['0x0000000000000000000000000000000000000000'],
+        ['0x0000000000000000000000000000000000000000'],
+        ['0x'],
+        { value: onChainKeyPrice }
+      );
+      purchaseGasLimit = (estimated * 120n) / 100n;
+    } catch (estimateError) {
+      console.warn('Purchase gas estimation failed, using fallback:', estimateError);
+      purchaseGasLimit = 100000n; // Fallback for ETH purchase
+    }
+
     const tx = await lockContract.purchase(
       [onChainKeyPrice],
       [wallet.address],
       ['0x0000000000000000000000000000000000000000'],
       ['0x0000000000000000000000000000000000000000'],
       ['0x'],
-      { value: onChainKeyPrice }
+      { value: onChainKeyPrice, gasLimit: purchaseGasLimit }
     );
     const receipt = await tx.wait();
     if (receipt.status !== 1) throw new Error('Transaction failed.');
