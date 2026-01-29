@@ -173,8 +173,8 @@ export const TransactionHistoryCard: React.FC<TransactionHistoryCardProps> = ({ 
     );
   }
 
-  // Empty state - no transactions yet
-  if (transactions.length === 0) {
+  // Empty state - no transactions yet AND no more to fetch
+  if (transactions.length === 0 && !hasMore) {
     return (
       <Card className="border-0 shadow-lg bg-gradient-to-b from-white to-slate-50/80 dark:from-slate-900 dark:to-slate-900/80 rounded-2xl">
         <CardHeader className="pb-4">
