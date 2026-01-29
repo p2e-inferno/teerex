@@ -313,20 +313,40 @@ async function fetchERC20Transfers(
 /**
  * Hook for fetching and paginating transaction history with React Query
  * Uses block-window pagination to keep RPC calls within provider limits
+ *
+ * @param address - User wallet address
+ * @param range - Time range for transaction history
+ * @param chainId - Optional chain ID to filter transactions to a specific network
  */
-export function useTransactionHistory(address: string | undefined, range: TransactionRange) {
+export function useTransactionHistory(
+  address: string | undefined,
+  range: TransactionRange,
+  chainId?: number
+) {
   const { networks: dbNetworks } = useNetworkConfigs();
 
   // Prepare network configs (filter out networks with no RPC URL)
-  const networks: NetworkConfig[] = (dbNetworks || [])
-    .filter((network) => network.rpc_url !== null)
-    .map((network) => ({
-      chainId: network.chain_id,
-      chainName: network.chain_name,
-      rpcUrl: network.rpc_url!,
-      nativeSymbol: network.native_currency_symbol,
-      blockExplorerUrl: network.block_explorer_url,
-    }));
+  // If chainId is provided, only query that specific network
+  const networks: NetworkConfig[] = useMemo(() => {
+    const filtered = (dbNetworks || [])
+      .filter((network) => network.rpc_url !== null)
+      .filter((network) => !chainId || network.chain_id === chainId)
+      .map((network) => ({
+        chainId: network.chain_id,
+        chainName: network.chain_name,
+        rpcUrl: network.rpc_url!,
+        nativeSymbol: network.native_currency_symbol,
+        blockExplorerUrl: network.block_explorer_url,
+      }));
+
+    console.log('[useTransactionHistory] Filtering networks:', {
+      chainIdParam: chainId,
+      allNetworks: dbNetworks?.map(n => n.chain_id),
+      filteredNetworks: filtered.map(n => n.chainId),
+    });
+
+    return filtered;
+  }, [dbNetworks, chainId]);
 
   // React Query for fetching transactions
   const {
@@ -341,10 +361,10 @@ export function useTransactionHistory(address: string | undefined, range: Transa
     TransactionHistoryPage,
     Error,
     InfiniteData<TransactionHistoryPage, TransactionHistoryPageParam>,
-    (string | undefined)[],
+    (string | undefined | number)[],
     TransactionHistoryPageParam
   >({
-    queryKey: ['transaction-history', address, networks.map((n) => n.chainId).join(','), range],
+    queryKey: ['transaction-history', address, networks.map((n) => n.chainId).join(','), range, chainId],
     initialPageParam: { pageIndex: 0, anchors: undefined },
     queryFn: ({ pageParam }) =>
       fetchTransactionHistoryPage(

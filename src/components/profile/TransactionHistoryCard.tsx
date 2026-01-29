@@ -10,14 +10,15 @@ import { History, RefreshCw, Loader2, AlertCircle, Inbox } from 'lucide-react';
 
 interface TransactionHistoryCardProps {
   address: string;
+  chainId?: number;
 }
 
 /**
  * Transaction history card with range selection and load-more pagination
- * Shows both sent and received transfers across all active networks
+ * Shows both sent and received transfers across all active networks (or filtered by chainId)
  */
-export const TransactionHistoryCard: React.FC<TransactionHistoryCardProps> = ({ address }) => {
-  const [range, setRange] = useState<TransactionRange>('12h');
+export const TransactionHistoryCard: React.FC<TransactionHistoryCardProps> = ({ address, chainId }) => {
+  const [range, setRange] = useState<TransactionRange>('1h');
   const {
     transactions,
     isLoading,
@@ -27,7 +28,7 @@ export const TransactionHistoryCard: React.FC<TransactionHistoryCardProps> = ({ 
     refetch,
     fetchNextPage,
     canFetchMore,
-  } = useTransactionHistory(address, range);
+  } = useTransactionHistory(address, range, chainId);
 
   const handleLoadMore = () => {
     if (canFetchMore) {
