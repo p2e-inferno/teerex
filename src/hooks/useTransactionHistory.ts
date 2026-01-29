@@ -6,6 +6,9 @@ import type { NetworkConfig as DbNetworkConfig } from '@/lib/config/network-conf
 
 const PAGE_BLOCK_SIZE = 500;
 const LOG_CHUNK_SIZE = 10;
+const THROTTLE_MS = 20; // 20ms delay between chunks (50 calls = 1s per page)
+
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 export type TransactionRange = '1h' | '12h' | '1d' | '7d' | '30d';
 
@@ -138,6 +141,8 @@ async function fetchTransactionHistoryPage(
             pageEnd,
             processedHashes
           );
+
+
           allTransactions.push(...tokenTransactions);
         }
       } catch (error) {
@@ -214,6 +219,10 @@ async function fetchERC20Transfers(
       const end = Math.min(start + LOG_CHUNK_SIZE - 1, toBlock);
 
       try {
+        if (start > fromBlock) {
+          await sleep(THROTTLE_MS);
+        }
+
         const [sentChunk, receivedChunk] = await Promise.all([
           contract.queryFilter(sentFilter, start, end),
           contract.queryFilter(receivedFilter, start, end),
@@ -250,6 +259,8 @@ async function fetchERC20Transfers(
       return true;
     });
 
+
+
     if (allLogs.length === 0) return transactions;
 
     // OPTIMIZATION: Batch fetch all unique blocks in parallel
@@ -265,6 +276,8 @@ async function fetchERC20Transfers(
         .filter((block): block is ethers.Block => block !== null)
         .map((block) => [block.number, block])
     );
+
+
 
     // Process all events with pre-fetched block data
     for (const log of allLogs) {
@@ -339,11 +352,7 @@ export function useTransactionHistory(
         blockExplorerUrl: network.block_explorer_url,
       }));
 
-    console.log('[useTransactionHistory] Filtering networks:', {
-      chainIdParam: chainId,
-      allNetworks: dbNetworks?.map(n => n.chain_id),
-      filteredNetworks: filtered.map(n => n.chainId),
-    });
+
 
     return filtered;
   }, [dbNetworks, chainId]);
