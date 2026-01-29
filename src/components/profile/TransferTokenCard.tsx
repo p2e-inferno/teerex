@@ -13,6 +13,7 @@ import { cn } from '@/lib/utils';
 
 interface TransferTokenCardProps {
   address: string;
+  chainId?: number;
 }
 
 interface TokenOption {
@@ -31,7 +32,7 @@ interface GroupedTokens {
   tokens: TokenOption[];
 }
 
-export const TransferTokenCard: React.FC<TransferTokenCardProps> = ({ address }) => {
+export const TransferTokenCard: React.FC<TransferTokenCardProps> = ({ address, chainId }) => {
   const [recipient, setRecipient] = useState('');
   const [resolvedAddress, setResolvedAddress] = useState<string | null>(null);
   const [selectedTokenKey, setSelectedTokenKey] = useState<string>('');
@@ -42,7 +43,7 @@ export const TransferTokenCard: React.FC<TransferTokenCardProps> = ({ address })
   const buttonRef = useRef<HTMLButtonElement>(null);
 
   const { transferToken, isTransferring } = useTokenTransfer();
-  const { balancesByChain, isLoading: balancesLoading } = useMultiNetworkBalances(address);
+  const { balancesByChain, isLoading: balancesLoading } = useMultiNetworkBalances(address, chainId);
 
   // Calculate dropdown position to ensure spacing from viewport edges
   useEffect(() => {
@@ -73,11 +74,11 @@ export const TransferTokenCard: React.FC<TransferTokenCardProps> = ({ address })
     };
 
     if (isDropdownOpen) {
-      document.addEventListener('mousedown', handleClickOutside);
+      document.addEventListener('mousedown', handleClickOutside, true);
     }
 
     return () => {
-      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('mousedown', handleClickOutside, true);
     };
   }, [isDropdownOpen]);
 
@@ -190,150 +191,150 @@ export const TransferTokenCard: React.FC<TransferTokenCardProps> = ({ address })
 
       <CardContent className="flex-1 flex flex-col">
         <div className="space-y-5 flex-1">
-        {/* Recipient Input */}
-        <div className="space-y-2">
-          <Label className="text-sm font-medium text-slate-700 dark:text-slate-300">To</Label>
-          <RecipientInput
-            value={recipient}
-            onChange={setRecipient}
-            onResolvedAddress={setResolvedAddress}
-          />
-        </div>
+          {/* Recipient Input */}
+          <div className="space-y-2">
+            <Label className="text-sm font-medium text-slate-700 dark:text-slate-300">To</Label>
+            <RecipientInput
+              value={recipient}
+              onChange={setRecipient}
+              onResolvedAddress={setResolvedAddress}
+            />
+          </div>
 
-        {/* Token Selection - Custom Grouped Dropdown */}
-        <div className="space-y-2">
-          <Label className="text-sm font-medium text-slate-700 dark:text-slate-300">Token</Label>
-          <div className="relative" ref={dropdownRef}>
-            <button
-              ref={buttonRef}
-              type="button"
-              onClick={() => setIsDropdownOpen(!isDropdownOpen)}
-              disabled={balancesLoading || allTokens.length === 0}
-              className={cn(
-                'w-full flex items-center justify-between px-4 py-3 rounded-xl border bg-white dark:bg-slate-800 transition-all duration-200',
-                'hover:border-violet-300 hover:shadow-sm focus:outline-none focus:ring-2 focus:ring-violet-500/20 focus:border-violet-400',
-                isDropdownOpen && 'ring-2 ring-violet-500/20 border-violet-400',
-                'disabled:opacity-50 disabled:cursor-not-allowed'
-              )}
-            >
-              {selectedToken ? (
-                <div className="flex items-center gap-3">
-                  <div className="w-8 h-8 rounded-full bg-gradient-to-br from-slate-100 to-slate-200 dark:from-slate-700 dark:to-slate-600 flex items-center justify-center">
-                    <Coins className="w-4 h-4 text-slate-600 dark:text-slate-300" />
-                  </div>
-                  <div className="text-left">
-                    <div className="font-medium text-slate-900 dark:text-white">{selectedToken.symbol}</div>
-                    <div className="text-xs text-slate-500">{selectedToken.networkName}</div>
-                  </div>
-                </div>
-              ) : (
-                <span className="text-slate-400">
-                  {balancesLoading ? 'Loading...' : 'Select a token'}
-                </span>
-              )}
-              <ChevronDown className={cn('w-5 h-5 text-slate-400 transition-transform duration-200', isDropdownOpen && 'rotate-180')} />
-            </button>
-
-            {/* Dropdown Menu */}
-            {isDropdownOpen && (
-              <div
+          {/* Token Selection - Custom Grouped Dropdown */}
+          <div className="space-y-2">
+            <Label className="text-sm font-medium text-slate-700 dark:text-slate-300">Token</Label>
+            <div className="relative" ref={dropdownRef}>
+              <button
+                ref={buttonRef}
+                type="button"
+                onClick={() => setIsDropdownOpen(!isDropdownOpen)}
+                disabled={balancesLoading || allTokens.length === 0}
                 className={cn(
-                  'absolute z-[100] w-full py-2 bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 shadow-xl overflow-y-auto',
-                  'max-h-[min(320px,calc(100vh-40px))]',
-                  dropdownPosition === 'bottom' ? 'mt-2 top-full' : 'mb-2 bottom-full'
+                  'w-full flex items-center justify-between px-4 py-3 rounded-xl border bg-white dark:bg-slate-800 transition-all duration-200',
+                  'hover:border-violet-300 hover:shadow-sm focus:outline-none focus:ring-2 focus:ring-violet-500/20 focus:border-violet-400',
+                  isDropdownOpen && 'ring-2 ring-violet-500/20 border-violet-400',
+                  'disabled:opacity-50 disabled:cursor-not-allowed'
                 )}
               >
-                {groupedTokens.map((group) => (
-                  <div key={group.chainId}>
-                    {/* Network Header */}
-                    <div className="px-4 py-2 text-xs font-semibold text-slate-400 uppercase tracking-wider bg-slate-50 dark:bg-slate-800/50 sticky top-0">
-                      {group.networkName}
+                {selectedToken ? (
+                  <div className="flex items-center gap-3">
+                    <div className="w-8 h-8 rounded-full bg-gradient-to-br from-slate-100 to-slate-200 dark:from-slate-700 dark:to-slate-600 flex items-center justify-center">
+                      <Coins className="w-4 h-4 text-slate-600 dark:text-slate-300" />
                     </div>
-                    {/* Tokens in this network */}
-                    {group.tokens.map((token) => (
-                      <button
-                        key={token.key}
-                        type="button"
-                        onClick={() => handleTokenSelect(token.key)}
-                        className={cn(
-                          'w-full flex items-center justify-between px-4 py-3.5 hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors min-h-[68px]',
-                          selectedTokenKey === token.key && 'bg-violet-50 dark:bg-violet-900/20'
-                        )}
-                      >
-                        <div className="flex items-center gap-3">
-                          <div className="w-9 h-9 rounded-full bg-gradient-to-br from-slate-100 to-slate-200 dark:from-slate-700 dark:to-slate-600 flex items-center justify-center flex-shrink-0">
-                            <span className="text-xs font-bold text-slate-600 dark:text-slate-300">
-                              {token.symbol.slice(0, 2)}
-                            </span>
-                          </div>
-                          <div className="text-left flex-1 min-w-0">
-                            <div className="font-medium text-slate-900 dark:text-white text-sm">{token.symbol}</div>
-                            <div className="text-xs text-slate-500 mt-0.5">
-                              {formatBalance(token.balance, token.decimals)} available
+                    <div className="text-left">
+                      <div className="font-medium text-slate-900 dark:text-white">{selectedToken.symbol}</div>
+                      <div className="text-xs text-slate-500">{selectedToken.networkName}</div>
+                    </div>
+                  </div>
+                ) : (
+                  <span className="text-slate-400">
+                    {balancesLoading ? 'Loading...' : 'Select a token'}
+                  </span>
+                )}
+                <ChevronDown className={cn('w-5 h-5 text-slate-400 transition-transform duration-200', isDropdownOpen && 'rotate-180')} />
+              </button>
+
+              {/* Dropdown Menu */}
+              {isDropdownOpen && (
+                <div
+                  className={cn(
+                    'absolute z-30 w-full py-2 bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 shadow-xl overflow-y-auto',
+                    'max-h-[min(320px,calc(100vh-40px))]',
+                    dropdownPosition === 'bottom' ? 'mt-2 top-full' : 'mb-2 bottom-full'
+                  )}
+                >
+                  {groupedTokens.map((group) => (
+                    <div key={group.chainId}>
+                      {/* Network Header */}
+                      <div className="px-4 py-2 text-xs font-semibold text-slate-400 uppercase tracking-wider bg-slate-50 dark:bg-slate-800/50 sticky top-0">
+                        {group.networkName}
+                      </div>
+                      {/* Tokens in this network */}
+                      {group.tokens.map((token) => (
+                        <button
+                          key={token.key}
+                          type="button"
+                          onClick={() => handleTokenSelect(token.key)}
+                          className={cn(
+                            'w-full flex items-center justify-between px-4 py-3.5 hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors min-h-[68px]',
+                            selectedTokenKey === token.key && 'bg-violet-50 dark:bg-violet-900/20'
+                          )}
+                        >
+                          <div className="flex items-center gap-3">
+                            <div className="w-9 h-9 rounded-full bg-gradient-to-br from-slate-100 to-slate-200 dark:from-slate-700 dark:to-slate-600 flex items-center justify-center flex-shrink-0">
+                              <span className="text-xs font-bold text-slate-600 dark:text-slate-300">
+                                {token.symbol.slice(0, 2)}
+                              </span>
+                            </div>
+                            <div className="text-left flex-1 min-w-0">
+                              <div className="font-medium text-slate-900 dark:text-white text-sm">{token.symbol}</div>
+                              <div className="text-xs text-slate-500 mt-0.5">
+                                {formatBalance(token.balance, token.decimals)} available
+                              </div>
                             </div>
                           </div>
-                        </div>
-                        {selectedTokenKey === token.key && (
-                          <Check className="w-4 h-4 text-violet-500 flex-shrink-0" />
-                        )}
-                      </button>
-                    ))}
-                  </div>
-                ))}
-                {allTokens.length === 0 && !balancesLoading && (
-                  <div className="px-4 py-8 text-center text-sm text-slate-400">
-                    No tokens available
-                  </div>
-                )}
+                          {selectedTokenKey === token.key && (
+                            <Check className="w-4 h-4 text-violet-500 flex-shrink-0" />
+                          )}
+                        </button>
+                      ))}
+                    </div>
+                  ))}
+                  {allTokens.length === 0 && !balancesLoading && (
+                    <div className="px-4 py-8 text-center text-sm text-slate-400">
+                      No tokens available
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* Selected Token Balance */}
+            {selectedToken && (
+              <div className="flex items-center justify-between px-1 text-xs text-slate-500">
+                <span>Available balance</span>
+                <span className="font-medium text-slate-700 dark:text-slate-300">
+                  {formatBalance(selectedToken.balance, selectedToken.decimals)} {selectedToken.symbol}
+                </span>
               </div>
             )}
           </div>
 
-          {/* Selected Token Balance */}
+          {/* Amount Input */}
           {selectedToken && (
-            <div className="flex items-center justify-between px-1 text-xs text-slate-500">
-              <span>Available balance</span>
-              <span className="font-medium text-slate-700 dark:text-slate-300">
-                {formatBalance(selectedToken.balance, selectedToken.decimals)} {selectedToken.symbol}
-              </span>
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <Label className="text-sm font-medium text-slate-700 dark:text-slate-300">Amount</Label>
+                <button
+                  type="button"
+                  onClick={handleMaxClick}
+                  className="text-xs font-medium text-violet-600 hover:text-violet-700 dark:text-violet-400 transition-colors"
+                >
+                  Use Max
+                </button>
+              </div>
+              <div className="relative">
+                <Input
+                  type="text"
+                  value={amount}
+                  onChange={(e) => setAmount(e.target.value)}
+                  placeholder="0.00"
+                  className={cn(
+                    'pr-16 h-12 text-lg font-medium rounded-xl border-slate-200 dark:border-slate-700',
+                    'focus:ring-2 focus:ring-violet-500/20 focus:border-violet-400',
+                    validation && !validation.valid && 'border-red-300 focus:border-red-400 focus:ring-red-500/20'
+                  )}
+                />
+                <div className="absolute right-4 top-1/2 -translate-y-1/2 text-sm font-medium text-slate-400">
+                  {selectedToken.symbol}
+                </div>
+              </div>
+              {validation && !validation.valid && (
+                <p className="text-xs text-red-500 px-1">{validation.error}</p>
+              )}
             </div>
           )}
-        </div>
-
-        {/* Amount Input */}
-        {selectedToken && (
-          <div className="space-y-2">
-            <div className="flex items-center justify-between">
-              <Label className="text-sm font-medium text-slate-700 dark:text-slate-300">Amount</Label>
-              <button
-                type="button"
-                onClick={handleMaxClick}
-                className="text-xs font-medium text-violet-600 hover:text-violet-700 dark:text-violet-400 transition-colors"
-              >
-                Use Max
-              </button>
-            </div>
-            <div className="relative">
-              <Input
-                type="text"
-                value={amount}
-                onChange={(e) => setAmount(e.target.value)}
-                placeholder="0.00"
-                className={cn(
-                  'pr-16 h-12 text-lg font-medium rounded-xl border-slate-200 dark:border-slate-700',
-                  'focus:ring-2 focus:ring-violet-500/20 focus:border-violet-400',
-                  validation && !validation.valid && 'border-red-300 focus:border-red-400 focus:ring-red-500/20'
-                )}
-              />
-              <div className="absolute right-4 top-1/2 -translate-y-1/2 text-sm font-medium text-slate-400">
-                {selectedToken.symbol}
-              </div>
-            </div>
-            {validation && !validation.valid && (
-              <p className="text-xs text-red-500 px-1">{validation.error}</p>
-            )}
-          </div>
-        )}
         </div>
 
         {/* Submit Button */}

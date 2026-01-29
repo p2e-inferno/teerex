@@ -3,25 +3,27 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { useMultiNetworkBalances } from '@/hooks/useMultiNetworkBalances';
+import { useNetworkConfigs } from '@/hooks/useNetworkConfigs';
 import { RefreshCw, Wallet2, Coins } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 interface TokenBalancesCardProps {
   address: string;
+  selectedChain?: number;
 }
 
-export const TokenBalancesCard: React.FC<TokenBalancesCardProps> = ({ address }) => {
-  const { balancesByChain, isLoading, hasError, refetchAll } = useMultiNetworkBalances(address);
+export const TokenBalancesCard: React.FC<TokenBalancesCardProps> = ({
+  address,
+  selectedChain: externalSelectedChain,
+}) => {
+  const { networks: activeNetworks } = useNetworkConfigs();
+  const { balancesByChain, isLoading, hasError, refetchAll } = useMultiNetworkBalances(address, externalSelectedChain);
 
-  const chainIds = Object.keys(balancesByChain).map(Number).sort();
-  const [selectedChain, setSelectedChain] = useState<number>(chainIds[0] || 0);
-
-  // Auto-select first chain when available
-  React.useEffect(() => {
-    if (chainIds.length > 0 && !chainIds.includes(selectedChain)) {
-      setSelectedChain(chainIds[0]);
-    }
-  }, [chainIds, selectedChain]);
+  // Get chain IDs from active networks (for tabs), not from balance results
+  const chainIds = activeNetworks.map(n => n.chain_id).sort();
+  // Calculate 'selectedChain' directly from props.
+  // We assume the parent (Profile) ensures a valid chain is selected.
+  const selectedChain = externalSelectedChain ?? chainIds[0];
 
   const currentNetwork = balancesByChain[selectedChain];
 
@@ -71,32 +73,6 @@ export const TokenBalancesCard: React.FC<TokenBalancesCardProps> = ({ address })
           </Alert>
         )}
 
-        {/* Network Tabs */}
-        {chainIds.length > 0 && (
-          <div className="mb-4">
-            <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-thin scrollbar-thumb-slate-200 dark:scrollbar-thumb-slate-700">
-              {chainIds.map((chainId) => {
-                const network = balancesByChain[chainId];
-                const isActive = selectedChain === chainId;
-                return (
-                  <button
-                    key={chainId}
-                    onClick={() => setSelectedChain(chainId)}
-                    className={cn(
-                      'px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-all duration-200',
-                      isActive
-                        ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900 shadow-md'
-                        : 'bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-400 dark:hover:bg-slate-700'
-                    )}
-                  >
-                    {network?.chainName || `Chain ${chainId}`}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-        )}
-
         {/* Token List */}
         {currentNetwork ? (
           <div className="space-y-2">
@@ -127,15 +103,17 @@ export const TokenBalancesCard: React.FC<TokenBalancesCardProps> = ({ address })
               </div>
             )}
           </div>
-        ) : chainIds.length === 0 && !isLoading ? (
+        ) : !isLoading ? (
           <div className="py-8 text-center">
             <Coins className="h-10 w-10 mx-auto text-slate-300 dark:text-slate-600 mb-3" />
-            <p className="text-sm text-slate-500">No networks configured</p>
+            <p className="text-sm text-slate-500">
+              {chainIds.length === 0 ? 'No networks configured' : 'Select a network to view balances'}
+            </p>
           </div>
         ) : null}
 
         {/* Loading state */}
-        {isLoading && chainIds.length === 0 && (
+        {isLoading && !currentNetwork && (
           <div className="py-8 text-center">
             <RefreshCw className="h-8 w-8 mx-auto text-slate-300 animate-spin mb-3" />
             <p className="text-sm text-slate-500">Loading balances...</p>
