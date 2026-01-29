@@ -1,7 +1,8 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useUserProfile } from '@/hooks/useUserProfile';
 import { useNetworkConfigs } from '@/hooks/useNetworkConfigs';
+import { getDefaultChainId } from '@/lib/config/network-config';
 import { WalletIdentityCard } from '@/components/profile/WalletIdentityCard';
 import { TokenBalancesCard } from '@/components/profile/TokenBalancesCard';
 import { TransferTokenCard } from '@/components/profile/TransferTokenCard';
@@ -10,6 +11,7 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Loader2, User } from 'lucide-react';
 import { usePrivy } from '@privy-io/react-auth';
+import { NetworkSelector } from '@/components/profile/NetworkSelector';
 
 /**
  * Profile page - User wallet identity, token balances, and transfers
@@ -34,8 +36,23 @@ const Profile: React.FC = () => {
   } = useUserProfile();
   const { networks: activeNetworks } = useNetworkConfigs();
 
-  // Use first active network or default to Base Mainnet (8453)
-  const primaryChainId = activeNetworks?.[0]?.chain_id || 8453;
+  // Determine primary chain for WalletIdentityCard
+  // Prioritize default chain from env, then first active network, then fallback
+  const defaultChainId = getDefaultChainId();
+  const primaryChainId = activeNetworks.find(n => n.chain_id === defaultChainId)?.chain_id
+    ?? activeNetworks?.[0]?.chain_id
+    ?? defaultChainId;
+
+  // Shared state for network selection across TokenBalancesCard and TransactionHistoryCard
+  // Initialize with default chain from environment (VITE_PRIMARY_CHAIN_ID or Base Sepolia 84532)
+  const [selectedChainId, setSelectedChainId] = useState<number>(getDefaultChainId());
+
+  // Update selectedChainId when activeNetworks loads, if current selection is not available
+  useEffect(() => {
+    if (activeNetworks.length > 0 && !activeNetworks.some(n => n.chain_id === selectedChainId)) {
+      setSelectedChainId(activeNetworks[0].chain_id);
+    }
+  }, [activeNetworks, selectedChainId]);
 
   // Redirect to home if not authenticated
   useEffect(() => {
@@ -103,20 +120,30 @@ const Profile: React.FC = () => {
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-slate-100 dark:from-slate-950 dark:via-slate-900 dark:to-slate-950">
       <div className="container mx-auto px-4 sm:px-6 py-8 sm:py-12">
+
         {/* Page Header */}
-        <div className="mb-8 sm:mb-12">
-          <div className="flex items-center gap-4">
-            <div className="p-3 rounded-2xl bg-gradient-to-br from-violet-500 to-purple-600 shadow-xl shadow-violet-500/20">
-              <User className="h-7 w-7 text-white" />
+        <div className="mb-8">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-6">
+            <div className="flex items-center gap-4">
+              <div className="p-3 rounded-2xl bg-gradient-to-br from-violet-500 to-purple-600 shadow-xl shadow-violet-500/20">
+                <User className="h-7 w-7 text-white" />
+              </div>
+              <div>
+                <h1 className="text-2xl sm:text-3xl font-bold text-slate-900 dark:text-white">
+                  My Profile
+                </h1>
+                <p className="text-slate-500 mt-1">
+                  Manage your wallet, view balances, and send tokens
+                </p>
+              </div>
             </div>
-            <div>
-              <h1 className="text-2xl sm:text-3xl font-bold text-slate-900 dark:text-white">
-                My Profile
-              </h1>
-              <p className="text-slate-500 mt-1">
-                Manage your wallet, view balances, and send tokens
-              </p>
-            </div>
+          </div>
+
+          <div className="mt-8">
+            <NetworkSelector
+              selectedChainId={selectedChainId}
+              onSelectChain={setSelectedChainId}
+            />
           </div>
         </div>
 
@@ -136,17 +163,23 @@ const Profile: React.FC = () => {
 
             {/* Middle Column - Token Balances */}
             <div className="flex flex-col h-full">
-              <TokenBalancesCard address={primaryAddress} />
+              <TokenBalancesCard
+                address={primaryAddress}
+                selectedChain={selectedChainId}
+              />
             </div>
 
             {/* Right Column - Send Tokens */}
             <div className="flex flex-col h-full">
-              <TransferTokenCard address={primaryAddress} />
+              <TransferTokenCard
+                address={primaryAddress}
+                chainId={selectedChainId}
+              />
             </div>
           </div>
 
           {/* Bottom Section - Full-Width Transaction History */}
-          <TransactionHistoryCard address={primaryAddress} />
+          <TransactionHistoryCard address={primaryAddress} chainId={selectedChainId} />
         </div>
       </div>
     </div>

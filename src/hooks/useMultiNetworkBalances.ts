@@ -1,5 +1,5 @@
 import { useQueries, useQueryClient } from '@tanstack/react-query';
-import { useMemo } from 'react';
+import { useMemo, useEffect } from 'react';
 import { useNetworkConfigs } from '@/hooks/useNetworkConfigs';
 import { fetchNativeBalance, fetchERC20Balance, formatNativeBalance, formatERC20Balance } from '@/utils/balanceHelpers';
 import { fetchTokenMetadata, tokenMetadataQueryKeys } from '@/hooks/useTokenMetadata';
@@ -70,6 +70,7 @@ export interface MultiNetworkBalancesResult {
  * Returns aggregated data organized by chain ID
  *
  * @param address - The wallet address to check balances for
+ * @param chainId - Optional chain ID to filter balances to a specific network
  *
  * @returns Multi-network balance data with loading states and refetch function
  *
@@ -87,19 +88,30 @@ export interface MultiNetworkBalancesResult {
  * ```
  */
 export function useMultiNetworkBalances(
-  address: string | undefined
+  address: string | undefined,
+  chainId?: number
 ): MultiNetworkBalancesResult {
   const { networks: activeNetworks } = useNetworkConfigs();
   const queryClient = useQueryClient();
 
   // Use active networks or fallback to Base Mainnet if none configured
+  // If chainId is provided, only query that specific network
   const networks = useMemo(() => {
-    if (activeNetworks.length > 0) {
-      return activeNetworks;
+    let networksToUse = activeNetworks.length > 0 ? activeNetworks : [BASE_MAINNET_FALLBACK as any];
+
+    // Filter by chainId if provided
+    if (chainId) {
+      networksToUse = networksToUse.filter(n => n.chain_id === chainId);
     }
-    // Fallback to Base Mainnet
-    return [BASE_MAINNET_FALLBACK as any];
-  }, [activeNetworks]);
+
+    console.log('[useMultiNetworkBalances] Filtering networks:', {
+      chainIdParam: chainId,
+      allNetworks: activeNetworks.map(n => n.chain_id),
+      filteredNetworks: networksToUse.map(n => n.chain_id),
+    });
+
+    return networksToUse;
+  }, [activeNetworks, chainId]);
 
   // Create queries for each network's native + token balances
   const queries = useMemo(() => {
@@ -112,15 +124,20 @@ export function useMultiNetworkBalances(
       queries.push({
         queryKey: ['native-balance', network.chain_id, address.toLowerCase()],
         queryFn: async () => {
-          const balance = await fetchNativeBalance(address, network.chain_id);
-          return {
-            type: 'native' as const,
-            chainId: network.chain_id,
-            balance,
-            formatted: formatNativeBalance(balance, network.native_currency_symbol),
-            symbol: network.native_currency_symbol,
-            name: network.native_currency_name || network.native_currency_symbol,
-          };
+          try {
+            const balance = await fetchNativeBalance(address, network.chain_id);
+            return {
+              type: 'native' as const,
+              chainId: network.chain_id,
+              balance,
+              formatted: formatNativeBalance(balance, network.native_currency_symbol),
+              symbol: network.native_currency_symbol,
+              name: network.native_currency_name || network.native_currency_symbol,
+            };
+          } catch (error) {
+            console.error(`[useMultiNetworkBalances] Failed to fetch native balance for chain ${network.chain_id}:`, error);
+            throw error;
+          }
         },
         staleTime: BALANCE_STALE_TIME_MS,
         gcTime: BALANCE_GC_TIME_MS,
@@ -140,29 +157,34 @@ export function useMultiNetworkBalances(
           queries.push({
             queryKey: ['erc20-balance', network.chain_id, tokenAddress.toLowerCase(), address.toLowerCase()],
             queryFn: async () => {
-              const balance = await fetchERC20Balance(tokenAddress, address, network.chain_id);
+              try {
+                const balance = await fetchERC20Balance(tokenAddress, address, network.chain_id);
 
-              const metadata = await queryClient.ensureQueryData({
-                queryKey: tokenMetadataQueryKeys.byToken(network.chain_id, tokenAddress),
-                queryFn: () => fetchTokenMetadata(network.chain_id, tokenAddress),
-                staleTime: BALANCE_STALE_TIME_MS,
-                gcTime: BALANCE_GC_TIME_MS,
-              });
+                const metadata = await queryClient.ensureQueryData({
+                  queryKey: tokenMetadataQueryKeys.byToken(network.chain_id, tokenAddress),
+                  queryFn: () => fetchTokenMetadata(network.chain_id, tokenAddress),
+                  staleTime: BALANCE_STALE_TIME_MS,
+                  gcTime: BALANCE_GC_TIME_MS,
+                });
 
-              const decimals = metadata?.decimals || 18;
-              const tokenSymbol = (metadata?.symbol || symbol) as CryptoCurrency;
-              const tokenName = metadata?.name || tokenSymbol;
+                const decimals = metadata?.decimals || 18;
+                const tokenSymbol = (metadata?.symbol || symbol) as CryptoCurrency;
+                const tokenName = metadata?.name || tokenSymbol;
 
-              return {
-                type: 'token' as const,
-                chainId: network.chain_id,
-                symbol: tokenSymbol,
-                name: tokenName,
-                address: tokenAddress,
-                balance,
-                formatted: formatERC20Balance(balance, tokenSymbol, decimals),
-                decimals,
-              };
+                return {
+                  type: 'token' as const,
+                  chainId: network.chain_id,
+                  symbol: tokenSymbol,
+                  name: tokenName,
+                  address: tokenAddress,
+                  balance,
+                  formatted: formatERC20Balance(balance, tokenSymbol, decimals),
+                  decimals,
+                };
+              } catch (error) {
+                console.error(`[useMultiNetworkBalances] Failed to fetch ${symbol} balance for chain ${network.chain_id} (${tokenAddress}):`, error);
+                throw error;
+              }
             },
             staleTime: BALANCE_STALE_TIME_MS,
             gcTime: BALANCE_GC_TIME_MS,
@@ -233,10 +255,31 @@ export function useMultiNetworkBalances(
     results.forEach((result: any) => result.refetch());
   };
 
+  const isLoading = results.some((r: any) => r.isLoading);
+  const hasError = results.some((r: any) => r.isError);
+
+  // Log error summary when errors occur
+  useEffect(() => {
+    if (hasError && !isLoading) {
+      const failedQueries = results
+        .filter((r: any) => r.isError)
+        .map((r: any) => ({
+          queryKey: r.error?.message || 'Unknown error',
+          error: r.error,
+        }));
+
+      console.error('[useMultiNetworkBalances] Error summary:', {
+        totalQueries: results.length,
+        failedCount: failedQueries.length,
+        failures: failedQueries,
+      });
+    }
+  }, [hasError, isLoading, results]);
+
   return {
     balancesByChain: aggregated,
-    isLoading: results.some((r: any) => r.isLoading),
-    hasError: results.some((r: any) => r.isError),
+    isLoading,
+    hasError,
     refetchAll,
   };
 }
