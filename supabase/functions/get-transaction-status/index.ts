@@ -22,7 +22,7 @@ serve(async (req) => {
 
     const { data: tx, error } = await supabase
       .from("paystack_transactions")
-      .select("status, gateway_response")
+      .select("status, gateway_response, issuance_last_error")
       .eq("reference", reference)
       .maybeSingle();
 
@@ -54,9 +54,9 @@ serve(async (req) => {
       rawGatewayResponse == null
         ? null
         : {
-            key_granted: keyGranted,
-            tx_hash: gatewayTxnHash,
-          };
+          key_granted: keyGranted,
+          tx_hash: gatewayTxnHash,
+        };
 
     return new Response(
       JSON.stringify({
@@ -64,6 +64,7 @@ serve(async (req) => {
         status: tx.status,
         key_granted: keyGranted,
         gateway_response: gatewayResponse,
+        issuance_last_error: tx.issuance_last_error,
       }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 200 }
     );

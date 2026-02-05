@@ -13,7 +13,8 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Switch } from '@/components/ui/switch';
 import { useToast } from '@/hooks/use-toast';
 import type { PublishedEvent } from '@/types/event';
-import { checkIfLockManager } from '@/utils/lockUtils';
+import { checkIfLockManager, updateLockPurchasability } from '@/utils/lockUtils';
+import { isEventRegistrationClosed } from '@/lib/events/registration';
 import { supabase } from '@/integrations/supabase/client';
 import {
   ExternalLink,
@@ -57,7 +58,12 @@ export const EventManagementDialog: React.FC<EventManagementDialogProps> = ({
   const [localAllowWaitlist, setLocalAllowWaitlist] = useState(event.allow_waitlist);
   const [isUpdatingWaitlist, setIsUpdatingWaitlist] = useState(false);
   const [isUpdatingMetadata, setIsUpdatingMetadata] = useState(false);
+  const [isUpdatingRegistration, setIsUpdatingRegistration] = useState(false);
   const [isLockManager, setIsLockManager] = useState(false);
+  const [localRegistrationClosed, setLocalRegistrationClosed] = useState(() =>
+    isEventRegistrationClosed(event)
+  );
+  const [pendingRegistrationClosed, setPendingRegistrationClosed] = useState<boolean | null>(null);
   const { networks } = useNetworkConfigs();
 
   const networkConfig = networks.find(n => n.chain_id === event.chain_id);
@@ -69,8 +75,8 @@ export const EventManagementDialog: React.FC<EventManagementDialogProps> = ({
     (event.chain_id === base.id
       ? 'https://basescan.org'
       : event.chain_id === baseSepolia.id
-      ? 'https://sepolia.basescan.org'
-      : undefined);
+        ? 'https://sepolia.basescan.org'
+        : undefined);
 
   // Check if current user is a lock manager
   useEffect(() => {
@@ -97,12 +103,104 @@ export const EventManagementDialog: React.FC<EventManagementDialogProps> = ({
     setLocalAllowWaitlist(event.allow_waitlist);
   }, [event.allow_waitlist]);
 
+  useEffect(() => {
+    setLocalRegistrationClosed(isEventRegistrationClosed(event));
+    setPendingRegistrationClosed(null);
+  }, [event.id, event.registration_cutoff, event.starts_at, event.date]);
+
+  const handleToggleRegistration = async (isOpening: boolean) => {
+    if (!wallets[0]) {
+      toast({ title: 'Wallet not connected', variant: 'destructive' });
+      return;
+    }
+
+    setIsUpdatingRegistration(true);
+    const previousClosed = localRegistrationClosed;
+    try {
+      const isClosing = !isOpening;
+      setPendingRegistrationClosed(isClosing);
+
+      // 1. Koordinat with Blockchain
+      toast({ title: isClosing ? 'Closing registration on-chain...' : 'Opening registration on-chain...', description: 'Please confirm the transaction in your wallet.' });
+
+      const txResult = await updateLockPurchasability(
+        event.lock_address,
+        isClosing,
+        event.capacity,
+        event.chain_id,
+        wallets[0]
+      );
+
+      if (!txResult.success) {
+        throw new Error(txResult.error || 'Blockchain transaction failed');
+      }
+
+      // 2. Update Database via Edge Function
+      const accessToken = await getAccessToken?.();
+      toast({
+        title: 'Syncing registration status...',
+        description: 'Updating registration status in the database.',
+      });
+
+      // Re-open logic: default to 1h before start, but use starts_at if already late
+      if (!event.starts_at) {
+        throw new Error('Event start time is not set');
+      }
+
+      const startsAtTime = new Date(event.starts_at).getTime();
+      const defaultCutoff = new Date(startsAtTime - 3600000);
+      const now = new Date();
+
+      // Prevent re-opening if event has already started
+      if (isOpening && now >= new Date(event.starts_at)) {
+        throw new Error('Cannot re-open registration after event has started');
+      }
+
+      let newCutoff;
+      if (isClosing) {
+        newCutoff = now.toISOString();
+      } else {
+        // If re-opening, set to starts_at if we're already past the 1h margin
+        newCutoff = now > defaultCutoff ? event.starts_at : defaultCutoff.toISOString();
+      }
+
+      const { error } = await supabase.functions.invoke('update-event', {
+        body: {
+          eventId: event.id,
+          formData: { registration_cutoff: newCutoff }
+        },
+        headers: accessToken ? { 'X-Privy-Authorization': `Bearer ${accessToken}` } : undefined,
+      });
+
+      if (error) throw error;
+
+      setLocalRegistrationClosed(isClosing);
+      setPendingRegistrationClosed(null);
+      toast({
+        title: isClosing ? 'Registration Closed' : 'Registration Re-opened',
+        description: isClosing ? 'On-chain purchases are now blocked.' : 'Registration is now active.'
+      });
+      onEventUpdated();
+    } catch (error: any) {
+      console.error('Error toggling registration:', error);
+      setLocalRegistrationClosed(previousClosed);
+      setPendingRegistrationClosed(null);
+      toast({
+        title: 'Update Failed',
+        description: error.message || 'An error occurred',
+        variant: 'destructive'
+      });
+    } finally {
+      setIsUpdatingRegistration(false);
+    }
+  };
+
   const handleUpdateMetadata = async () => {
     if (!wallets[0]) {
-      toast({ 
-        title: 'No wallet', 
-        description: 'Please connect your wallet', 
-        variant: 'destructive' 
+      toast({
+        title: 'No wallet',
+        description: 'Please connect your wallet',
+        variant: 'destructive'
       });
       return;
     }
@@ -110,12 +208,12 @@ export const EventManagementDialog: React.FC<EventManagementDialogProps> = ({
     setIsUpdatingMetadata(true);
     try {
       const { setLockMetadata, getBaseTokenURI, TEEREX_NFT_SYMBOL } = await import('@/utils/lockMetadata');
-      
+
       const ethersProvider = await getDivviBrowserProvider(wallets[0]);
       const signer = await ethersProvider.getSigner();
-      
+
       const baseTokenURI = getBaseTokenURI(event.lock_address);
-      
+
       const result = await setLockMetadata(
         event.lock_address,
         event.title,
@@ -123,10 +221,9 @@ export const EventManagementDialog: React.FC<EventManagementDialogProps> = ({
         baseTokenURI,
         signer
       );
-      
+
       if (result.success) {
         const accessToken = await getAccessToken();
-        const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
 
         const { data, error } = await supabase.functions.invoke('update-event', {
           body: {
@@ -136,10 +233,7 @@ export const EventManagementDialog: React.FC<EventManagementDialogProps> = ({
               nft_base_uri: baseTokenURI
             }
           },
-          headers: {
-            Authorization: `Bearer ${anonKey}`,
-            'X-Privy-Authorization': `Bearer ${accessToken}`,
-          },
+          headers: accessToken ? { 'X-Privy-Authorization': `Bearer ${accessToken}` } : undefined,
         });
 
         if (error) {
@@ -149,10 +243,10 @@ export const EventManagementDialog: React.FC<EventManagementDialogProps> = ({
         if (data?.error) {
           throw new Error(data.error);
         }
-        
-        toast({ 
-          title: 'Success', 
-          description: 'NFT metadata updated successfully. Your event images will now appear on OpenSea and other marketplaces.' 
+
+        toast({
+          title: 'Success',
+          description: 'NFT metadata updated successfully. Your event images will now appear on OpenSea and other marketplaces.'
         });
         onEventUpdated();
       } else {
@@ -160,10 +254,10 @@ export const EventManagementDialog: React.FC<EventManagementDialogProps> = ({
       }
     } catch (error: any) {
       console.error('Error updating metadata:', error);
-      toast({ 
-        title: 'Failed to update metadata', 
+      toast({
+        title: 'Failed to update metadata',
         description: error.message || 'An error occurred',
-        variant: 'destructive' 
+        variant: 'destructive'
       });
     } finally {
       setIsUpdatingMetadata(false);
@@ -174,16 +268,12 @@ export const EventManagementDialog: React.FC<EventManagementDialogProps> = ({
     setIsUpdatingWaitlist(true);
     try {
       const accessToken = await getAccessToken();
-      const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
       const { error } = await supabase.functions.invoke('update-event', {
         body: {
           eventId: event.id,
           formData: { allow_waitlist: enabled }
         },
-        headers: {
-          Authorization: `Bearer ${anonKey}`,
-          'X-Privy-Authorization': `Bearer ${accessToken}`,
-        },
+        headers: accessToken ? { 'X-Privy-Authorization': `Bearer ${accessToken}` } : undefined,
       });
 
       if (error) {
@@ -338,13 +428,13 @@ export const EventManagementDialog: React.FC<EventManagementDialogProps> = ({
                 <CreditCard className="w-5 h-5 text-gray-600" />
                 <h3 className="font-semibold text-gray-900">Payment Methods</h3>
               </div>
-              
+
               <div className="space-y-2">
                 <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
                   <span className="text-sm text-gray-600">Crypto Payments:</span>
                   <Badge variant="default" className="bg-blue-600">Enabled</Badge>
                 </div>
-                
+
                 <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
                   <span className="text-sm text-gray-600">Fiat Payments:</span>
                   {hasFiatPayment ? (
@@ -397,6 +487,50 @@ export const EventManagementDialog: React.FC<EventManagementDialogProps> = ({
               {!isLockManager && (
                 <p className="text-xs text-orange-600 mt-2">
                   ⚠️ You must be a lock manager to update metadata
+                </p>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Registration Status */}
+          <Card>
+            <CardContent className="pt-6">
+              <div className="flex items-center justify-between">
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2">
+                    <Lock className="w-4 h-4" />
+                    <span className="font-medium">Registration Status</span>
+                    {pendingRegistrationClosed !== null ? (
+                      <Badge variant="secondary">
+                        {pendingRegistrationClosed ? 'Closing…' : 'Opening…'}
+                      </Badge>
+                    ) : localRegistrationClosed ? (
+                      <Badge variant="destructive">Closed</Badge>
+                    ) : (
+                      <Badge variant="default" className="bg-green-600">Open</Badge>
+                    )}
+                  </div>
+                  <p className="text-sm text-gray-600">
+                    Manually disable or re-open registrations on the blockchain
+                  </p>
+                  {isUpdatingRegistration && (
+                    <p className="text-xs text-gray-500">Waiting for wallet confirmation…</p>
+                  )}
+                </div>
+                <div className="flex items-center gap-2">
+                  {isUpdatingRegistration && (
+                    <Loader2 className="w-4 h-4 animate-spin text-gray-500" />
+                  )}
+                  <Switch
+                    checked={!localRegistrationClosed}
+                    onCheckedChange={handleToggleRegistration}
+                    disabled={isUpdatingRegistration || !isLockManager}
+                  />
+                </div>
+              </div>
+              {!isLockManager && (
+                <p className="text-xs text-orange-600 mt-2">
+                  ⚠️ Lock manager permission required for registration control
                 </p>
               )}
             </CardContent>

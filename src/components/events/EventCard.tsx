@@ -12,6 +12,7 @@ import { stripHtml } from '@/utils/textUtils';
 import { WaitlistDialog } from './WaitlistDialog';
 import { formatEventDateRange } from '@/utils/dateUtils';
 import { hasMethod, isFreeEvent } from '@/lib/events/paymentMethods';
+import { isEventRegistrationClosed } from '@/lib/events/registration';
 
 interface EventCardProps {
   event: PublishedEvent;
@@ -56,8 +57,8 @@ export const EventCard: React.FC<EventCardProps> = ({
   const spotsLeft = event.capacity - keysSold;
   const isSoldOut = spotsLeft <= 0;
 
-  // Check if event has expired
-  const isEventExpired = event.date && new Date(event.date) < new Date();
+  // Check if registration has closed
+  const isRegistrationClosed = isEventRegistrationClosed(event);
 
   const handleCardClick = () => {
     if (!isTicketView) {
@@ -100,7 +101,7 @@ export const EventCard: React.FC<EventCardProps> = ({
     if (actionType === 'edit') return 'Edit';
     if (actionType === 'manage') return 'Manage';
     if (isUserTicketOwner) return 'View';
-    if (isEventExpired) return 'Event Ended';
+    if (isRegistrationClosed) return 'Registration Closed';
     if (isSoldOut && event.allow_waitlist) return 'Join Waitlist';
     if (isSoldOut) return 'Sold Out';
     return 'Get Ticket';
@@ -112,7 +113,7 @@ export const EventCard: React.FC<EventCardProps> = ({
   };
 
   return (
-    <Card 
+    <Card
       className={`border-0 shadow-sm hover:shadow-md transition-all duration-200 group ${!isTicketView ? 'cursor-pointer' : ''}`}
       onClick={handleCardClick}
     >
@@ -149,7 +150,7 @@ export const EventCard: React.FC<EventCardProps> = ({
                     eventId: event.id,
                     src: (e.currentTarget as HTMLImageElement).src,
                   });
-                    setImgError(true);
+                  setImgError(true);
                 }}
                 style={{
                   objectFit: 'cover',
@@ -165,7 +166,7 @@ export const EventCard: React.FC<EventCardProps> = ({
           </div>
         )}
       </CardHeader>
-      
+
       <CardContent className="p-6">
         <div className="mb-3 flex items-center gap-2 flex-wrap">
           <Badge variant="secondary" className="text-xs">
@@ -182,21 +183,21 @@ export const EventCard: React.FC<EventCardProps> = ({
             </Badge>
           )}
         </div>
-        
-        <h3 
+
+        <h3
           className={`font-semibold text-lg text-gray-900 mb-2 line-clamp-2 group-hover:text-blue-600 transition-colors ${isTicketView ? 'cursor-pointer hover:underline' : ''}`}
           onClick={isTicketView ? handleTitleClick : undefined}
         >
           {event.title}
         </h3>
-        
+
         <div className="text-gray-600 text-sm mb-4">
           <RichTextDisplay
             content={event.description}
             className="prose-sm prose-gray max-w-none line-clamp-2 prose-card"
           />
         </div>
-        
+
         <div className="space-y-3 mb-4">
           {(event.date || event.time || event.location) && (
             <div className="flex flex-col gap-2 text-sm text-gray-600">
@@ -231,7 +232,7 @@ export const EventCard: React.FC<EventCardProps> = ({
               )}
             </div>
           )}
-          
+
           <div className="flex items-center justify-between text-sm">
             <div className="flex items-center text-gray-600">
               <Users className="w-4 h-4 mr-2" />
@@ -248,7 +249,7 @@ export const EventCard: React.FC<EventCardProps> = ({
             ) : null}
           </div>
         </div>
-        
+
         <div className="flex items-center justify-between">
           <div className="font-semibold text-lg text-gray-900">
             {event.payment_methods?.includes('fiat') && event.ngn_price > 0 ? (
@@ -275,16 +276,16 @@ export const EventCard: React.FC<EventCardProps> = ({
                 <Button
                   size="sm"
                   onClick={handleButtonClick}
-                  disabled={isEventExpired || (isSoldOut && !event.allow_waitlist) || (!authenticated && !onConnectWallet)}
+                  disabled={isRegistrationClosed || (isSoldOut && !event.allow_waitlist) || (!authenticated && !onConnectWallet)}
                   variant={getButtonVariant()}
                   className={
                     !authenticated
                       ? "bg-purple-600 hover:bg-purple-700"
                       : isUserTicketOwner
-                      ? "bg-green-600 hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed"
-                      : actionType === 'manage'
-                      ? ''
-                      : "bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                        ? "bg-green-600 hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                        : actionType === 'manage'
+                          ? ''
+                          : "bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
                   }
                 >
                   {getButtonText()}

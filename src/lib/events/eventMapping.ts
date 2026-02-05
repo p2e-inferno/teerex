@@ -12,6 +12,7 @@ export const mapEventRow = (event: any): MappedEvent => ({
   created_at: new Date(event.created_at),
   updated_at: new Date(event.updated_at),
   starts_at: event.starts_at || null,
+  registration_cutoff: event.registration_cutoff || null,
   currency: event.currency,
   ngn_price: event.ngn_price || 0,
   ngn_price_kobo: event.ngn_price_kobo || 0,

@@ -6,6 +6,7 @@ import { validateChain } from "../_shared/network-helpers.ts";
 import { handleError } from "../_shared/error-handler.ts";
 import { isAnyUserWalletIsLockManagerParallel } from "../_shared/unlock.ts";
 import { Wallet } from "https://esm.sh/ethers@6.14.4";
+import { buildStartsAtUtcIso, toDateOnly } from "../_shared/datetime.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -131,12 +132,27 @@ serve(async (req: Request) => {
             }
         }
 
+        // Client sends date as full ISO string (e.g. 2026-02-05T00:00:00.000Z)
+        // Extract date-only portion and combine with time deterministically in UTC.
+        const timezoneOffsetMinutes =
+          typeof (payload as any)?.timezone_offset_minutes === "number"
+            ? (payload as any).timezone_offset_minutes
+            : undefined;
+        const dateOnly = toDateOnly(date, timezoneOffsetMinutes);
+        const startsAt =
+          dateOnly && time ? buildStartsAtUtcIso(dateOnly, time, timezoneOffsetMinutes) : null;
+        const defaultCutoff = startsAt
+          ? new Date(new Date(startsAt).getTime() - 60 * 60 * 1000).toISOString()
+          : null;
+
         const eventData = {
             creator_id: privyUserId,
             title,
             description,
             date,
             end_date,
+            starts_at: startsAt,
+            registration_cutoff: defaultCutoff,
             time,
             location,
             event_type,

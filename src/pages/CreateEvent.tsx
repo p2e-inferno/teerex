@@ -467,7 +467,10 @@ const CreateEvent = () => {
 
       const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
       const { data, error } = await supabase.functions.invoke('update-event', {
-        body: { eventId: editingEventId, formData },
+        body: {
+          eventId: editingEventId,
+          formData: { ...formData, timezone_offset_minutes: new Date().getTimezoneOffset() },
+        },
         headers: {
           Authorization: `Bearer ${anonKey}`,
           'X-Privy-Authorization': `Bearer ${accessToken}`,
