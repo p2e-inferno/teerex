@@ -33,6 +33,10 @@ const MyEvents = () => {
         const userEvents = await getUserEvents(user.id);
         console.log('Loaded events:', userEvents);
         setEvents(userEvents);
+        setSelectedEvent((prev) => {
+          if (!prev) return prev;
+          return userEvents.find((ev) => ev.id === prev.id) ?? prev;
+        });
       }
     } catch (error) {
       console.error('Error loading user events:', error);
@@ -248,5 +252,4 @@ const MyEvents = () => {
 };
 
 export default MyEvents;
-
 

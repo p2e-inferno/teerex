@@ -152,6 +152,17 @@ export const TicketProcessingDialog: React.FC<TicketProcessingDialogProps> = ({
           return;
         }
 
+        const issuanceLastError: string | null | undefined = (data as any)?.issuance_last_error;
+        if (issuanceLastError) {
+          setStatus("error");
+          setProgressMessage(
+            issuanceLastError === "registration_closed"
+              ? "Ticket issuance was declined because registration was closed."
+              : "Ticket issuance failed. Please go to My Tickets for manual issuance/reconciliation."
+          );
+          return;
+        }
+
         if (data.status === "success") {
           setProgressMessage("Payment confirmed. Issuing your NFT ticket...");
           if (attempts < maxAttempts) return setTimeout(pollForStatus, pollInterval);

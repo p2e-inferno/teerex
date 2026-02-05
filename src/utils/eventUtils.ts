@@ -1,10 +1,10 @@
-
 import { supabase } from '@/integrations/supabase/client';
 import { EventFormData } from '@/pages/CreateEvent';
 import { checkKeyOwnership } from './lockUtils';
 import { createEventHash } from './eventIdempotency';
 import { mapEventRow, MappedEvent } from '@/lib/events/eventMapping';
 import type { PublishedEvent } from '@/types/event';
+export { isEventRegistrationClosed } from '@/lib/events/registration';
 
 export const savePublishedEvent = async (
   formData: EventFormData,
@@ -149,8 +149,11 @@ export const savePublishedEvent = async (
     return {
       ...data,
       date: data.date ? new Date(data.date) : null,
+      end_date: data.end_date ? new Date(data.end_date) : null,
       created_at: new Date(data.created_at),
       updated_at: new Date(data.updated_at),
+      starts_at: data.starts_at || null,
+      registration_cutoff: data.registration_cutoff || null,
       currency: data.currency,
       ngn_price: data.ngn_price || 0,
       payment_methods: data.payment_methods || [formData.paymentMethod],

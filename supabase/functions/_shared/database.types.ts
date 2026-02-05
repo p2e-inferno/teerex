@@ -7,6 +7,9 @@ export type Json =
   | Json[]
 
 export type Database = {
+  __InternalSupabase: {
+    PostgrestVersion: "13.0.5"
+  }
   graphql_public: {
     Tables: {
       [_ in never]: never
@@ -431,8 +434,11 @@ export type Database = {
           payment_methods: string[] | null
           paystack_public_key: string | null
           price: number
+          registration_cutoff: string | null
+          starts_at: string | null
           ticket_duration: string | null
           time: string
+          timezone_offset_minutes: number | null
           title: string
           transferable: boolean
           updated_at: string
@@ -462,8 +468,11 @@ export type Database = {
           payment_methods?: string[] | null
           paystack_public_key?: string | null
           price?: number
+          registration_cutoff?: string | null
+          starts_at?: string | null
           ticket_duration?: string | null
           time?: string
+          timezone_offset_minutes?: number | null
           title?: string
           transferable?: boolean
           updated_at?: string
@@ -493,8 +502,11 @@ export type Database = {
           payment_methods?: string[] | null
           paystack_public_key?: string | null
           price?: number
+          registration_cutoff?: string | null
+          starts_at?: string | null
           ticket_duration?: string | null
           time?: string
+          timezone_offset_minutes?: number | null
           title?: string
           transferable?: boolean
           updated_at?: string
@@ -644,9 +656,11 @@ export type Database = {
           payment_methods: string[] | null
           paystack_public_key: string | null
           price: number
+          registration_cutoff: string | null
           requires_approval: boolean
           review_schema_uid: string | null
           service_manager_added: boolean
+          starts_at: string | null
           ticket_duration: string | null
           time: string
           title: string
@@ -686,9 +700,11 @@ export type Database = {
           payment_methods?: string[] | null
           paystack_public_key?: string | null
           price?: number
+          registration_cutoff?: string | null
           requires_approval?: boolean
           review_schema_uid?: string | null
           service_manager_added?: boolean
+          starts_at?: string | null
           ticket_duration?: string | null
           time: string
           title: string
@@ -728,9 +744,11 @@ export type Database = {
           payment_methods?: string[] | null
           paystack_public_key?: string | null
           price?: number
+          registration_cutoff?: string | null
           requires_approval?: boolean
           review_schema_uid?: string | null
           service_manager_added?: boolean
+          starts_at?: string | null
           ticket_duration?: string | null
           time?: string
           title?: string
