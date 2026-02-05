@@ -6,6 +6,8 @@ export interface EventDraft {
   description: string;
   date: Date | null;
   end_date?: Date | null;
+  starts_at?: string | null;
+  registration_cutoff?: string | null;
   time: string;
   location: string;
   capacity: number;
@@ -42,7 +44,8 @@ export interface PublishedEvent {
   description: string;
   date: Date | null;
   end_date: Date | null;
-  starts_at?: string | null;
+  starts_at: string | null;
+  registration_cutoff: string | null;
   time: string;
   location: string;
   event_type: 'physical' | 'virtual';

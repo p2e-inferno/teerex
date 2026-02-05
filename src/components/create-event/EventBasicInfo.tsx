@@ -9,7 +9,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Switch } from '@/components/ui/switch';
 import { CalendarIcon, Upload, X, Loader2, Crop } from 'lucide-react';
-import { format, isSameDay } from 'date-fns';
+import { format, isSameDay, startOfDay } from 'date-fns';
 import { EventFormData } from '@/pages/CreateEvent';
 import { uploadEventImage } from '@/utils/supabaseDraftStorage';
 import { useToast } from '@/hooks/use-toast';
@@ -341,7 +341,7 @@ export const EventBasicInfo: React.FC<EventBasicInfoProps> = ({
             </Button>
           </div>
         ) : (
-          <div 
+          <div
             className="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center hover:border-gray-400 transition-colors cursor-pointer"
             onClick={triggerFileInput}
           >
@@ -419,7 +419,7 @@ export const EventBasicInfo: React.FC<EventBasicInfoProps> = ({
                 mode="single"
                 selected={formData.date || undefined}
                 onSelect={(date) => updateFormData({ date: date || null })}
-                disabled={(date) => date < new Date()}
+                disabled={(date) => date < startOfDay(new Date())}
                 initialFocus
               />
             </PopoverContent>

@@ -28,6 +28,7 @@ import {
   getMaxKeysPerAddress,
   getTransferabilityStatus,
 } from "@/utils/lockUtils";
+import { isEventRegistrationClosed } from "@/lib/events/registration";
 import { EventPurchaseDialog } from "@/components/events/EventPurchaseDialog";
 import { PaystackPaymentDialog } from "@/components/events/PaystackPaymentDialog";
 import { TicketProcessingDialog } from "@/components/events/TicketProcessingDialog";
@@ -228,6 +229,8 @@ const EventDetailsContent = () => {
   const [isTopAttendanceBusy, setIsTopAttendanceBusy] = useState(false);
   const [eventHasEnded, setEventHasEnded] = useState(false);
   const [attendanceSchemaRevocable, setAttendanceSchemaRevocable] = useState<boolean | null>(null);
+
+  const isRegistrationClosed = event ? isEventRegistrationClosed(event) : false;
 
   const networkConfig = event ? networks.find(n => n.chain_id === event.chain_id) : undefined;
   const networkLabel = networkConfig?.chain_name
@@ -563,16 +566,9 @@ const EventDetailsContent = () => {
     const loadAttendanceSchema = async () => {
       if (!event) return;
 
-      console.log("Loading attendance schema for event:", event.id);
-      console.log("Event attendance_schema_uid:", event.attendance_schema_uid);
-
       try {
         // First check if event has an attendance schema UID set and valid
         if (event.attendance_schema_uid && isValidSchemaUid(event.attendance_schema_uid)) {
-          console.log(
-            "Using event attendance schema UID:",
-            event.attendance_schema_uid
-          );
           setAttendanceSchemaUid(event.attendance_schema_uid);
           try {
             const { data: schema } = await supabase
@@ -588,9 +584,7 @@ const EventDetailsContent = () => {
         }
 
         // Otherwise, fetch attendance schemas from database
-        console.log("Fetching attendance schemas from database...");
         const schemas = await getAttestationSchemas("attendance");
-        console.log("Found attendance schemas:", schemas);
 
         // Filter out invalid schema UIDs (must be 66 characters and valid hex)
         const validSchemas = schemas.filter((schema) => {
@@ -598,20 +592,13 @@ const EventDetailsContent = () => {
             schema.schema_uid.startsWith("0x") &&
             schema.schema_uid.length === 66 &&
             /^0x[0-9a-f]{64}$/i.test(schema.schema_uid);
-          console.log(
-            `Schema ${schema.name} (${schema.schema_uid}) is ${
-              isValid ? "valid" : "invalid"
-            }`
-          );
           return isValid;
         });
 
         if (validSchemas.length > 0) {
-          console.log("Using valid schema UID:", validSchemas[0].schema_uid);
           setAttendanceSchemaUid(validSchemas[0].schema_uid);
           setAttendanceSchemaRevocable(Boolean((validSchemas[0] as any).revocable));
         } else {
-          console.log("No valid attendance schemas found");
           setAttendanceSchemaRevocable(null);
         }
       } catch (error) {
@@ -733,17 +720,15 @@ const EventDetailsContent = () => {
 
     const googleCalendarUrl = `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${encodeURIComponent(
       calendarData.title
-    )}&dates=${calendarData.start}/${
-      calendarData.end
-    }&details=${encodeURIComponent(
-      calendarData.description
-    )}&location=${encodeURIComponent(calendarData.location)}`;
+    )}&dates=${calendarData.start}/${calendarData.end
+      }&details=${encodeURIComponent(
+        calendarData.description
+      )}&location=${encodeURIComponent(calendarData.location)}`;
 
     window.open(googleCalendarUrl, "_blank");
   };
 
   const handleGetTicket = () => {
-    console.log("=== HANDLE GET TICKET CALLED ===");
     if (!event) return;
 
     // Check if user is authenticated
@@ -752,31 +737,20 @@ const EventDetailsContent = () => {
       return;
     }
 
-    console.log("Event data:", event);
-    console.log("Payment methods:", event.payment_methods);
-    console.log("Paystack key:", event.paystack_public_key);
-    console.log("NGN price:", event.ngn_price);
-
     const hasCrypto = hasMethod(event, "crypto") || hasMethod(event, "free");
     const hasPaystack =
       hasMethod(event, "fiat") &&
       event.paystack_public_key &&
       event.ngn_price;
 
-    console.log("Has crypto:", hasCrypto);
-    console.log("Has paystack:", hasPaystack);
-
     // If both payment methods available, show selection dialog
     if (hasCrypto && hasPaystack) {
-      console.log("Opening payment method dialog");
       setActiveModal("payment-method");
     } else if (hasPaystack) {
       // Only Paystack available
-      console.log("Opening paystack dialog");
       setActiveModal("paystack-payment");
     } else {
       // Only crypto available (default)
-      console.log("Opening crypto dialog");
       setActiveModal("crypto-purchase");
     }
   };
@@ -816,21 +790,6 @@ const EventDetailsContent = () => {
     return null;
   }
 
-  // Temporary detailed debug log for image diagnostics
-  const __ts =
-    (event as any)?.updated_at instanceof Date
-      ? (event as any).updated_at.getTime()
-      : Date.now();
-  const __imageSrc = event.image_url
-    ? `${event.image_url}${event.image_url.includes("?") ? "&" : "?"}t=${__ts}`
-    : "";
-  console.log("EventDetails debug event", {
-    id: event.id,
-    event,
-    image_url: event.image_url,
-    computedImageSrc: __imageSrc,
-  });
-
   return (
     <>
       <MetaTags
@@ -841,514 +800,507 @@ const EventDetailsContent = () => {
         type="event"
       />
       <div className="min-h-screen bg-gray-50">
-      {/* Header */}
-      <div className="bg-white border-b">
-        <div className="container mx-auto px-6 max-w-4xl py-4">
-          <Button
-            variant="ghost"
-            onClick={() => navigate("/explore")}
-            className="mb-4"
-          >
-            <ArrowLeft className="w-4 h-4 mr-2" />
-            Back to events
-          </Button>
+        {/* Header */}
+        <div className="bg-white border-b">
+          <div className="container mx-auto px-6 max-w-4xl py-4">
+            <Button
+              variant="ghost"
+              onClick={() => navigate("/explore")}
+              className="mb-4"
+            >
+              <ArrowLeft className="w-4 h-4 mr-2" />
+              Back to events
+            </Button>
+          </div>
         </div>
-      </div>
 
-      <div className="container mx-auto px-6 max-w-4xl py-8">
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-          {/* Main Content */}
-          <div className="lg:col-span-2 space-y-6">
-            {/* Event Image */}
-            {event.image_url && (
-              <div className="aspect-square rounded-lg overflow-hidden bg-gray-100">
-                <img
-                  src={`${event.image_url}${
-                    event.image_url.includes("?") ? "&" : "?"
-                  }t=${event.updated_at?.getTime?.() ?? Date.now()}`}
-                  alt={event.title}
-                  onLoad={(e) => {
-                    console.log("EventDetails image loaded", {
-                      eventId: event.id,
-                      src: (e.currentTarget as HTMLImageElement).src,
-                    });
-                  }}
-                  onError={(e) => {
-                    console.warn("EventDetails image failed to load:", {
-                      eventId: event.id,
-                      src: (e.currentTarget as HTMLImageElement).src,
-                    });
-                  }}
-                  style={{
-                    objectFit: 'cover',
-                    objectPosition: `${event.image_crop_x || 50}% ${event.image_crop_y || 50}%`
-                  }}
-                  className="w-full h-full"
-                />
-              </div>
-            )}
-
-            {/* Event Info */}
-            <div>
-              <div className="flex items-start justify-between mb-4">
-                <div className="flex-1">
-                  <Badge variant="secondary" className="mb-3">
-                    {event.category}
-                  </Badge>
-                  <h1 className="text-3xl font-bold text-gray-900 mb-2">
-                    {event.title}
-                  </h1>
-                  {networkLabel && (
-                    <Badge variant="outline" className="text-xs mb-2">{networkLabel}</Badge>
-                  )}
-                  <div className="flex items-center space-x-4 text-gray-600">
-                    {event.date && (
-                      <div className="flex items-center space-x-1">
-                        <Calendar className="w-4 h-4" />
-                        <span>{formatEventDateRange({ startDate: event.date, endDate: event.end_date, formatStyle: 'long' })}</span>
-                      </div>
-                    )}
-                    <div className="flex items-center space-x-1">
-                      <Clock className="w-4 h-4" />
-                      <span>{event.time}</span>
-                    </div>
-                  </div>
-                  {isTransferableOnChain !== null && (
-                    <div className="mt-2">
-                      {isTransferableOnChain ? (
-                        <Badge variant="outline" className="text-xs text-green-700 border-green-200">
-                          {transferFeeBps && transferFeeBps > 0
-                            ? `Transferable (fee ${transferFeeBps / 100}% )`
-                            : 'Transferable'}
-                        </Badge>
-                      ) : (
-                        <Badge variant="outline" className="text-xs text-purple-700 border-purple-200">
-                          Soul-bound (non-transferable)
-                        </Badge>
-                      )}
-                    </div>
-                  )}
-                </div>
-                <div className="flex items-center space-x-2">
-                  <TooltipProvider>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <span>
-                          <Button variant="outline" size="sm" onClick={handleToggleLike} disabled={isLikeLoading || (!likeSchemaUid) || (Boolean(userLikeUid) && state.like.flags && !state.like.flags.canRevoke)}>
-                            <div className="flex items-center gap-1">
-                              <Heart className={`w-4 h-4 ${userLikeUid ? 'fill-red-500 text-red-500' : ''}`} />
-                              <span className="text-xs">{likeCount}</span>
-                            </div>
-                          </Button>
-                        </span>
-                      </TooltipTrigger>
-                      {((!likeSchemaUid) || (Boolean(userLikeUid) && state.like.flags && !state.like.flags.canRevoke)) && (
-                        <TooltipContent>
-                          {!likeSchemaUid
-                            ? 'Likes unavailable: schema not configured or invalid.'
-                            : (getDisableMessage('like', state.like.flags?.reason) || "Removing your like isn't available for this event.")}
-                        </TooltipContent>
-                      )}
-                    </Tooltip>
-                  </TooltipProvider>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={handleAddToCalendar}
-                  >
-                    <CalendarPlus className="w-4 h-4" />
-                  </Button>
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <Button variant="outline" size="sm">
-                        <Share2 className="w-4 h-4" />
-                      </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end">
-                      <DropdownMenuItem onClick={() => handleShare("facebook")}>
-                        <Facebook className="w-4 h-4 mr-2" />
-                        Facebook
-                      </DropdownMenuItem>
-                      <DropdownMenuItem onClick={() => handleShare("twitter")}>
-                        <Twitter className="w-4 h-4 mr-2" />
-                        Twitter
-                      </DropdownMenuItem>
-                      <DropdownMenuItem onClick={() => handleShare("linkedin")}>
-                        <Linkedin className="w-4 h-4 mr-2" />
-                        LinkedIn
-                      </DropdownMenuItem>
-                      <DropdownMenuItem onClick={() => handleShare("copy")}>
-                        <Copy className="w-4 h-4 mr-2" />
-                        Copy Link
-                      </DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                </div>
-              </div>
-
-              {event.location && (
-                <div className="flex items-center space-x-1 text-gray-600 mb-6">
-                  {event.event_type === 'virtual' ? (
-                    <>
-                      <Globe className="w-4 h-4" />
-                      <a
-                        href={event.location}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-blue-600 hover:text-blue-800 underline flex items-center gap-1"
-                      >
-                        Virtual Event Link
-                        <ExternalLink className="w-3 h-3" />
-                      </a>
-                    </>
-                  ) : (
-                    <>
-                      <MapPin className="w-4 h-4" />
-                      <span>{event.location}</span>
-                    </>
-                  )}
+        <div className="container mx-auto px-6 max-w-4xl py-8">
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+            {/* Main Content */}
+            <div className="lg:col-span-2 space-y-6">
+              {/* Event Image */}
+              {event.image_url && (
+                <div className="aspect-square rounded-lg overflow-hidden bg-gray-100">
+                  <img
+                    src={`${event.image_url}${event.image_url.includes("?") ? "&" : "?"
+                      }t=${event.updated_at?.getTime?.() ?? Date.now()}`}
+                    alt={event.title}
+                    onError={(e) => {
+                      console.warn("EventDetails image failed to load:", {
+                        eventId: event.id,
+                        src: (e.currentTarget as HTMLImageElement).src,
+                      });
+                    }}
+                    style={{
+                      objectFit: 'cover',
+                      objectPosition: `${event.image_crop_x || 50}% ${event.image_crop_y || 50}%`
+                    }}
+                    className="w-full h-full"
+                  />
                 </div>
               )}
 
-              <Separator className="my-6" />
-
-              {/* Description */}
+              {/* Event Info */}
               <div>
-                <h2 className="text-xl font-semibold text-gray-900 mb-4">
-                  About this event
-                </h2>
-                <RichTextDisplay content={event.description} />
-              </div>
-            </div>
-          </div>
-
-          {/* Sidebar */}
-          <div className="space-y-6">
-            {/* Event Details Card */}
-            <Card className="border-0 shadow-sm">
-              <CardHeader className="pb-4">
-                <h3 className="font-semibold text-gray-900">Event details</h3>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="space-y-3">
-                  {event.date && (
-                    <div className="flex items-start space-x-3">
-                      <Calendar className="w-5 h-5 text-gray-400 mt-0.5" />
-                      <div>
-                        <div className="font-medium text-gray-900">
-                          {formatEventDateRange({ startDate: event.date, endDate: event.end_date, formatStyle: 'long' })}
-                        </div>
-                        <div className="text-sm text-gray-600">
-                          {event.time}
-                        </div>
-                      </div>
-                    </div>
-                  )}
-
-                  {event.location && (
-                    <div className="flex items-start space-x-3">
-                      <MapPin className="w-5 h-5 text-gray-400 mt-0.5" />
-                      <div>
-                        <div className="font-medium text-gray-900">Location</div>
-                        <div className="text-sm text-gray-600">
-                          {event.location}
-                        </div>
-                      </div>
-                    </div>
-                  )}
-
-                  <div className="flex items-start space-x-3">
-                    <Users className="w-5 h-5 text-gray-400 mt-0.5" />
-                    <div>
-                      <div className="font-medium text-gray-900">Capacity</div>
-                      <div className="text-sm text-gray-600">
-                        {event.capacity} attendees
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                <Separator />
-
-                <div className="space-y-2">
-                  <div className="text-xs text-gray-500 uppercase tracking-wider">
-                    Blockchain Info
-                  </div>
-                  <div className="flex items-center justify-between text-sm">
-                    <span className="text-gray-600">Contract</span>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="h-auto p-0 text-blue-600"
-                      asChild
-                    >
-                      <a href={explorerUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center">
-                        <span className="font-mono text-xs">
-                          {event.lock_address.slice(0, 6)}...
-                          {event.lock_address.slice(-4)}
-                        </span>
-                        <ExternalLink className="w-3 h-3 ml-1" />
-                      </a>
-                    </Button>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-
-            {/* Ticket Card */}
-            <Card className="border-0 shadow-sm">
-              <CardHeader className="pb-4">
-                <div className="flex items-center justify-between">
-                  <h3 className="font-semibold text-gray-900">
-                    {authenticated && userTicketCount > 0
-                      ? "Your Tickets"
-                      : "Get tickets"}
-                  </h3>
-                  <Ticket className="w-5 h-5 text-gray-400" />
-                </div>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                {/* User Ticket Status */}
-                {authenticated && userTicketCount > 0 && (
-                  <div className="bg-green-50 border border-green-200 rounded-lg p-3 mb-4">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center space-x-2">
-                        <div className="w-2 h-2 bg-green-500 rounded-full"></div>
-                        <span className="text-sm font-medium text-green-800">
-                          You own {userTicketCount} ticket
-                          {userTicketCount > 1 ? "s" : ""}
-                        </span>
-                      </div>
-                      {maxTicketsPerUser > 1 && (
-                        <Badge
-                          variant="outline"
-                          className="text-green-600 border-green-200"
-                        >
-                          {userTicketCount}/{maxTicketsPerUser} max
-                        </Badge>
-                      )}
-                    </div>
-                  </div>
-                )}
-
-                <div className="flex items-center justify-between">
-                  <span className="text-2xl font-bold text-gray-900">
-                    {event.payment_methods?.includes('fiat') && event.ngn_price > 0
-                      ? `₦${event.ngn_price.toLocaleString()}`
-                      : isFreeEvent(event)
-                      ? 'Free'
-                      : `${event.price} ${event.currency}`}
-                  </span>
-                  {!isSoldOut && (
-                    <Badge
-                      variant="outline"
-                      className="text-green-600 border-green-200"
-                    >
-                      {spotsLeft} spots left
+                <div className="flex items-start justify-between mb-4">
+                  <div className="flex-1">
+                    <Badge variant="secondary" className="mb-3">
+                      {event.category}
                     </Badge>
-                  )}
-                </div>
-
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between text-sm text-gray-600">
-                    <span>Capacity</span>
-                    <span>{event.capacity} people</span>
-                  </div>
-                  <div className="flex items-center justify-between text-sm text-gray-600">
-                    <span>Registered</span>
-                    <span>{keysSold} people</span>
-                  </div>
-                  {maxTicketsPerUser > 1 && (
-                    <div className="flex items-center justify-between text-sm text-gray-600">
-                      <span>Max per person</span>
-                      <span>{maxTicketsPerUser} tickets</span>
+                    <h1 className="text-3xl font-bold text-gray-900 mb-2">
+                      {event.title}
+                    </h1>
+                    {networkLabel && (
+                      <Badge variant="outline" className="text-xs mb-2">{networkLabel}</Badge>
+                    )}
+                    <div className="flex items-center space-x-4 text-gray-600">
+                      {event.date && (
+                        <div className="flex items-center space-x-1">
+                          <Calendar className="w-4 h-4" />
+                          <span>{formatEventDateRange({ startDate: event.date, endDate: event.end_date, formatStyle: 'long' })}</span>
+                        </div>
+                      )}
+                      <div className="flex items-center space-x-1">
+                        <Clock className="w-4 h-4" />
+                        <span>{event.time}</span>
+                      </div>
                     </div>
-                  )}
-                </div>
-
-                <div className="w-full bg-gray-200 rounded-full h-2">
-                  <div
-                    className="bg-blue-600 h-2 rounded-full transition-all duration-300"
-                    style={{
-                      width: `${Math.min(
-                        (keysSold / event.capacity) * 100,
-                        100
-                      )}%`,
-                    }}
-                  />
-                </div>
-
-                {authenticated && userTicketCount > 0 ? (
-                  <div className="space-y-2">
-                    {/* Attendance toggle for ticket holders */}
+                    {isTransferableOnChain !== null && (
+                      <div className="mt-2">
+                        {isTransferableOnChain ? (
+                          <Badge variant="outline" className="text-xs text-green-700 border-green-200">
+                            {transferFeeBps && transferFeeBps > 0
+                              ? `Transferable (fee ${transferFeeBps / 100}% )`
+                              : 'Transferable'}
+                          </Badge>
+                        ) : (
+                          <Badge variant="outline" className="text-xs text-purple-700 border-purple-200">
+                            Soul-bound (non-transferable)
+                          </Badge>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                  <div className="flex items-center space-x-2">
                     <TooltipProvider>
                       <Tooltip>
                         <TooltipTrigger asChild>
                           <span>
-                            {myAttendanceUidTop ? (
-                              <Button
-                                variant="outline"
-                                className="w-full"
-                                disabled={isTopAttendanceBusy || !attendanceSchemaUid || !isValidSchemaUid(attendanceSchemaUid) || (state.attendance.flags && !state.attendance.flags.canRevoke) || !isValidAttestationUid(myAttendanceUidTop)}
-                                onClick={handleRevokeAttendanceTop}
-                              >
-                                {isTopAttendanceBusy ? 'Processing...' : 'Revoke Attendance'}
-                              </Button>
-                            ) : (
-                              <Button
-                                className="w-full bg-green-600 hover:bg-green-700 text-white"
-                                disabled={isTopAttendanceBusy || !eventHasEnded || !attendanceSchemaUid || !isValidSchemaUid(attendanceSchemaUid)}
-                                onClick={handleAttestAttendanceTop}
-                              >
-                                {isTopAttendanceBusy ? 'Processing...' : (eventHasEnded ? 'I Attended This Event' : 'Available after event ends')}
-                              </Button>
-                            )}
+                            <Button variant="outline" size="sm" onClick={handleToggleLike} disabled={isLikeLoading || (!likeSchemaUid) || (Boolean(userLikeUid) && state.like.flags && !state.like.flags.canRevoke)}>
+                              <div className="flex items-center gap-1">
+                                <Heart className={`w-4 h-4 ${userLikeUid ? 'fill-red-500 text-red-500' : ''}`} />
+                                <span className="text-xs">{likeCount}</span>
+                              </div>
+                            </Button>
                           </span>
                         </TooltipTrigger>
-                        {(!attendanceSchemaUid || !isValidSchemaUid(attendanceSchemaUid) || (state.attendance.flags && !state.attendance.flags.canRevoke)) && (
+                        {((!likeSchemaUid) || (Boolean(userLikeUid) && state.like.flags && !state.like.flags.canRevoke)) && (
                           <TooltipContent>
-                            {state.attendance.flags && !state.attendance.flags.canRevoke
-                              ? (getDisableMessage('attendance', state.attendance.flags.reason) || 'Attendance records for this event are permanent.')
-                              : 'Attendance unavailable: schema not configured or invalid.'}
+                            {!likeSchemaUid
+                              ? 'Likes unavailable: schema not configured or invalid.'
+                              : (getDisableMessage('like', state.like.flags?.reason) || "Removing your like isn't available for this event.")}
                           </TooltipContent>
                         )}
                       </Tooltip>
                     </TooltipProvider>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={handleAddToCalendar}
+                    >
+                      <CalendarPlus className="w-4 h-4" />
+                    </Button>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button variant="outline" size="sm">
+                          <Share2 className="w-4 h-4" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        <DropdownMenuItem onClick={() => handleShare("facebook")}>
+                          <Facebook className="w-4 h-4 mr-2" />
+                          Facebook
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => handleShare("twitter")}>
+                          <Twitter className="w-4 h-4 mr-2" />
+                          Twitter
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => handleShare("linkedin")}>
+                          <Linkedin className="w-4 h-4 mr-2" />
+                          LinkedIn
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => handleShare("copy")}>
+                          <Copy className="w-4 h-4 mr-2" />
+                          Copy Link
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </div>
+                </div>
 
-                    {/* Additional ticket purchase if allowed */}
-                    {userTicketCount < maxTicketsPerUser && !isSoldOut && (
-                      <Button
-                        variant="outline"
-                        className="w-full"
-                        onClick={handleGetTicket}
-                      >
-                        Get Additional Ticket
-                      </Button>
+                {event.location && (
+                  <div className="flex items-center space-x-1 text-gray-600 mb-6">
+                    {event.event_type === 'virtual' ? (
+                      <>
+                        <Globe className="w-4 h-4" />
+                        <a
+                          href={event.location}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-blue-600 hover:text-blue-800 underline flex items-center gap-1"
+                        >
+                          Virtual Event Link
+                          <ExternalLink className="w-3 h-3" />
+                        </a>
+                      </>
+                    ) : (
+                      <>
+                        <MapPin className="w-4 h-4" />
+                        <span>{event.location}</span>
+                      </>
                     )}
                   </div>
-                ) : (
-                  <>
-                    <Button
-                      className="w-full"
-                      onClick={handleGetTicket}
-                      disabled={
-                        isSoldOut ||
-                        (event.date && new Date(event.date) < new Date()) ||
-                        (authenticated && userTicketCount >= maxTicketsPerUser)
-                      }
-                    >
-                      {isSoldOut
-                        ? "Sold Out"
-                        : event.date && new Date(event.date) < new Date()
-                        ? "Event has ended"
-                        : !authenticated
-                        ? "Connect Wallet to Get Ticket"
-                        : userTicketCount >= maxTicketsPerUser
-                        ? "Ticket Limit Reached"
-                        : "Get Ticket"}
-                    </Button>
-                    {/* Waitlist button when event is sold out */}
-                    {isSoldOut && event.allow_waitlist && (
-                      <Button
-                        variant="outline"
-                        className="w-full"
-                        onClick={() => setActiveModal("waitlist")}
-                      >
-                        Join Waitlist
-                      </Button>
-                    )}
-                  </>
                 )}
 
-                <div className="text-xs text-gray-500 text-center">
-                  Powered by blockchain technology
+                <Separator className="my-6" />
+
+                {/* Description */}
+                <div>
+                  <h2 className="text-xl font-semibold text-gray-900 mb-4">
+                    About this event
+                  </h2>
+                  <RichTextDisplay content={event.description} />
                 </div>
-              </CardContent>
-            </Card>
+              </div>
+            </div>
 
-            {/* Event Interactions Card */}
-            <EventInteractionsCard
-              eventId={event.id}
-              lockAddress={event.lock_address}
-              creatorAddress={event.creator_address || ''}
-              creatorId={event.creator_id}
-              chainId={event.chain_id}
-              refreshToken={refreshToken}
-            />
+            {/* Sidebar */}
+            <div className="space-y-6">
+              {/* Event Details Card */}
+              <Card className="border-0 shadow-sm">
+                <CardHeader className="pb-4">
+                  <h3 className="font-semibold text-gray-900">Event details</h3>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="space-y-3">
+                    {event.date && (
+                      <div className="flex items-start space-x-3">
+                        <Calendar className="w-5 h-5 text-gray-400 mt-0.5" />
+                        <div>
+                          <div className="font-medium text-gray-900">
+                            {formatEventDateRange({ startDate: event.date, endDate: event.end_date, formatStyle: 'long' })}
+                          </div>
+                          <div className="text-sm text-gray-600">
+                            {event.time}
+                          </div>
+                        </div>
+                      </div>
+                    )}
 
-            {/* Attendees List */}
-            <AttendeesList
-              eventId={event.id}
-              eventTitle={event.title}
-              attendanceSchemaUid={attendanceSchemaUid || undefined}
-              refreshToken={refreshToken}
-            />
+                    {event.location && (
+                      <div className="flex items-start space-x-3">
+                        <MapPin className="w-5 h-5 text-gray-400 mt-0.5" />
+                        <div>
+                          <div className="font-medium text-gray-900">Location</div>
+                          <div className="text-sm text-gray-600">
+                            {event.location}
+                          </div>
+                        </div>
+                      </div>
+                    )}
 
-            {/* Enhanced Attestation Card */}
-            <EventAttestationCard
-              eventId={event.id}
-              eventTitle={event.title}
-              eventDate={(event.date ? event.date : new Date()).toISOString()}
-              eventTime={event.time}
-              lockAddress={event.lock_address}
-              userHasTicket={userTicketCount > 0}
-              attendanceSchemaUid={attendanceSchemaUid || undefined}
-              chainId={event.chain_id}
-              canRevokeAttendanceOverride={myAttendanceUidTop ? !((attendanceSchemaRevocable === false)) : undefined}
-              attendanceDisableReason={myAttendanceUidTop && attendanceSchemaRevocable === false ? 'Attendance records for this event are permanent.' : undefined}
-              canRevokeGoingOverride={myGoingUid ? !((goingSchemaRevocable === false || goingInstanceRevocable === false)) : undefined}
-              goingDisableReason={myGoingUid && (goingSchemaRevocable === false || goingInstanceRevocable === false) ? "This going status cannot be revoked." : undefined}
-              refreshToken={refreshToken}
-            />
+                    <div className="flex items-start space-x-3">
+                      <Users className="w-5 h-5 text-gray-400 mt-0.5" />
+                      <div>
+                        <div className="font-medium text-gray-900">Capacity</div>
+                        <div className="text-sm text-gray-600">
+                          {event.capacity} attendees
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <Separator />
+
+                  <div className="space-y-2">
+                    <div className="text-xs text-gray-500 uppercase tracking-wider">
+                      Blockchain Info
+                    </div>
+                    <div className="flex items-center justify-between text-sm">
+                      <span className="text-gray-600">Contract</span>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-auto p-0 text-blue-600"
+                        asChild
+                      >
+                        <a href={explorerUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center">
+                          <span className="font-mono text-xs">
+                            {event.lock_address.slice(0, 6)}...
+                            {event.lock_address.slice(-4)}
+                          </span>
+                          <ExternalLink className="w-3 h-3 ml-1" />
+                        </a>
+                      </Button>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* Ticket Card */}
+              <Card className="border-0 shadow-sm">
+                <CardHeader className="pb-4">
+                  <div className="flex items-center justify-between">
+                    <h3 className="font-semibold text-gray-900">
+                      {authenticated && userTicketCount > 0
+                        ? "Your Tickets"
+                        : "Get tickets"}
+                    </h3>
+                    <Ticket className="w-5 h-5 text-gray-400" />
+                  </div>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  {/* User Ticket Status */}
+                  {authenticated && userTicketCount > 0 && (
+                    <div className="bg-green-50 border border-green-200 rounded-lg p-3 mb-4">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center space-x-2">
+                          <div className="w-2 h-2 bg-green-500 rounded-full"></div>
+                          <span className="text-sm font-medium text-green-800">
+                            You own {userTicketCount} ticket
+                            {userTicketCount > 1 ? "s" : ""}
+                          </span>
+                        </div>
+                        {maxTicketsPerUser > 1 && (
+                          <Badge
+                            variant="outline"
+                            className="text-green-600 border-green-200"
+                          >
+                            {userTicketCount}/{maxTicketsPerUser} max
+                          </Badge>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="flex items-center justify-between">
+                    <span className="text-2xl font-bold text-gray-900">
+                      {event.payment_methods?.includes('fiat') && event.ngn_price > 0
+                        ? `₦${event.ngn_price.toLocaleString()}`
+                        : isFreeEvent(event)
+                          ? 'Free'
+                          : `${event.price} ${event.currency}`}
+                    </span>
+                    {!isSoldOut && (
+                      <Badge
+                        variant="outline"
+                        className="text-green-600 border-green-200"
+                      >
+                        {spotsLeft} spots left
+                      </Badge>
+                    )}
+                  </div>
+
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between text-sm text-gray-600">
+                      <span>Capacity</span>
+                      <span>{event.capacity} people</span>
+                    </div>
+                    <div className="flex items-center justify-between text-sm text-gray-600">
+                      <span>Registered</span>
+                      <span>{keysSold} people</span>
+                    </div>
+                    {maxTicketsPerUser > 1 && (
+                      <div className="flex items-center justify-between text-sm text-gray-600">
+                        <span>Max per person</span>
+                        <span>{maxTicketsPerUser} tickets</span>
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="w-full bg-gray-200 rounded-full h-2">
+                    <div
+                      className="bg-blue-600 h-2 rounded-full transition-all duration-300"
+                      style={{
+                        width: `${Math.min(
+                          (keysSold / event.capacity) * 100,
+                          100
+                        )}%`,
+                      }}
+                    />
+                  </div>
+
+                  {authenticated && userTicketCount > 0 ? (
+                    <div className="space-y-2">
+                      {/* Attendance toggle for ticket holders */}
+                      <TooltipProvider>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <span>
+                              {myAttendanceUidTop ? (
+                                <Button
+                                  variant="outline"
+                                  className="w-full"
+                                  disabled={isTopAttendanceBusy || !attendanceSchemaUid || !isValidSchemaUid(attendanceSchemaUid) || (state.attendance.flags && !state.attendance.flags.canRevoke) || !isValidAttestationUid(myAttendanceUidTop)}
+                                  onClick={handleRevokeAttendanceTop}
+                                >
+                                  {isTopAttendanceBusy ? 'Processing...' : 'Revoke Attendance'}
+                                </Button>
+                              ) : (
+                                <Button
+                                  className="w-full bg-green-600 hover:bg-green-700 text-white"
+                                  disabled={isTopAttendanceBusy || !eventHasEnded || !attendanceSchemaUid || !isValidSchemaUid(attendanceSchemaUid)}
+                                  onClick={handleAttestAttendanceTop}
+                                >
+                                  {isTopAttendanceBusy ? 'Processing...' : (eventHasEnded ? 'I Attended This Event' : 'Available after event ends')}
+                                </Button>
+                              )}
+                            </span>
+                          </TooltipTrigger>
+                          {(!attendanceSchemaUid || !isValidSchemaUid(attendanceSchemaUid) || (state.attendance.flags && !state.attendance.flags.canRevoke)) && (
+                            <TooltipContent>
+                              {state.attendance.flags && !state.attendance.flags.canRevoke
+                                ? (getDisableMessage('attendance', state.attendance.flags.reason) || 'Attendance records for this event are permanent.')
+                                : 'Attendance unavailable: schema not configured or invalid.'}
+                            </TooltipContent>
+                          )}
+                        </Tooltip>
+                      </TooltipProvider>
+
+                      {/* Additional ticket purchase if allowed */}
+                      {userTicketCount < maxTicketsPerUser && !isSoldOut && !isRegistrationClosed && (
+                        <Button
+                          variant="outline"
+                          className="w-full"
+                          onClick={handleGetTicket}
+                        >
+                          Get Additional Ticket
+                        </Button>
+                      )}
+                    </div>
+                  ) : (
+                    <>
+                      <Button
+                        className="w-full"
+                        onClick={handleGetTicket}
+                        disabled={
+                          isSoldOut ||
+                          isRegistrationClosed ||
+                          (authenticated && userTicketCount >= maxTicketsPerUser)
+                        }
+                      >
+                        {isSoldOut
+                          ? "Sold Out"
+                          : isRegistrationClosed
+                            ? "Registration Closed"
+                            : !authenticated
+                              ? "Connect Wallet to Get Ticket"
+                              : userTicketCount >= maxTicketsPerUser
+                                ? "Ticket Limit Reached"
+                                : "Get Ticket"}
+                      </Button>
+                      {/* Waitlist button when event is sold out */}
+                      {isSoldOut && event.allow_waitlist && (
+                        <Button
+                          variant="outline"
+                          className="w-full"
+                          onClick={() => setActiveModal("waitlist")}
+                        >
+                          Join Waitlist
+                        </Button>
+                      )}
+                    </>
+                  )}
+
+                  <div className="text-xs text-gray-500 text-center">
+                    Powered by blockchain technology
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* Event Interactions Card */}
+              <EventInteractionsCard
+                eventId={event.id}
+                lockAddress={event.lock_address}
+                creatorAddress={event.creator_address || ''}
+                creatorId={event.creator_id}
+                chainId={event.chain_id}
+                refreshToken={refreshToken}
+              />
+
+              {/* Attendees List */}
+              <AttendeesList
+                eventId={event.id}
+                eventTitle={event.title}
+                attendanceSchemaUid={attendanceSchemaUid || undefined}
+                refreshToken={refreshToken}
+              />
+
+              {/* Enhanced Attestation Card */}
+              <EventAttestationCard
+                eventId={event.id}
+                eventTitle={event.title}
+                eventDate={(event.date ? event.date : new Date()).toISOString()}
+                eventTime={event.time}
+                lockAddress={event.lock_address}
+                userHasTicket={userTicketCount > 0}
+                attendanceSchemaUid={attendanceSchemaUid || undefined}
+                chainId={event.chain_id}
+                canRevokeAttendanceOverride={myAttendanceUidTop ? !((attendanceSchemaRevocable === false)) : undefined}
+                attendanceDisableReason={myAttendanceUidTop && attendanceSchemaRevocable === false ? 'Attendance records for this event are permanent.' : undefined}
+                canRevokeGoingOverride={myGoingUid ? !((goingSchemaRevocable === false || goingInstanceRevocable === false)) : undefined}
+                goingDisableReason={myGoingUid && (goingSchemaRevocable === false || goingInstanceRevocable === false) ? "This going status cannot be revoked." : undefined}
+                refreshToken={refreshToken}
+              />
+            </div>
           </div>
         </div>
+
+        {/* Payment Method Selection Dialog */}
+        <PaymentMethodDialog
+          event={event}
+          isOpen={activeModal === "payment-method"}
+          onClose={closeAllModals}
+          onSelectCrypto={handleSelectCrypto}
+          onSelectPaystack={handleSelectPaystack}
+          vendorHasPayoutAccount={vendorHasPayoutAccount}
+        />
+
+        {/* Crypto Purchase Dialog */}
+        <EventPurchaseDialog
+          event={event}
+          isOpen={activeModal === "crypto-purchase"}
+          onClose={closeAllModals}
+          onPurchaseSuccess={handlePurchaseSuccess}
+        />
+
+        {/* Paystack Payment Dialog */}
+        <PaystackPaymentDialog
+          event={event}
+          isOpen={activeModal === "paystack-payment"}
+          onClose={closeAllModals}
+          onSuccess={(paymentData) => {
+            setPaymentData(paymentData);
+            setActiveModal("ticket-processing");
+          }}
+        />
+
+        {/* Ticket Processing Dialog */}
+        <TicketProcessingDialog
+          event={event}
+          isOpen={activeModal === "ticket-processing"}
+          onClose={closeAllModals}
+          paymentData={paymentData}
+          onPurchaseSuccess={handlePurchaseSuccess}
+        />
+
+        {/* Waitlist Dialog */}
+        <WaitlistDialog
+          event={event}
+          isOpen={activeModal === "waitlist"}
+          onClose={closeAllModals}
+        />
       </div>
-
-      {/* Payment Method Selection Dialog */}
-      <PaymentMethodDialog
-        event={event}
-        isOpen={activeModal === "payment-method"}
-        onClose={closeAllModals}
-        onSelectCrypto={handleSelectCrypto}
-        onSelectPaystack={handleSelectPaystack}
-        vendorHasPayoutAccount={vendorHasPayoutAccount}
-      />
-
-      {/* Crypto Purchase Dialog */}
-      <EventPurchaseDialog
-        event={event}
-        isOpen={activeModal === "crypto-purchase"}
-        onClose={closeAllModals}
-        onPurchaseSuccess={handlePurchaseSuccess}
-      />
-
-      {/* Paystack Payment Dialog */}
-      <PaystackPaymentDialog
-        event={event}
-        isOpen={activeModal === "paystack-payment"}
-        onClose={closeAllModals}
-        onSuccess={(paymentData) => {
-          setPaymentData(paymentData);
-          setActiveModal("ticket-processing");
-        }}
-      />
-
-      {/* Ticket Processing Dialog */}
-      <TicketProcessingDialog
-        event={event}
-        isOpen={activeModal === "ticket-processing"}
-        onClose={closeAllModals}
-        paymentData={paymentData}
-        onPurchaseSuccess={handlePurchaseSuccess}
-      />
-
-      {/* Waitlist Dialog */}
-      <WaitlistDialog
-        event={event}
-        isOpen={activeModal === "waitlist"}
-        onClose={closeAllModals}
-      />
-    </div>
     </>
   );
 };

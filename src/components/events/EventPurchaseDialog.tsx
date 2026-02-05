@@ -18,6 +18,7 @@ import { purchaseKey, getBlockExplorerUrl, isFreeOnchain } from '@/utils/lockUti
 import { Loader2, ExternalLink } from 'lucide-react';
 import { format } from 'date-fns';
 import { supabase } from '@/integrations/supabase/client';
+import { isEventRegistrationClosed } from '@/lib/events/registration';
 import { useGaslessFallback } from '@/hooks/useGasless';
 import { normalizeEmail } from '@/utils/emailUtils';
 import { isFreeEvent } from '@/lib/events/paymentMethods';
@@ -208,6 +209,17 @@ export const EventPurchaseDialog: React.FC<EventPurchaseDialogProps> = ({
         description: 'Please refresh and try again.',
         variant: 'destructive',
       });
+      return;
+    }
+
+    // Double check registration cutoff
+    if (isEventRegistrationClosed(event)) {
+      toast({
+        title: 'Registration Closed',
+        description: 'Ticket sales have ended for this event.',
+        variant: 'destructive',
+      });
+      onClose();
       return;
     }
 

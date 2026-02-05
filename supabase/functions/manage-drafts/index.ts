@@ -15,6 +15,7 @@ const ALLOWED_DRAFT_FIELDS = [
     'date',
     'end_date',
     'time',
+    'timezone_offset_minutes',
     'location',
     'event_type',
     'capacity',

@@ -9,6 +9,7 @@ import {
 import { ethers } from "https://esm.sh/ethers@6.14.4";
 import { getUserWalletAddresses } from "../_shared/privy.ts";
 import { validateChain } from "../_shared/network-helpers.ts";
+import { buildStartsAtUtcIso, toDateOnly } from "../_shared/datetime.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -137,7 +138,7 @@ serve(async (req) => {
     );
     const { data: event, error: fetchError } = await serviceRoleClient
       .from("events")
-      .select("lock_address, chain_id")
+      .select("lock_address, chain_id, date, time, starts_at, registration_cutoff")
       .eq("id", eventId)
       .single();
 
@@ -229,6 +230,45 @@ serve(async (req) => {
       }
       if ("time" in formData) eventData.time = formData.time;
       if ("location" in formData) eventData.location = formData.location;
+
+      // Update starts_at (and default registration_cutoff) if date or time changes
+      if ("date" in formData || "time" in formData) {
+        const d = "date" in formData ? formData.date : event.date;
+        const t = "time" in formData ? formData.time : event.time;
+        if (d && t) {
+          try {
+            const timezoneOffsetMinutes =
+              typeof (formData as any)?.timezone_offset_minutes === "number"
+                ? (formData as any).timezone_offset_minutes
+                : undefined;
+            const dateOnly = toDateOnly(d, timezoneOffsetMinutes);
+            if (!dateOnly) {
+              return new Response(JSON.stringify({ error: "Invalid date format" }), {
+                headers: { ...corsHeaders, "Content-Type": "application/json" },
+                status: 400,
+              });
+            }
+            eventData.starts_at = buildStartsAtUtcIso(dateOnly, t, timezoneOffsetMinutes);
+            if (!("registration_cutoff" in formData)) {
+              eventData.registration_cutoff = new Date(
+                new Date(eventData.starts_at).getTime() - 60 * 60 * 1000
+              ).toISOString();
+            }
+          } catch (e) {
+            return new Response(JSON.stringify({ error: e instanceof Error ? e.message : "Invalid date/time" }), {
+              headers: { ...corsHeaders, "Content-Type": "application/json" },
+              status: 400,
+            });
+          }
+        }
+      }
+
+      if ("registration_cutoff" in formData) {
+        eventData.registration_cutoff = formData.registration_cutoff
+          ? new Date(formData.registration_cutoff).toISOString()
+          : null;
+      }
+
       if ("eventType" in formData) eventData.event_type = formData.eventType;
       if ("category" in formData) eventData.category = formData.category;
       if ("imageUrl" in formData) {

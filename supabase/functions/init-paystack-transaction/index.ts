@@ -34,11 +34,17 @@ serve(async (req) => {
     // Validate event exists and get creator info
     const { data: ev, error: evErr } = await supabase
       .from('events')
-      .select('id, paystack_public_key, creator_id, ngn_price, ngn_price_kobo, payment_methods')
+      .select('id, paystack_public_key, creator_id, ngn_price, ngn_price_kobo, payment_methods, registration_cutoff, starts_at')
       .eq('id', eventId)
       .maybeSingle();
     if (evErr || !ev) {
       return new Response(JSON.stringify({ error: 'Event not found' }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 404 });
+    }
+
+    // Check registration cutoff
+    const cutoffDate = ev.registration_cutoff ? new Date(ev.registration_cutoff) : (ev.starts_at ? new Date(ev.starts_at) : null);
+    if (cutoffDate && new Date() > cutoffDate) {
+      return new Response(JSON.stringify({ error: 'registration_closed' }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 400 });
     }
 
     const hasFiat = Array.isArray((ev as any).payment_methods) && (ev as any).payment_methods.includes('fiat');

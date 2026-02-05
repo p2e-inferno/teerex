@@ -267,6 +267,31 @@ const PublicLockABI = [
     "outputs": [],
     "stateMutability": "nonpayable",
     "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "expirationDuration",
+    "outputs": [{ "internalType": "uint256", "name": "", "type": "uint256" }],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "maxNumberOfKeys",
+    "outputs": [{ "internalType": "uint256", "name": "", "type": "uint256" }],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      { "internalType": "uint256", "name": "_newExpirationDuration", "type": "uint256" },
+      { "internalType": "uint256", "name": "_maxNumberOfKeys", "type": "uint256" },
+      { "internalType": "uint256", "name": "_maxKeysPerAcccount", "type": "uint256" }
+    ],
+    "name": "updateLockConfig",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
   }
 ];
 
@@ -1335,5 +1360,88 @@ export async function updateKeyPrice(
     }
 
     return { success: false, error: errorMessage };
+  }
+}
+
+/**
+ * Update lock purchasersability by toggling maxNumberOfKeys
+ * @param lockAddress - Address of the lock
+ * @param isClosed - Whether to close registration
+ * @param originalCapacity - The original capacity to reset to when opening
+ * @param wallet - The wallet to sign the transaction
+ * @param chainId - Chain ID of the network
+ */
+export async function updateLockPurchasability(
+  lockAddress: string,
+  isClosed: boolean,
+  originalCapacity: number,
+  chainId: number,
+  wallet: any
+): Promise<{ success: boolean; transactionHash?: string; error?: string }> {
+  try {
+    if (!lockAddress || lockAddress === 'Unknown' || !ethers.isAddress(lockAddress)) {
+      throw new Error('Invalid lock address.');
+    }
+
+    if (!wallet || !wallet.address) {
+      throw new Error('No wallet provided or not connected.');
+    }
+
+    if (!chainId) {
+      throw new Error('Missing chainId for purchasability update.');
+    }
+
+    const provider = await getDivviEip1193Provider(wallet);
+    await ensureCorrectNetwork(provider, chainId);
+    const ethersProvider = new ethers.BrowserProvider(provider);
+    const signer = await ethersProvider.getSigner();
+    const lock = new ethers.Contract(lockAddress, PublicLockABI, signer);
+
+    const signerAddress = await signer.getAddress();
+    const isManager = await lock.isLockManager(signerAddress);
+    if (!isManager) {
+      throw new Error('You must be a lock manager to update lock configuration.');
+    }
+
+    // Fetch current configurations to maintain them
+    const [expiration, maxKeysPerAcc] = await Promise.all([
+      lock.expirationDuration(),
+      lock.maxKeysPerAddress(),
+    ]);
+
+    // Some lock versions revert if maxKeysPerAddress is 0; clamp to 1 when updating config
+    const safeMaxKeysPerAcc = maxKeysPerAcc === 0n ? 1n : maxKeysPerAcc;
+
+    // If closing, set maxNumberOfKeys to 0 to disable purchases
+    // If opening, restore maxNumberOfKeys to original capacity
+    const newMaxKeys = isClosed ? 0n : BigInt(originalCapacity);
+
+    let gasLimit: bigint | undefined;
+    try {
+      const estimated = await lock.updateLockConfig.estimateGas(
+        expiration,
+        newMaxKeys,
+        safeMaxKeysPerAcc
+      );
+      gasLimit = (estimated * 120n) / 100n;
+    } catch (e) {
+      // Best-effort; we'll let the wallet/provider pick a default if estimation fails.
+    }
+
+    const tx = await lock.updateLockConfig(expiration, newMaxKeys, safeMaxKeysPerAcc, {
+      gasLimit,
+    });
+    const receipt = await tx.wait();
+
+    return {
+      success: true,
+      transactionHash: receipt.hash
+    };
+  } catch (error: any) {
+    console.error('Error updating lock purchasability:', error);
+    return {
+      success: false,
+      error: error.message || 'Failed to update lock configuration'
+    };
   }
 }
