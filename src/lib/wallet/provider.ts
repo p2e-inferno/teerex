@@ -6,8 +6,12 @@ type Eip1193Provider = { request: (args: { method: string; params?: any[] }) => 
 
 const isAddress = (v: string) => /^0x[a-fA-F0-9]{40}$/.test(v);
 
+export async function getRawEip1193Provider(wallet: any): Promise<Eip1193Provider> {
+  return await wallet.getEthereumProvider();
+}
+
 export async function getDivviEip1193Provider(wallet: any): Promise<Eip1193Provider> {
-  const raw = await wallet.getEthereumProvider();
+  const raw = await getRawEip1193Provider(wallet);
   if (!isAddress(DIVVI_CONSUMER_ADDRESS)) return raw;
 
   return wrapEip1193ProviderWithDivvi(raw, {

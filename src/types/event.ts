@@ -7,6 +7,7 @@ export interface EventDraft {
   date: Date | null;
   end_date?: Date | null;
   starts_at?: string | null;
+  ends_at?: string | null;
   registration_cutoff?: string | null;
   time: string;
   location: string;
@@ -25,6 +26,15 @@ export interface EventDraft {
   custom_duration_days?: number;
   chain_id?: number;
   transferable?: boolean;
+  refund_protection_enabled?: boolean;
+  refund_min_attendees?: number | null;
+  refund_trigger_at?: string | null;
+  refund_event_end_at?: string | null;
+  refund_controller_address?: string | null;
+  refund_reserve_bond?: string | null;
+  refund_status?: string | null;
+  refund_last_tx_hash?: string | null;
+  refund_last_synced_at?: string | null;
   created_at: Date;
   updated_at: Date;
 }
@@ -45,6 +55,7 @@ export interface PublishedEvent {
   date: Date | null;
   end_date: Date | null;
   starts_at: string | null;
+  ends_at: string | null;
   registration_cutoff: string | null;
   time: string;
   location: string;
@@ -77,4 +88,13 @@ export interface PublishedEvent {
   has_allow_list: boolean;
   nft_metadata_set: boolean;
   nft_base_uri: string | null;
+  refund_protection_enabled?: boolean;
+  refund_min_attendees?: number | null;
+  refund_trigger_at?: string | null;
+  refund_event_end_at?: string | null;
+  refund_controller_address?: string | null;
+  refund_reserve_bond?: string | null;
+  refund_status?: string | null;
+  refund_last_tx_hash?: string | null;
+  refund_last_synced_at?: string | null;
 }

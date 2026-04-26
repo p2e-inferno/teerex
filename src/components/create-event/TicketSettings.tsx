@@ -1,13 +1,15 @@
 
-import React, { useEffect, useMemo, useState, useCallback } from 'react';
+import React, { useEffect, useMemo, useState, useCallback, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import { usePrivy } from '@privy-io/react-auth';
+import { ethers } from 'ethers';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Card, CardContent, CardDescription, CardHeader } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
+import { Switch } from '@/components/ui/switch';
 import { Shield, Zap, Ticket, CreditCard, Info, Loader2, AlertCircle, AlertTriangle, Eye, EyeOff, CheckCircle2 } from 'lucide-react';
 import { EventFormData } from '@/pages/CreateEvent';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
@@ -20,6 +22,8 @@ import { usesWholeNumberPricing } from '@/types/currency';
 import { supabase } from '@/integrations/supabase/client';
 import { useQueries } from '@tanstack/react-query';
 import { CACHE_TIMES } from '@/lib/config/react-query-config';
+import { getDefaultRefundTriggerIso, getEventEndIso, getEventStartIso } from '@/utils/eventTime';
+import { previewProtectedEventReserveBond, type ProtectedReserveBondPreview } from '@/utils/lockUtils';
 
 interface PayoutAccountInfo {
   id: string;
@@ -43,6 +47,26 @@ interface TicketSettingsProps {
   onNext: () => void;
 }
 
+const toDateTimeLocalValue = (value?: string | null): string => {
+  if (!value) return '';
+  const date = new Date(value);
+  if (!Number.isFinite(date.getTime())) return '';
+  const pad = (part: number) => String(part).padStart(2, '0');
+  return [
+    date.getFullYear(),
+    pad(date.getMonth() + 1),
+    pad(date.getDate()),
+  ].join('-') + `T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+};
+
+const formatTokenAmount = (value: string, decimals: number): string => {
+  const formatted = ethers.formatUnits(value, decimals);
+  const [whole, fractional] = formatted.split('.');
+  if (!fractional) return whole;
+  const trimmedFractional = fractional.replace(/0+$/, '').slice(0, 8);
+  return trimmedFractional ? `${whole}.${trimmedFractional}` : whole;
+};
+
 export const TicketSettings: React.FC<TicketSettingsProps> = ({
   formData,
   updateFormData,
@@ -53,6 +77,75 @@ export const TicketSettings: React.FC<TicketSettingsProps> = ({
 
   // Check if current network supports selected currency
   const currentChainId = (formData as any).chainId;
+  const currentNetwork = currentChainId ? getNetworkByChainId(currentChainId) : undefined;
+  const hasRefundManager = Boolean(currentNetwork?.refundable_event_manager_address);
+  const isPaidCrypto = formData.paymentMethod === 'crypto' && Number(formData.price) > 0;
+  const refundTriggerValue = toDateTimeLocalValue(formData.refundTriggerAt);
+  const refundEndAt = useMemo(() => {
+    try {
+      return getEventEndIso(formData);
+    } catch {
+      return null;
+    }
+  }, [formData]);
+  const refundTriggerInvalid = Boolean(
+    formData.refundProtectionEnabled &&
+    formData.refundTriggerAt &&
+    refundEndAt &&
+    new Date(formData.refundTriggerAt).getTime() >= new Date(refundEndAt).getTime()
+  );
+  const refundTriggerAfterStart = useMemo(() => {
+    if (!formData.refundProtectionEnabled || !formData.refundTriggerAt) return false;
+    try {
+      const startsAt = getEventStartIso(formData);
+      if (!startsAt) return false;
+      return new Date(formData.refundTriggerAt).getTime() > new Date(startsAt).getTime();
+    } catch {
+      return false;
+    }
+  }, [formData]);
+
+  const handleRefundProtectionToggle = (checked: boolean) => {
+    if (!checked) {
+      updateFormData({
+        refundProtectionEnabled: false,
+        refundMinAttendees: undefined,
+        refundTriggerAt: null,
+        refundEventEndAt: null,
+        refundReserveBond: null,
+      } as any);
+      return;
+    }
+
+    const startsAt = getEventStartIso(formData);
+    const endsAt = getEventEndIso(formData);
+    const defaultMin = Math.min(
+      Number(formData.capacity) || 1,
+      Math.max(1, Math.ceil((Number(formData.capacity) || 1) / 2))
+    );
+
+    updateFormData({
+      refundProtectionEnabled: true,
+      refundMinAttendees: formData.refundMinAttendees || defaultMin,
+      refundTriggerAt: formData.refundTriggerAt || getDefaultRefundTriggerIso(startsAt),
+      refundEventEndAt: endsAt,
+      refundReserveBond: null,
+      transferable: false,
+    } as any);
+  };
+
+  useEffect(() => {
+    if (!formData.refundProtectionEnabled) return;
+    if (isPaidCrypto && hasRefundManager) return;
+
+    updateFormData({
+      refundProtectionEnabled: false,
+      refundMinAttendees: undefined,
+      refundTriggerAt: null,
+      refundEventEndAt: null,
+      refundReserveBond: null,
+    } as any);
+  }, [formData.refundProtectionEnabled, hasRefundManager, isPaidCrypto, updateFormData]);
 
   // Fetch token metadata for all available tokens on current chain
   const availableTokens = currentChainId ? getAvailableTokens(currentChainId) : ['ETH'];
@@ -163,6 +256,106 @@ export const TicketSettings: React.FC<TicketSettingsProps> = ({
   // Validation state for real-time feedback
   const [priceError, setPriceError] = useState<string>('');
   const [fiatPriceError, setFiatPriceError] = useState<string>('');
+  const [reserveBondPreview, setReserveBondPreview] = useState<ProtectedReserveBondPreview | null>(null);
+  const [reserveBondPreviewError, setReserveBondPreviewError] = useState('');
+  const [reserveBondPreviewLoading, setReserveBondPreviewLoading] = useState(false);
+  const reserveBondPreviewRequestIdRef = useRef(0);
+
+  const clearReserveBondPreview = useCallback(() => {
+    reserveBondPreviewRequestIdRef.current += 1;
+    setReserveBondPreview(null);
+    setReserveBondPreviewError('');
+    setReserveBondPreviewLoading(false);
+    updateFormData({ refundReserveBond: null } as any);
+  }, [updateFormData]);
+
+  const refreshReserveBondPreview = useCallback(async (
+    params: {
+      chainId?: number;
+      currency: CryptoCurrency;
+      price: number;
+      minAttendees?: number;
+      refundProtectionEnabled?: boolean;
+      capacity: number;
+      allowPreview: boolean;
+    }
+  ) => {
+    const {
+      chainId,
+      currency,
+      price,
+      minAttendees,
+      refundProtectionEnabled,
+      capacity,
+      allowPreview,
+    } = params;
+
+    if (
+      !refundProtectionEnabled ||
+      !allowPreview ||
+      !chainId ||
+      !price ||
+      !minAttendees ||
+      minAttendees > capacity
+    ) {
+      clearReserveBondPreview();
+      return;
+    }
+
+    const requestId = ++reserveBondPreviewRequestIdRef.current;
+    setReserveBondPreviewLoading(true);
+    setReserveBondPreviewError('');
+
+    try {
+      const preview = await previewProtectedEventReserveBond(
+        chainId,
+        currency,
+        price,
+        minAttendees
+      );
+
+      if (requestId !== reserveBondPreviewRequestIdRef.current) return;
+      setReserveBondPreview(preview);
+      updateFormData({ refundReserveBond: preview.reserveBond } as any);
+    } catch (error) {
+      if (requestId !== reserveBondPreviewRequestIdRef.current) return;
+      setReserveBondPreview(null);
+      setReserveBondPreviewError(error instanceof Error ? error.message : 'Failed to estimate reserve bond.');
+      updateFormData({ refundReserveBond: null } as any);
+    } finally {
+      if (requestId !== reserveBondPreviewRequestIdRef.current) return;
+      setReserveBondPreviewLoading(false);
+    }
+  }, [
+    clearReserveBondPreview,
+    updateFormData,
+  ]);
+
+  useEffect(() => {
+    if (!formData.refundProtectionEnabled || !isPaidCrypto || !hasRefundManager || !currentChainId) {
+      clearReserveBondPreview();
+      return;
+    }
+
+    void refreshReserveBondPreview({
+      chainId: currentChainId,
+      currency: formData.currency,
+      price: formData.price,
+      minAttendees: formData.refundMinAttendees,
+      refundProtectionEnabled: formData.refundProtectionEnabled,
+      capacity: formData.capacity,
+      allowPreview: isPaidCrypto && hasRefundManager,
+    });
+  }, [
+    clearReserveBondPreview,
+    currentChainId,
+    formData.capacity,
+    formData.currency,
+    formData.refundProtectionEnabled,
+    hasRefundManager,
+    isPaidCrypto,
+    refreshReserveBondPreview,
+  ]);
 
   useEffect(() => {
     // If selected currency is not available on current network, switch to ETH
@@ -375,7 +568,10 @@ export const TicketSettings: React.FC<TicketSettingsProps> = ({
               <Label>Currency</Label>
               <Select
                 value={formData.currency}
-                onValueChange={(value) => updateFormData({ currency: value as CryptoCurrency })}
+                onValueChange={(value) => {
+                  clearReserveBondPreview();
+                  updateFormData({ currency: value as CryptoCurrency });
+                }}
               >
                 <SelectTrigger>
                   <SelectValue />
@@ -434,15 +630,27 @@ export const TicketSettings: React.FC<TicketSettingsProps> = ({
                 value={formData.price}
                 onChange={(e) => {
                   const newPrice = parseFloat(e.target.value) || 0;
+                  clearReserveBondPreview();
                   updateFormData({ price: newPrice });
                   // Clear error on change
                   if (priceError) setPriceError('');
                 }}
-                onBlur={() => {
+                onBlur={async () => {
                   // Validate on blur
                   const nativeCurrency = getNetworkByChainId(currentChainId)?.native_currency_symbol;
                   const { error } = validateCryptoPrice(formData.price || 0, formData.currency, nativeCurrency);
                   setPriceError(error);
+                  if (!error && formData.refundProtectionEnabled) {
+                    await refreshReserveBondPreview({
+                      chainId: currentChainId,
+                      currency: formData.currency,
+                      price: formData.price,
+                      minAttendees: formData.refundMinAttendees,
+                      refundProtectionEnabled: formData.refundProtectionEnabled,
+                      capacity: formData.capacity,
+                      allowPreview: isPaidCrypto && hasRefundManager,
+                    });
+                  }
                 }}
                 min={usesWholeNumberPricing(formData.currency) ? getWholeNumberTokenMinimum(formData.currency).toString() : MIN_NATIVE_TOKEN_PRICE.toString()}
                 step={getPriceStep(formData.currency)}
@@ -456,6 +664,146 @@ export const TicketSettings: React.FC<TicketSettingsProps> = ({
             </div>
           </div>
         </div>
+      )}
+
+      {formData.paymentMethod === 'crypto' && (
+        <Card className="border-slate-200">
+          <CardContent className="pt-6 space-y-4">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <Label htmlFor="refund-protection" className="text-base font-medium">
+                  Minimum attendance protection
+                </Label>
+                <p className="text-sm text-gray-600 mt-1">
+                  If the event misses the minimum before the trigger time, paid attendees will be refunded in full.
+                </p>
+              </div>
+              <Switch
+                id="refund-protection"
+                checked={Boolean(formData.refundProtectionEnabled)}
+                disabled={!isPaidCrypto || !hasRefundManager}
+                onCheckedChange={handleRefundProtectionToggle}
+              />
+            </div>
+
+            {!isPaidCrypto && (
+              <Alert>
+                <Info className="h-4 w-4" />
+                <AlertDescription>
+                  Refund protection is available only for paid crypto events.
+                </AlertDescription>
+              </Alert>
+            )}
+
+            {isPaidCrypto && !hasRefundManager && (
+              <Alert variant="destructive">
+                <AlertCircle className="h-4 w-4" />
+                <AlertDescription>
+                  This network does not have a refundable event manager configured.
+                </AlertDescription>
+              </Alert>
+            )}
+
+            {formData.refundProtectionEnabled && (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="refund-min-attendees">Minimum attendees</Label>
+                  <Input
+                    id="refund-min-attendees"
+                    type="number"
+                    value={formData.refundMinAttendees || ''}
+                    min="1"
+                    max={formData.capacity}
+                    step="1"
+                    onChange={(e) => {
+                      clearReserveBondPreview();
+                      updateFormData({
+                        refundMinAttendees: parseInt(e.target.value, 10) || 1,
+                        transferable: false,
+                      } as any);
+                    }}
+                    onBlur={() => {
+                      void refreshReserveBondPreview({
+                        chainId: currentChainId,
+                        currency: formData.currency,
+                        price: formData.price,
+                        minAttendees: formData.refundMinAttendees,
+                        refundProtectionEnabled: formData.refundProtectionEnabled,
+                        capacity: formData.capacity,
+                        allowPreview: isPaidCrypto && hasRefundManager,
+                      });
+                    }}
+                  />
+                  {formData.refundMinAttendees && formData.refundMinAttendees > formData.capacity && (
+                    <p className="text-xs text-red-600">Minimum attendees cannot exceed capacity.</p>
+                  )}
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="refund-trigger-at">Refund trigger time</Label>
+                  <Input
+                    id="refund-trigger-at"
+                    type="datetime-local"
+                    value={refundTriggerValue}
+                    onChange={(e) => {
+                      const value = e.target.value ? new Date(e.target.value).toISOString() : null;
+                      updateFormData({
+                        refundTriggerAt: value,
+                        refundEventEndAt: refundEndAt,
+                        transferable: false,
+                      } as any);
+                    }}
+                  />
+                  {(refundTriggerInvalid || refundTriggerAfterStart) && (
+                    <p className="text-xs text-red-600">
+                      Refund trigger must be before event end and no later than event start.
+                    </p>
+                  )}
+                </div>
+
+                <div className="md:col-span-2 rounded-md border border-purple-200 bg-purple-50 p-3 text-sm text-purple-800">
+                  The event only qualifies as successful if the minimum attendees are reached by the refund trigger time. If that threshold is missed when the trigger time arrives, paid attendees will be refunded in full.
+                </div>
+
+                <div className="md:col-span-2 rounded-md border border-amber-200 bg-amber-50 p-4 text-sm">
+                  <div className="flex items-start gap-3">
+                    <AlertTriangle className="mt-0.5 h-4 w-4 text-amber-700" />
+                    <div className="space-y-2 text-amber-900">
+                      <div className="font-medium">Reserve bond required before deployment</div>
+                      <p className="text-amber-800">
+                        Protected events require a reserve bond up front so refunds can be covered if the attendance threshold is missed. This bond is separate from gas.
+                      </p>
+                      {reserveBondPreviewLoading && (
+                        <div className="flex items-center gap-2 text-amber-800">
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                          <span>Calculating reserve bond estimate...</span>
+                        </div>
+                      )}
+                      {!reserveBondPreviewLoading && reserveBondPreview && (
+                        <div className="rounded-md border border-amber-200 bg-white/80 p-3">
+                          <div className="text-base font-semibold text-amber-950">
+                            Estimated reserve bond: {formatTokenAmount(reserveBondPreview.reserveBond, reserveBondPreview.decimals)} {reserveBondPreview.symbol}
+                          </div>
+                          <p className="mt-1 text-xs text-amber-800">
+                            Based on {formData.refundMinAttendees} required attendee{formData.refundMinAttendees === 1 ? '' : 's'} at the current ticket price. If unused for refunds the reserve bond can be withdrawn
+                          </p>
+                        </div>
+                      )}
+                      {!reserveBondPreviewLoading && reserveBondPreviewError && (
+                        <p className="text-xs text-red-700">{reserveBondPreviewError}</p>
+                      )}
+                      {!reserveBondPreviewLoading && !reserveBondPreview && !reserveBondPreviewError && (
+                        <p className="text-xs text-amber-800">
+                          Enter a valid paid ticket price and minimum attendee count, then leave the input field to calculate the reserve bond estimate.
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+          </CardContent>
+        </Card>
       )}
 
       {/* NGN Pricing */}
@@ -613,15 +961,32 @@ export const TicketSettings: React.FC<TicketSettingsProps> = ({
           <div className="flex items-start gap-3">
             <Ticket className="w-5 h-5 text-blue-600 mt-0.5" />
             <div>
-              <h4 className="font-medium text-blue-900">NFT Ticket Benefits</h4>
+              <h4 className="font-medium text-blue-900">
+                {formData.refundProtectionEnabled ? 'Protected Event Rules' : 'NFT Ticket Benefits'}
+              </h4>
               <p className="text-sm text-blue-700 mt-1">
-                Paid crypto tickets will be minted as NFTs, providing:
+                {formData.refundProtectionEnabled
+                  ? 'Protected events have these rules:'
+                  : 'Crypto events have these benefits:'}
               </p>
               <ul className="text-sm text-blue-700 mt-2 space-y-1">
-                <li>• Transferable tickets</li>
-                <li>• Proof of attendance (POAP)</li>
-                <li>• Secondary market trading</li>
-                <li>• Fraud prevention</li>
+                {formData.refundProtectionEnabled ? (
+                  <>
+                    <li>• Onchain ticket configurations stay locked while protection is active</li>
+                    <li>• The event protection only clears once the minimum attendees are reached by the refund trigger time</li>
+                    <li>• Paid attendees should be refunded in full if the minimum attendees threshold is missed at trigger time</li>
+                    <li>• Creator control and withdrawals stay locked if threshold is missed and attendees are not refunded</li>
+                    <li>• Any ticket buyer can trigger the refund before the event end time (refund window) if the threshold is missed.</li>
+                    <li>• After the refund window only the creator can initiate refund</li>
+                  </>
+                ) : (
+                  <>
+                    <li>• Transferable tickets (If enabled)</li>
+                    <li>• Proof of attendance (POAP)</li>
+                    <li>• Secondary market trading (If transferable)</li>
+                    <li>• Fraud prevention</li>
+                  </>
+                )}
               </ul>
             </div>
           </div>

@@ -20,6 +20,9 @@ import {
   Facebook,
   Twitter,
   Linkedin,
+  Shield,
+  Loader2,
+  AlertCircle,
 } from "lucide-react";
 import { getPublishedEventById } from "@/utils/eventUtils";
 import type { PublishedEvent } from "@/types/event";
@@ -50,10 +53,13 @@ import { useAttestations } from "@/hooks/useAttestations";
 import { useTeeRexDelegatedAttestation } from "@/hooks/useTeeRexDelegatedAttestation";
 import { useAttestationEncoding } from "@/hooks/useAttestationEncoding";
 import { formatEventDateRange } from "@/utils/dateUtils";
+import { formatEventLocalDateTime, formatEventLocalTime } from "@/utils/eventTime";
 import { useEventTicketRealtime } from "@/hooks/useEventTicketRealtime";
 import { useNetworkConfigs } from "@/hooks/useNetworkConfigs";
 import { useTicketBalance } from "@/hooks/useTicketBalance";
 import { useUserAddresses } from "@/hooks/useUserAddresses";
+import { useRefundableEventStatus } from "@/hooks/useRefundableEventStatus";
+import { useRefundableEventActions } from "@/hooks/useRefundableEventActions";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -64,6 +70,28 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import { RichTextDisplay } from "@/components/ui/rich-text/RichTextDisplay";
 import { hasMethod, isFreeEvent } from "@/lib/events/paymentMethods";
 import { EventDetailsRefreshProvider, useEventDetailsRefresh } from "@/pages/event-details/eventDetailsRefresh";
+import { getRefundProtectionBadge } from "@/lib/events/refundStatus";
+
+function formatCountdownLabel(targetIso: string | null | undefined, nowMs: number): string | null {
+  if (!targetIso) return null;
+
+  const targetMs = new Date(targetIso).getTime();
+  if (!Number.isFinite(targetMs)) return null;
+
+  const diffMs = targetMs - nowMs;
+  if (diffMs <= 0) return "Now";
+
+  const totalSeconds = Math.floor(diffMs / 1000);
+  const days = Math.floor(totalSeconds / 86400);
+  const hours = Math.floor((totalSeconds % 86400) / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+
+  if (days > 0) return `${days}d ${hours}h ${minutes}m`;
+  if (hours > 0) return `${hours}h ${minutes}m`;
+  if (minutes > 0) return `${minutes}m ${seconds}s`;
+  return `${seconds}s`;
+}
 
 const EventDetailsContent = () => {
   const { id } = useParams<{ id: string }>();
@@ -86,6 +114,7 @@ const EventDetailsContent = () => {
   const [isTransferableOnChain, setIsTransferableOnChain] = useState<boolean | null>(null);
   const [transferFeeBps, setTransferFeeBps] = useState<number | null>(null);
   const [vendorHasPayoutAccount, setVendorHasPayoutAccount] = useState<boolean>(true); // Default to true for backwards compatibility
+  const [nowMs, setNowMs] = useState(() => Date.now());
 
   // Real-time ticket count subscription
   const { ticketsSold: keysSold } = useEventTicketRealtime({
@@ -107,6 +136,15 @@ const EventDetailsContent = () => {
   const [attendanceSchemaUid, setAttendanceSchemaUid] = useState<string | null>(
     null
   );
+
+  useEffect(() => {
+    const intervalId = window.setInterval(() => {
+      setNowMs(Date.now());
+    }, 1000);
+
+    return () => window.clearInterval(intervalId);
+  }, []);
+
   // On-chain transferability status
   useEffect(() => {
     const loadTransferability = async () => {
@@ -231,6 +269,40 @@ const EventDetailsContent = () => {
   const [attendanceSchemaRevocable, setAttendanceSchemaRevocable] = useState<boolean | null>(null);
 
   const isRegistrationClosed = event ? isEventRegistrationClosed(event) : false;
+  const refundableStatus = useRefundableEventStatus(event, userAddresses);
+  const protectedActionEvent = event
+    ? { ...event, refund_controller_address: refundableStatus.controllerAddress || event.refund_controller_address || null }
+    : null;
+  const refundActions = useRefundableEventActions(
+    protectedActionEvent,
+    wallet,
+    refundableStatus.authorizedRefundAddress,
+    refundableStatus.refresh
+  );
+  const isProtectedRefundEvent = Boolean(event?.refund_protection_enabled);
+  const refundTriggerMillis = event?.refund_trigger_at ? new Date(event.refund_trigger_at).getTime() : null;
+  const protectionTriggered = Boolean(refundTriggerMillis && Date.now() >= refundTriggerMillis);
+  const isProtectedPurchaseClosed = Boolean(
+    isProtectedRefundEvent &&
+    protectionTriggered &&
+    refundableStatus.status !== 'released'
+  );
+  const refundBadge = getRefundProtectionBadge(refundableStatus.status || event?.refund_status);
+  const signerMatchesAuthorizedRefundCaller = Boolean(
+    wallet?.address &&
+    refundableStatus.authorizedRefundAddress &&
+    wallet.address.toLowerCase() === refundableStatus.authorizedRefundAddress.toLowerCase()
+  );
+  const refundWindowCountdown = formatCountdownLabel(event?.refund_trigger_at, nowMs);
+  const refundWindowClosesCountdown = formatCountdownLabel(event?.refund_event_end_at || event?.ends_at, nowMs);
+  const eventDisplayTime = formatEventLocalTime(event?.starts_at, event?.time || '');
+  const isMultiDayEvent = Boolean(
+    event?.date &&
+    event?.end_date &&
+    event.date.toDateString() !== event.end_date.toDateString()
+  );
+  const eventStartDateTimeLabel = formatEventLocalDateTime(event?.starts_at, { month: 'short', day: 'numeric', year: 'numeric' });
+  const eventEndDateTimeLabel = formatEventLocalDateTime(event?.ends_at, { month: 'short', day: 'numeric', year: 'numeric' });
 
   const networkConfig = event ? networks.find(n => n.chain_id === event.chain_id) : undefined;
   const networkLabel = networkConfig?.chain_name
@@ -446,10 +518,14 @@ const EventDetailsContent = () => {
     triggerRefresh();
   }, [refetchTicketBalance, triggerRefresh]);
 
-  // Compute if event has ended (same 2h duration assumption)
+  // Compute if event has ended
   useEffect(() => {
     if (!event?.date || !event?.time) {
       setEventHasEnded(false);
+      return;
+    }
+    if (event.ends_at) {
+      setEventHasEnded(Date.now() > new Date(event.ends_at).getTime());
       return;
     }
     const timeParts = event.time.trim().match(/^(\d{1,2}):(\d{2})\s*(AM|PM)?$/i);
@@ -466,7 +542,7 @@ const EventDetailsContent = () => {
     }
     const ended = Date.now() > start.getTime() + 2 * 60 * 60 * 1000;
     setEventHasEnded(ended);
-  }, [event?.date, event?.time]);
+  }, [event?.date, event?.time, event?.ends_at]);
 
   // Load my attendance UID for top ticket card toggle
   useEffect(() => {
@@ -698,7 +774,9 @@ const EventDetailsContent = () => {
     const startDate = parseEventTime(event.time, new Date(event.date));
 
     let endDate: Date;
-    if (event.end_date) {
+    if (event.ends_at) {
+      endDate = new Date(event.ends_at);
+    } else if (event.end_date) {
       // Multi-day: end at the same time on the end date
       endDate = parseEventTime(event.time, new Date(event.end_date));
     } else {
@@ -734,6 +812,15 @@ const EventDetailsContent = () => {
     // Check if user is authenticated
     if (!authenticated) {
       login(); // Trigger wallet connection
+      return;
+    }
+
+    if (isProtectedPurchaseClosed) {
+      toast({
+        title: 'Ticket sales paused',
+        description: 'This protected event is waiting for release or refund resolution.',
+        variant: 'destructive',
+      });
       return;
     }
 
@@ -847,23 +934,43 @@ const EventDetailsContent = () => {
                     <Badge variant="secondary" className="mb-3">
                       {event.category}
                     </Badge>
+                    {isProtectedRefundEvent && (
+                      <Badge variant="outline" className={`mb-3 ml-2 text-xs ${refundBadge.className}`}>
+                        {refundBadge.label}
+                      </Badge>
+                    )}
                     <h1 className="text-3xl font-bold text-gray-900 mb-2">
                       {event.title}
                     </h1>
                     {networkLabel && (
                       <Badge variant="outline" className="text-xs mb-2">{networkLabel}</Badge>
                     )}
-                    <div className="flex items-center space-x-4 text-gray-600">
-                      {event.date && (
-                        <div className="flex items-center space-x-1">
-                          <Calendar className="w-4 h-4" />
-                          <span>{formatEventDateRange({ startDate: event.date, endDate: event.end_date, formatStyle: 'long' })}</span>
+                    <div className="flex flex-col gap-2 text-gray-600">
+                      {event.date && isMultiDayEvent && eventStartDateTimeLabel ? (
+                        <>
+                          <div className="flex items-center space-x-1">
+                            <Calendar className="w-4 h-4" />
+                            <span>Starts: {eventStartDateTimeLabel}</span>
+                          </div>
+                          <div className="flex items-center space-x-1">
+                            <Clock className="w-4 h-4" />
+                            <span>Ends: {eventEndDateTimeLabel || formatEventDateRange({ startDate: event.date, endDate: event.end_date, formatStyle: 'long' })}</span>
+                          </div>
+                        </>
+                      ) : (
+                        <div className="flex items-center space-x-4">
+                          {event.date && (
+                            <div className="flex items-center space-x-1">
+                              <Calendar className="w-4 h-4" />
+                              <span>{formatEventDateRange({ startDate: event.date, endDate: event.end_date, formatStyle: 'long' })}</span>
+                            </div>
+                          )}
+                          <div className="flex items-center space-x-1">
+                            <Clock className="w-4 h-4" />
+                            <span>{eventDisplayTime}</span>
+                          </div>
                         </div>
                       )}
-                      <div className="flex items-center space-x-1">
-                        <Clock className="w-4 h-4" />
-                        <span>{event.time}</span>
-                      </div>
                     </div>
                     {isTransferableOnChain !== null && (
                       <div className="mt-2">
@@ -987,12 +1094,25 @@ const EventDetailsContent = () => {
                       <div className="flex items-start space-x-3">
                         <Calendar className="w-5 h-5 text-gray-400 mt-0.5" />
                         <div>
-                          <div className="font-medium text-gray-900">
-                            {formatEventDateRange({ startDate: event.date, endDate: event.end_date, formatStyle: 'long' })}
-                          </div>
-                          <div className="text-sm text-gray-600">
-                            {event.time}
-                          </div>
+                          {isMultiDayEvent && eventStartDateTimeLabel ? (
+                            <>
+                              <div className="font-medium text-gray-900">
+                                Starts: {eventStartDateTimeLabel}
+                              </div>
+                              <div className="text-sm text-gray-600">
+                                Ends: {eventEndDateTimeLabel || formatEventDateRange({ startDate: event.date, endDate: event.end_date, formatStyle: 'long' })}
+                              </div>
+                            </>
+                          ) : (
+                            <>
+                              <div className="font-medium text-gray-900">
+                                {formatEventDateRange({ startDate: event.date, endDate: event.end_date, formatStyle: 'long' })}
+                              </div>
+                              <div className="text-sm text-gray-600">
+                                {eventDisplayTime}
+                              </div>
+                            </>
+                          )}
                         </div>
                       </div>
                     )}
@@ -1022,24 +1142,26 @@ const EventDetailsContent = () => {
 
                   <Separator />
 
-                  <div className="space-y-2">
-                    <div className="text-xs text-gray-500 uppercase tracking-wider">
-                      Blockchain Info
+                  <div className="space-y-3">
+                    <div className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">
+                      Blockchain Details
                     </div>
-                    <div className="flex items-center justify-between text-sm">
-                      <span className="text-gray-600">Contract</span>
+                    <div className="flex items-center justify-between group">
+                      <div className="flex items-center gap-2">
+                        <div className="w-1.5 h-1.5 rounded-full bg-blue-500 shadow-[0_0_8px_rgba(59,130,246,0.5)]"></div>
+                        <span className="text-xs font-medium text-gray-500">Contract</span>
+                      </div>
                       <Button
                         variant="ghost"
                         size="sm"
-                        className="h-auto p-0 text-blue-600"
+                        className="h-auto p-0 text-blue-600 hover:text-blue-700 hover:bg-transparent"
                         asChild
                       >
-                        <a href={explorerUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center">
-                          <span className="font-mono text-xs">
-                            {event.lock_address.slice(0, 6)}...
-                            {event.lock_address.slice(-4)}
+                        <a href={explorerUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1.5">
+                          <span className="font-mono text-xs bg-blue-50 px-2 py-0.5 rounded border border-blue-100/50">
+                            {event.lock_address.slice(0, 6)}...{event.lock_address.slice(-4)}
                           </span>
-                          <ExternalLink className="w-3 h-3 ml-1" />
+                          <ExternalLink className="w-3 h-3 opacity-70 group-hover:opacity-100 transition-opacity" />
                         </a>
                       </Button>
                     </div>
@@ -1063,42 +1185,42 @@ const EventDetailsContent = () => {
                   {/* User Ticket Status */}
                   {authenticated && userTicketCount > 0 && (
                     <div className="bg-green-50 border border-green-200 rounded-lg p-3 mb-4">
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center space-x-2">
-                          <div className="w-2 h-2 bg-green-500 rounded-full"></div>
-                          <span className="text-sm font-medium text-green-800">
-                            You own {userTicketCount} ticket
-                            {userTicketCount > 1 ? "s" : ""}
-                          </span>
-                        </div>
+                      <div className="flex flex-col gap-2">
                         {maxTicketsPerUser > 1 && (
                           <Badge
-                            variant="outline"
-                            className="text-green-600 border-green-200"
+                            variant="secondary"
+                            className="text-green-700 bg-green-100 border-green-200/50 text-[10px] w-fit"
                           >
                             {userTicketCount}/{maxTicketsPerUser} max
                           </Badge>
                         )}
+                        <div className="flex items-center space-x-2">
+                          <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse shadow-[0_0_8px_rgba(34,197,94,0.5)]"></div>
+                          <span className="text-sm font-semibold text-green-800 leading-none">
+                            You own {userTicketCount} ticket
+                            {userTicketCount > 1 ? "s" : ""}
+                          </span>
+                        </div>
                       </div>
                     </div>
                   )}
 
-                  <div className="flex items-center justify-between">
-                    <span className="text-2xl font-bold text-gray-900">
+                  <div className="flex flex-col gap-2">
+                    {!isSoldOut && (
+                      <Badge
+                        variant="secondary"
+                        className="bg-green-50 text-green-700 border-green-200/50 text-[10px] uppercase tracking-wider font-bold w-fit"
+                      >
+                        {spotsLeft} spots left
+                      </Badge>
+                    )}
+                    <div className="text-3xl font-bold text-gray-900 tracking-tight">
                       {event.payment_methods?.includes('fiat') && event.ngn_price > 0
                         ? `₦${event.ngn_price.toLocaleString()}`
                         : isFreeEvent(event)
                           ? 'Free'
                           : `${event.price} ${event.currency}`}
-                    </span>
-                    {!isSoldOut && (
-                      <Badge
-                        variant="outline"
-                        className="text-green-600 border-green-200"
-                      >
-                        {spotsLeft} spots left
-                      </Badge>
-                    )}
+                    </div>
                   </div>
 
                   <div className="space-y-2">
@@ -1117,6 +1239,92 @@ const EventDetailsContent = () => {
                       </div>
                     )}
                   </div>
+
+                  {isProtectedRefundEvent && (
+                    <div className="rounded-xl border border-purple-100 bg-purple-50/50 p-4 space-y-4">
+                      <div className="space-y-3">
+                        <Badge variant="outline" className={`text-[10px] uppercase tracking-wider font-bold w-fit ${refundBadge.className}`}>
+                          {refundBadge.label}
+                        </Badge>
+                        <div className="flex items-center gap-2">
+                          <Shield className="w-4 h-4 text-purple-600" />
+                          <div className="text-sm font-bold text-purple-950">Protected Event</div>
+                        </div>
+                      </div>
+
+                      <div className="space-y-3 text-sm">
+                        <div className="flex justify-between items-center text-purple-900">
+                          <span className="text-purple-700/70 font-medium">Progress to Release</span>
+                          <span className="font-mono font-bold">
+                            {refundableStatus.attendeeCount || keysSold}/{refundableStatus.minAttendees || event.refund_min_attendees || 0}
+                          </span>
+                        </div>
+
+                        <div className="w-full bg-purple-200/50 rounded-full h-2 overflow-hidden">
+                          <div
+                            className="bg-purple-600 h-2 rounded-full transition-all duration-500 ease-out"
+                            style={{
+                              width: `${Math.min(
+                                ((refundableStatus.attendeeCount || keysSold) / Math.max(refundableStatus.minAttendees || event.refund_min_attendees || 1, 1)) * 100,
+                                100
+                              )}%`,
+                            }}
+                          />
+                        </div>
+
+                        <div className="grid grid-cols-1 gap-3 pt-2">
+                          {event.refund_trigger_at && (
+                            <div className="flex flex-col gap-0.5 border-l-2 border-purple-200 pl-3">
+                              <span className="text-[11px] uppercase tracking-tight text-purple-500 font-bold">Refund Window Opens</span>
+                              <span className="text-purple-900 font-medium leading-tight">
+                                {refundWindowCountdown}
+                              </span>
+                              <span className="text-xs text-purple-500/80 leading-tight">
+                                {new Date(event.refund_trigger_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}
+                                <span className="text-purple-300 mx-1">at</span>
+                                {new Date(event.refund_trigger_at).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}
+                              </span>
+                            </div>
+                          )}
+                          {(event.refund_event_end_at || event.ends_at) && (
+                            <div className="flex flex-col gap-0.5 border-l-2 border-purple-200 pl-3">
+                              <span className="text-[11px] uppercase tracking-tight text-purple-500 font-bold">Public Refund Window Closes</span>
+                              <span className="text-purple-900 font-medium leading-tight">
+                                {refundWindowClosesCountdown}
+                              </span>
+                              <span className="text-xs text-purple-500/80 leading-tight">
+                                {new Date(event.refund_event_end_at || event.ends_at!).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}
+                                <span className="text-purple-300 mx-1">at</span>
+                                {new Date(event.refund_event_end_at || event.ends_at!).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}
+                              </span>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
+                      {(refundableStatus.status === 'refund_available' || refundableStatus.status === 'refund_in_progress' || refundableStatus.status === 'creator_only_refund_window') && (
+                        <Button
+                          variant="destructive"
+                          className="w-full shadow-sm"
+                          onClick={() => refundActions.cancelAndRefund(50)}
+                          disabled={
+                            refundActions.isRefunding ||
+                            !refundableStatus.authorizedRefundCaller ||
+                            !signerMatchesAuthorizedRefundCaller
+                          }
+                        >
+                          {refundActions.isRefunding ? (
+                            <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                          ) : (
+                            <AlertCircle className="w-4 h-4 mr-2" />
+                          )}
+                          {refundableStatus.status === 'refund_in_progress'
+                            ? 'Continue refunds'
+                            : 'Cancel and refund'}
+                        </Button>
+                      )}
+                    </div>
+                  )}
 
                   <div className="w-full bg-gray-200 rounded-full h-2">
                     <div
@@ -1168,7 +1376,7 @@ const EventDetailsContent = () => {
                       </TooltipProvider>
 
                       {/* Additional ticket purchase if allowed */}
-                      {userTicketCount < maxTicketsPerUser && !isSoldOut && !isRegistrationClosed && (
+                      {userTicketCount < maxTicketsPerUser && !isSoldOut && !isRegistrationClosed && !isProtectedPurchaseClosed && (
                         <Button
                           variant="outline"
                           className="w-full"
@@ -1186,6 +1394,7 @@ const EventDetailsContent = () => {
                         disabled={
                           isSoldOut ||
                           isRegistrationClosed ||
+                          isProtectedPurchaseClosed ||
                           (authenticated && userTicketCount >= maxTicketsPerUser)
                         }
                       >
@@ -1193,7 +1402,9 @@ const EventDetailsContent = () => {
                           ? "Sold Out"
                           : isRegistrationClosed
                             ? "Registration Closed"
-                            : !authenticated
+                            : isProtectedPurchaseClosed
+                              ? "Protected Event Paused"
+                              : !authenticated
                               ? "Connect Wallet to Get Ticket"
                               : userTicketCount >= maxTicketsPerUser
                                 ? "Ticket Limit Reached"
@@ -1242,6 +1453,8 @@ const EventDetailsContent = () => {
                 eventTitle={event.title}
                 eventDate={(event.date ? event.date : new Date()).toISOString()}
                 eventTime={event.time}
+                startsAt={event.starts_at}
+                endsAt={event.ends_at}
                 lockAddress={event.lock_address}
                 userHasTicket={userTicketCount > 0}
                 attendanceSchemaUid={attendanceSchemaUid || undefined}

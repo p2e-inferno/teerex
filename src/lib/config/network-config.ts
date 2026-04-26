@@ -18,6 +18,7 @@ export interface NetworkConfig {
   g_token_address: string | null;
   up_token_address: string | null;
   unlock_factory_address: string | null;
+  refundable_event_manager_address: string | null;
   native_currency_symbol: string;
   native_currency_name: string | null;
   native_currency_decimals: number | null;
@@ -43,6 +44,7 @@ function isValidNetworkConfig(data: any): data is NetworkConfig {
     (data.g_token_address === null || typeof data.g_token_address === 'string') &&
     (data.up_token_address === null || typeof data.up_token_address === 'string') &&
     (data.unlock_factory_address === null || typeof data.unlock_factory_address === 'string') &&
+    (data.refundable_event_manager_address === null || typeof data.refundable_event_manager_address === 'string') &&
     (data.native_currency_name === null || typeof data.native_currency_name === 'string') &&
     (data.native_currency_decimals === null || typeof data.native_currency_decimals === 'number') &&
     (data.rpc_url === null || typeof data.rpc_url === 'string') &&

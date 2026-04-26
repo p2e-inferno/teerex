@@ -26,6 +26,18 @@ const PublicLockABI = [
   },
 ];
 
+const SAFE_METADATA_FIELDS = new Set([
+  "title",
+  "description",
+  "location",
+  "eventType",
+  "category",
+  "imageUrl",
+  "imageCropX",
+  "imageCropY",
+  "allowWaitlist",
+]);
+
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: buildPreflightHeaders(req) });
@@ -138,7 +150,7 @@ serve(async (req) => {
     );
     const { data: event, error: fetchError } = await serviceRoleClient
       .from("events")
-      .select("lock_address, chain_id, date, time, starts_at, registration_cutoff")
+      .select("creator_id, lock_address, chain_id, date, end_date, time, starts_at, ends_at, registration_cutoff, refund_protection_enabled")
       .eq("id", eventId)
       .single();
 
@@ -151,47 +163,18 @@ serve(async (req) => {
     }
     const lockAddress = event.lock_address;
     const chainId = event.chain_id;
-
-    // 5. Validate chain and get network configuration
-    const networkConfig = await validateChain(serviceRoleClient, chainId);
-    if (!networkConfig) {
-      return new Response(
-        JSON.stringify({ error: "Chain not supported or not active" }),
-        {
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-          status: 400,
-        }
-      );
-    }
-
-    if (!networkConfig.rpc_url) {
-      return new Response(
-        JSON.stringify({ error: "Network not fully configured (missing RPC URL)" }),
-        {
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-          status: 500,
-        }
-      );
-    }
-
-    // 6. On-chain authorization: Check if any of the user's wallets is a lock manager
-    const provider = new ethers.JsonRpcProvider(networkConfig.rpc_url);
-    const lockContract = new ethers.Contract(
-      lockAddress,
-      PublicLockABI,
-      provider
+    const requestedKeys = Object.keys(formData).filter(
+      (key) => key !== "timezone_offset_minutes"
     );
+    const isSafeMetadataOnlyUpdate =
+      requestedKeys.length > 0 &&
+      requestedKeys.every((key) => SAFE_METADATA_FIELDS.has(key));
 
-    try {
-      let authorized = false;
-      for (const addr of userWalletAddresses) {
-        const isManager = await lockContract.isLockManager(addr);
-        if (isManager) { authorized = true; break; }
-      }
-      if (!authorized) {
+    if (isSafeMetadataOnlyUpdate) {
+      if (event.creator_id !== privyUserId) {
         return new Response(
           JSON.stringify({
-            error: "Unauthorized: You are not a manager for this event.",
+            error: "Unauthorized: You are not the creator of this event.",
           }),
           {
             headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -199,17 +182,66 @@ serve(async (req) => {
           }
         );
       }
-    } catch (contractError) {
-      console.error("Error checking lock manager status:", contractError);
-      return new Response(
-        JSON.stringify({
-          error: "Failed to verify lock manager status on blockchain",
-        }),
-        {
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-          status: 500,
-        }
+    } else {
+      // 5. Validate chain and get network configuration
+      const networkConfig = await validateChain(serviceRoleClient, chainId);
+      if (!networkConfig) {
+        return new Response(
+          JSON.stringify({ error: "Chain not supported or not active" }),
+          {
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+            status: 400,
+          }
+        );
+      }
+
+      if (!networkConfig.rpc_url) {
+        return new Response(
+          JSON.stringify({ error: "Network not fully configured (missing RPC URL)" }),
+          {
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+            status: 500,
+          }
+        );
+      }
+
+      // 6. On-chain authorization: Check if any of the user's wallets is a lock manager
+      const provider = new ethers.JsonRpcProvider(networkConfig.rpc_url);
+      const lockContract = new ethers.Contract(
+        lockAddress,
+        PublicLockABI,
+        provider
       );
+
+      try {
+        let authorized = false;
+        for (const addr of userWalletAddresses) {
+          const isManager = await lockContract.isLockManager(addr);
+          if (isManager) { authorized = true; break; }
+        }
+        if (!authorized) {
+          return new Response(
+            JSON.stringify({
+              error: "Unauthorized: You are not a manager for this event.",
+            }),
+            {
+              headers: { ...corsHeaders, "Content-Type": "application/json" },
+              status: 403,
+            }
+          );
+        }
+      } catch (contractError) {
+        console.error("Error checking lock manager status:", contractError);
+        return new Response(
+          JSON.stringify({
+            error: "Failed to verify lock manager status on blockchain",
+          }),
+          {
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+            status: 500,
+          }
+        );
+      }
     }
 
     // 7. If authorized, prepare and perform a partial update only for provided fields
@@ -218,6 +250,63 @@ serve(async (req) => {
     };
 
     if (formData && typeof formData === "object") {
+      if ("isPublic" in formData) {
+        return new Response(
+          JSON.stringify({
+            error: "Event visibility cannot be edited after creation.",
+          }),
+          {
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+            status: 400,
+          }
+        );
+      }
+
+      if (event.refund_protection_enabled) {
+        const normalizeIso = (value: unknown): string | null => {
+          if (!value) return null;
+          const dateValue = new Date(value as string);
+          return Number.isFinite(dateValue.getTime()) ? dateValue.toISOString() : null;
+        };
+        const timezoneOffsetMinutes =
+          typeof (formData as any)?.timezone_offset_minutes === "number"
+            ? (formData as any).timezone_offset_minutes
+            : undefined;
+        const nextDate = "date" in formData ? normalizeIso(formData.date) : normalizeIso(event.date);
+        const nextEndDate = "endDate" in formData ? normalizeIso(formData.endDate) : normalizeIso(event.end_date);
+        const nextTime = "time" in formData ? formData.time : event.time;
+        let nextEndsAt = "ends_at" in formData ? normalizeIso(formData.ends_at) : normalizeIso(event.ends_at);
+
+        if (!("ends_at" in formData) && ("endTime" in formData || "endDate" in formData || "date" in formData)) {
+          const baseDate = "endDate" in formData
+            ? formData.endDate || formData.date || event.date
+            : event.end_date || event.date;
+          const endTime = "endTime" in formData ? formData.endTime : undefined;
+          if (baseDate && endTime) {
+            const dateOnly = toDateOnly(baseDate, timezoneOffsetMinutes);
+            nextEndsAt = dateOnly ? buildStartsAtUtcIso(dateOnly, endTime, timezoneOffsetMinutes) : null;
+          }
+        }
+
+        const timingChanged =
+          nextDate !== normalizeIso(event.date) ||
+          nextEndDate !== normalizeIso(event.end_date) ||
+          nextTime !== event.time ||
+          nextEndsAt !== normalizeIso(event.ends_at);
+
+        if (timingChanged) {
+          return new Response(
+            JSON.stringify({
+              error: "Protected event timing cannot be edited after creation.",
+            }),
+            {
+              headers: { ...corsHeaders, "Content-Type": "application/json" },
+              status: 400,
+            }
+          );
+        }
+      }
+
       if ("title" in formData) eventData.title = formData.title;
       if ("description" in formData) eventData.description = formData.description;
       if ("date" in formData) {
@@ -227,6 +316,9 @@ serve(async (req) => {
         eventData.end_date = formData.endDate
           ? new Date(formData.endDate).toISOString()
           : null;
+      }
+      if ("ends_at" in formData) {
+        eventData.ends_at = formData.ends_at ? new Date(formData.ends_at).toISOString() : null;
       }
       if ("time" in formData) eventData.time = formData.time;
       if ("location" in formData) eventData.location = formData.location;
@@ -263,6 +355,23 @@ serve(async (req) => {
         }
       }
 
+      if ("endTime" in formData || "endDate" in formData || "date" in formData) {
+        const baseDate = "endDate" in formData
+          ? formData.endDate || formData.date || event.date
+          : event.end_date || event.date;
+        const endTime = "endTime" in formData ? formData.endTime : undefined;
+        if (!eventData.ends_at && baseDate && endTime) {
+          const timezoneOffsetMinutes =
+            typeof (formData as any)?.timezone_offset_minutes === "number"
+              ? (formData as any).timezone_offset_minutes
+              : undefined;
+          const dateOnly = toDateOnly(baseDate, timezoneOffsetMinutes);
+          if (dateOnly) {
+            eventData.ends_at = buildStartsAtUtcIso(dateOnly, endTime, timezoneOffsetMinutes);
+          }
+        }
+      }
+
       if ("registration_cutoff" in formData) {
         eventData.registration_cutoff = formData.registration_cutoff
           ? new Date(formData.registration_cutoff).toISOString()
@@ -274,6 +383,12 @@ serve(async (req) => {
       if ("imageUrl" in formData) {
         // Only touch image_url if imageUrl was provided explicitly
         eventData.image_url = formData.imageUrl || null;
+      }
+      if ("imageCropX" in formData) {
+        eventData.image_crop_x = formData.imageCropX ?? null;
+      }
+      if ("imageCropY" in formData) {
+        eventData.image_crop_y = formData.imageCropY ?? null;
       }
       if ("service_manager_added" in formData) {
         eventData.service_manager_added = !!formData.service_manager_added;
@@ -287,7 +402,9 @@ serve(async (req) => {
       if ("transferable" in formData) {
         eventData.transferable = !!formData.transferable;
       }
-      if ("allow_waitlist" in formData) {
+      if ("allowWaitlist" in formData) {
+        eventData.allow_waitlist = !!formData.allowWaitlist;
+      } else if ("allow_waitlist" in formData) {
         eventData.allow_waitlist = !!formData.allow_waitlist;
       }
     }

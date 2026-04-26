@@ -36,6 +36,8 @@ interface EventAttestationCardProps {
   chainId?: number;
   /** When this value changes, the component reloads stats */
   refreshToken?: number;
+  startsAt?: string | null;
+  endsAt?: string | null;
 }
 
 interface AttestationStats {
@@ -67,7 +69,9 @@ export const EventAttestationCard: React.FC<EventAttestationCardProps & {
   goingDisableReason,
   canRevokeAttendanceOverride,
   attendanceDisableReason,
-  refreshToken
+  refreshToken,
+  startsAt,
+  endsAt
 }) => {
   const { authenticated, getAccessToken } = usePrivy();
   const { wallets } = useWallets();
@@ -109,10 +113,22 @@ export const EventAttestationCard: React.FC<EventAttestationCardProps & {
   }, [refreshToken]);
 
   // Calculate event timing - handle both ISO and regular date formats
-  const eventDateTime = new Date(`${eventDate.split('T')[0]}T${eventTime}`);
+  const eventDateTime = React.useMemo(() => {
+    if (startsAt) return new Date(startsAt);
+    const datePart = eventDate.split('T')[0];
+    const dateObj = new Date(`${datePart}T${eventTime}`);
+    // Fallback if parsing fails
+    return isNaN(dateObj.getTime()) ? new Date(eventDate) : dateObj;
+  }, [startsAt, eventDate, eventTime]);
+
+  const eventEndDateTime = React.useMemo(() => {
+    if (endsAt) return new Date(endsAt);
+    return addHours(eventDateTime, 2); // Assume 2-hour event duration fallback
+  }, [endsAt, eventDateTime]);
+
   const now = new Date();
   const eventHasStarted = isAfter(now, eventDateTime);
-  const eventHasEnded = isAfter(now, addHours(eventDateTime, 2)); // Assume 2-hour event duration
+  const eventHasEnded = isAfter(now, eventEndDateTime);
   const canDeclareGoing = !eventHasStarted && authenticated && userHasTicket;
   const canAttestAttendance = eventHasEnded && authenticated && userHasTicket;
 
@@ -504,17 +520,17 @@ export const EventAttestationCard: React.FC<EventAttestationCardProps & {
   return (
     <Card className="border-0 shadow-sm bg-gradient-to-br from-background to-muted/20">
       <CardHeader className="pb-4">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center space-x-2">
-            <Award className="w-5 h-5 text-primary" />
-            <h3 className="font-semibold text-foreground">Event Attestations</h3>
+          <div className="space-y-3">
+            {authenticated && (
+              <Badge variant="outline" className="text-[10px] w-fit uppercase tracking-tight font-bold bg-primary/5 text-primary border-primary/20">
+                Reputation: {stats.userReputation}
+              </Badge>
+            )}
+            <div className="flex items-center space-x-2">
+              <Award className="w-5 h-5 text-primary" />
+              <h3 className="font-semibold text-foreground">Event Attestations</h3>
+            </div>
           </div>
-          {authenticated && (
-            <Badge variant="outline" className="text-xs">
-              Reputation: {stats.userReputation}
-            </Badge>
-          )}
-        </div>
       </CardHeader>
 
       <CardContent className="space-y-6">

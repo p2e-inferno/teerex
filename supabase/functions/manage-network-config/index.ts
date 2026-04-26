@@ -12,6 +12,7 @@ interface NetworkConfigInput {
   chain_name: string;
   usdc_token_address?: string | null;
   unlock_factory_address?: string | null;
+  refundable_event_manager_address?: string | null;
   native_currency_symbol: string;
   native_currency_name?: string | null;
   native_currency_decimals?: number | null;
@@ -104,12 +105,14 @@ function validateNetworkConfig(input: any): NetworkConfigInput {
 
   validateAddress(input.usdc_token_address, 'usdc_token_address');
   validateAddress(input.unlock_factory_address, 'unlock_factory_address');
+  validateAddress(input.refundable_event_manager_address, 'refundable_event_manager_address');
 
   return {
     chain_id: input.chain_id,
     chain_name: input.chain_name.trim(),
     usdc_token_address: input.usdc_token_address || null,
     unlock_factory_address: input.unlock_factory_address || null,
+    refundable_event_manager_address: input.refundable_event_manager_address || null,
     native_currency_symbol: input.native_currency_symbol.trim(),
     native_currency_name: input.native_currency_name?.trim() || null,
     native_currency_decimals: input.native_currency_decimals || null,
