@@ -14,6 +14,8 @@ const ALLOWED_DRAFT_FIELDS = [
     'description',
     'date',
     'end_date',
+    'starts_at',
+    'ends_at',
     'time',
     'timezone_offset_minutes',
     'location',
@@ -34,7 +36,16 @@ const ALLOWED_DRAFT_FIELDS = [
     'allow_waitlist',
     'has_allow_list',
     'transferable',
-    'chain_id'
+    'chain_id',
+    'refund_protection_enabled',
+    'refund_min_attendees',
+    'refund_trigger_at',
+    'refund_event_end_at',
+    'refund_controller_address',
+    'refund_reserve_bond',
+    'refund_status',
+    'refund_last_tx_hash',
+    'refund_last_synced_at'
 ];
 
 // Sanitize payload to only include allowed fields

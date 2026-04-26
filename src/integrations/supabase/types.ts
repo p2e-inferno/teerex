@@ -420,6 +420,7 @@ export type Database = {
           custom_duration_days: number | null
           date: string | null
           description: string
+          ends_at: string | null
           end_date: string | null
           event_type: string
           has_allow_list: boolean | null
@@ -435,6 +436,15 @@ export type Database = {
           paystack_public_key: string | null
           price: number
           registration_cutoff: string | null
+          refund_controller_address: string | null
+          refund_event_end_at: string | null
+          refund_last_synced_at: string | null
+          refund_last_tx_hash: string | null
+          refund_min_attendees: number | null
+          refund_protection_enabled: boolean
+          refund_reserve_bond: string | null
+          refund_status: string | null
+          refund_trigger_at: string | null
           starts_at: string | null
           ticket_duration: string | null
           time: string
@@ -454,6 +464,7 @@ export type Database = {
           custom_duration_days?: number | null
           date?: string | null
           description?: string
+          ends_at?: string | null
           end_date?: string | null
           event_type?: string
           has_allow_list?: boolean | null
@@ -469,6 +480,15 @@ export type Database = {
           paystack_public_key?: string | null
           price?: number
           registration_cutoff?: string | null
+          refund_controller_address?: string | null
+          refund_event_end_at?: string | null
+          refund_last_synced_at?: string | null
+          refund_last_tx_hash?: string | null
+          refund_min_attendees?: number | null
+          refund_protection_enabled?: boolean
+          refund_reserve_bond?: string | null
+          refund_status?: string | null
+          refund_trigger_at?: string | null
           starts_at?: string | null
           ticket_duration?: string | null
           time?: string
@@ -488,6 +508,7 @@ export type Database = {
           custom_duration_days?: number | null
           date?: string | null
           description?: string
+          ends_at?: string | null
           end_date?: string | null
           event_type?: string
           has_allow_list?: boolean | null
@@ -503,6 +524,15 @@ export type Database = {
           paystack_public_key?: string | null
           price?: number
           registration_cutoff?: string | null
+          refund_controller_address?: string | null
+          refund_event_end_at?: string | null
+          refund_last_synced_at?: string | null
+          refund_last_tx_hash?: string | null
+          refund_min_attendees?: number | null
+          refund_protection_enabled?: boolean
+          refund_reserve_bond?: string | null
+          refund_status?: string | null
+          refund_trigger_at?: string | null
           starts_at?: string | null
           ticket_duration?: string | null
           time?: string
@@ -637,6 +667,7 @@ export type Database = {
           custom_duration_days: number | null
           date: string | null
           description: string
+          ends_at: string | null
           end_date: string | null
           event_type: string
           has_allow_list: boolean | null
@@ -658,6 +689,15 @@ export type Database = {
           price: number
           registration_cutoff: string | null
           requires_approval: boolean
+          refund_controller_address: string | null
+          refund_event_end_at: string | null
+          refund_last_synced_at: string | null
+          refund_last_tx_hash: string | null
+          refund_min_attendees: number | null
+          refund_protection_enabled: boolean
+          refund_reserve_bond: string | null
+          refund_status: string | null
+          refund_trigger_at: string | null
           review_schema_uid: string | null
           service_manager_added: boolean
           starts_at: string | null
@@ -681,6 +721,7 @@ export type Database = {
           custom_duration_days?: number | null
           date?: string | null
           description: string
+          ends_at?: string | null
           end_date?: string | null
           event_type?: string
           has_allow_list?: boolean | null
@@ -702,6 +743,15 @@ export type Database = {
           price?: number
           registration_cutoff?: string | null
           requires_approval?: boolean
+          refund_controller_address?: string | null
+          refund_event_end_at?: string | null
+          refund_last_synced_at?: string | null
+          refund_last_tx_hash?: string | null
+          refund_min_attendees?: number | null
+          refund_protection_enabled?: boolean
+          refund_reserve_bond?: string | null
+          refund_status?: string | null
+          refund_trigger_at?: string | null
           review_schema_uid?: string | null
           service_manager_added?: boolean
           starts_at?: string | null
@@ -725,6 +775,7 @@ export type Database = {
           custom_duration_days?: number | null
           date?: string | null
           description?: string
+          ends_at?: string | null
           end_date?: string | null
           event_type?: string
           has_allow_list?: boolean | null
@@ -746,6 +797,15 @@ export type Database = {
           price?: number
           registration_cutoff?: string | null
           requires_approval?: boolean
+          refund_controller_address?: string | null
+          refund_event_end_at?: string | null
+          refund_last_synced_at?: string | null
+          refund_last_tx_hash?: string | null
+          refund_min_attendees?: number | null
+          refund_protection_enabled?: boolean
+          refund_reserve_bond?: string | null
+          refund_status?: string | null
+          refund_trigger_at?: string | null
           review_schema_uid?: string | null
           service_manager_added?: boolean
           starts_at?: string | null
@@ -1377,6 +1437,7 @@ export type Database = {
           native_currency_decimals: number | null
           native_currency_name: string | null
           native_currency_symbol: string
+          refundable_event_manager_address: string | null
           rpc_url: string | null
           unlock_factory_address: string | null
           up_token_address: string | null
@@ -1396,6 +1457,7 @@ export type Database = {
           native_currency_decimals?: number | null
           native_currency_name?: string | null
           native_currency_symbol?: string
+          refundable_event_manager_address?: string | null
           rpc_url?: string | null
           unlock_factory_address?: string | null
           up_token_address?: string | null
@@ -1415,6 +1477,7 @@ export type Database = {
           native_currency_decimals?: number | null
           native_currency_name?: string | null
           native_currency_symbol?: string
+          refundable_event_manager_address?: string | null
           rpc_url?: string | null
           unlock_factory_address?: string | null
           up_token_address?: string | null

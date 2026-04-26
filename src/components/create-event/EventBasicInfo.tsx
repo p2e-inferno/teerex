@@ -478,6 +478,19 @@ export const EventBasicInfo: React.FC<EventBasicInfoProps> = ({
         </p>
       </div>
 
+      <div className="space-y-2">
+        <Label htmlFor="endTime">End Time *</Label>
+        <Input
+          id="endTime"
+          type="time"
+          value={formData.endTime}
+          onChange={(e) => updateFormData({ endTime: e.target.value })}
+        />
+        {!formData.endTime && (
+          <p className="text-sm text-red-600">Event end time is required</p>
+        )}
+      </div>
+
       {/* Transferability Setting */}
       <div className="space-y-3 p-4 border border-gray-200 rounded-lg bg-gray-50">
         <div className="flex items-center justify-between gap-3">
@@ -487,6 +500,7 @@ export const EventBasicInfo: React.FC<EventBasicInfoProps> = ({
           <Switch
             id="transferable"
             checked={formData.transferable ?? false}
+            disabled={Boolean(formData.refundProtectionEnabled)}
             onCheckedChange={(checked) => updateFormData({ transferable: checked })}
             className="shrink-0"
           />
@@ -500,7 +514,9 @@ export const EventBasicInfo: React.FC<EventBasicInfoProps> = ({
           )}
         </div>
         <p className="text-sm text-gray-600">
-          {formData.transferable
+          {formData.refundProtectionEnabled
+            ? "Ticket transfers are disabled while minimum attendance protection is enabled."
+            : formData.transferable
             ? "Ticket holders can transfer or resell their tickets to others."
             : "Tickets are soul-bound (non-transferable) and cannot be resold. Recommended for most events to prevent scalping."}
         </p>

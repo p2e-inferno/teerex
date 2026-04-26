@@ -211,11 +211,6 @@ export const TicketSettingsDisplay: React.FC<TicketSettingsDisplayProps> = ({
                 {formData.paymentMethod === 'crypto' && `${formData.price} ${formData.currency}`}
                 {formData.paymentMethod === 'fiat' && `₦${formData.ngnPrice.toLocaleString()}`}
               </p>
-              {isPublishedCryptoEvent && lockState.onChainPrice !== null && !lockState.hasMismatch && (
-                <p className="text-xs text-gray-500 mt-1">
-                  On-chain: {lockState.onChainPrice} {lockState.onChainCurrency}
-                </p>
-              )}
             </div>
           </div>
           <div className="flex items-start gap-4">
@@ -227,6 +222,22 @@ export const TicketSettingsDisplay: React.FC<TicketSettingsDisplayProps> = ({
               <p className="text-lg font-semibold text-gray-900">{networkLabel}</p>
             </div>
           </div>
+          {formData.refundProtectionEnabled && (
+            <div className="flex items-start gap-4 md:col-span-3">
+              <div className="bg-purple-100 text-purple-600 rounded-lg p-3">
+                <AlertTriangle className="w-6 h-6" />
+              </div>
+              <div>
+                <p className="text-sm font-medium text-gray-500">Refund Protection</p>
+                <p className="text-lg font-semibold text-gray-900">
+                  {formData.refundMinAttendees} attendees minimum
+                </p>
+                <p className="text-xs text-gray-500 mt-1">
+                  Trigger: {formData.refundTriggerAt ? new Date(formData.refundTriggerAt).toLocaleString() : 'Not set'}
+                </p>
+              </div>
+            </div>
+          )}
         </CardContent>
       </Card>
     </div>

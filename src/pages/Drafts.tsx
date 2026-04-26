@@ -92,12 +92,16 @@ const Drafts = () => {
       : 'free';
 
     // Convert draft to EventFormData format
+    const endTime = draft.ends_at
+      ? `${String(new Date(draft.ends_at).getHours()).padStart(2, '0')}:${String(new Date(draft.ends_at).getMinutes()).padStart(2, '0')}`
+      : '';
     const formData: EventFormData = {
       title: draft.title,
       description: draft.description,
       date: draft.date,
       endDate: draft.end_date,
       time: draft.time,
+      endTime,
       location: draft.location,
       eventType: (draft as any).event_type || 'physical',
       capacity: draft.capacity,
@@ -114,6 +118,12 @@ const Drafts = () => {
       allowWaitlist: (draft as any).allow_waitlist ?? false,
       hasAllowList: (draft as any).has_allow_list ?? false,
       transferable: draft.transferable ?? false,
+      refundProtectionEnabled: draft.refund_protection_enabled ?? false,
+      refundMinAttendees: draft.refund_min_attendees ?? undefined,
+      refundTriggerAt: draft.refund_trigger_at ?? null,
+      refundEventEndAt: draft.refund_event_end_at ?? draft.ends_at ?? null,
+      refundReserveBond: draft.refund_reserve_bond ?? null,
+      refundStatus: draft.refund_status ?? null,
     };
 
     const result = await publishEvent(formData, {

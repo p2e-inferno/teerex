@@ -4,14 +4,52 @@ import { corsHeaders, buildPreflightHeaders } from "../_shared/cors.ts";
 import { verifyPrivyToken, getUserWalletAddresses } from "../_shared/privy.ts";
 import { validateChain } from "../_shared/network-helpers.ts";
 import { handleError } from "../_shared/error-handler.ts";
-import { isAnyUserWalletIsLockManagerParallel } from "../_shared/unlock.ts";
-import { Wallet } from "https://esm.sh/ethers@6.14.4";
+import { isAnyUserWalletIsLockManagerParallel, resolveTokenInfo } from "../_shared/unlock.ts";
+import { Contract, JsonRpcProvider, Wallet } from "https://esm.sh/ethers@6.14.4";
 import { buildStartsAtUtcIso, toDateOnly } from "../_shared/datetime.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const PAYSTACK_PUBLIC_KEY = Deno.env.get("VITE_PAYSTACK_PUBLIC_KEY")!;
 const UNLOCK_SERVICE_PRIVATE_KEY = Deno.env.get("UNLOCK_SERVICE_PRIVATE_KEY")!;
+
+const REFUNDABLE_EVENT_MANAGER_ABI = [
+    {
+        inputs: [{ name: "lock", type: "address" }],
+        name: "eventConfigByLock",
+        outputs: [
+            { name: "exists", type: "bool" },
+            { name: "managerReleased", type: "bool" },
+            { name: "cancelInitiated", type: "bool" },
+            { name: "refundComplete", type: "bool" },
+            { name: "creator", type: "address" },
+            { name: "currency", type: "address" },
+            { name: "keyPrice", type: "uint256" },
+            { name: "minAttendees", type: "uint256" },
+            { name: "refundTriggerTime", type: "uint256" },
+            { name: "eventStartTime", type: "uint256" },
+            { name: "eventEndTime", type: "uint256" },
+            { name: "protocolFeeBpsAtCreation", type: "uint256" },
+            { name: "effectiveBondFeeBps", type: "uint256" },
+            { name: "reserveBond", type: "uint256" },
+            { name: "refundCursor", type: "uint256" },
+            { name: "refundUpperTokenId", type: "uint256" }
+        ],
+        stateMutability: "view",
+        type: "function"
+    }
+] as const;
+
+function toUnixSeconds(value: string | null | undefined, fieldName: string): bigint {
+    if (!value) {
+        throw new Error(`${fieldName} is required`);
+    }
+    const millis = new Date(value).getTime();
+    if (!Number.isFinite(millis)) {
+        throw new Error(`${fieldName} is invalid`);
+    }
+    return BigInt(Math.floor(millis / 1000));
+}
 
 serve(async (req: Request) => {
     if (req.method === "OPTIONS") {
@@ -32,6 +70,7 @@ serve(async (req: Request) => {
             description,
             date,
             end_date,
+            ends_at,
             time,
             location,
             event_type,
@@ -56,7 +95,14 @@ serve(async (req: Request) => {
             has_allow_list,
             transferable,
             nft_metadata_set,
-            nft_base_uri
+            nft_base_uri,
+            refund_protection_enabled,
+            refund_min_attendees,
+            refund_trigger_at,
+            refund_event_end_at,
+            refund_controller_address,
+            refund_reserve_bond,
+            refund_status
         } = payload;
 
         // 3. Create Supabase service client
@@ -80,16 +126,8 @@ serve(async (req: Request) => {
             throw new Error("Chain not supported or not configured");
         }
 
-        // Verify on-chain that at least one of user's wallets is a lock manager
-        const { anyIsManager: isAuthorized } = await isAnyUserWalletIsLockManagerParallel(
-            lock_address,
-            userWalletAddresses,
-            networkConfig.rpc_url
-        );
-
-        if (!isAuthorized) {
-            throw new Error("Unauthorized: You are not a manager of this lock contract");
-        }
+        const isProtectedRefundEvent = Boolean(refund_protection_enabled);
+        const provider = new JsonRpcProvider(networkConfig.rpc_url);
 
         // 5. Check Idempotency (Prevent Duplicates)
         if (idempotency_hash) {
@@ -140,10 +178,92 @@ serve(async (req: Request) => {
             : undefined;
         const dateOnly = toDateOnly(date, timezoneOffsetMinutes);
         const startsAt =
-          dateOnly && time ? buildStartsAtUtcIso(dateOnly, time, timezoneOffsetMinutes) : null;
+          payload.starts_at ||
+          (dateOnly && time ? buildStartsAtUtcIso(dateOnly, time, timezoneOffsetMinutes) : null);
+        const resolvedEndsAt = ends_at || refund_event_end_at || null;
         const defaultCutoff = startsAt
           ? new Date(new Date(startsAt).getTime() - 60 * 60 * 1000).toISOString()
           : null;
+        let resolvedRefundControllerAddress = refund_controller_address || null;
+        let resolvedRefundReserveBond = refund_reserve_bond || null;
+        let resolvedRefundStatus = refund_status || null;
+
+        if (isProtectedRefundEvent) {
+            if (!payment_methods?.includes("crypto")) {
+                throw new Error("Refund protection is only available for crypto paid events");
+            }
+            if (!networkConfig.refundable_event_manager_address) {
+                throw new Error("Refundable event manager is not configured for this chain");
+            }
+            if (!resolvedEndsAt) {
+                throw new Error("ends_at is required for protected events");
+            }
+            if (!refund_min_attendees || Number(refund_min_attendees) <= 0) {
+                throw new Error("refund_min_attendees must be greater than zero");
+            }
+            if (Number(refund_min_attendees) > Number(capacity)) {
+                throw new Error("refund_min_attendees cannot exceed capacity");
+            }
+
+            const controllerAddress = networkConfig.refundable_event_manager_address;
+            if (
+                refund_controller_address &&
+                refund_controller_address.toLowerCase() !== controllerAddress.toLowerCase()
+            ) {
+                throw new Error("Refund controller does not match configured manager");
+            }
+
+            const { tokenAddress, keyPrice } = await resolveTokenInfo(
+                currency,
+                Number(price),
+                Number(chain_id),
+                networkConfig,
+                provider
+            );
+            const controller = new Contract(controllerAddress, REFUNDABLE_EVENT_MANAGER_ABI, provider);
+            const cfg = await controller.eventConfigByLock(lock_address);
+
+            if (!cfg.exists) {
+                throw new Error("Lock is not registered with the refundable event manager");
+            }
+            if (!userWalletAddresses.some((addr) => addr.toLowerCase() === String(cfg.creator).toLowerCase())) {
+                throw new Error("Unauthorized: protected event creator is not a linked wallet");
+            }
+            if (String(cfg.currency).toLowerCase() !== tokenAddress.toLowerCase()) {
+                throw new Error("Protected lock currency does not match event payload");
+            }
+            if (BigInt(cfg.keyPrice) !== keyPrice) {
+                throw new Error("Protected lock price does not match event payload");
+            }
+            if (BigInt(cfg.minAttendees) !== BigInt(refund_min_attendees)) {
+                throw new Error("Protected lock minimum attendees does not match event payload");
+            }
+            if (BigInt(cfg.refundTriggerTime) !== toUnixSeconds(refund_trigger_at, "refund_trigger_at")) {
+                throw new Error("Protected lock refund trigger does not match event payload");
+            }
+            if (BigInt(cfg.eventStartTime) !== toUnixSeconds(startsAt, "starts_at")) {
+                throw new Error("Protected lock start time does not match event payload");
+            }
+            if (BigInt(cfg.eventEndTime) !== toUnixSeconds(resolvedEndsAt, "ends_at")) {
+                throw new Error("Protected lock end time does not match event payload");
+            }
+
+            resolvedServiceManagerAdded = false;
+            resolvedRefundControllerAddress = controllerAddress;
+            resolvedRefundReserveBond = cfg.reserveBond.toString();
+            resolvedRefundStatus = "protected";
+        } else {
+            // Verify on-chain that at least one of user's wallets is a lock manager.
+            const { anyIsManager: isAuthorized } = await isAnyUserWalletIsLockManagerParallel(
+                lock_address,
+                userWalletAddresses,
+                networkConfig.rpc_url
+            );
+
+            if (!isAuthorized) {
+                throw new Error("Unauthorized: You are not a manager of this lock contract");
+            }
+        }
 
         const eventData = {
             creator_id: privyUserId,
@@ -152,6 +272,7 @@ serve(async (req: Request) => {
             date,
             end_date,
             starts_at: startsAt,
+            ends_at: resolvedEndsAt,
             registration_cutoff: defaultCutoff,
             time,
             location,
@@ -179,6 +300,13 @@ serve(async (req: Request) => {
             transferable,
             nft_metadata_set,
             nft_base_uri,
+            refund_protection_enabled: isProtectedRefundEvent,
+            refund_min_attendees: isProtectedRefundEvent ? refund_min_attendees : null,
+            refund_trigger_at: isProtectedRefundEvent ? refund_trigger_at : null,
+            refund_event_end_at: isProtectedRefundEvent ? resolvedEndsAt : null,
+            refund_controller_address: isProtectedRefundEvent ? resolvedRefundControllerAddress : null,
+            refund_reserve_bond: isProtectedRefundEvent ? resolvedRefundReserveBond : null,
+            refund_status: isProtectedRefundEvent ? resolvedRefundStatus : null,
             created_at: new Date().toISOString(),
             updated_at: new Date().toISOString()
         };

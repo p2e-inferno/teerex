@@ -1,5 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { usePrivy, useWallets } from '@privy-io/react-auth';
+import { ethers } from 'ethers';
 import {
   Dialog,
   DialogContent,
@@ -14,7 +15,13 @@ import { Switch } from '@/components/ui/switch';
 import { useToast } from '@/hooks/use-toast';
 import type { PublishedEvent } from '@/types/event';
 import { checkIfLockManager, updateLockPurchasability } from '@/utils/lockUtils';
-import { isEventRegistrationClosed } from '@/lib/events/registration';
+import {
+  cancelAndRefundProtectedEvent,
+  getLockWithdrawableBalance,
+  releaseProtectedEventManager,
+  withdrawLockBalance,
+} from '@/utils/lockUtils';
+import { getEventRegistrationStatus, isEventRegistrationClosed } from '@/lib/events/registration';
 import { supabase } from '@/integrations/supabase/client';
 import {
   ExternalLink,
@@ -27,7 +34,10 @@ import {
   Eye,
   Lock,
   Info,
-  Image
+  Image,
+  Shield,
+  Wallet,
+  Zap
 } from 'lucide-react';
 import { AllowListManager } from './AllowListManager';
 import { WaitlistManager } from './WaitlistManager';
@@ -35,6 +45,9 @@ import { ServiceManagerControls } from '@/components/shared/ServiceManagerContro
 import { useNetworkConfigs } from '@/hooks/useNetworkConfigs';
 import { base, baseSepolia } from 'wagmi/chains';
 import { getDivviBrowserProvider } from '@/lib/wallet/provider';
+import { useUserAddresses } from '@/hooks/useUserAddresses';
+import { useRefundableEventStatus } from '@/hooks/useRefundableEventStatus';
+import { getRefundProtectionBadge } from '@/lib/events/refundStatus';
 
 interface EventManagementDialogProps {
   event: PublishedEvent;
@@ -51,6 +64,8 @@ export const EventManagementDialog: React.FC<EventManagementDialogProps> = ({
 }) => {
   const { getAccessToken } = usePrivy();
   const { wallets } = useWallets();
+  const wallet = wallets[0];
+  const userAddresses = useUserAddresses();
   const { toast } = useToast();
 
   const [allowListManagerOpen, setAllowListManagerOpen] = useState(false);
@@ -60,6 +75,10 @@ export const EventManagementDialog: React.FC<EventManagementDialogProps> = ({
   const [isUpdatingMetadata, setIsUpdatingMetadata] = useState(false);
   const [isUpdatingRegistration, setIsUpdatingRegistration] = useState(false);
   const [isLockManager, setIsLockManager] = useState(false);
+  const [isReleasingProtected, setIsReleasingProtected] = useState(false);
+  const [isRefundingProtected, setIsRefundingProtected] = useState(false);
+  const [isWithdrawingLockBalance, setIsWithdrawingLockBalance] = useState(false);
+  const [withdrawableBalance, setWithdrawableBalance] = useState<string | null>(null);
   const [localRegistrationClosed, setLocalRegistrationClosed] = useState(() =>
     isEventRegistrationClosed(event)
   );
@@ -70,6 +89,40 @@ export const EventManagementDialog: React.FC<EventManagementDialogProps> = ({
   const networkLabel =
     networkConfig?.chain_name ||
     (event.chain_id === base.id ? 'Base' : event.chain_id === baseSepolia.id ? 'Base Sepolia' : 'Network');
+  const refundableStatus = useRefundableEventStatus(
+    event.refund_protection_enabled ? event : null,
+    userAddresses
+  );
+  const refundBadge = getRefundProtectionBadge(refundableStatus.status || event.refund_status);
+  const creatorMatchesWallet = Boolean(
+    wallet?.address &&
+    refundableStatus.creatorAddress &&
+    wallet.address.toLowerCase() === refundableStatus.creatorAddress.toLowerCase()
+  );
+  const signerMatchesAuthorizedRefundCaller = Boolean(
+    wallet?.address &&
+    refundableStatus.authorizedRefundAddress &&
+    wallet.address.toLowerCase() === refundableStatus.authorizedRefundAddress.toLowerCase()
+  );
+  const canRecoverOrReleaseManager = Boolean(
+    event.refund_protection_enabled &&
+    creatorMatchesWallet &&
+    !isLockManager &&
+    (refundableStatus.status === 'threshold_met' || refundableStatus.refundComplete)
+  );
+  const canWithdrawLockBalance = Boolean(
+    event.refund_protection_enabled &&
+    creatorMatchesWallet &&
+    isLockManager &&
+    refundableStatus.status !== 'protected'
+  );
+  const registrationStatus = getEventRegistrationStatus(event);
+  const hasEventStarted = registrationStatus.reason === 'event_started';
+  const registrationStatusDescription = hasEventStarted
+    ? 'Registration is closed because the event has already started.'
+    : localRegistrationClosed
+      ? 'Registration is closed because the registration cutoff has passed. You can reopen it until the event starts.'
+      : 'Manually disable or re-open registrations on the blockchain.';
   const explorerBase =
     networkConfig?.block_explorer_url ||
     (event.chain_id === base.id
@@ -79,24 +132,47 @@ export const EventManagementDialog: React.FC<EventManagementDialogProps> = ({
         : undefined);
 
   // Check if current user is a lock manager
+  const refreshLockManagerState = async () => {
+    if (!wallet || !open) {
+      setIsLockManager(false);
+      return;
+    }
+
+    try {
+      const ethersProvider = await getDivviBrowserProvider(wallet);
+      const signer = await ethersProvider.getSigner();
+      const userAddress = await signer.getAddress();
+
+      const isManager = await checkIfLockManager(event.lock_address, userAddress, event.chain_id);
+      setIsLockManager(isManager);
+    } catch (error) {
+      console.error('Error checking user lock manager status:', error);
+      setIsLockManager(false);
+    }
+  };
+
+  const refreshWithdrawableBalance = useCallback(async () => {
+    if (!open || !canWithdrawLockBalance) {
+      setWithdrawableBalance(null);
+      return;
+    }
+
+    try {
+      const { balance, decimals } = await getLockWithdrawableBalance(event.lock_address, event.chain_id);
+      setWithdrawableBalance(ethers.formatUnits(balance, decimals));
+    } catch (error) {
+      console.error('Error loading withdrawable lock balance:', error);
+      setWithdrawableBalance(null);
+    }
+  }, [open, canWithdrawLockBalance, event.lock_address, event.chain_id]);
+
   useEffect(() => {
-    const checkUserLockManager = async () => {
-      if (!wallets[0] || !open) return;
+    void refreshLockManagerState();
+  }, [wallet, event.lock_address, event.chain_id, open]);
 
-      try {
-        const ethersProvider = await getDivviBrowserProvider(wallets[0]);
-        const signer = await ethersProvider.getSigner();
-        const userAddress = await signer.getAddress();
-
-        const isManager = await checkIfLockManager(event.lock_address, userAddress, event.chain_id);
-        setIsLockManager(isManager);
-      } catch (error) {
-        console.error('Error checking user lock manager status:', error);
-      }
-    };
-
-    checkUserLockManager();
-  }, [wallets, event.lock_address, open]);
+  useEffect(() => {
+    void refreshWithdrawableBalance();
+  }, [refreshWithdrawableBalance, refundableStatus.status, refundableStatus.refundComplete]);
 
   // Sync local state with prop changes
   useEffect(() => {
@@ -313,6 +389,120 @@ export const EventManagementDialog: React.FC<EventManagementDialogProps> = ({
   const hasFiatPayment = event.payment_methods?.includes('fiat');
   const showWarning = hasFiatPayment && !event.service_manager_added;
 
+  const refreshProtectedControls = async (txHash?: string) => {
+    await refundableStatus.refresh(txHash);
+    await refreshLockManagerState();
+    onEventUpdated();
+  };
+
+  const handleReleaseProtected = async () => {
+    if (!wallet) {
+      toast({ title: 'Wallet not connected', variant: 'destructive' });
+      return;
+    }
+
+    setIsReleasingProtected(true);
+    try {
+      const result = await releaseProtectedEventManager(
+        event.lock_address,
+        refundableStatus.controllerAddress || event.refund_controller_address || '',
+        wallet,
+        event.chain_id
+      );
+
+      if (!result.success) {
+        throw new Error(result.error || 'Failed to release lock control');
+      }
+
+      toast({
+        title: refundableStatus.refundComplete ? 'Lock control returned' : 'Lock control released',
+        description: refundableStatus.refundComplete
+          ? 'Creator lock-manager control has been restored after refunds completed.'
+          : 'Creator lock-manager control has been released for this event.',
+      });
+
+      await refreshProtectedControls(result.transactionHash);
+    } catch (error) {
+      toast({
+        title: 'Release failed',
+        description: error instanceof Error ? error.message : 'Failed to release lock control',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsReleasingProtected(false);
+    }
+  };
+
+  const handleRefundProtected = async () => {
+    if (!wallet) {
+      toast({ title: 'Wallet not connected', variant: 'destructive' });
+      return;
+    }
+
+    setIsRefundingProtected(true);
+    try {
+      const result = await cancelAndRefundProtectedEvent(
+        event.lock_address,
+        refundableStatus.controllerAddress || event.refund_controller_address || '',
+        wallet,
+        event.chain_id,
+        50
+      );
+
+      if (!result.success) {
+        throw new Error(result.error || 'Failed to process refunds');
+      }
+
+      toast({ title: 'Refund transaction confirmed' });
+      await refreshProtectedControls(result.transactionHash);
+    } catch (error) {
+      toast({
+        title: 'Refund failed',
+        description: error instanceof Error ? error.message : 'Failed to process refunds',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsRefundingProtected(false);
+    }
+  };
+
+  const handleWithdrawLockBalance = async () => {
+    if (!wallet?.address) {
+      toast({ title: 'Wallet not connected', variant: 'destructive' });
+      return;
+    }
+
+    setIsWithdrawingLockBalance(true);
+    try {
+      const result = await withdrawLockBalance(
+        event.lock_address,
+        wallet.address,
+        wallet,
+        event.chain_id
+      );
+
+      if (!result.success) {
+        throw new Error(result.error || 'Failed to withdraw lock balance');
+      }
+
+      toast({
+        title: 'Lock balance withdrawn',
+        description: 'Available funds were withdrawn from the lock to your connected wallet.',
+      });
+      setWithdrawableBalance('0');
+      await refreshProtectedControls(result.transactionHash);
+      void refreshWithdrawableBalance();
+    } catch (error) {
+      toast({
+        title: 'Withdraw failed',
+        description: error instanceof Error ? error.message : 'Failed to withdraw lock balance',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsWithdrawingLockBalance(false);
+    }
+  };
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
@@ -421,6 +611,111 @@ export const EventManagementDialog: React.FC<EventManagementDialogProps> = ({
             onUpdated={onEventUpdated}
           />
 
+          {event.refund_protection_enabled && (
+            <Card>
+              <CardContent className="pt-6 space-y-4">
+                <div className="flex items-center gap-2">
+                  <Shield className="w-5 h-5 text-gray-600" />
+                  <h3 className="font-semibold text-gray-900">Protected Event Controls</h3>
+                </div>
+
+                <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                  <div className="space-y-1">
+                    <div className="text-sm font-medium text-gray-900">Protection Status</div>
+                    <p className="text-xs text-gray-600">
+                      Min attendees: {refundableStatus.minAttendees || event.refund_min_attendees || 0} · Current: {refundableStatus.attendeeCount || 0}
+                    </p>
+                  </div>
+                  <Badge variant="outline" className={refundBadge.className}>
+                    {refundBadge.label}
+                  </Badge>
+                </div>
+
+                {canRecoverOrReleaseManager && (
+                  <Button
+                    className="w-full"
+                    onClick={handleReleaseProtected}
+                    disabled={isReleasingProtected}
+                  >
+                    {isReleasingProtected ? (
+                      <>
+                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                        Processing...
+                      </>
+                    ) : (
+                      <>
+                        <Zap className="w-4 h-4 mr-2" />
+                        {refundableStatus.refundComplete ? 'Return Lock Control' : 'Release Lock Control'}
+                      </>
+                    )}
+                  </Button>
+                )}
+
+                {(refundableStatus.status === 'refund_available' || refundableStatus.status === 'refund_in_progress' || refundableStatus.status === 'creator_only_refund_window') && (
+                  <Button
+                    variant="destructive"
+                    className="w-full"
+                    onClick={handleRefundProtected}
+                    disabled={
+                      isRefundingProtected ||
+                      !refundableStatus.authorizedRefundCaller ||
+                      !signerMatchesAuthorizedRefundCaller
+                    }
+                  >
+                    {isRefundingProtected ? (
+                      <>
+                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                        Processing...
+                      </>
+                    ) : (
+                      <>
+                        <Shield className="w-4 h-4 mr-2" />
+                        {refundableStatus.status === 'refund_in_progress' ? 'Continue refunds' : 'Cancel and refund'}
+                      </>
+                    )}
+                  </Button>
+                )}
+
+                <div className="rounded-lg border border-gray-200 p-3 space-y-3">
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-2 text-sm font-medium text-gray-900">
+                      <Wallet className="w-4 h-4 text-gray-500" />
+                      Withdraw Lock Balance
+                    </div>
+                    <p className="text-xs text-gray-600">
+                      Withdraw available funds from the lock to your connected wallet after the protection period resolves.
+                    </p>
+                    {withdrawableBalance !== null && (
+                      <p className="text-xs text-gray-500">
+                        Available: {withdrawableBalance} {event.currency}
+                      </p>
+                    )}
+                  </div>
+                  <Button
+                    variant="outline"
+                    className="w-full"
+                    onClick={handleWithdrawLockBalance}
+                    disabled={isWithdrawingLockBalance || !canWithdrawLockBalance}
+                  >
+                    {isWithdrawingLockBalance ? (
+                      <>
+                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                        Withdrawing...
+                      </>
+                    ) : (
+                      'Withdraw Lock Balance'
+                    )}
+                  </Button>
+                  {!canWithdrawLockBalance && (
+                    <p className="text-xs text-gray-500">
+                      Lock-manager control is required before funds can be withdrawn from the lock.
+                    </p>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
           {/* Payment Methods */}
           <Card>
             <CardContent className="pt-6">
@@ -511,7 +806,7 @@ export const EventManagementDialog: React.FC<EventManagementDialogProps> = ({
                     )}
                   </div>
                   <p className="text-sm text-gray-600">
-                    Manually disable or re-open registrations on the blockchain
+                    {registrationStatusDescription}
                   </p>
                   {isUpdatingRegistration && (
                     <p className="text-xs text-gray-500">Waiting for wallet confirmation…</p>
@@ -524,13 +819,18 @@ export const EventManagementDialog: React.FC<EventManagementDialogProps> = ({
                   <Switch
                     checked={!localRegistrationClosed}
                     onCheckedChange={handleToggleRegistration}
-                    disabled={isUpdatingRegistration || !isLockManager}
+                    disabled={isUpdatingRegistration || !isLockManager || (localRegistrationClosed && hasEventStarted)}
                   />
                 </div>
               </div>
               {!isLockManager && (
                 <p className="text-xs text-orange-600 mt-2">
                   ⚠️ Lock manager permission required for registration control
+                </p>
+              )}
+              {localRegistrationClosed && hasEventStarted && (
+                <p className="text-xs text-gray-500 mt-2">
+                  Registration can no longer be reopened because the event start time has passed.
                 </p>
               )}
             </CardContent>
