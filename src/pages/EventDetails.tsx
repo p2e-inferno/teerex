@@ -70,7 +70,10 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import { RichTextDisplay } from "@/components/ui/rich-text/RichTextDisplay";
 import { hasMethod, isFreeEvent } from "@/lib/events/paymentMethods";
 import { EventDetailsRefreshProvider, useEventDetailsRefresh } from "@/pages/event-details/eventDetailsRefresh";
-import { getRefundProtectionBadge } from "@/lib/events/refundStatus";
+import {
+  getRefundProtectionBadge,
+  getRefundProtectionPurchaseStateLabel,
+} from "@/lib/events/refundStatus";
 
 function formatCountdownLabel(targetIso: string | null | undefined, nowMs: number): string | null {
   if (!targetIso) return null;
@@ -816,9 +819,19 @@ const EventDetailsContent = () => {
     }
 
     if (isProtectedPurchaseClosed) {
+      const protectedPurchaseStateLabel = getRefundProtectionPurchaseStateLabel(refundableStatus.status || event.refund_status);
+      const protectedPurchaseStateDescription =
+        protectedPurchaseStateLabel === 'Threshold Missed'
+          ? 'This protected event missed its attendance threshold and is waiting for cancellation or refunds.'
+          : protectedPurchaseStateLabel === 'Cancelled'
+            ? 'This event has been cancelled and refunds are being processed.'
+            : protectedPurchaseStateLabel === 'Event Successful'
+              ? 'This protected event met its attendance threshold and ticket sales are closed.'
+              : 'This protected event is still resolving.';
+
       toast({
         title: 'Ticket sales paused',
-        description: 'This protected event is waiting for release or refund resolution.',
+        description: protectedPurchaseStateDescription,
         variant: 'destructive',
       });
       return;
@@ -1402,8 +1415,8 @@ const EventDetailsContent = () => {
                           ? "Sold Out"
                           : isRegistrationClosed
                             ? "Registration Closed"
-                            : isProtectedPurchaseClosed
-                              ? "Protected Event Paused"
+                          : isProtectedPurchaseClosed
+                              ? getRefundProtectionPurchaseStateLabel(refundableStatus.status || event?.refund_status)
                               : !authenticated
                               ? "Connect Wallet to Get Ticket"
                               : userTicketCount >= maxTicketsPerUser
