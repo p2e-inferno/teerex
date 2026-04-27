@@ -42,12 +42,14 @@ import {
 import { AllowListManager } from './AllowListManager';
 import { WaitlistManager } from './WaitlistManager';
 import { ServiceManagerControls } from '@/components/shared/ServiceManagerControls';
+import { EventManagersPanel } from './EventManagersPanel';
 import { useNetworkConfigs } from '@/hooks/useNetworkConfigs';
 import { base, baseSepolia } from 'wagmi/chains';
 import { getDivviBrowserProvider } from '@/lib/wallet/provider';
 import { useUserAddresses } from '@/hooks/useUserAddresses';
 import { useRefundableEventStatus } from '@/hooks/useRefundableEventStatus';
 import { getRefundProtectionBadge } from '@/lib/events/refundStatus';
+import { useEventManagerPermissions } from '@/hooks/useEventManagerPermissions';
 
 interface EventManagementDialogProps {
   event: PublishedEvent;
@@ -93,6 +95,12 @@ export const EventManagementDialog: React.FC<EventManagementDialogProps> = ({
     event.refund_protection_enabled ? event : null,
     userAddresses
   );
+  const eventAccess = useEventManagerPermissions(event.id);
+  const isManagementAccessLoading = open && (!eventAccess.checked || eventAccess.loading);
+  const canManageSensitiveControls = eventAccess.isCreator || isLockManager;
+  const canManageAccess = eventAccess.canManageAccess;
+  const canManageWaitlist = eventAccess.canManageWaitlist;
+  const canManageManagers = eventAccess.canManageManagers;
   const refundBadge = getRefundProtectionBadge(refundableStatus.status || event.refund_status, 'creator');
   const creatorMatchesWallet = Boolean(
     wallet?.address &&
@@ -387,7 +395,7 @@ export const EventManagementDialog: React.FC<EventManagementDialogProps> = ({
   };
 
   const hasFiatPayment = event.payment_methods?.includes('fiat');
-  const showWarning = hasFiatPayment && !event.service_manager_added;
+  const showWarning = hasFiatPayment && !event.service_manager_added && canManageSensitiveControls;
 
   const refreshProtectedControls = async (txHash?: string) => {
     await refundableStatus.refresh(txHash);
@@ -513,6 +521,17 @@ export const EventManagementDialog: React.FC<EventManagementDialogProps> = ({
           </DialogDescription>
         </DialogHeader>
 
+        {isManagementAccessLoading ? (
+          <div className="flex min-h-[260px] items-center justify-center py-10">
+            <div className="flex max-w-sm flex-col items-center text-center">
+              <Loader2 className="mb-4 h-7 w-7 animate-spin text-purple-600" />
+              <h3 className="text-base font-semibold text-gray-900">Loading management tools</h3>
+              <p className="mt-2 text-sm text-muted-foreground">
+                Checking your event manager permissions and available controls.
+              </p>
+            </div>
+          </div>
+        ) : (
         <div className="space-y-6">
           {/* Warning Banner */}
           {showWarning && (
@@ -534,7 +553,10 @@ export const EventManagementDialog: React.FC<EventManagementDialogProps> = ({
             </Card>
           )}
 
+          <EventManagersPanel event={event} enabled={canManageManagers} />
+
           {/* Visibility & Access Settings */}
+          {canManageSensitiveControls && (
           <Card>
             <CardContent className="pt-6">
               <div className="flex items-center gap-2 mb-4">
@@ -600,18 +622,21 @@ export const EventManagementDialog: React.FC<EventManagementDialogProps> = ({
               </div>
             </CardContent>
           </Card>
+          )}
 
-          <ServiceManagerControls
-            entityType="event"
-            entityId={event.id}
-            lockAddress={event.lock_address}
-            chainId={event.chain_id}
-            canManage={isLockManager}
-            initialAdded={event.service_manager_added}
-            onUpdated={onEventUpdated}
-          />
+          {canManageSensitiveControls && (
+            <ServiceManagerControls
+              entityType="event"
+              entityId={event.id}
+              lockAddress={event.lock_address}
+              chainId={event.chain_id}
+              canManage={isLockManager}
+              initialAdded={event.service_manager_added}
+              onUpdated={onEventUpdated}
+            />
+          )}
 
-          {event.refund_protection_enabled && (
+          {event.refund_protection_enabled && canManageSensitiveControls && (
             <Card>
               <CardContent className="pt-6 space-y-4">
                 <div className="flex items-center gap-2">
@@ -717,6 +742,7 @@ export const EventManagementDialog: React.FC<EventManagementDialogProps> = ({
           )}
 
           {/* Payment Methods */}
+          {canManageSensitiveControls && (
           <Card>
             <CardContent className="pt-6">
               <div className="flex items-center gap-2 mb-4">
@@ -747,8 +773,10 @@ export const EventManagementDialog: React.FC<EventManagementDialogProps> = ({
               </div>
             </CardContent>
           </Card>
+          )}
 
           {/* NFT Metadata */}
+          {canManageSensitiveControls && (
           <Card>
             <CardContent className="pt-6">
               <div className="flex items-center justify-between">
@@ -786,8 +814,10 @@ export const EventManagementDialog: React.FC<EventManagementDialogProps> = ({
               )}
             </CardContent>
           </Card>
+          )}
 
           {/* Registration Status */}
+          {canManageSensitiveControls && (
           <Card>
             <CardContent className="pt-6">
               <div className="flex items-center justify-between">
@@ -835,8 +865,10 @@ export const EventManagementDialog: React.FC<EventManagementDialogProps> = ({
               )}
             </CardContent>
           </Card>
+          )}
 
           {/* Event Info */}
+          {canManageAccess && (
           <Card>
             <CardContent className="pt-6">
               <h3 className="font-semibold text-gray-900 mb-3">Event Information</h3>
@@ -882,8 +914,10 @@ export const EventManagementDialog: React.FC<EventManagementDialogProps> = ({
               </div>
             </CardContent>
           </Card>
+          )}
 
           {/* Allow List Management */}
+          {canManageAccess && (
           <Card>
             <CardContent className="pt-6">
               <div className="flex items-center gap-2 mb-4">
@@ -918,8 +952,10 @@ export const EventManagementDialog: React.FC<EventManagementDialogProps> = ({
               )}
             </CardContent>
           </Card>
+          )}
 
           {/* Waitlist Management */}
+          {canManageWaitlist && (
           <Card>
             <CardContent className="pt-6">
               <div className="flex items-center gap-2 mb-4">
@@ -954,7 +990,9 @@ export const EventManagementDialog: React.FC<EventManagementDialogProps> = ({
               )}
             </CardContent>
           </Card>
+          )}
         </div>
+        )}
       </DialogContent>
 
       {/* Management Dialogs */}

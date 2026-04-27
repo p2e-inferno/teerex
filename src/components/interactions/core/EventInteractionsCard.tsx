@@ -30,11 +30,11 @@ export const EventInteractionsCard: React.FC<EventInteractionsCardProps> = ({
   refreshToken,
 }) => {
   const navigate = useNavigate();
-  const { posts, isLoading, error: postsError, refetch: refetchPosts } = useEventPosts(eventId);
+  const { posts, isLoading, canManageDiscussions, error: postsError, refetch: refetchPosts } = useEventPosts(eventId);
   const { hasTicket, isChecking, error, refetch } = useTicketVerification(lockAddress, chainId);
   const { isLockManager, isChecking: isCheckingManager, error: lockManagerError } = useLockManagerVerification(lockAddress, chainId);
   const { isCreator } = useCreatorPermissions(creatorAddress, creatorId);
-  const canManagePosts = isCreator || isLockManager;
+  const canManagePosts = isCreator || isLockManager || canManageDiscussions;
 
   // Track if this is the initial mount to avoid refetching on first render
   const isInitialMountRef = useRef(true);
@@ -98,7 +98,7 @@ export const EventInteractionsCard: React.FC<EventInteractionsCardProps> = ({
     );
   }
 
-  if ((error || lockManagerError) && !(isCreator || isLockManager)) {
+  if ((error || lockManagerError) && !(isCreator || isLockManager || canManageDiscussions)) {
     return (
       <Card className="border-0 shadow-sm border-yellow-200 bg-yellow-50/50">
         <CardContent className="py-8 text-center space-y-3">
@@ -123,7 +123,7 @@ export const EventInteractionsCard: React.FC<EventInteractionsCardProps> = ({
     );
   }
 
-  if (!hasTicket && !isCreator && !isLockManager) {
+  if (!hasTicket && !isCreator && !isLockManager && !canManageDiscussions) {
     return (
       <Card className="border-0 shadow-sm">
         <CardContent className="py-8 text-center">

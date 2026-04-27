@@ -79,11 +79,7 @@ export async function validateUserWallet(
   return normalized;
 }
 
-/**
- * Fetches all wallet addresses linked to a Privy user.
- * Requires server-side secret: PRIVY_APP_SECRET
- */
-export async function getUserWalletAddresses(privyUserId: string): Promise<string[]> {
+async function fetchPrivyUser(privyUserId: string): Promise<any> {
   const PRIVY_APP_SECRET = Deno.env.get('PRIVY_APP_SECRET');
   if (!PRIVY_APP_SECRET) {
     throw new Error('Privy app secret not configured on server');
@@ -120,7 +116,39 @@ export async function getUserWalletAddresses(privyUserId: string): Promise<strin
     throw new Error(`Failed to fetch user wallets from Privy: ${resp.status}${body ? ` ${body}` : ''}`);
   }
 
-  const data = await resp.json();
+  return await resp.json();
+}
+
+function extractEmail(data: any): string | null {
+  const direct =
+    data?.email?.address ||
+    data?.email ||
+    data?.user?.email?.address ||
+    data?.user?.email ||
+    null;
+
+  if (typeof direct === 'string' && direct.includes('@')) {
+    return direct.trim().toLowerCase();
+  }
+
+  if (Array.isArray(data?.linked_accounts)) {
+    for (const account of data.linked_accounts) {
+      const candidate =
+        account?.email ||
+        account?.address ||
+        account?.email_address ||
+        account?.account?.email ||
+        null;
+      if (typeof candidate === 'string' && candidate.includes('@')) {
+        return candidate.trim().toLowerCase();
+      }
+    }
+  }
+
+  return null;
+}
+
+function extractWalletAddresses(data: any): string[] {
   const addrs: string[] = [];
 
   // Common shapes returned by Privy API
@@ -139,4 +167,24 @@ export async function getUserWalletAddresses(privyUserId: string): Promise<strin
 
   // De-duplicate
   return Array.from(new Set(addrs));
+}
+
+/**
+ * Fetches all wallet addresses linked to a Privy user.
+ * Requires server-side secret: PRIVY_APP_SECRET
+ */
+export async function getUserWalletAddresses(privyUserId: string): Promise<string[]> {
+  const data = await fetchPrivyUser(privyUserId);
+  return extractWalletAddresses(data);
+}
+
+export async function getPrivyUserProfile(privyUserId: string): Promise<{
+  email: string | null;
+  walletAddresses: string[];
+}> {
+  const data = await fetchPrivyUser(privyUserId);
+  return {
+    email: extractEmail(data),
+    walletAddresses: extractWalletAddresses(data),
+  };
 }

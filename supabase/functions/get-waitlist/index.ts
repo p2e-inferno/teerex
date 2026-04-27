@@ -1,13 +1,11 @@
 import { serve } from 'https://deno.land/std@0.224.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.50.0';
-import { ethers } from 'https://esm.sh/ethers@6.14.4';
 import { corsHeaders, buildPreflightHeaders } from '../_shared/cors.ts';
 import { enforcePost } from '../_shared/http.ts';
 import { handleError } from '../_shared/error-handler.ts';
-import { verifyPrivyToken, getUserWalletAddresses } from '../_shared/privy.ts';
+import { verifyPrivyToken } from '../_shared/privy.ts';
 import { SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY } from '../_shared/constants.ts';
-import PublicLockV15 from '../_shared/abi/PublicLockV15.json' assert { type: 'json' };
-import { validateChain } from '../_shared/network-helpers.ts';
+import { requireEventAuthorization } from '../_shared/event-auth.ts';
 
 const DEFAULT_PAGE_SIZE = 50;
 const MAX_PAGE_SIZE = 200;
@@ -69,44 +67,13 @@ serve(async (req) => {
       );
     }
 
-    let authorized = event.creator_id === privyUserId;
-
-    if (!authorized) {
-      const userWallets = await getUserWalletAddresses(privyUserId);
-
-      if (userWallets && userWallets.length > 0) {
-        // Get network configuration
-        const networkConfig = await validateChain(supabase, event.chain_id);
-        if (!networkConfig?.rpc_url) {
-          console.error(`[get-waitlist] RPC URL not configured for chain ${event.chain_id}`);
-        }
-
-        if (networkConfig?.rpc_url) {
-          const rpcUrl = networkConfig.rpc_url;
-          const provider = new ethers.JsonRpcProvider(rpcUrl);
-          const lock = new ethers.Contract(event.lock_address, PublicLockV15 as any, provider);
-
-          for (const wallet of userWallets) {
-            try {
-              const isManager = await lock.isLockManager(wallet);
-              if (isManager) {
-                authorized = true;
-                break;
-              }
-            } catch (err) {
-              console.error(`[GET-WAITLIST] Error checking lock manager for ${wallet}:`, err);
-            }
-          }
-        }
-      }
-    }
-
-    if (!authorized) {
-      return new Response(
-        JSON.stringify({ ok: false, error: 'Unauthorized: must be event creator or lock manager' }),
-        { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 403 },
-      );
-    }
+    await requireEventAuthorization({
+      supabase,
+      event,
+      privyUserId,
+      permission: 'manage_waitlist',
+      errorMessage: 'Unauthorized: must be event creator, lock manager, or waitlist manager',
+    });
 
     const offset = (pageNumber - 1) * pageSize;
 

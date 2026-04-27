@@ -7,6 +7,7 @@ import { handleError } from '../_shared/error-handler.ts';
 import { getUserWalletAddresses, verifyPrivyToken } from '../_shared/privy.ts';
 import { validateChain } from '../_shared/network-helpers.ts';
 import { isAnyUserWalletHasValidKeyParallel, isAnyUserWalletIsLockManagerParallel } from '../_shared/unlock.ts';
+import { getEventAuthorization } from '../_shared/event-auth.ts';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
@@ -84,22 +85,32 @@ serve(async (req) => {
     if (!networkConfig) throw new Error('chain_not_supported');
     if (!networkConfig.rpc_url) throw new Error('rpc_not_configured');
 
-    const [{ anyIsManager }, { anyHasKey }] = await Promise.all([
+    const [{ anyIsManager }, { anyHasKey }, eventAuth] = await Promise.all([
       isAnyUserWalletIsLockManagerParallel(event.lock_address, normalizedWallets, networkConfig.rpc_url),
       isAnyUserWalletHasValidKeyParallel(event.lock_address, normalizedWallets, networkConfig.rpc_url),
+      getEventAuthorization({
+        supabase,
+        event,
+        privyUserId,
+        permission: 'manage_discussions',
+        allowOnchainManager: false,
+        userWallets: normalizedWallets,
+      }),
     ]);
 
-    const allowed = Boolean(isCreatorById || anyIsManager || anyHasKey);
+    const allowed = Boolean(isCreatorById || anyIsManager || eventAuth.authorized || anyHasKey);
+    const canManageDiscussions = Boolean(isCreatorById || anyIsManager || eventAuth.authorized);
     console.log('[get-event-discussions] gating result', {
       requestId,
       walletCount: normalizedWallets.length,
       isCreatorById,
       anyIsManager,
+      isOffchainManager: eventAuth.isOffchainManager,
       anyHasKey,
       allowed,
     });
     if (!allowed) {
-      return new Response(JSON.stringify({ ok: true, allowed: false, posts: [] }), {
+      return new Response(JSON.stringify({ ok: true, allowed: false, can_manage_discussions: false, posts: [] }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         status: 200,
       });
@@ -112,7 +123,7 @@ serve(async (req) => {
         post_engagement_stats (*),
         post_reactions (*)
       `)
-      .eq('event_id', eventId)
+      .eq('event_id', event.id)
       .eq('is_deleted', false)
       .order('is_pinned', { ascending: false })
       .order('created_at', { ascending: false });
@@ -142,7 +153,7 @@ serve(async (req) => {
       eventId: event.id,
     });
 
-    return new Response(JSON.stringify({ ok: true, allowed: true, posts }), {
+    return new Response(JSON.stringify({ ok: true, allowed: true, can_manage_discussions: canManageDiscussions, posts }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       status: 200,
     });

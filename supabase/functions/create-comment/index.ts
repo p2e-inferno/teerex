@@ -5,6 +5,7 @@ import { corsHeaders, buildPreflightHeaders } from "../_shared/cors.ts";
 import { getUserWalletAddresses, verifyPrivyToken } from "../_shared/privy.ts";
 import { isAnyUserWalletHasValidKeyParallel, isAnyUserWalletIsLockManagerParallel } from "../_shared/unlock.ts";
 import { validateChain } from "../_shared/network-helpers.ts";
+import { getEventAuthorization } from "../_shared/event-auth.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -109,14 +110,22 @@ serve(async (req) => {
       throw new Error("Network not fully configured (missing RPC URL)");
     }
 
-    // 8. Authorization: creators, lock managers, or key holders can comment
-    const [{ anyHasKey, holder }, { anyIsManager, manager }] = await Promise.all([
+    // 8. Authorization: creators, lock managers, offchain discussion managers, or key holders can comment
+    const [{ anyHasKey, holder }, { anyIsManager, manager }, eventAuth] = await Promise.all([
       isAnyUserWalletHasValidKeyParallel(event.lock_address, normalizedWallets, networkConfig.rpc_url),
       isAnyUserWalletIsLockManagerParallel(event.lock_address, normalizedWallets, networkConfig.rpc_url),
+      getEventAuthorization({
+        supabase,
+        event,
+        privyUserId,
+        permission: "manage_discussions",
+        allowOnchainManager: false,
+        userWallets: normalizedWallets,
+      }),
     ]);
 
-    if (!(isCreatorByWallet || isCreatorById || anyIsManager || anyHasKey)) {
-      throw new Error("Unauthorized: You must be an event creator, lock manager, or ticket holder to comment");
+    if (!(isCreatorByWallet || isCreatorById || anyIsManager || eventAuth.authorized || anyHasKey)) {
+      throw new Error("Unauthorized: You must be an event creator, lock manager, discussions manager, or ticket holder to comment");
     }
 
     let commenterAddress: string | undefined;
@@ -124,6 +133,8 @@ serve(async (req) => {
       commenterAddress = creatorAddress;
     } else if (anyIsManager) {
       commenterAddress = manager;
+    } else if (eventAuth.isOffchainManager) {
+      commenterAddress = eventAuth.managerWallet;
     } else if (anyHasKey) {
       commenterAddress = holder;
     } else if (isCreatorById && normalizedWallets.length > 0) {

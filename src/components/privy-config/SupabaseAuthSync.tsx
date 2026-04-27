@@ -1,19 +1,26 @@
 import React, { useEffect } from 'react';
 import { usePrivy } from '@privy-io/react-auth';
+import { supabase } from '@/integrations/supabase/client';
 
 // Component to sync Privy auth with Supabase
 export const SupabaseAuthSync: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const { user, authenticated } = usePrivy();
+  const { user, authenticated, getAccessToken } = usePrivy();
 
   useEffect(() => {
+    let cancelled = false;
+
     const syncAuth = async () => {
       if (authenticated && user) {
         try {
           console.log('User authenticated with Privy:', user.id);
-          // We'll handle authentication at the individual API level
-          // since Privy tokens aren't directly compatible with Supabase
+          const token = await getAccessToken?.();
+          if (!token || cancelled) return;
+          await supabase.functions.invoke('sync-user-profile', {
+            body: {},
+            headers: { 'X-Privy-Authorization': `Bearer ${token}` },
+          });
         } catch (error) {
-          console.error('Error syncing auth:', error);
+          console.warn('Error syncing user profile:', error);
         }
       } else {
         console.log('User not authenticated');
@@ -21,7 +28,11 @@ export const SupabaseAuthSync: React.FC<{ children: React.ReactNode }> = ({ chil
     };
 
     syncAuth();
-  }, [authenticated, user]);
+
+    return () => {
+      cancelled = true;
+    };
+  }, [authenticated, user, getAccessToken]);
 
   return <>{children}</>;
 };
