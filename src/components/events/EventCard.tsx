@@ -14,7 +14,10 @@ import { formatEventDateRange } from '@/utils/dateUtils';
 import { formatEventLocalDateTime, formatEventLocalTime } from '@/utils/eventTime';
 import { hasMethod, isFreeEvent } from '@/lib/events/paymentMethods';
 import { isEventRegistrationClosed } from '@/lib/events/registration';
-import { getRefundProtectionBadge } from '@/lib/events/refundStatus';
+import {
+  getRefundProtectionBadge,
+  getRefundProtectionPurchaseStateLabel,
+} from '@/lib/events/refundStatus';
 
 interface EventCardProps {
   event: PublishedEvent;
@@ -58,6 +61,7 @@ export const EventCard: React.FC<EventCardProps> = ({
   const navigate = useNavigate();
   const spotsLeft = event.capacity - keysSold;
   const isSoldOut = spotsLeft <= 0;
+  const refundBadgeAudience = (onEdit || onManage) ? 'creator' : 'public';
 
   // Check if registration has closed
   const isRegistrationClosed = isEventRegistrationClosed(event);
@@ -67,7 +71,7 @@ export const EventCard: React.FC<EventCardProps> = ({
     Date.now() >= new Date(event.refund_trigger_at).getTime() &&
     event.refund_status !== 'released'
   );
-  const refundBadge = getRefundProtectionBadge(event.refund_status);
+  const refundBadge = getRefundProtectionBadge(event.refund_status, refundBadgeAudience);
   const eventDisplayTime = formatEventLocalTime(event.starts_at, event.time);
   const isMultiDayEvent = Boolean(
     event.date &&
@@ -118,7 +122,9 @@ export const EventCard: React.FC<EventCardProps> = ({
     if (actionType === 'edit') return 'Edit';
     if (actionType === 'manage') return 'Manage';
     if (isUserTicketOwner) return 'View';
-    if (isProtectedPurchaseClosed) return 'Awaiting Resolution';
+    if (isProtectedPurchaseClosed) {
+      return getRefundProtectionPurchaseStateLabel(event.refund_status);
+    }
     if (isRegistrationClosed) return 'Registration Closed';
     if (isSoldOut && event.allow_waitlist) return 'Join Waitlist';
     if (isSoldOut) return 'Sold Out';

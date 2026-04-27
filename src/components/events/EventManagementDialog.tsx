@@ -93,7 +93,7 @@ export const EventManagementDialog: React.FC<EventManagementDialogProps> = ({
     event.refund_protection_enabled ? event : null,
     userAddresses
   );
-  const refundBadge = getRefundProtectionBadge(refundableStatus.status || event.refund_status);
+  const refundBadge = getRefundProtectionBadge(refundableStatus.status || event.refund_status, 'creator');
   const creatorMatchesWallet = Boolean(
     wallet?.address &&
     refundableStatus.creatorAddress &&
