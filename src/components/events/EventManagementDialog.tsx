@@ -43,6 +43,7 @@ import { AllowListManager } from './AllowListManager';
 import { WaitlistManager } from './WaitlistManager';
 import { ServiceManagerControls } from '@/components/shared/ServiceManagerControls';
 import { EventManagersPanel } from './EventManagersPanel';
+import { EventPurchaseMessageSection } from './EventPurchaseMessageSection';
 import { useNetworkConfigs } from '@/hooks/useNetworkConfigs';
 import { base, baseSepolia } from 'wagmi/chains';
 import { getDivviBrowserProvider } from '@/lib/wallet/provider';
@@ -554,6 +555,14 @@ export const EventManagementDialog: React.FC<EventManagementDialogProps> = ({
           )}
 
           <EventManagersPanel event={event} enabled={canManageManagers} />
+
+          {eventAccess.isCreator && (
+            <EventPurchaseMessageSection
+              event={event}
+              isCreator={eventAccess.isCreator}
+              onEventUpdated={onEventUpdated}
+            />
+          )}
 
           {/* Visibility & Access Settings */}
           {canManageSensitiveControls && (

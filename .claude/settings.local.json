@@ -31,7 +31,8 @@
       "mcp__supabase__apply_migration",
       "Bash(supabase db dump:*)",
       "Bash(psql:*)",
-      "Bash(supabase db inspect:*)"
+      "Bash(supabase db inspect:*)",
+      "Bash(npx vitest *)"
     ],
     "deny": [],
     "ask": []

@@ -13,6 +13,7 @@ import { sendEmail, getTicketEmail, normalizeEmail } from '../_shared/email-util
 import { formatEventDate } from '../_shared/date-utils.ts';
 import { appendDivviTagToCalldataAsync, submitDivviReferralBestEffort } from '../_shared/divvi.ts';
 import { isLockFreeOnchain } from '../_shared/unlock.ts';
+import { getEventPurchaseMessageSnapshot } from '../_shared/purchase-message.ts';
 
 /**
  * Checks if recipient already owns keys and validates against max limits
@@ -65,7 +66,8 @@ async function getOrCreateTicketRecord(
   supabase: any,
   event_id: string,
   recipient: string,
-  user_email: string | null
+  user_email: string | null,
+  purchase_message_snapshot: string | null
 ): Promise<{ ticket: any; isNew: boolean }> {
   // Check for existing ticket
   const { data: existing } = await supabase
@@ -90,6 +92,8 @@ async function getOrCreateTicketRecord(
       grant_tx_hash: null, // Unknown - was from previous attempt
       status: 'active',
       user_email: user_email || null,
+      purchase_confirmation_message_snapshot: purchase_message_snapshot,
+      purchase_confirmation_message_snapshot_at: purchase_message_snapshot ? new Date().toISOString() : null,
     })
     .select()
     .single();
@@ -177,6 +181,7 @@ serve(async (req) => {
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 200 }
       );
     }
+    const purchaseMessageSnapshot = await getEventPurchaseMessageSnapshot(supabase, event_id);
 
     if (event.lock_address.toLowerCase() !== lock_address.toLowerCase()) {
       return new Response(
@@ -225,7 +230,8 @@ serve(async (req) => {
         supabase,
         event_id,
         normalizedRecipient,
-        normalizedUserEmail
+        normalizedUserEmail,
+        purchaseMessageSnapshot
       );
 
       // Check if they've reached their limit
@@ -251,6 +257,7 @@ serve(async (req) => {
             purchase_tx_hash: ticket.grant_tx_hash,
             message: 'ticket_already_claimed',
             recovered: isNew, // true if we just created the missing DB record
+            purchase_confirmation_message_snapshot: ticket.purchase_confirmation_message_snapshot ?? null,
           }),
           { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 200 }
         );
@@ -291,7 +298,8 @@ serve(async (req) => {
             supabase,
             event_id,
             normalizedRecipient,
-            normalizedUserEmail
+            normalizedUserEmail,
+            purchaseMessageSnapshot
           );
 
           return new Response(
@@ -301,6 +309,7 @@ serve(async (req) => {
               purchase_tx_hash: ticket.grant_tx_hash,
               message: 'ticket_already_claimed',
               recovered: isNew,
+              purchase_confirmation_message_snapshot: ticket.purchase_confirmation_message_snapshot ?? null,
             }),
             { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 200 }
           );
@@ -316,26 +325,37 @@ serve(async (req) => {
     }
 
     // 10. Log activity, gas cost, and ticket record with safe error handling
+    const ticketCreatedAt = new Date().toISOString();
+    const { error: ticketInsertError } = await supabase.from('tickets').insert({
+      event_id,
+      owner_wallet: normalizedRecipient,
+      grant_tx_hash: receipt.transactionHash,
+      status: 'active',
+      user_email: normalizedUserEmail || null,
+      purchase_confirmation_message_snapshot: purchaseMessageSnapshot,
+      purchase_confirmation_message_snapshot_at: purchaseMessageSnapshot ? ticketCreatedAt : null,
+    });
+
+    let dbSyncStatus = 'complete';
+    if (ticketInsertError) {
+      console.error('Failed to persist ticket after successful on-chain purchase:', ticketInsertError);
+      dbSyncStatus = 'partial';
+    }
+
     const dbOperations = await Promise.allSettled([
       logActivity(supabase, privyUserId, 'ticket_purchase', chain_id, event_id, {
         lock_address,
         recipient: normalizedRecipient,
+        ...(ticketInsertError && purchaseMessageSnapshot ? { purchase_message_snapshot_fallback: purchaseMessageSnapshot } : {})
       }),
       logGasTransaction(supabase, receipt, tx, chain_id, await signer.getAddress(), event_id),
-      supabase.from('tickets').insert({
-        event_id,
-        owner_wallet: normalizedRecipient,
-        grant_tx_hash: receipt.transactionHash,
-        status: 'active',
-        user_email: normalizedUserEmail || null,
-      }),
     ]);
 
     // Check for failures in DB operations
     const failures = dbOperations.filter((op) => op.status === 'rejected');
     if (failures.length > 0) {
       console.error('Some DB operations failed after successful on-chain purchase:', failures);
-      // Log failures but don't fail the request - ticket is already minted on-chain
+      dbSyncStatus = 'partial';
     }
 
     // Send ticket confirmation email (non-blocking)
@@ -346,7 +366,14 @@ serve(async (req) => {
         ? `https://${chain_id === 8453 ? 'basescan.org' : 'sepolia.basescan.org'}/tx/${receipt.transactionHash}`
         : undefined;
 
-      const emailContent = getTicketEmail(eventTitle, eventDate, receipt.transactionHash, chain_id, explorerUrl);
+      const emailContent = getTicketEmail(
+        eventTitle,
+        eventDate,
+        receipt.transactionHash,
+        chain_id,
+        explorerUrl,
+        purchaseMessageSnapshot,
+      );
 
       // Fire and forget - don't block response
       sendEmail({
@@ -364,7 +391,8 @@ serve(async (req) => {
         ok: true,
         purchase_tx_hash: tx.hash || receipt.transactionHash,
         limits: { remaining_today: rateLimit.remaining - 1 },
-        db_sync_status: failures.length > 0 ? 'partial' : 'complete',
+        db_sync_status: dbSyncStatus,
+        purchase_confirmation_message_snapshot: purchaseMessageSnapshot,
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 200 }
     );

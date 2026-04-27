@@ -10,8 +10,11 @@ import { Card, CardContent, CardDescription, CardHeader } from '@/components/ui/
 import { Badge } from '@/components/ui/badge';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Switch } from '@/components/ui/switch';
-import { Shield, Zap, Ticket, CreditCard, Info, Loader2, AlertCircle, AlertTriangle, Eye, EyeOff, CheckCircle2 } from 'lucide-react';
+import { Shield, Zap, Ticket, CreditCard, Info, Loader2, AlertCircle, AlertTriangle, Eye, EyeOff, CheckCircle2, MessageSquareText } from 'lucide-react';
 import { EventFormData } from '@/pages/CreateEvent';
+import { RichTextEditor } from '@/components/ui/rich-text/RichTextEditor';
+import { isEmptyHtml } from '@/utils/textUtils';
+import { PURCHASE_MESSAGE_MAX_LENGTH } from '@/utils/purchaseMessage';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { useNetworkConfigs } from '@/hooks/useNetworkConfigs';
 import { useMultipleTokenMetadata, tokenMetadataQueryKeys, fetchTokenMetadata } from '@/hooks/useTokenMetadata';
@@ -256,6 +259,33 @@ export const TicketSettings: React.FC<TicketSettingsProps> = ({
   // Validation state for real-time feedback
   const [priceError, setPriceError] = useState<string>('');
   const [fiatPriceError, setFiatPriceError] = useState<string>('');
+  const [purchaseMessageEnabled, setPurchaseMessageEnabled] = useState<boolean>(
+    () => Boolean(formData.purchaseConfirmationMessage && !isEmptyHtml(formData.purchaseConfirmationMessage))
+  );
+
+  useEffect(() => {
+    if (formData.purchaseConfirmationMessage && !isEmptyHtml(formData.purchaseConfirmationMessage)) {
+      setPurchaseMessageEnabled(true);
+    }
+  }, [formData.purchaseConfirmationMessage]);
+
+  const handleTogglePurchaseMessage = (checked: boolean) => {
+    if (!checked) {
+      const hasContent = Boolean(
+        formData.purchaseConfirmationMessage && !isEmptyHtml(formData.purchaseConfirmationMessage)
+      );
+      if (hasContent) {
+        const confirmed = typeof window !== 'undefined'
+          ? window.confirm('Hide and clear the post-purchase message? You can re-enable it any time.')
+          : true;
+        if (!confirmed) return;
+        updateFormData({ purchaseConfirmationMessage: null });
+      }
+      setPurchaseMessageEnabled(false);
+      return;
+    }
+    setPurchaseMessageEnabled(true);
+  };
   const [reserveBondPreview, setReserveBondPreview] = useState<ProtectedReserveBondPreview | null>(null);
   const [reserveBondPreviewError, setReserveBondPreviewError] = useState('');
   const [reserveBondPreviewLoading, setReserveBondPreviewLoading] = useState(false);
@@ -954,6 +984,41 @@ export const TicketSettings: React.FC<TicketSettingsProps> = ({
           </div>
         </div>
       )}
+
+      {/* Optional post-purchase message */}
+      <Card className="border-slate-200">
+        <CardContent className="pt-6 space-y-4">
+          <div className="flex items-start justify-between gap-4">
+            <div className="flex-1 space-y-1">
+              <Label htmlFor="purchase-message-toggle" className="text-base font-medium flex items-center gap-2">
+                <MessageSquareText className="w-4 h-4 text-purple-600" />
+                Add message after purchase
+              </Label>
+              <p className="text-sm text-gray-600">
+                Shown after a ticket is successfully issued and included in ticket emails. You can edit this later from Manage Event.
+              </p>
+            </div>
+            <Switch
+              id="purchase-message-toggle"
+              checked={purchaseMessageEnabled}
+              onCheckedChange={handleTogglePurchaseMessage}
+            />
+          </div>
+
+          {purchaseMessageEnabled && (
+            <div className="space-y-2">
+              <RichTextEditor
+                value={formData.purchaseConfirmationMessage || ''}
+                onChange={(value) => updateFormData({ purchaseConfirmationMessage: value })}
+                placeholder="e.g. Doors open at 6pm. Bring your ID. Join our community at..."
+              />
+              <p className="text-xs text-gray-500">
+                Up to {PURCHASE_MESSAGE_MAX_LENGTH.toLocaleString()} characters of HTML. Avoid putting personal access codes here — every attendee receives the same message and keeps a copy.
+              </p>
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
       {/* NFT Benefits for Paid Events */}
       {formData.paymentMethod === 'crypto' && (

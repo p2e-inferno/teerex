@@ -15,13 +15,15 @@ import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
 import type { PublishedEvent } from '@/types/event';
 import { purchaseKey, getBlockExplorerUrl, isFreeOnchain } from '@/utils/lockUtils';
-import { Loader2, ExternalLink } from 'lucide-react';
+import { Loader2, ExternalLink, MessageSquareText } from 'lucide-react';
 import { format } from 'date-fns';
 import { supabase } from '@/integrations/supabase/client';
 import { isEventRegistrationClosed } from '@/lib/events/registration';
 import { useGaslessFallback } from '@/hooks/useGasless';
 import { normalizeEmail } from '@/utils/emailUtils';
 import { isFreeEvent } from '@/lib/events/paymentMethods';
+import { RichTextDisplay } from '@/components/ui/rich-text/RichTextDisplay';
+import { isEmptyHtml } from '@/utils/textUtils';
 
 interface EventPurchaseDialogProps {
   event: PublishedEvent | null;
@@ -42,6 +44,16 @@ export const EventPurchaseDialog: React.FC<EventPurchaseDialogProps> = ({
   const [isPurchasing, setIsPurchasing] = useState(false);
   const [email, setEmail] = useState('');
   const [isOnchainFree, setIsOnchainFree] = useState(false);
+  const [purchaseSuccessMessage, setPurchaseSuccessMessage] = useState<string | null>(null);
+  const [purchaseSuccess, setPurchaseSuccess] = useState(false);
+
+  // Reset success state whenever the dialog opens for a new attempt.
+  useEffect(() => {
+    if (isOpen) {
+      setPurchaseSuccess(false);
+      setPurchaseSuccessMessage(null);
+    }
+  }, [isOpen]);
 
   // Check if event is free on-chain (catches bug-affected events)
   useEffect(() => {
@@ -125,7 +137,7 @@ export const EventPurchaseDialog: React.FC<EventPurchaseDialogProps> = ({
       if (result.success && result.transactionHash) {
         // Register ticket via edge function (service_role bypasses RLS)
         const accessToken = await getAccessToken?.();
-        const { error: registerError } = await supabase.functions.invoke('register-ticket', {
+        const { data: registerData, error: registerError } = await supabase.functions.invoke('register-ticket', {
           body: {
             event_id: event.id,
             owner_wallet: wallet.address.toLowerCase(),
@@ -139,6 +151,9 @@ export const EventPurchaseDialog: React.FC<EventPurchaseDialogProps> = ({
           console.error('Failed to register ticket:', registerError);
           // Don't fail the purchase - ticket is already on-chain
         }
+
+        const snapshotMessage =
+          (registerData as any)?.purchase_confirmation_message_snapshot ?? null;
 
         const explorerUrl = await getBlockExplorerUrl(result.transactionHash, event.chain_id);
         toast({
@@ -172,6 +187,13 @@ export const EventPurchaseDialog: React.FC<EventPurchaseDialogProps> = ({
             console.warn('[TICKET EMAIL] Failed to send ticket email:', err instanceof Error ? err.message : String(err));
           }
         })();
+
+        if (snapshotMessage && !isEmptyHtml(snapshotMessage)) {
+          setPurchaseSuccessMessage(snapshotMessage);
+          setPurchaseSuccess(true);
+          return { success: true };
+        }
+
         onClose();
         return { success: true };
       } else {
@@ -371,7 +393,15 @@ export const EventPurchaseDialog: React.FC<EventPurchaseDialogProps> = ({
             ),
           });
           onPurchaseSuccess?.({ increment: true });
-          onClose();
+
+          const snapshotMessage =
+            result.purchase_confirmation_message_snapshot ?? null;
+          if (snapshotMessage && !isEmptyHtml(snapshotMessage)) {
+            setPurchaseSuccessMessage(snapshotMessage);
+            setPurchaseSuccess(true);
+          } else {
+            onClose();
+          }
         } else if (result.error) {
           // Gasless returned an error before fallback
           toast({
@@ -410,6 +440,39 @@ export const EventPurchaseDialog: React.FC<EventPurchaseDialogProps> = ({
   };
 
   if (!event) return null;
+
+  if (purchaseSuccess && purchaseSuccessMessage) {
+    return (
+      <Dialog open={isOpen} onOpenChange={onClose}>
+        <DialogContent className="sm:max-w-[480px]">
+          <DialogHeader>
+            <DialogTitle>You're In! 🎟️</DialogTitle>
+            <DialogDescription>
+              Your ticket for {event.title} has been issued.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3 py-2">
+            <div className="flex items-center gap-2 text-sm font-medium text-purple-700">
+              <MessageSquareText className="w-4 h-4" />
+              Message from the organiser
+            </div>
+            <div className="rounded-md border border-purple-100 bg-purple-50/60 p-3 max-h-[40vh] overflow-y-auto">
+              <RichTextDisplay
+                content={purchaseSuccessMessage}
+                className="prose prose-sm max-w-none leading-relaxed"
+              />
+            </div>
+            <p className="text-xs text-muted-foreground">
+              We've also included this in your ticket confirmation email.
+            </p>
+          </div>
+          <DialogFooter>
+            <Button onClick={onClose} className="w-full sm:w-auto">Done</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    );
+  }
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>

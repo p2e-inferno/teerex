@@ -7,9 +7,6 @@ export type Json =
   | Json[]
 
 export type Database = {
-  __InternalSupabase: {
-    PostgrestVersion: "13.0.5"
-  }
   graphql_public: {
     Tables: {
       [_ in never]: never
@@ -37,6 +34,33 @@ export type Database = {
   }
   public: {
     Tables: {
+      app_user_profiles: {
+        Row: {
+          created_at: string
+          email: string | null
+          primary_wallet_address: string | null
+          privy_user_id: string
+          updated_at: string
+          wallet_addresses: string[]
+        }
+        Insert: {
+          created_at?: string
+          email?: string | null
+          primary_wallet_address?: string | null
+          privy_user_id: string
+          updated_at?: string
+          wallet_addresses?: string[]
+        }
+        Update: {
+          created_at?: string
+          email?: string | null
+          primary_wallet_address?: string | null
+          privy_user_id?: string
+          updated_at?: string
+          wallet_addresses?: string[]
+        }
+        Relationships: []
+      }
       attestation_challenges: {
         Row: {
           attestation_id: string
@@ -420,8 +444,8 @@ export type Database = {
           custom_duration_days: number | null
           date: string | null
           description: string
-          ends_at: string | null
           end_date: string | null
+          ends_at: string | null
           event_type: string
           has_allow_list: boolean | null
           id: string
@@ -435,7 +459,7 @@ export type Database = {
           payment_methods: string[] | null
           paystack_public_key: string | null
           price: number
-          registration_cutoff: string | null
+          purchase_confirmation_message: string | null
           refund_controller_address: string | null
           refund_event_end_at: string | null
           refund_last_synced_at: string | null
@@ -445,6 +469,7 @@ export type Database = {
           refund_reserve_bond: string | null
           refund_status: string | null
           refund_trigger_at: string | null
+          registration_cutoff: string | null
           starts_at: string | null
           ticket_duration: string | null
           time: string
@@ -464,8 +489,8 @@ export type Database = {
           custom_duration_days?: number | null
           date?: string | null
           description?: string
-          ends_at?: string | null
           end_date?: string | null
+          ends_at?: string | null
           event_type?: string
           has_allow_list?: boolean | null
           id?: string
@@ -479,7 +504,7 @@ export type Database = {
           payment_methods?: string[] | null
           paystack_public_key?: string | null
           price?: number
-          registration_cutoff?: string | null
+          purchase_confirmation_message?: string | null
           refund_controller_address?: string | null
           refund_event_end_at?: string | null
           refund_last_synced_at?: string | null
@@ -489,6 +514,7 @@ export type Database = {
           refund_reserve_bond?: string | null
           refund_status?: string | null
           refund_trigger_at?: string | null
+          registration_cutoff?: string | null
           starts_at?: string | null
           ticket_duration?: string | null
           time?: string
@@ -508,8 +534,8 @@ export type Database = {
           custom_duration_days?: number | null
           date?: string | null
           description?: string
-          ends_at?: string | null
           end_date?: string | null
+          ends_at?: string | null
           event_type?: string
           has_allow_list?: boolean | null
           id?: string
@@ -523,7 +549,7 @@ export type Database = {
           payment_methods?: string[] | null
           paystack_public_key?: string | null
           price?: number
-          registration_cutoff?: string | null
+          purchase_confirmation_message?: string | null
           refund_controller_address?: string | null
           refund_event_end_at?: string | null
           refund_last_synced_at?: string | null
@@ -533,6 +559,7 @@ export type Database = {
           refund_reserve_bond?: string | null
           refund_status?: string | null
           refund_trigger_at?: string | null
+          registration_cutoff?: string | null
           starts_at?: string | null
           ticket_duration?: string | null
           time?: string
@@ -543,6 +570,56 @@ export type Database = {
           user_id?: string
         }
         Relationships: []
+      }
+      event_managers: {
+        Row: {
+          added_by: string
+          created_at: string
+          email: string | null
+          event_id: string
+          id: string
+          label: string | null
+          permissions: Json
+          privy_user_id: string | null
+          revoked_at: string | null
+          updated_at: string
+          wallet_address: string
+        }
+        Insert: {
+          added_by: string
+          created_at?: string
+          email?: string | null
+          event_id: string
+          id?: string
+          label?: string | null
+          permissions?: Json
+          privy_user_id?: string | null
+          revoked_at?: string | null
+          updated_at?: string
+          wallet_address: string
+        }
+        Update: {
+          added_by?: string
+          created_at?: string
+          email?: string | null
+          event_id?: string
+          id?: string
+          label?: string | null
+          permissions?: Json
+          privy_user_id?: string | null
+          revoked_at?: string | null
+          updated_at?: string
+          wallet_address?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "event_managers_event_id_fkey"
+            columns: ["event_id"]
+            isOneToOne: false
+            referencedRelation: "events"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       event_posts: {
         Row: {
@@ -612,6 +689,38 @@ export type Database = {
           },
         ]
       }
+      event_purchase_messages: {
+        Row: {
+          created_at: string
+          event_id: string
+          message_html: string
+          updated_at: string
+          updated_by: string
+        }
+        Insert: {
+          created_at?: string
+          event_id: string
+          message_html: string
+          updated_at?: string
+          updated_by: string
+        }
+        Update: {
+          created_at?: string
+          event_id?: string
+          message_html?: string
+          updated_at?: string
+          updated_by?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "event_purchase_messages_event_id_fkey"
+            columns: ["event_id"]
+            isOneToOne: true
+            referencedRelation: "events"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       event_waitlist: {
         Row: {
           confirmation_sent: boolean | null
@@ -667,8 +776,8 @@ export type Database = {
           custom_duration_days: number | null
           date: string | null
           description: string
-          ends_at: string | null
           end_date: string | null
+          ends_at: string | null
           event_type: string
           has_allow_list: boolean | null
           id: string
@@ -687,8 +796,6 @@ export type Database = {
           payment_methods: string[] | null
           paystack_public_key: string | null
           price: number
-          registration_cutoff: string | null
-          requires_approval: boolean
           refund_controller_address: string | null
           refund_event_end_at: string | null
           refund_last_synced_at: string | null
@@ -698,6 +805,8 @@ export type Database = {
           refund_reserve_bond: string | null
           refund_status: string | null
           refund_trigger_at: string | null
+          registration_cutoff: string | null
+          requires_approval: boolean
           review_schema_uid: string | null
           service_manager_added: boolean
           starts_at: string | null
@@ -721,8 +830,8 @@ export type Database = {
           custom_duration_days?: number | null
           date?: string | null
           description: string
-          ends_at?: string | null
           end_date?: string | null
+          ends_at?: string | null
           event_type?: string
           has_allow_list?: boolean | null
           id?: string
@@ -741,8 +850,6 @@ export type Database = {
           payment_methods?: string[] | null
           paystack_public_key?: string | null
           price?: number
-          registration_cutoff?: string | null
-          requires_approval?: boolean
           refund_controller_address?: string | null
           refund_event_end_at?: string | null
           refund_last_synced_at?: string | null
@@ -752,6 +859,8 @@ export type Database = {
           refund_reserve_bond?: string | null
           refund_status?: string | null
           refund_trigger_at?: string | null
+          registration_cutoff?: string | null
+          requires_approval?: boolean
           review_schema_uid?: string | null
           service_manager_added?: boolean
           starts_at?: string | null
@@ -775,8 +884,8 @@ export type Database = {
           custom_duration_days?: number | null
           date?: string | null
           description?: string
-          ends_at?: string | null
           end_date?: string | null
+          ends_at?: string | null
           event_type?: string
           has_allow_list?: boolean | null
           id?: string
@@ -795,8 +904,6 @@ export type Database = {
           payment_methods?: string[] | null
           paystack_public_key?: string | null
           price?: number
-          registration_cutoff?: string | null
-          requires_approval?: boolean
           refund_controller_address?: string | null
           refund_event_end_at?: string | null
           refund_last_synced_at?: string | null
@@ -806,6 +913,8 @@ export type Database = {
           refund_reserve_bond?: string | null
           refund_status?: string | null
           refund_trigger_at?: string | null
+          registration_cutoff?: string | null
+          requires_approval?: boolean
           review_schema_uid?: string | null
           service_manager_added?: boolean
           starts_at?: string | null
@@ -1743,6 +1852,8 @@ export type Database = {
           id: string
           owner_wallet: string
           payment_transaction_id: string | null
+          purchase_confirmation_message_snapshot: string | null
+          purchase_confirmation_message_snapshot_at: string | null
           status: string | null
           token_id: string | null
           updated_at: string | null
@@ -1757,6 +1868,8 @@ export type Database = {
           id?: string
           owner_wallet: string
           payment_transaction_id?: string | null
+          purchase_confirmation_message_snapshot?: string | null
+          purchase_confirmation_message_snapshot_at?: string | null
           status?: string | null
           token_id?: string | null
           updated_at?: string | null
@@ -1771,6 +1884,8 @@ export type Database = {
           id?: string
           owner_wallet?: string
           payment_transaction_id?: string | null
+          purchase_confirmation_message_snapshot?: string | null
+          purchase_confirmation_message_snapshot_at?: string | null
           status?: string | null
           token_id?: string | null
           updated_at?: string | null
@@ -2263,3 +2378,4 @@ export const Constants = {
     Enums: {},
   },
 } as const
+
