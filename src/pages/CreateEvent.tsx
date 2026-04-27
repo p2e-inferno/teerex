@@ -68,7 +68,8 @@ const getDefaultFormData = (): EventFormData => ({
   refundTriggerAt: null,
   refundEventEndAt: null,
   refundReserveBond: null,
-  refundStatus: null
+  refundStatus: null,
+  purchaseConfirmationMessage: null
 });
 
 const buildEventUpdatePatch = (
@@ -143,6 +144,9 @@ export interface EventFormData {
   refundEventEndAt?: string | null;
   refundReserveBond?: string | null;
   refundStatus?: string | null;
+  // Optional rich-text message shown after a successful purchase / claim and
+  // included in the ticket confirmation email. Editable later from Manage Event.
+  purchaseConfirmationMessage?: string | null;
 }
 
 const CreateEvent = () => {
@@ -222,7 +226,8 @@ const CreateEvent = () => {
             refundTriggerAt: (draft as any).refund_trigger_at ?? null,
             refundEventEndAt: (draft as any).refund_event_end_at ?? (draft as any).ends_at ?? null,
             refundReserveBond: (draft as any).refund_reserve_bond ?? null,
-            refundStatus: (draft as any).refund_status ?? null
+            refundStatus: (draft as any).refund_status ?? null,
+            purchaseConfirmationMessage: (draft as any).purchase_confirmation_message ?? null
           });
           setCurrentDraftId(draftId);
           setEditingEventId(null);
@@ -265,7 +270,8 @@ const CreateEvent = () => {
             refundTriggerAt: (event as any).refund_trigger_at ?? null,
             refundEventEndAt: (event as any).refund_event_end_at ?? (event as any).ends_at ?? null,
             refundReserveBond: (event as any).refund_reserve_bond ?? null,
-            refundStatus: (event as any).refund_status ?? null
+            refundStatus: (event as any).refund_status ?? null,
+            purchaseConfirmationMessage: (event as any).purchase_confirmation_message ?? null
           };
           setFormData(loadedFormData);
           setInitialEditFormData(loadedFormData);

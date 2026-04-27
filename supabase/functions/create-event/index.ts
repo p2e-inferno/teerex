@@ -7,6 +7,7 @@ import { handleError } from "../_shared/error-handler.ts";
 import { isAnyUserWalletIsLockManagerParallel, resolveTokenInfo } from "../_shared/unlock.ts";
 import { Contract, JsonRpcProvider, Wallet } from "https://esm.sh/ethers@6.14.4";
 import { buildStartsAtUtcIso, toDateOnly } from "../_shared/datetime.ts";
+import { sanitizePurchaseMessage } from "../_shared/purchase-message.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -102,7 +103,8 @@ serve(async (req: Request) => {
             refund_event_end_at,
             refund_controller_address,
             refund_reserve_bond,
-            refund_status
+            refund_status,
+            purchase_confirmation_message
         } = payload;
 
         // 3. Create Supabase service client
@@ -265,6 +267,21 @@ serve(async (req: Request) => {
             }
         }
 
+        let sanitizedPurchaseMessage: string | null = null;
+        try {
+            sanitizedPurchaseMessage = sanitizePurchaseMessage(purchase_confirmation_message);
+        } catch (err) {
+            return new Response(
+                JSON.stringify({
+                    error: err instanceof Error ? err.message : "Invalid purchase confirmation message.",
+                }),
+                {
+                    headers: { ...corsHeaders, "Content-Type": "application/json" },
+                    status: 400,
+                },
+            );
+        }
+
         const eventData = {
             creator_id: privyUserId,
             title,
@@ -327,6 +344,20 @@ serve(async (req: Request) => {
                     .eq('idempotency_hash', idempotency_hash)
                     .maybeSingle();
 
+                if (racedEvent?.id && sanitizedPurchaseMessage) {
+                    await supabase
+                        .from("event_purchase_messages")
+                        .upsert(
+                            {
+                                event_id: racedEvent.id,
+                                message_html: sanitizedPurchaseMessage,
+                                updated_by: privyUserId,
+                                updated_at: new Date().toISOString(),
+                            },
+                            { onConflict: "event_id" },
+                        );
+                }
+
                 return new Response(
                     JSON.stringify({
                         error: "DUPLICATE_EVENT",
@@ -338,8 +369,28 @@ serve(async (req: Request) => {
             throw insertError;
         }
 
+        let purchaseMessageSaved = true;
+        if (sanitizedPurchaseMessage) {
+            const { error: purchaseMessageError } = await supabase
+                .from("event_purchase_messages")
+                .upsert(
+                    {
+                        event_id: newEvent.id,
+                        message_html: sanitizedPurchaseMessage,
+                        updated_by: privyUserId,
+                        updated_at: new Date().toISOString(),
+                    },
+                    { onConflict: "event_id" },
+                );
+
+            if (purchaseMessageError) {
+                console.error("Failed to save purchase confirmation message:", purchaseMessageError);
+                purchaseMessageSaved = false;
+            }
+        }
+
         return new Response(
-            JSON.stringify(newEvent),
+            JSON.stringify({ ...newEvent, purchase_message_saved: purchaseMessageSaved }),
             { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
 

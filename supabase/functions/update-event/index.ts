@@ -407,6 +407,7 @@ serve(async (req) => {
       } else if ("allow_waitlist" in formData) {
         eventData.allow_waitlist = !!formData.allow_waitlist;
       }
+
     }
 
     console.log("Updating event with data:", eventData);

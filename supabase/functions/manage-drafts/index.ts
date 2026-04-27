@@ -3,6 +3,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.50.0";
 import { corsHeaders, buildPreflightHeaders } from "../_shared/cors.ts";
 import { verifyPrivyToken } from "../_shared/privy.ts";
 import { handleError } from "../_shared/error-handler.ts";
+import { sanitizePurchaseMessage } from "../_shared/purchase-message.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -45,7 +46,8 @@ const ALLOWED_DRAFT_FIELDS = [
     'refund_reserve_bond',
     'refund_status',
     'refund_last_tx_hash',
-    'refund_last_synced_at'
+    'refund_last_synced_at',
+    'purchase_confirmation_message'
 ];
 
 // Sanitize payload to only include allowed fields
@@ -55,6 +57,11 @@ function sanitizePayload(payload: Record<string, any>): Record<string, any> {
         if (field in payload) {
             sanitized[field] = payload[field];
         }
+    }
+    if ('purchase_confirmation_message' in sanitized) {
+        sanitized.purchase_confirmation_message = sanitizePurchaseMessage(
+            sanitized.purchase_confirmation_message
+        );
     }
     return sanitized;
 }

@@ -9,6 +9,7 @@ import { validateChain } from "../_shared/network-helpers.ts";
 import { appendDivviTagToCalldataAsync, submitDivviReferralBestEffort } from "../_shared/divvi.ts";
 import { getExpectedFiatCurrency, getExpectedPaystackAmountKobo, verifyPaystackAmountAndCurrency } from "../_shared/paystack.ts";
 import { grantLockKey } from "../_shared/unlock.ts";
+import { getEventPurchaseMessageSnapshot } from "../_shared/purchase-message.ts";
 
 const PAYSTACK_SUCCESS_EVENT = "charge.success";
 
@@ -495,6 +496,10 @@ serve(async (req) => {
       key_granted: true,
     };
     if (grantTxHash) gatewayPatch.key_grant_tx_hash = grantTxHash;
+    const purchaseMessageSnapshot = await getEventPurchaseMessageSnapshot(supabase, txEvent?.id);
+    if (purchaseMessageSnapshot) {
+      gatewayPatch.purchase_message_snapshot = purchaseMessageSnapshot;
+    }
 
     await supabase
       .from('paystack_transactions')
@@ -515,6 +520,7 @@ serve(async (req) => {
 
     // Store ticket record with token_id if key was granted
     if (granted && grantTxHash) {
+      const ticketCreatedAt = new Date().toISOString();
       await supabase.from('tickets').insert({
         event_id: txEvent?.id,
         owner_wallet: recipient.toLowerCase(),
@@ -522,6 +528,8 @@ serve(async (req) => {
         grant_tx_hash: grantTxHash,
         token_id: tokenId,
         status: 'active',
+        purchase_confirmation_message_snapshot: purchaseMessageSnapshot,
+        purchase_confirmation_message_snapshot_at: purchaseMessageSnapshot ? ticketCreatedAt : null,
       });
     }
 
@@ -536,7 +544,14 @@ serve(async (req) => {
         ? `https://${chainId === 8453 ? 'basescan.org' : 'sepolia.basescan.org'}/tx/${grantTxHash}`
         : undefined;
 
-      const emailContent = getTicketEmail(eventTitle, eventDate, grantTxHash, chainId, explorerUrl);
+      const emailContent = getTicketEmail(
+        eventTitle,
+        eventDate,
+        grantTxHash,
+        chainId,
+        explorerUrl,
+        purchaseMessageSnapshot,
+      );
 
       // Fire and forget - don't block webhook response
       sendEmail({

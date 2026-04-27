@@ -40,7 +40,7 @@ serve(async (req) => {
     // Ensure ticket exists and is active for this wallet + event
     const { data: ticket } = await supabase
       .from('tickets')
-      .select('id, grant_tx_hash, status, user_email')
+      .select('id, grant_tx_hash, status, user_email, purchase_confirmation_message_snapshot')
       .eq('event_id', event_id)
       .eq('owner_wallet', normalizedWallet)
       .eq('status', 'active')
@@ -119,6 +119,7 @@ serve(async (req) => {
       txHash,
       chainId,
       explorerUrl,
+      (ticket as any)?.purchase_confirmation_message_snapshot ?? null,
     );
 
     const result = await sendEmail({
