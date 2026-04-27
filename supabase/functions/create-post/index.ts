@@ -3,13 +3,12 @@ import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.50.0";
 import { corsHeaders, buildPreflightHeaders } from "../_shared/cors.ts";
 import { getUserWalletAddresses } from "../_shared/privy.ts";
-import { isAnyUserWalletIsLockManagerParallel } from "../_shared/unlock.ts";
 import {
   createRemoteJWKSet,
   jwtVerify,
   importSPKI,
 } from "https://deno.land/x/jose@v4.14.4/index.ts";
-import { validateChain } from "../_shared/network-helpers.ts";
+import { requireEventAuthorization } from "../_shared/event-auth.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -83,7 +82,7 @@ serve(async (req) => {
     // 3. Get event details
     const { data: event, error: eventError } = await supabase
       .from("events")
-      .select("id, lock_address, chain_id")
+      .select("id, creator_id, lock_address, chain_id")
       .eq("id", eventId)
       .maybeSingle();
 
@@ -101,33 +100,26 @@ serve(async (req) => {
       throw new Error("No wallet addresses found for user");
     }
 
-    // 5. Validate chain and get network configuration
-    const networkConfig = await validateChain(supabase, event.chain_id);
-    if (!networkConfig) {
-      throw new Error("Chain not supported or not active");
-    }
-
-    if (!networkConfig.rpc_url) {
-      throw new Error("Network not fully configured (missing RPC URL)");
-    }
-
-    // 6. Authorization: ONLY lock managers (event creators) can create posts
-    const { anyIsManager, manager } = await isAnyUserWalletIsLockManagerParallel(
-      event.lock_address,
+    // 5. Authorization: creator, lock manager, or offchain discussions manager
+    const auth = await requireEventAuthorization({
+      supabase,
+      event,
+      privyUserId,
+      permission: "manage_discussions",
       userWallets,
-      networkConfig.rpc_url
-    );
-
-    if (!anyIsManager) {
-      throw new Error("Unauthorized: Only event creators (lock managers) can create posts");
+      errorMessage: "Unauthorized: Only event creators, lock managers, or discussions managers can create posts",
+    });
+    const authorAddress = auth.managerWallet || auth.userWallets[0];
+    if (!authorAddress) {
+      throw new Error("Unable to resolve post author address");
     }
 
-    // 7. Insert post
+    // 6. Insert post
     const { data: newPost, error: insertError } = await supabase
       .from("event_posts")
       .insert({
         event_id: eventId,
-        creator_address: manager!.toLowerCase(),
+        creator_address: authorAddress.toLowerCase(),
         content: content.trim(),
       })
       .select()

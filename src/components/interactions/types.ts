@@ -136,6 +136,7 @@ export interface UseEventPostsReturn {
   posts: EventPost[];
   isLoading: boolean;
   isRefreshing: boolean;
+  canManageDiscussions: boolean;
   error: Error | null;
   createPost: (content: string) => Promise<void>;
   deletePost: (postId: string) => Promise<void>;

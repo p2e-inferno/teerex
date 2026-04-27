@@ -41,18 +41,17 @@ export const WaitlistManager: React.FC<WaitlistManagerProps> = ({ event, isOpen,
     refresh: refreshWaitlist,
     hasMore,
     loadMore,
-  } = useEventWaitlist(event?.id || null, filter);
+  } = useEventWaitlist(isOpen ? event?.id || null : null, filter);
 
   useEffect(() => {
     if (isOpen && event) {
-      refreshWaitlist();
-      // Default target URL if not set
-      if (!targetUrl) {
+      setTargetUrl((current) => {
+        if (current) return current;
         const origin = window.location?.origin || 'https://teerex.live';
-        setTargetUrl(`${origin}/event/${event.lock_address}`);
-      }
+        return `${origin}/event/${event.lock_address}`;
+      });
     }
-  }, [isOpen, event, refreshWaitlist, targetUrl]);
+  }, [isOpen, event]);
 
   const selectedTarget = useMemo(
     () => myEvents.find((e) => e.id === targetEventId),
@@ -93,6 +92,7 @@ export const WaitlistManager: React.FC<WaitlistManagerProps> = ({ event, isOpen,
         const { data, error } = await supabase.functions.invoke('notify-waitlist', {
           body: {
             event_id: event.id,
+            target_event_id: selectedTarget?.id,
             page,
             event_url: targetUrl,
             target_title: selectedTarget?.title,
@@ -111,7 +111,7 @@ export const WaitlistManager: React.FC<WaitlistManagerProps> = ({ event, isOpen,
         totalNotified += data.notified || 0;
         totalFailed += data.failed || 0;
         hasMore = !!data.has_more;
-        page = data.next_page || page + 1;
+        page = data.next_page || 1;
       } while (hasMore);
 
       toast({

@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { usePrivy } from '@privy-io/react-auth';
 
@@ -15,6 +15,7 @@ export interface WaitlistEntry {
 
 export function useEventWaitlist(eventId: string | null, filter: WaitlistFilter = 'all') {
   const { getAccessToken } = usePrivy();
+  const getAccessTokenRef = useRef(getAccessToken);
   const [entries, setEntries] = useState<WaitlistEntry[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -26,12 +27,16 @@ export function useEventWaitlist(eventId: string | null, filter: WaitlistFilter 
     unnotified: 0,
   });
 
+  useEffect(() => {
+    getAccessTokenRef.current = getAccessToken;
+  }, [getAccessToken]);
+
   const fetchWaitlist = useCallback(async (pageToLoad = 1, append = false) => {
     if (!eventId) return;
     setLoading(true);
     setError(null);
     try {
-      const accessToken = await getAccessToken();
+      const accessToken = await getAccessTokenRef.current();
       if (!accessToken) {
         throw new Error('Authentication required to load waitlist');
       }
@@ -66,11 +71,18 @@ export function useEventWaitlist(eventId: string | null, filter: WaitlistFilter 
     } finally {
       setLoading(false);
     }
-  }, [eventId, filter, getAccessToken]);
+  }, [eventId, filter]);
 
   useEffect(() => {
     fetchWaitlist(1, false);
   }, [fetchWaitlist]);
+
+  const refresh = useCallback(() => fetchWaitlist(1, false), [fetchWaitlist]);
+
+  const loadMore = useCallback(
+    () => (hasMore ? fetchWaitlist(page + 1, true) : undefined),
+    [fetchWaitlist, hasMore, page],
+  );
 
   return {
     entries,
@@ -79,7 +91,7 @@ export function useEventWaitlist(eventId: string | null, filter: WaitlistFilter 
     counts,
     page,
     hasMore,
-    refresh: () => fetchWaitlist(1, false),
-    loadMore: () => (hasMore ? fetchWaitlist(page + 1, true) : undefined),
+    refresh,
+    loadMore,
   };
 }

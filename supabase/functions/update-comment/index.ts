@@ -3,8 +3,7 @@ import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.50.0";
 import { corsHeaders, buildPreflightHeaders } from "../_shared/cors.ts";
 import { getUserWalletAddresses, verifyPrivyToken } from "../_shared/privy.ts";
-import { isAnyUserWalletIsLockManagerParallel } from "../_shared/unlock.ts";
-import { validateChain } from "../_shared/network-helpers.ts";
+import { getEventAuthorization } from "../_shared/event-auth.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -116,16 +115,6 @@ serve(async (req) => {
     const isCreatorByWallet = creatorAddress ? normalizedWallets.includes(creatorAddress) : false;
     const isCreatorById = event.creator_id ? event.creator_id === privyUserId : false;
 
-    // 6. Validate chain and get network configuration
-    const networkConfig = await validateChain(supabase, event.chain_id);
-    if (!networkConfig) {
-      throw new Error("Chain not supported or not active");
-    }
-
-    if (!networkConfig.rpc_url) {
-      throw new Error("Network not fully configured (missing RPC URL)");
-    }
-
     // 7. Authorization based on update type
     const isEdit = "content" in updates;
     const isDelete = "is_deleted" in updates;
@@ -145,15 +134,16 @@ serve(async (req) => {
     if (isDelete) {
       // Delete: Comment owner OR lock manager can delete
       if (!isCommentOwner && !(isCreatorByWallet || isCreatorById)) {
-        // Check if user is lock manager
-        const { anyIsManager } = await isAnyUserWalletIsLockManagerParallel(
-          event.lock_address,
-          normalizedWallets,
-          networkConfig.rpc_url
-        );
+        const auth = await getEventAuthorization({
+          supabase,
+          event,
+          privyUserId,
+          permission: "manage_discussions",
+          userWallets: normalizedWallets,
+        });
 
-        if (!anyIsManager) {
-          throw new Error("Unauthorized: Only comment owner, event creator, or lock manager can delete comments");
+        if (!auth.authorized) {
+          throw new Error("Unauthorized: Only comment owner, event creator, lock manager, or discussions manager can delete comments");
         }
       }
     }

@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import { usePrivy } from '@privy-io/react-auth';
-import { getUserEvents } from '@/utils/eventUtils';
+import { getUserEvents, mapPublishedEventRow } from '@/utils/eventUtils';
+import { supabase } from '@/integrations/supabase/client';
 import type { PublishedEvent } from '@/types/event';
 
 type UseMyEventsListState = {
@@ -10,7 +11,7 @@ type UseMyEventsListState = {
 };
 
 export function useMyEventsList() {
-  const { user } = usePrivy();
+  const { user, authenticated, getAccessToken } = usePrivy();
   const [state, setState] = useState<UseMyEventsListState>({
     events: [],
     loading: false,
@@ -18,10 +19,27 @@ export function useMyEventsList() {
   });
 
   const fetchEvents = useCallback(async () => {
-    if (!user?.id) return;
+    if (!user?.id || !authenticated) return;
     setState((prev) => ({ ...prev, loading: true, error: null }));
     try {
-      const events = await getUserEvents(user.id);
+      const accessToken = await getAccessToken?.();
+      let events: PublishedEvent[];
+
+      if (accessToken) {
+        const { data, error } = await supabase.functions.invoke('list-my-manageable-events', {
+          body: {},
+          headers: { 'X-Privy-Authorization': `Bearer ${accessToken}` },
+        });
+        if (error || !data?.ok) {
+          throw error || new Error(data?.error || 'Failed to load manageable events');
+        }
+        const createdEvents = (data.created_events || []).map(mapPublishedEventRow);
+        const managedEvents = (data.managed_events || []).map(mapPublishedEventRow);
+        events = [...createdEvents, ...managedEvents];
+      } else {
+        events = await getUserEvents(user.id);
+      }
+
       setState({ events, loading: false, error: null });
     } catch (err: any) {
       setState({
@@ -30,7 +48,7 @@ export function useMyEventsList() {
         error: err?.message || 'Failed to load events',
       });
     }
-  }, [user?.id]);
+  }, [authenticated, getAccessToken, user?.id]);
 
   useEffect(() => {
     fetchEvents();
