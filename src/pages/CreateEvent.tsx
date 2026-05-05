@@ -27,6 +27,7 @@ import type { CryptoCurrency } from '@/types/currency';
 import { useEventPublisher } from '@/hooks/useEventPublisher';
 import { getDefaultChainId } from '@/lib/config/network-config';
 import { getEventEndIso, getEventStartIso } from '@/utils/eventTime';
+import type { PurchaseFormSchema } from '@/types/purchaseForm';
 
 const timeFromIso = (value?: string | null): string => {
   if (!value) return '';
@@ -69,7 +70,8 @@ const getDefaultFormData = (): EventFormData => ({
   refundEventEndAt: null,
   refundReserveBond: null,
   refundStatus: null,
-  purchaseConfirmationMessage: null
+  purchaseConfirmationMessage: null,
+  purchaseFormSchema: null
 });
 
 const buildEventUpdatePatch = (
@@ -147,6 +149,8 @@ export interface EventFormData {
   // Optional rich-text message shown after a successful purchase / claim and
   // included in the ticket confirmation email. Editable later from Manage Event.
   purchaseConfirmationMessage?: string | null;
+  // Optional creator-defined purchase form (extra required inputs beyond email).
+  purchaseFormSchema?: PurchaseFormSchema | null;
 }
 
 const CreateEvent = () => {
@@ -227,7 +231,8 @@ const CreateEvent = () => {
             refundEventEndAt: (draft as any).refund_event_end_at ?? (draft as any).ends_at ?? null,
             refundReserveBond: (draft as any).refund_reserve_bond ?? null,
             refundStatus: (draft as any).refund_status ?? null,
-            purchaseConfirmationMessage: (draft as any).purchase_confirmation_message ?? null
+            purchaseConfirmationMessage: (draft as any).purchase_confirmation_message ?? null,
+            purchaseFormSchema: (draft as any).purchase_form_schema ?? null
           });
           setCurrentDraftId(draftId);
           setEditingEventId(null);
@@ -271,7 +276,8 @@ const CreateEvent = () => {
             refundEventEndAt: (event as any).refund_event_end_at ?? (event as any).ends_at ?? null,
             refundReserveBond: (event as any).refund_reserve_bond ?? null,
             refundStatus: (event as any).refund_status ?? null,
-            purchaseConfirmationMessage: (event as any).purchase_confirmation_message ?? null
+            purchaseConfirmationMessage: (event as any).purchase_confirmation_message ?? null,
+            purchaseFormSchema: (event as any).purchase_form_schema ?? null
           };
           setFormData(loadedFormData);
           setInitialEditFormData(loadedFormData);

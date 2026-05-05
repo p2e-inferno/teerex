@@ -60,7 +60,7 @@ serve(async (req) => {
     // Find Paystack transaction and related event
     const { data: tx, error: txError } = await supabase
       .from("paystack_transactions")
-      .select("*, events:events(id, title, date, creator_id, lock_address, chain_id)")
+      .select("*, purchase_form_response, events:events(id, title, date, creator_id, lock_address, chain_id)")
       .eq("reference", transactionReference)
       .single();
     if (txError || !tx) return new Response(JSON.stringify({ error: "Transaction not found" }), { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 404 });
@@ -129,6 +129,8 @@ serve(async (req) => {
 
     // Store ticket record with email from paystack transaction
     const purchaseMessageSnapshot = await getEventPurchaseMessageSnapshot(supabase, event.id);
+    const formResponseSnapshot = (tx as any).purchase_form_response ?? null;
+    const formSchemaVersionAt = formResponseSnapshot?.schema_updated_at ?? null;
     const ticketCreatedAt = new Date().toISOString();
     const { error: ticketInsertError } = await supabase.from('tickets').insert({
       event_id: event.id,
@@ -139,6 +141,8 @@ serve(async (req) => {
       user_email: tx.user_email || null, // Copy email from paystack_transactions
       purchase_confirmation_message_snapshot: purchaseMessageSnapshot,
       purchase_confirmation_message_snapshot_at: purchaseMessageSnapshot ? ticketCreatedAt : null,
+      purchase_form_response_snapshot: formResponseSnapshot,
+      purchase_form_schema_version_at: formResponseSnapshot ? formSchemaVersionAt : null,
     });
 
     let dbSyncStatus = 'complete';

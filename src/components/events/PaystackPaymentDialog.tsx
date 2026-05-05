@@ -17,6 +17,13 @@ import type { PublishedEvent } from "@/types/event";
 import { supabase } from "@/integrations/supabase/client";
 import { Loader2, CreditCard } from "lucide-react";
 import { format } from "date-fns";
+import { PurchaseFormFields } from "@/components/events/PurchaseFormFields";
+import {
+  isPurchaseFormSchemaEmpty,
+  PurchaseFormResponseValues,
+  PurchaseFormSchema,
+  validatePurchaseFormResponse,
+} from "@/types/purchaseForm";
 
 interface PaymentData {
   reference: string;
@@ -54,6 +61,33 @@ export const PaystackPaymentDialog: React.FC<PaystackPaymentDialogProps> = ({
   const [reference, setReference] = useState<string>("");
   const [shouldLaunchPaystack, setShouldLaunchPaystack] = useState(false);
   const [amountKobo, setAmountKobo] = useState<number | null>(null);
+  const [formSchema, setFormSchema] = useState<PurchaseFormSchema | null>(null);
+  const [formValues, setFormValues] = useState<PurchaseFormResponseValues>({});
+  const [formErrors, setFormErrors] = useState<Record<string, string>>({});
+
+  useEffect(() => {
+    if (!event?.id) {
+      setFormSchema(null);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      const { data, error } = await supabase
+        .from("event_purchase_form_schemas")
+        .select("schema_json")
+        .eq("event_id", event.id)
+        .maybeSingle();
+      if (cancelled) return;
+      if (error) {
+        setFormSchema(null);
+        return;
+      }
+      setFormSchema((data?.schema_json as PurchaseFormSchema | null) ?? null);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [event?.id]);
 
   useEffect(() => {
     if (isOpen) return;
@@ -106,7 +140,8 @@ export const PaystackPaymentDialog: React.FC<PaystackPaymentDialogProps> = ({
   const initializePayment = usePaystackPayment(config);
 
   const ensureTransactionRecord = async (
-    paymentReference: string
+    paymentReference: string,
+    purchaseFormResponse: PurchaseFormResponseValues | null
   ): Promise<{ subaccountCode: string | null; amountKobo: number }> => {
     if (!event) throw new Error("Missing event");
     try {
@@ -123,6 +158,7 @@ export const PaystackPaymentDialog: React.FC<PaystackPaymentDialogProps> = ({
             ...(typeof (event as any)?.ngn_price_kobo === 'number' || typeof amountKobo === 'number'
               ? { amount: (amountKobo ?? (event as any)?.ngn_price_kobo) }
               : {}),
+            purchase_form_response: purchaseFormResponse,
           },
           headers: {
             ...(anonKey ? { Authorization: `Bearer ${anonKey}` } : {}),
@@ -263,6 +299,23 @@ export const PaystackPaymentDialog: React.FC<PaystackPaymentDialogProps> = ({
       return;
     }
 
+    // Validate creator-defined purchase form fields.
+    let cleanedFormValues: PurchaseFormResponseValues | null = null;
+    if (!isPurchaseFormSchemaEmpty(formSchema)) {
+      const { errors, values } = validatePurchaseFormResponse(formSchema, formValues);
+      if (Object.keys(errors).length > 0) {
+        setFormErrors(errors);
+        toast({
+          title: "Please fix the highlighted fields",
+          description: Object.values(errors)[0],
+          variant: "destructive",
+        });
+        return;
+      }
+      setFormErrors({});
+      cleanedFormValues = values;
+    }
+
     console.log(
       "✅ [PAYMENT INIT] Validation passed, launching Paystack modal..."
     );
@@ -272,7 +325,7 @@ export const PaystackPaymentDialog: React.FC<PaystackPaymentDialogProps> = ({
     const paymentReference = `TeeRex-${event?.id}-${Date.now()}`;
     setReference(paymentReference);
     try {
-      const init = await ensureTransactionRecord(paymentReference);
+      const init = await ensureTransactionRecord(paymentReference, cleanedFormValues);
       setAmountKobo(init.amountKobo);
       if (init.subaccountCode) {
         setSubaccountCode(init.subaccountCode);
@@ -380,6 +433,15 @@ export const PaystackPaymentDialog: React.FC<PaystackPaymentDialogProps> = ({
               </p>
             </div>
           </div>
+
+          <PurchaseFormFields
+            schema={formSchema}
+            values={formValues}
+            errors={formErrors}
+            onChange={setFormValues}
+            disabled={isLoading}
+            prefillWallet={userWalletAddress || null}
+          />
 
           <div className="bg-blue-50 p-3 rounded-lg">
             <p className="text-sm text-blue-700">

@@ -3,6 +3,11 @@ import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.50.0";
 import { corsHeaders, buildPreflightHeaders } from "../_shared/cors.ts";
 import { normalizeEmail } from "../_shared/email-utils.ts";
+import {
+  getPublishedPurchaseFormSchema,
+  validatePurchaseFormResponse,
+  type PurchaseFormResponseSnapshot,
+} from "../_shared/purchase-form.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -26,6 +31,7 @@ serve(async (req) => {
     const email: string | undefined = body.email;
     const walletAddressRaw: string | undefined = body.wallet_address || body.walletAddress;
     const requestedAmountKobo: number | undefined = typeof body.amount === 'number' ? body.amount : undefined;
+    const purchaseFormResponseRaw = body.purchase_form_response ?? null;
 
     if (!eventId || !reference || !email || !walletAddressRaw) {
       return new Response(JSON.stringify({ error: 'Missing required fields: event_id, reference, email, wallet_address' }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 400 });
@@ -90,6 +96,30 @@ serve(async (req) => {
       });
     }
 
+    // Validate purchase-form response against the live schema. We persist the
+    // server-validated snapshot onto paystack_transactions so the eventual
+    // ticket grant (webhook or manual) carries it through unchanged.
+    const { schema: formSchema, updatedAt: formSchemaUpdatedAt } =
+      await getPublishedPurchaseFormSchema(supabase, eventId);
+    let formResponseSnapshot: PurchaseFormResponseSnapshot | null = null;
+    if (formSchema) {
+      try {
+        const { values, labels } = validatePurchaseFormResponse(formSchema, purchaseFormResponseRaw);
+        formResponseSnapshot = {
+          schema_updated_at: formSchemaUpdatedAt,
+          values,
+          labels,
+        };
+      } catch (err) {
+        return new Response(
+          JSON.stringify({
+            error: err instanceof Error ? err.message : 'Invalid purchase form response.',
+          }),
+          { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 400 },
+        );
+      }
+    }
+
     const insertPayload: any = {
       event_id: eventId,
       user_email: normalizedEmail,
@@ -97,6 +127,7 @@ serve(async (req) => {
       currency: 'NGN',
       status: 'pending',
       payout_account_id: payoutAccountId, // Link to vendor's payout account
+      purchase_form_response: formResponseSnapshot,
       gateway_response: {
         reference,
         status: 'initialized',

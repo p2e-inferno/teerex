@@ -27,6 +27,7 @@ import { useQueries } from '@tanstack/react-query';
 import { CACHE_TIMES } from '@/lib/config/react-query-config';
 import { getDefaultRefundTriggerIso, getEventEndIso, getEventStartIso } from '@/utils/eventTime';
 import { previewProtectedEventReserveBond, type ProtectedReserveBondPreview } from '@/utils/lockUtils';
+import { PurchaseFormBuilder } from '@/components/create-event/PurchaseFormBuilder';
 
 interface PayoutAccountInfo {
   id: string;
@@ -1019,6 +1020,12 @@ export const TicketSettings: React.FC<TicketSettingsProps> = ({
           )}
         </CardContent>
       </Card>
+
+      {/* Custom required purchase inputs */}
+      <PurchaseFormBuilder
+        schema={formData.purchaseFormSchema ?? null}
+        onChange={(next) => updateFormData({ purchaseFormSchema: next })}
+      />
 
       {/* NFT Benefits for Paid Events */}
       {formData.paymentMethod === 'crypto' && (

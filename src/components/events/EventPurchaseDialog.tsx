@@ -24,6 +24,13 @@ import { normalizeEmail } from '@/utils/emailUtils';
 import { isFreeEvent } from '@/lib/events/paymentMethods';
 import { RichTextDisplay } from '@/components/ui/rich-text/RichTextDisplay';
 import { isEmptyHtml } from '@/utils/textUtils';
+import { PurchaseFormFields } from '@/components/events/PurchaseFormFields';
+import {
+  isPurchaseFormSchemaEmpty,
+  PurchaseFormResponseValues,
+  PurchaseFormSchema,
+  validatePurchaseFormResponse,
+} from '@/types/purchaseForm';
 
 interface EventPurchaseDialogProps {
   event: PublishedEvent | null;
@@ -46,14 +53,43 @@ export const EventPurchaseDialog: React.FC<EventPurchaseDialogProps> = ({
   const [isOnchainFree, setIsOnchainFree] = useState(false);
   const [purchaseSuccessMessage, setPurchaseSuccessMessage] = useState<string | null>(null);
   const [purchaseSuccess, setPurchaseSuccess] = useState(false);
+  const [formSchema, setFormSchema] = useState<PurchaseFormSchema | null>(null);
+  const [formValues, setFormValues] = useState<PurchaseFormResponseValues>({});
+  const [formErrors, setFormErrors] = useState<Record<string, string>>({});
 
   // Reset success state whenever the dialog opens for a new attempt.
   useEffect(() => {
     if (isOpen) {
       setPurchaseSuccess(false);
       setPurchaseSuccessMessage(null);
+      setFormErrors({});
     }
   }, [isOpen]);
+
+  // Load the event's purchase form schema (if any).
+  useEffect(() => {
+    if (!event?.id) {
+      setFormSchema(null);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      const { data, error } = await supabase
+        .from('event_purchase_form_schemas')
+        .select('schema_json')
+        .eq('event_id', event.id)
+        .maybeSingle();
+      if (cancelled) return;
+      if (error) {
+        setFormSchema(null);
+        return;
+      }
+      setFormSchema((data?.schema_json as PurchaseFormSchema | null) ?? null);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [event?.id]);
 
   // Check if event is free on-chain (catches bug-affected events)
   useEffect(() => {
@@ -93,19 +129,21 @@ export const EventPurchaseDialog: React.FC<EventPurchaseDialogProps> = ({
     chain_id: number;
     recipient: string;
     user_email: string;
+    purchase_form_response?: PurchaseFormResponseValues | null;
   };
 
   // Use shared hook for gasless FREE purchase (with auto-fallback)
   // Enabled if marked as free in DB OR detected as free on-chain (catches bug-affected events)
   const purchaseFreeTicketWithGasless = useGaslessFallback<GaslessPurchaseArgs, any>(
     'gasless-purchase',
-    async (args) => await handleClientSidePurchase(args.user_email, { currency: 'FREE', price: 0 }),
+    async (args) => await handleClientSidePurchase(args.user_email, args.purchase_form_response ?? null, { currency: 'FREE', price: 0 }),
     isFreeEvent(event) || isOnchainFree
   );
 
   // Client-side purchase handler (ALL currencies: FREE, ETH, USDC)
   const handleClientSidePurchase = async (
     userEmail: string,
+    purchaseFormResponse: PurchaseFormResponseValues | null,
     override?: { currency: string; price: number }
   ) => {
     if (!event) return { success: false };
@@ -143,6 +181,7 @@ export const EventPurchaseDialog: React.FC<EventPurchaseDialogProps> = ({
             owner_wallet: wallet.address.toLowerCase(),
             grant_tx_hash: result.transactionHash,
             user_email: userEmail || null,
+            purchase_form_response: purchaseFormResponse,
           },
           headers: accessToken ? { 'X-Privy-Authorization': `Bearer ${accessToken}` } : undefined,
         });
@@ -223,6 +262,23 @@ export const EventPurchaseDialog: React.FC<EventPurchaseDialogProps> = ({
         variant: 'destructive',
       });
       return;
+    }
+
+    // Validate any creator-defined purchase form fields.
+    let cleanedFormValues: PurchaseFormResponseValues | null = null;
+    if (!isPurchaseFormSchemaEmpty(formSchema)) {
+      const { errors, values } = validatePurchaseFormResponse(formSchema, formValues);
+      if (Object.keys(errors).length > 0) {
+        setFormErrors(errors);
+        toast({
+          title: 'Please fix the highlighted fields',
+          description: Object.values(errors)[0],
+          variant: 'destructive',
+        });
+        return;
+      }
+      setFormErrors({});
+      cleanedFormValues = values;
     }
 
     if (!event) {
@@ -331,6 +387,7 @@ export const EventPurchaseDialog: React.FC<EventPurchaseDialogProps> = ({
           chain_id: event.chain_id,
           recipient: walletAddress,
           user_email: normalizedEmail,
+          purchase_form_response: cleanedFormValues,
         };
 
         const result: any = await purchaseFreeTicketWithGasless(gaslessArgs);
@@ -418,7 +475,7 @@ export const EventPurchaseDialog: React.FC<EventPurchaseDialogProps> = ({
     }
 
     // ETH/USDC tickets: client-side purchase with email storage
-    await handleClientSidePurchase(normalizedEmail);
+    await handleClientSidePurchase(normalizedEmail, cleanedFormValues);
   };
 
   // Helper to convert error codes to user-friendly messages
@@ -435,6 +492,7 @@ export const EventPurchaseDialog: React.FC<EventPurchaseDialogProps> = ({
       'limit_exceeded': 'Daily gasless limit exceeded. Please use your wallet instead.',
       'max_keys_reached': 'You have reached the maximum number of tickets allowed for this event.',
       'ticket_already_claimed': 'You have already claimed a ticket for this event.',
+      'invalid_purchase_form_response': 'One of your answers didn\'t pass validation. Please review and try again.',
     };
     return errorMessages[errorCode] || errorCode;
   };
@@ -521,6 +579,16 @@ export const EventPurchaseDialog: React.FC<EventPurchaseDialogProps> = ({
               We'll use this to send you event updates and your ticket invoice
             </p>
           </div>
+
+          {/* Creator-defined extra purchase fields */}
+          <PurchaseFormFields
+            schema={formSchema}
+            values={formValues}
+            errors={formErrors}
+            onChange={setFormValues}
+            disabled={isPurchasing}
+            prefillWallet={(wallets[0]?.address ?? user?.wallet?.address) ?? null}
+          />
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={onClose} disabled={isPurchasing}>

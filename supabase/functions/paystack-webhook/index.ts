@@ -136,7 +136,7 @@ serve(async (req) => {
     const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
     const { data: tx } = await supabase
       .from("paystack_transactions")
-      .select("id, reference, status, amount, currency, user_email, gateway_response, verified_at, issuance_lock_id, issuance_locked_at, issuance_attempts, events:events(id, title, date, lock_address, chain_id)")
+      .select("id, reference, status, amount, currency, user_email, purchase_form_response, gateway_response, verified_at, issuance_lock_id, issuance_locked_at, issuance_attempts, events:events(id, title, date, lock_address, chain_id)")
       .eq("reference", reference)
       .maybeSingle();
 
@@ -521,6 +521,8 @@ serve(async (req) => {
     // Store ticket record with token_id if key was granted
     if (granted && grantTxHash) {
       const ticketCreatedAt = new Date().toISOString();
+      const formResponseSnapshot = (tx as any).purchase_form_response ?? null;
+      const formSchemaVersionAt = formResponseSnapshot?.schema_updated_at ?? null;
       await supabase.from('tickets').insert({
         event_id: txEvent?.id,
         owner_wallet: recipient.toLowerCase(),
@@ -530,6 +532,8 @@ serve(async (req) => {
         status: 'active',
         purchase_confirmation_message_snapshot: purchaseMessageSnapshot,
         purchase_confirmation_message_snapshot_at: purchaseMessageSnapshot ? ticketCreatedAt : null,
+        purchase_form_response_snapshot: formResponseSnapshot,
+        purchase_form_schema_version_at: formResponseSnapshot ? formSchemaVersionAt : null,
       });
     }
 

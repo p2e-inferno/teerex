@@ -4,6 +4,7 @@ import { corsHeaders, buildPreflightHeaders } from "../_shared/cors.ts";
 import { verifyPrivyToken } from "../_shared/privy.ts";
 import { handleError } from "../_shared/error-handler.ts";
 import { sanitizePurchaseMessage } from "../_shared/purchase-message.ts";
+import { validatePurchaseFormSchema } from "../_shared/purchase-form.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -47,7 +48,8 @@ const ALLOWED_DRAFT_FIELDS = [
     'refund_status',
     'refund_last_tx_hash',
     'refund_last_synced_at',
-    'purchase_confirmation_message'
+    'purchase_confirmation_message',
+    'purchase_form_schema'
 ];
 
 // Sanitize payload to only include allowed fields
@@ -61,6 +63,11 @@ function sanitizePayload(payload: Record<string, any>): Record<string, any> {
     if ('purchase_confirmation_message' in sanitized) {
         sanitized.purchase_confirmation_message = sanitizePurchaseMessage(
             sanitized.purchase_confirmation_message
+        );
+    }
+    if ('purchase_form_schema' in sanitized) {
+        sanitized.purchase_form_schema = validatePurchaseFormSchema(
+            sanitized.purchase_form_schema
         );
     }
     return sanitized;

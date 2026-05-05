@@ -9,6 +9,7 @@ import { EventDraft, PublishedEvent } from '@/types/event';
 import { EventFormData } from '@/pages/CreateEvent';
 import { getEventEndIso, getEventStartIso } from '@/utils/eventTime';
 import { normalizePurchaseMessage } from '@/utils/purchaseMessage';
+import { isPurchaseFormSchemaEmpty } from '@/types/purchaseForm';
 
 /**
  * Save a new draft using the manage-drafts edge function
@@ -64,6 +65,9 @@ export const saveDraftViaEdge = async (
       refund_event_end_at: isProtectedRefundEvent ? endsAt : null,
       refund_status: isProtectedRefundEvent ? 'draft' : null,
       purchase_confirmation_message: normalizePurchaseMessage(formData.purchaseConfirmationMessage),
+      purchase_form_schema: isPurchaseFormSchemaEmpty(formData.purchaseFormSchema)
+        ? null
+        : formData.purchaseFormSchema,
     };
 
     const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
@@ -148,6 +152,9 @@ export const updateDraftViaEdge = async (
       refund_event_end_at: isProtectedRefundEvent ? endsAt : null,
       refund_status: isProtectedRefundEvent ? 'draft' : null,
       purchase_confirmation_message: normalizePurchaseMessage(formData.purchaseConfirmationMessage),
+      purchase_form_schema: isPurchaseFormSchemaEmpty(formData.purchaseFormSchema)
+        ? null
+        : formData.purchaseFormSchema,
     };
 
     const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
@@ -419,6 +426,9 @@ export const savePublishedEventViaEdge = async (
       refund_reserve_bond: isProtectedRefundEvent ? deploymentMeta?.reserveBond : null,
       refund_status: isProtectedRefundEvent ? 'protected' : null,
       purchase_confirmation_message: normalizePurchaseMessage(formData.purchaseConfirmationMessage),
+      purchase_form_schema: isPurchaseFormSchemaEmpty(formData.purchaseFormSchema)
+        ? null
+        : formData.purchaseFormSchema,
     };
 
     const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
