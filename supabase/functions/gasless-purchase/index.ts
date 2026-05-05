@@ -14,6 +14,11 @@ import { formatEventDate } from '../_shared/date-utils.ts';
 import { appendDivviTagToCalldataAsync, submitDivviReferralBestEffort } from '../_shared/divvi.ts';
 import { isLockFreeOnchain } from '../_shared/unlock.ts';
 import { getEventPurchaseMessageSnapshot } from '../_shared/purchase-message.ts';
+import {
+  getPublishedPurchaseFormSchema,
+  validatePurchaseFormResponse,
+  type PurchaseFormResponseSnapshot,
+} from '../_shared/purchase-form.ts';
 
 /**
  * Checks if recipient already owns keys and validates against max limits
@@ -67,7 +72,9 @@ async function getOrCreateTicketRecord(
   event_id: string,
   recipient: string,
   user_email: string | null,
-  purchase_message_snapshot: string | null
+  purchase_message_snapshot: string | null,
+  purchase_form_snapshot: PurchaseFormResponseSnapshot | null,
+  purchase_form_schema_version_at: string | null,
 ): Promise<{ ticket: any; isNew: boolean }> {
   // Check for existing ticket
   const { data: existing } = await supabase
@@ -94,6 +101,8 @@ async function getOrCreateTicketRecord(
       user_email: user_email || null,
       purchase_confirmation_message_snapshot: purchase_message_snapshot,
       purchase_confirmation_message_snapshot_at: purchase_message_snapshot ? new Date().toISOString() : null,
+      purchase_form_response_snapshot: purchase_form_snapshot,
+      purchase_form_schema_version_at: purchase_form_snapshot ? purchase_form_schema_version_at : null,
     })
     .select()
     .single();
@@ -118,7 +127,7 @@ serve(async (req) => {
 
     // 2. Parse request
     const body = await req.json();
-    const { event_id, lock_address, chain_id, recipient, user_email } = body;
+    const { event_id, lock_address, chain_id, recipient, user_email, purchase_form_response } = body;
 
     const normalizedUserEmail = normalizeEmail(user_email);
 
@@ -183,6 +192,30 @@ serve(async (req) => {
     }
     const purchaseMessageSnapshot = await getEventPurchaseMessageSnapshot(supabase, event_id);
 
+    // Validate purchase form response against the live schema (if any).
+    const { schema: formSchema, updatedAt: formSchemaUpdatedAt } =
+      await getPublishedPurchaseFormSchema(supabase, event_id);
+    let formResponseSnapshot: PurchaseFormResponseSnapshot | null = null;
+    if (formSchema) {
+      try {
+        const { values, labels } = validatePurchaseFormResponse(formSchema, purchase_form_response);
+        formResponseSnapshot = {
+          schema_updated_at: formSchemaUpdatedAt,
+          values,
+          labels,
+        };
+      } catch (err) {
+        return new Response(
+          JSON.stringify({
+            ok: false,
+            error: 'invalid_purchase_form_response',
+            detail: err instanceof Error ? err.message : 'Invalid purchase form response.',
+          }),
+          { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 200 }
+        );
+      }
+    }
+
     if (event.lock_address.toLowerCase() !== lock_address.toLowerCase()) {
       return new Response(
         JSON.stringify({ ok: false, error: 'lock_address_mismatch' }),
@@ -231,7 +264,9 @@ serve(async (req) => {
         event_id,
         normalizedRecipient,
         normalizedUserEmail,
-        purchaseMessageSnapshot
+        purchaseMessageSnapshot,
+        formResponseSnapshot,
+        formSchemaUpdatedAt,
       );
 
       // Check if they've reached their limit
@@ -334,6 +369,8 @@ serve(async (req) => {
       user_email: normalizedUserEmail || null,
       purchase_confirmation_message_snapshot: purchaseMessageSnapshot,
       purchase_confirmation_message_snapshot_at: purchaseMessageSnapshot ? ticketCreatedAt : null,
+      purchase_form_response_snapshot: formResponseSnapshot,
+      purchase_form_schema_version_at: formResponseSnapshot ? formSchemaUpdatedAt : null,
     });
 
     let dbSyncStatus = 'complete';

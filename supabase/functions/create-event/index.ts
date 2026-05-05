@@ -8,6 +8,7 @@ import { isAnyUserWalletIsLockManagerParallel, resolveTokenInfo } from "../_shar
 import { Contract, JsonRpcProvider, Wallet } from "https://esm.sh/ethers@6.14.4";
 import { buildStartsAtUtcIso, toDateOnly } from "../_shared/datetime.ts";
 import { sanitizePurchaseMessage } from "../_shared/purchase-message.ts";
+import { validatePurchaseFormSchema } from "../_shared/purchase-form.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -104,7 +105,8 @@ serve(async (req: Request) => {
             refund_controller_address,
             refund_reserve_bond,
             refund_status,
-            purchase_confirmation_message
+            purchase_confirmation_message,
+            purchase_form_schema
         } = payload;
 
         // 3. Create Supabase service client
@@ -282,6 +284,21 @@ serve(async (req: Request) => {
             );
         }
 
+        let validatedPurchaseFormSchema: ReturnType<typeof validatePurchaseFormSchema> = null;
+        try {
+            validatedPurchaseFormSchema = validatePurchaseFormSchema(purchase_form_schema);
+        } catch (err) {
+            return new Response(
+                JSON.stringify({
+                    error: err instanceof Error ? err.message : "Invalid purchase form schema.",
+                }),
+                {
+                    headers: { ...corsHeaders, "Content-Type": "application/json" },
+                    status: 400,
+                },
+            );
+        }
+
         const eventData = {
             creator_id: privyUserId,
             title,
@@ -357,6 +374,19 @@ serve(async (req: Request) => {
                             { onConflict: "event_id" },
                         );
                 }
+                if (racedEvent?.id && validatedPurchaseFormSchema) {
+                    await supabase
+                        .from("event_purchase_form_schemas")
+                        .upsert(
+                            {
+                                event_id: racedEvent.id,
+                                schema_json: validatedPurchaseFormSchema,
+                                updated_by: privyUserId,
+                                updated_at: new Date().toISOString(),
+                            },
+                            { onConflict: "event_id" },
+                        );
+                }
 
                 return new Response(
                     JSON.stringify({
@@ -389,8 +419,32 @@ serve(async (req: Request) => {
             }
         }
 
+        let purchaseFormSaved = true;
+        if (validatedPurchaseFormSchema) {
+            const { error: purchaseFormError } = await supabase
+                .from("event_purchase_form_schemas")
+                .upsert(
+                    {
+                        event_id: newEvent.id,
+                        schema_json: validatedPurchaseFormSchema,
+                        updated_by: privyUserId,
+                        updated_at: new Date().toISOString(),
+                    },
+                    { onConflict: "event_id" },
+                );
+
+            if (purchaseFormError) {
+                console.error("Failed to save purchase form schema:", purchaseFormError);
+                purchaseFormSaved = false;
+            }
+        }
+
         return new Response(
-            JSON.stringify({ ...newEvent, purchase_message_saved: purchaseMessageSaved }),
+            JSON.stringify({
+                ...newEvent,
+                purchase_message_saved: purchaseMessageSaved,
+                purchase_form_saved: purchaseFormSaved,
+            }),
             { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
 

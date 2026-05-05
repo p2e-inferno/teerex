@@ -36,6 +36,7 @@ export interface EventDraft {
   refund_last_tx_hash?: string | null;
   refund_last_synced_at?: string | null;
   purchase_confirmation_message?: string | null;
+  purchase_form_schema?: import('./purchaseForm').PurchaseFormSchema | null;
   created_at: Date;
   updated_at: Date;
 }

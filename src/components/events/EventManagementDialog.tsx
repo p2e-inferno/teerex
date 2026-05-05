@@ -44,6 +44,8 @@ import { WaitlistManager } from './WaitlistManager';
 import { ServiceManagerControls } from '@/components/shared/ServiceManagerControls';
 import { EventManagersPanel } from './EventManagersPanel';
 import { EventPurchaseMessageSection } from './EventPurchaseMessageSection';
+import { EventPurchaseFormSection } from './EventPurchaseFormSection';
+import { EventPurchaseResponsesSection } from './EventPurchaseResponsesSection';
 import { useNetworkConfigs } from '@/hooks/useNetworkConfigs';
 import { base, baseSepolia } from 'wagmi/chains';
 import { getDivviBrowserProvider } from '@/lib/wallet/provider';
@@ -562,6 +564,18 @@ export const EventManagementDialog: React.FC<EventManagementDialogProps> = ({
               isCreator={eventAccess.isCreator}
               onEventUpdated={onEventUpdated}
             />
+          )}
+
+          {eventAccess.isCreator && (
+            <EventPurchaseFormSection
+              event={event}
+              isCreator={eventAccess.isCreator}
+              onEventUpdated={onEventUpdated}
+            />
+          )}
+
+          {eventAccess.isCreator && (
+            <EventPurchaseResponsesSection event={event} />
           )}
 
           {/* Visibility & Access Settings */}

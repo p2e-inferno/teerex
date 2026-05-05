@@ -4,6 +4,11 @@ import { corsHeaders, buildPreflightHeaders } from "../_shared/cors.ts";
 import { verifyPrivyToken, validateUserWallet } from "../_shared/privy.ts";
 import { handleError } from "../_shared/error-handler.ts";
 import { getEventPurchaseMessageSnapshot } from "../_shared/purchase-message.ts";
+import {
+    getPublishedPurchaseFormSchema,
+    validatePurchaseFormResponse,
+    type PurchaseFormResponseSnapshot,
+} from "../_shared/purchase-form.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -21,7 +26,7 @@ serve(async (req: Request) => {
 
         const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
         const requestBody = await req.json();
-        const { event_id, owner_wallet, grant_tx_hash, user_email } = requestBody;
+        const { event_id, owner_wallet, grant_tx_hash, user_email, purchase_form_response } = requestBody;
 
         if (!event_id || !owner_wallet || !grant_tx_hash) {
             throw new Error("Missing required fields: event_id, owner_wallet, grant_tx_hash");
@@ -34,6 +39,30 @@ serve(async (req: Request) => {
         // Snapshot the current purchase confirmation message so the attendee
         // keeps the version they received even if the creator edits it later.
         const purchaseMessageSnapshot = await getEventPurchaseMessageSnapshot(supabase, event_id);
+
+        // Validate the purchase-form response against the live schema and build
+        // the per-ticket snapshot.
+        const { schema: formSchema, updatedAt: formSchemaUpdatedAt } =
+            await getPublishedPurchaseFormSchema(supabase, event_id);
+        let formResponseSnapshot: PurchaseFormResponseSnapshot | null = null;
+        if (formSchema) {
+            try {
+                const { values, labels } = validatePurchaseFormResponse(formSchema, purchase_form_response);
+                formResponseSnapshot = {
+                    schema_updated_at: formSchemaUpdatedAt,
+                    values,
+                    labels,
+                };
+            } catch (err) {
+                return new Response(
+                    JSON.stringify({
+                        error: err instanceof Error ? err.message : "Invalid purchase form response.",
+                    }),
+                    { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+                );
+            }
+        }
+
         const nowIso = new Date().toISOString();
 
         const insertData = {
@@ -45,6 +74,8 @@ serve(async (req: Request) => {
             created_at: nowIso,
             purchase_confirmation_message_snapshot: purchaseMessageSnapshot,
             purchase_confirmation_message_snapshot_at: purchaseMessageSnapshot ? nowIso : null,
+            purchase_form_response_snapshot: formResponseSnapshot,
+            purchase_form_schema_version_at: formResponseSnapshot ? formSchemaUpdatedAt : null,
         };
 
         const { error } = await supabase.from('tickets').insert(insertData);

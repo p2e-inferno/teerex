@@ -32,7 +32,10 @@
       "Bash(supabase db dump:*)",
       "Bash(psql:*)",
       "Bash(supabase db inspect:*)",
-      "Bash(npx vitest *)"
+      "Bash(npx vitest *)",
+      "Bash(echo \"EXIT=$?\")",
+      "Bash(npm run *)",
+      "Bash(git stash *)"
     ],
     "deny": [],
     "ask": []
