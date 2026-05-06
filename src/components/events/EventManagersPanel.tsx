@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Loader2, Plus, RefreshCw, Trash2, Users } from 'lucide-react';
+import { Clock, Info, Loader2, MessageSquare, MoreHorizontal, Plus, RefreshCw, Trash2, UserCheck, Users } from 'lucide-react';
 import type { PublishedEvent } from '@/types/event';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -27,21 +27,25 @@ const PERMISSION_LABELS: Array<{
   key: keyof EventManagerPermissions;
   label: string;
   description: string;
+  icon: React.ElementType;
 }> = [
   {
     key: 'manage_access',
     label: 'Manage Allowlist',
     description: 'Add, remove, and approve people on the event allowlist.',
+    icon: UserCheck,
   },
   {
     key: 'manage_waitlist',
     label: 'Manage Waitlist',
     description: 'View the waitlist and notify people when spots open up.',
+    icon: Clock,
   },
   {
     key: 'manage_discussions',
     label: 'Manage Event Discussions',
     description: 'Create, edit, and moderate posts and comments in event discussions.',
+    icon: MessageSquare,
   },
 ];
 
@@ -132,81 +136,123 @@ export const EventManagersPanel: React.FC<EventManagersPanelProps> = ({ event, e
   if (!enabled) return null;
 
   return (
-    <div className="space-y-4 rounded-lg border p-4">
+    <div className="space-y-5 rounded-xl border p-5 bg-white">
+      {/* Header */}
       <div className="flex items-start justify-between gap-3">
         <div className="flex items-start gap-3">
-          <Users className="w-5 h-5 text-purple-600 mt-0.5" />
+          <div className="bg-purple-100 p-2.5 rounded-xl flex-shrink-0">
+            <Users className="w-5 h-5 text-purple-600" />
+          </div>
           <div>
-            <h3 className="font-semibold">Event managers</h3>
+            <h3 className="font-semibold text-base text-gray-900">Event managers</h3>
             <p className="text-sm text-muted-foreground">
               Add trusted users by wallet address or by email if they already use Teerex.
             </p>
           </div>
         </div>
-        <Button variant="ghost" size="sm" onClick={refresh} disabled={loading}>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="text-muted-foreground hover:text-gray-700 flex-shrink-0"
+          onClick={refresh}
+          disabled={loading}
+        >
           {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
         </Button>
       </div>
 
-      <div className="mt-16 grid gap-4 md:mt-20">
+      {/* Add manager form */}
+      <div className="grid gap-4">
         <div className="grid gap-1.5">
-          <Label htmlFor="manager-identifier">Wallet address or Teerex email</Label>
-          <Input
-            id="manager-identifier"
-            value={identifier}
-            onChange={(event) => setIdentifier(event.target.value)}
-            placeholder="0x1234... or manager@teerex.com"
-          />
+          <Label htmlFor="manager-identifier" className="flex items-center gap-1.5 text-sm font-medium">
+            Wallet address or Teerex email
+            <Info className="w-3.5 h-3.5 text-muted-foreground" />
+          </Label>
+          <div className="relative">
+            <Input
+              id="manager-identifier"
+              value={identifier}
+              onChange={(e) => setIdentifier(e.target.value)}
+              placeholder="0x1234... or manager@teerex.com"
+              className="pr-12"
+            />
+            <button
+              type="button"
+              className="absolute right-2 top-1/2 -translate-y-1/2 rounded border border-gray-200 bg-gray-50 p-1 text-muted-foreground hover:bg-gray-100"
+              tabIndex={-1}
+            >
+              <MoreHorizontal className="w-3.5 h-3.5" />
+            </button>
+          </div>
         </div>
+
         <div className="grid gap-1.5">
-          <Label htmlFor="manager-label">Manager name or note</Label>
+          <Label htmlFor="manager-label" className="flex items-center gap-1.5 text-sm font-medium">
+            Manager name or note
+            <span className="font-normal text-muted-foreground">(optional)</span>
+            <Info className="w-3.5 h-3.5 text-muted-foreground" />
+          </Label>
           <Input
             id="manager-label"
             value={label}
-            onChange={(event) => setLabel(event.target.value)}
+            onChange={(e) => setLabel(e.target.value)}
             placeholder="Optional label for the manager"
           />
         </div>
-        <Button className="justify-self-start" onClick={handleAdd} disabled={saving || !identifier.trim()}>
+
+        <Button
+          className="w-fit bg-purple-600 hover:bg-purple-700 text-white"
+          onClick={handleAdd}
+          disabled={saving || !identifier.trim()}
+        >
           {saving ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Plus className="w-4 h-4 mr-2" />}
           Add
         </Button>
       </div>
 
+      {/* Permissions */}
       <div className="grid gap-2">
-        <p className="text-xs text-muted-foreground">
-          Choose what this manager can do.
-        </p>
-        {PERMISSION_LABELS.map((item) => (
-          <label
-            key={item.key}
-            className="flex items-start justify-between gap-4 rounded-md border px-3 py-2 text-sm"
-          >
-            <div className="space-y-0.5">
-              <span className="font-medium text-foreground">{item.label}</span>
-              <p className="text-xs leading-5 text-muted-foreground">{item.description}</p>
-            </div>
-            <Switch
-              checked={permissions[item.key]}
-              onCheckedChange={(checked) => setPermissions((prev) => ({ ...prev, [item.key]: checked }))}
-            />
-          </label>
-        ))}
+        <p className="text-sm text-muted-foreground">Choose what this manager can do.</p>
+        {PERMISSION_LABELS.map((item) => {
+          const Icon = item.icon;
+          return (
+            <label
+              key={item.key}
+              className="flex items-center justify-between gap-4 rounded-xl border border-gray-100 bg-white px-4 py-3 cursor-pointer hover:bg-gray-50/50 transition-colors"
+            >
+              <div className="flex items-center gap-3">
+                <div className="bg-purple-50 p-2 rounded-lg flex-shrink-0">
+                  <Icon className="w-5 h-5 text-purple-600" />
+                </div>
+                <div>
+                  <span className="text-sm font-semibold text-gray-900">{item.label}</span>
+                  <p className="text-xs text-muted-foreground mt-0.5">{item.description}</p>
+                </div>
+              </div>
+              <Switch
+                className="data-[state=checked]:bg-purple-600"
+                checked={permissions[item.key]}
+                onCheckedChange={(checked) => setPermissions((prev) => ({ ...prev, [item.key]: checked }))}
+              />
+            </label>
+          );
+        })}
       </div>
 
       {error && (
         <div className="text-sm text-destructive">{error}</div>
       )}
 
+      {/* Managers list */}
       <div className="w-full overflow-hidden rounded-xl border border-gray-100 bg-white">
         <div className="overflow-x-auto">
           <div className="min-w-[600px]">
             <div className="grid grid-cols-[1fr_1fr_1.5fr_auto] gap-3 border-b bg-gray-50/50 px-4 py-3 text-xs font-semibold uppercase tracking-wider text-gray-500">
-          <span>Email</span>
-          <span>Address</span>
-          <span>Permissions</span>
-          <span />
-        </div>
+              <span>Email</span>
+              <span>Address</span>
+              <span>Permissions</span>
+              <span />
+            </div>
             {loading && managers.length === 0 ? (
               <div className="flex items-center justify-center py-10">
                 <Loader2 className="w-6 h-6 animate-spin text-purple-600/50" />
@@ -234,22 +280,25 @@ export const EventManagersPanel: React.FC<EventManagersPanelProps> = ({ event, e
                     {shortAddress(manager.wallet_address)}
                   </div>
                   <div className="grid gap-2">
-                    {PERMISSION_LABELS.map((item) => (
-                      <label
-                        key={item.key}
-                        className="flex items-start justify-between gap-3 rounded-lg border border-gray-100 bg-gray-50/50 px-2 py-2 shadow-sm"
-                      >
-                        <div className="space-y-0.5">
-                          <span className="text-[10px] font-bold uppercase tracking-tight text-gray-700">{item.label}</span>
-                          <p className="text-[10px] leading-3 text-muted-foreground">{item.description}</p>
-                        </div>
-                        <Switch
-                          className="scale-75 origin-right"
-                          checked={Boolean(manager.permissions?.[item.key])}
-                          onCheckedChange={(checked) => handleToggle(manager.id, manager.permissions, item.key, checked)}
-                        />
-                      </label>
-                    ))}
+                    {PERMISSION_LABELS.map((item) => {
+                      const Icon = item.icon;
+                      return (
+                        <label
+                          key={item.key}
+                          className="flex items-start justify-between gap-3 rounded-lg border border-gray-100 bg-gray-50/50 px-2 py-2 shadow-sm"
+                        >
+                          <div className="flex items-center gap-1.5">
+                            <Icon className="w-3 h-3 text-purple-500 flex-shrink-0" />
+                            <span className="text-[10px] font-bold uppercase tracking-tight text-gray-700">{item.label}</span>
+                          </div>
+                          <Switch
+                            className="scale-75 origin-right"
+                            checked={Boolean(manager.permissions?.[item.key])}
+                            onCheckedChange={(checked) => handleToggle(manager.id, manager.permissions, item.key, checked)}
+                          />
+                        </label>
+                      );
+                    })}
                   </div>
                   <Button
                     variant="ghost"
@@ -266,6 +315,7 @@ export const EventManagersPanel: React.FC<EventManagersPanelProps> = ({ event, e
           </div>
         </div>
       </div>
+
       <AlertDialog open={Boolean(managerToRemove)} onOpenChange={(open) => !open && setManagerToRemove(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
