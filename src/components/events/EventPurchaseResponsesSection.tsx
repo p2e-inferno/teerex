@@ -209,7 +209,8 @@ export const EventPurchaseResponsesSection: React.FC<EventPurchaseResponsesSecti
             Once people start buying tickets and answering, their responses will show up here.
           </div>
         ) : (
-          <div className="rounded-md border border-gray-200 overflow-x-auto">
+          <div className="w-full overflow-hidden rounded-xl border border-gray-100 bg-white">
+            <div className="overflow-x-auto">
             <Table>
               <TableHeader>
                 <TableRow>
@@ -251,6 +252,7 @@ export const EventPurchaseResponsesSection: React.FC<EventPurchaseResponsesSecti
               </TableBody>
             </Table>
           </div>
+        </div>
         )}
 
         {rows.length < total && (
