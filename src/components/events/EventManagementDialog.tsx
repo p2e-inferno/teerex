@@ -556,20 +556,20 @@ export const EventManagementDialog: React.FC<EventManagementDialogProps> = ({
           <Tabs defaultValue="general" className="w-full">
             <div className="sticky top-0 z-20 bg-white/80 backdrop-blur-md pt-2 pb-4 -mx-1 px-1">
               <TabsList className="grid w-full grid-cols-4 p-1 bg-gray-100/50 rounded-xl border border-gray-100">
-                <TabsTrigger value="general" className="flex items-center gap-2 rounded-lg data-[state=active]:bg-white data-[state=active]:shadow-sm transition-all duration-200 py-2">
-                  <Settings2 className="w-4 h-4" />
+                <TabsTrigger value="general" className="group flex items-center gap-2 rounded-lg data-[state=active]:bg-white data-[state=active]:shadow-[0_2px_8px_rgba(0,0,0,0.12)] data-[state=active]:border data-[state=active]:border-gray-200/60 data-[state=inactive]:text-gray-400 transition-all duration-200 py-2">
+                  <Settings2 className="w-4 h-4 group-data-[state=active]:text-purple-600" />
                   <span className="hidden sm:inline font-medium">General</span>
                 </TabsTrigger>
-                <TabsTrigger value="access" className="flex items-center gap-2 rounded-lg data-[state=active]:bg-white data-[state=active]:shadow-sm transition-all duration-200 py-2">
-                  <Users className="w-4 h-4" />
+                <TabsTrigger value="access" className="group flex items-center gap-2 rounded-lg data-[state=active]:bg-white data-[state=active]:shadow-[0_2px_8px_rgba(0,0,0,0.12)] data-[state=active]:border data-[state=active]:border-gray-200/60 data-[state=inactive]:text-gray-400 transition-all duration-200 py-2">
+                  <Users className="w-4 h-4 group-data-[state=active]:text-purple-600" />
                   <span className="hidden sm:inline font-medium">Access</span>
                 </TabsTrigger>
-                <TabsTrigger value="checkout" className="flex items-center gap-2 rounded-lg data-[state=active]:bg-white data-[state=active]:shadow-sm transition-all duration-200 py-2">
-                  <FileText className="w-4 h-4" />
+                <TabsTrigger value="checkout" className="group flex items-center gap-2 rounded-lg data-[state=active]:bg-white data-[state=active]:shadow-[0_2px_8px_rgba(0,0,0,0.12)] data-[state=active]:border data-[state=active]:border-gray-200/60 data-[state=inactive]:text-gray-400 transition-all duration-200 py-2">
+                  <FileText className="w-4 h-4 group-data-[state=active]:text-purple-600" />
                   <span className="hidden sm:inline font-medium">Checkout</span>
                 </TabsTrigger>
-                <TabsTrigger value="advanced" className="flex items-center gap-2 rounded-lg data-[state=active]:bg-white data-[state=active]:shadow-sm transition-all duration-200 py-2">
-                  <ShieldCheck className="w-4 h-4" />
+                <TabsTrigger value="advanced" className="group flex items-center gap-2 rounded-lg data-[state=active]:bg-white data-[state=active]:shadow-[0_2px_8px_rgba(0,0,0,0.12)] data-[state=active]:border data-[state=active]:border-gray-200/60 data-[state=inactive]:text-gray-400 transition-all duration-200 py-2">
+                  <ShieldCheck className="w-4 h-4 group-data-[state=active]:text-purple-600" />
                   <span className="hidden sm:inline font-medium">Advanced</span>
                 </TabsTrigger>
               </TabsList>
