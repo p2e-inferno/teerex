@@ -2,8 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
-import { Checkbox } from '@/components/ui/checkbox';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { supabase } from '@/integrations/supabase/client';
 import {
   isPurchaseFormSchemaEmpty,
@@ -46,13 +45,21 @@ export const PurchaseFormFields: React.FC<PurchaseFormFieldsProps> = ({
         const prefill = (data ?? {}) as PurchaseFormResponseValues;
         const merged: PurchaseFormResponseValues = { ...values };
         for (const f of fields) {
-          // Only fill if the user hasn't typed anything yet, and the prefill
-          // value type matches the current field type expectations.
-          if (merged[f.id] !== undefined && merged[f.id] !== null && merged[f.id] !== '') continue;
+          const existing = merged[f.id];
+          if (
+            existing !== undefined &&
+            existing !== null &&
+            existing !== ''
+          ) {
+            continue;
+          }
           const candidate = prefill[f.id];
           if (candidate === undefined || candidate === null) continue;
-          if (f.type === 'select' && !(f.options ?? []).includes(String(candidate))) continue;
-          merged[f.id] = candidate;
+          // For select fields the prefill must still be one of the current options.
+          if (f.type === 'select') {
+            if (typeof candidate !== 'string' || !(f.options ?? []).includes(candidate)) continue;
+          }
+          merged[f.id] = candidate as any;
         }
         onChange(merged);
       } finally {
@@ -65,7 +72,7 @@ export const PurchaseFormFields: React.FC<PurchaseFormFieldsProps> = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [prefillWallet, empty]);
 
-  const setValue = (field: PurchaseFormField, raw: string | number | boolean | null) => {
+  const setValue = (field: PurchaseFormField, raw: string | number | null) => {
     onChange({ ...values, [field.id]: raw });
   };
 
@@ -79,31 +86,42 @@ export const PurchaseFormFields: React.FC<PurchaseFormFieldsProps> = ({
       ...(helpId ? { 'aria-describedby': helpId } : {}),
     };
 
+    // Single choice — render as radio buttons (pick one from a predefined list).
     if (field.type === 'checkbox') {
-      // Checkbox renders the label inline next to the box (single canonical
-      // label, no duplicate question text). Help text falls beneath as a hint.
+      const currentStr = typeof current === 'string' ? current : '';
       return (
         <div className="space-y-1" key={field.id}>
-          <div className="flex items-start gap-2">
-            <Checkbox
-              id={id}
-              checked={current === true}
-              disabled={disabled}
-              onCheckedChange={(v) => setValue(field, v === true)}
-              {...ariaProps}
-            />
-            <Label htmlFor={id} className="text-sm leading-snug">
-              {field.label}
-              {field.required && <span className="text-red-500"> *</span>}
-            </Label>
-          </div>
+          <span id={`${id}-grouplabel`} className="text-sm font-medium">
+            {field.label}
+            {field.required && <span className="text-red-500"> *</span>}
+          </span>
+          <RadioGroup
+            value={currentStr}
+            onValueChange={(v) => setValue(field, v)}
+            disabled={disabled}
+            aria-labelledby={`${id}-grouplabel`}
+            {...(helpId ? { 'aria-describedby': helpId } : {})}
+            className="space-y-1.5 pt-1"
+          >
+            {(field.options ?? []).map((opt) => {
+              const optId = `${id}-${opt.replace(/[^a-zA-Z0-9]+/g, '_')}`;
+              return (
+                <div key={opt} className="flex items-center gap-2">
+                  <RadioGroupItem id={optId} value={opt} aria-invalid={Boolean(errorMsg)} />
+                  <Label htmlFor={optId} className="text-sm font-normal cursor-pointer">
+                    {opt}
+                  </Label>
+                </div>
+              );
+            })}
+          </RadioGroup>
           {field.help_text && (
-            <p id={helpId} className="text-xs text-muted-foreground pl-6">
+            <p id={helpId} className="text-xs text-muted-foreground">
               {field.help_text}
             </p>
           )}
           {errorMsg && (
-            <p className="text-xs text-red-600 pl-6" role="alert">
+            <p className="text-xs text-red-600" role="alert">
               {errorMsg}
             </p>
           )}
@@ -141,6 +159,37 @@ export const PurchaseFormFields: React.FC<PurchaseFormFieldsProps> = ({
           />
         );
         break;
+      case 'select': {
+        const selected = (current as string)?.split(',').filter(Boolean) ?? [];
+        const toggleOption = (option: string, isSelected: boolean) => {
+          const next = isSelected 
+            ? [...selected, option]
+            : selected.filter((s) => s !== option);
+          setValue(field, next.length > 0 ? next.join(',') : null);
+        };
+        return (
+          <div className="space-y-1.5 pt-1" key={field.id}>
+             <span className="text-sm font-medium">{field.label}
+              {field.required && <span className="text-red-500"> *</span>}
+             </span>
+            {(field.options ?? []).map((opt) => (
+              <div key={opt} className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  id={`${id}-${opt}`}
+                  checked={selected.includes(opt)}
+                  onChange={(e) => toggleOption(opt, e.target.checked)}
+                  disabled={disabled}
+                  className="h-4 w-4 rounded border-slate-300 text-primary focus:ring-primary"
+                />
+                <Label htmlFor={`${id}-${opt}`} className="text-sm font-normal cursor-pointer">
+                  {opt}
+                </Label>
+              </div>
+            ))}
+          </div>
+        );
+      }
       case 'number':
         control = (
           <Input
@@ -154,26 +203,6 @@ export const PurchaseFormFields: React.FC<PurchaseFormFieldsProps> = ({
             }}
             {...ariaProps}
           />
-        );
-        break;
-      case 'select':
-        control = (
-          <Select
-            value={(current as string) ?? ''}
-            onValueChange={(v) => setValue(field, v)}
-            disabled={disabled}
-          >
-            <SelectTrigger id={id} {...ariaProps}>
-              <SelectValue placeholder="Select..." />
-            </SelectTrigger>
-            <SelectContent>
-              {(field.options ?? []).map((opt) => (
-                <SelectItem key={opt} value={opt}>
-                  {opt}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
         );
         break;
     }

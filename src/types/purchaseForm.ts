@@ -15,20 +15,20 @@ export const PURCHASE_FORM_MAX_FIELD_ID_LENGTH = 32;
 export type PurchaseFormFieldType =
   | 'short_text'
   | 'long_text'
-  | 'select'
+  | 'select'    // dropdown — pick one option from a list
+  | 'checkbox'  // radio buttons — pick one option from a list
   | 'phone'
   | 'url'
-  | 'number'
-  | 'checkbox';
+  | 'number';
 
 export const PURCHASE_FORM_FIELD_TYPES: { value: PurchaseFormFieldType; label: string }[] = [
-  { value: 'short_text', label: 'Short text' },
-  { value: 'long_text', label: 'Long text' },
-  { value: 'select', label: 'Dropdown' },
+  { value: 'short_text', label: 'Short answer' },
+  { value: 'long_text', label: 'Paragraph' },
+  { value: 'select', label: 'Multiple choice' },
+  { value: 'checkbox', label: 'Single choice' },
   { value: 'phone', label: 'Phone' },
   { value: 'url', label: 'URL' },
   { value: 'number', label: 'Number' },
-  { value: 'checkbox', label: 'Checkbox' },
 ];
 
 export interface PurchaseFormField {
@@ -49,7 +49,7 @@ export interface PurchaseFormSchema {
   fields: PurchaseFormField[];
 }
 
-export type PurchaseFormResponseValues = Record<string, string | number | boolean | null>;
+export type PurchaseFormResponseValues = Record<string, string | number | null>;
 
 const SENSITIVE_LABEL_PATTERNS: RegExp[] = [
   /\bssn\b/i,
@@ -74,7 +74,7 @@ export const purchaseFormFieldSchema = z
   .object({
     id: z.string().regex(FIELD_ID_PATTERN, 'Invalid field id'),
     label: z.string().trim().min(1).max(PURCHASE_FORM_MAX_LABEL_LENGTH),
-    type: z.enum(['short_text', 'long_text', 'select', 'phone', 'url', 'number', 'checkbox']),
+    type: z.enum(['short_text', 'long_text', 'select', 'checkbox', 'phone', 'url', 'number']),
     required: z.boolean(),
     help_text: z
       .string()
@@ -98,13 +98,13 @@ export const purchaseFormFieldSchema = z
         message: 'Label looks like sensitive data — pick something else.',
       });
     }
-    if (field.type === 'select') {
+    if (field.type === 'select' || field.type === 'checkbox') {
       const opts = (field.options ?? []).map((o) => o.trim()).filter(Boolean);
       if (opts.length === 0) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
           path: ['options'],
-          message: 'Add at least one option',
+          message: 'Add at least one choice',
         });
       }
       const dedup = new Set(opts);
@@ -112,7 +112,7 @@ export const purchaseFormFieldSchema = z
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
           path: ['options'],
-          message: 'Options must be unique',
+          message: 'Choices must be unique',
         });
       }
     }
@@ -153,11 +153,6 @@ export const makeEmptyPurchaseFormSchema = (): PurchaseFormSchema => ({
   fields: [],
 });
 
-/**
- * Generate a stable, slug-safe field id from a label. Used in the builder UI
- * when the creator hasn't customized the id manually. The result must satisfy
- * FIELD_ID_PATTERN (a-z, 0-9, _, starting with a letter).
- */
 export const slugifyFieldId = (raw: string): string => {
   const base = raw
     .toLowerCase()
@@ -168,11 +163,6 @@ export const slugifyFieldId = (raw: string): string => {
   return /^[a-z]/.test(base) ? base : `f_${base}`.slice(0, PURCHASE_FORM_MAX_FIELD_ID_LENGTH);
 };
 
-/**
- * Client-side response validator for a single field. Returns an error message
- * (string) or null if valid. The server re-validates with the canonical
- * Deno-side validator before persisting.
- */
 export const validateResponseField = (
   field: PurchaseFormField,
   rawValue: unknown,
@@ -204,8 +194,17 @@ export const validateResponseField = (
       return null;
     }
     case 'select': {
-      if (typeof rawValue !== 'string' || !(field.options ?? []).includes(rawValue)) {
+      if (typeof rawValue !== 'string') return field.required ? `${field.label} is required.` : null;
+      const values = rawValue.split(',');
+      const invalid = values.filter((v) => !(field.options ?? []).includes(v));
+      if (invalid.length > 0) {
         return `${field.label} is not one of the allowed options.`;
+      }
+      return null;
+    }
+    case 'checkbox': {
+      if (typeof rawValue !== 'string' || rawValue === '') {
+        return field.required ? `${field.label} must be checked.` : null;
       }
       return null;
     }
@@ -217,19 +216,9 @@ export const validateResponseField = (
       if (field.max != null && num > field.max) return `${field.label} must be at most ${field.max}.`;
       return null;
     }
-    case 'checkbox': {
-      const truthy = rawValue === true || rawValue === 'true';
-      if (field.required && !truthy) return `${field.label} must be checked.`;
-      return null;
-    }
   }
 };
 
-/**
- * Validate an entire response payload against a schema. Returns a map of
- * field id -> error message for invalid fields, plus the cleaned values for
- * valid fields.
- */
 export const validatePurchaseFormResponse = (
   schema: PurchaseFormSchema | null,
   response: PurchaseFormResponseValues,
@@ -249,8 +238,6 @@ export const validatePurchaseFormResponse = (
       } else if (field.type === 'number') {
         values[field.id] =
           typeof incoming === 'number' ? incoming : Number(String(incoming));
-      } else if (field.type === 'checkbox') {
-        values[field.id] = incoming === true || incoming === 'true';
       } else if (typeof incoming === 'string') {
         values[field.id] = incoming.trim();
       } else {

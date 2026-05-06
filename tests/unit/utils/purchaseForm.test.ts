@@ -122,6 +122,18 @@ describe('purchaseForm — validateResponseField', () => {
     ).toMatch(/not one of/);
   });
 
+  it('validates checkbox — accepts a valid option, rejects unset when required', () => {
+    const f = {
+      id: 'attending',
+      label: 'Attending?',
+      type: 'checkbox' as const,
+      required: true,
+      options: ['Yes', 'No', 'Maybe'],
+    };
+    expect(validateResponseField(f, 'Yes')).toBeNull();
+    expect(validateResponseField(f, '')).toBe('Attending? is required.');
+  });
+
   it('validates number range and integer-only', () => {
     const f = {
       id: 'age',
@@ -148,17 +160,6 @@ describe('purchaseForm — validateResponseField', () => {
     ).toBeNull();
   });
 
-  it('checkbox required must be true', () => {
-    const f = { id: 'agree', label: 'Agree', type: 'checkbox' as const, required: true };
-    expect(validateResponseField(f, true)).toBeNull();
-    expect(validateResponseField(f, false)).toMatch(/must be checked/);
-  });
-
-  it('checkbox optional accepts both true and false', () => {
-    const f = { id: 'agree', label: 'Agree', type: 'checkbox' as const, required: false };
-    expect(validateResponseField(f, true)).toBeNull();
-    expect(validateResponseField(f, false)).toBeNull();
-  });
 });
 
 describe('purchaseForm — validatePurchaseFormResponse', () => {
@@ -181,15 +182,15 @@ describe('purchaseForm — validatePurchaseFormResponse', () => {
     const s = schema([
       { id: 'name', label: 'Name', type: 'short_text', required: true },
       { id: 'count', label: 'Count', type: 'number', required: false },
-      { id: 'agree', label: 'Agree', type: 'checkbox', required: false },
+      { id: 'size', label: 'Size', type: 'select', required: false, options: ['S', 'M', 'L'] },
     ]);
     const { errors, values } = validatePurchaseFormResponse(s, {
       name: '  Alice  ',
       count: '42',
-      agree: 'true',
+      size: 'M',
     });
     expect(errors).toEqual({});
-    expect(values).toEqual({ name: 'Alice', count: 42, agree: true });
+    expect(values).toEqual({ name: 'Alice', count: 42, size: 'M' });
   });
 
   it('preserves null for optional unset fields', () => {

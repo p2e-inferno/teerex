@@ -24,11 +24,11 @@
 export type PurchaseFormFieldType =
   | "short_text"
   | "long_text"
-  | "select"
+  | "select"    // dropdown — pick one option from a list
+  | "checkbox"  // radio buttons — pick one option from a list
   | "phone"
   | "url"
-  | "number"
-  | "checkbox";
+  | "number";
 
 export interface PurchaseFormField {
   id: string;
@@ -53,7 +53,7 @@ export interface PurchaseFormSchema {
 
 export type PurchaseFormResponse = Record<
   string,
-  string | number | boolean | null
+  string | number | null
 >;
 
 export interface PurchaseFormResponseSnapshot {
@@ -180,10 +180,10 @@ export function validatePurchaseFormSchema(
       type !== "short_text" &&
       type !== "long_text" &&
       type !== "select" &&
+      type !== "checkbox" &&
       type !== "phone" &&
       type !== "url" &&
-      type !== "number" &&
-      type !== "checkbox"
+      type !== "number"
     ) {
       throw new Error(`Field "${id}" has unsupported type: ${type}`);
     }
@@ -216,7 +216,7 @@ export function validatePurchaseFormSchema(
       field.max_length = Math.min(requested, PURCHASE_FORM_MAX_TEXT_LENGTH);
     }
 
-    if (type === "select") {
+    if (type === "select" || type === "checkbox") {
       if (!Array.isArray(raw.options)) {
         throw new Error(`Field "${id}" requires an options array`);
       }
@@ -322,7 +322,7 @@ export function assertAdditiveSchemaEdit(
         `Cannot make existing field "${a.id}" required after tickets exist (allowed direction: required -> optional only).`,
       );
     }
-    if (a.type === "select") {
+    if (a.type === "select" || a.type === "checkbox") {
       const prevOpts = new Set(a.options ?? []);
       for (const opt of prevOpts) {
         if (!(b.options ?? []).includes(opt)) {
@@ -416,7 +416,8 @@ export function validatePurchaseFormResponse(
         values[field.id] = trimmed;
         break;
       }
-      case "select": {
+      case "select":
+      case "checkbox": {
         if (typeof incoming !== "string") {
           throw new Error(`"${field.label}" must be a selection.`);
         }
@@ -443,19 +444,6 @@ export function validatePurchaseFormResponse(
           throw new Error(`"${field.label}" must be at most ${field.max}.`);
         }
         values[field.id] = num;
-        break;
-      }
-      case "checkbox": {
-        if (typeof incoming === "boolean") {
-          values[field.id] = incoming;
-        } else if (incoming === "true" || incoming === "false") {
-          values[field.id] = incoming === "true";
-        } else {
-          throw new Error(`"${field.label}" must be true or false.`);
-        }
-        if (field.required && values[field.id] !== true) {
-          throw new Error(`"${field.label}" must be checked.`);
-        }
         break;
       }
     }

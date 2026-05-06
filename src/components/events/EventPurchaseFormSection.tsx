@@ -9,7 +9,18 @@ import type { PublishedEvent } from '@/types/event';
 import {
   isPurchaseFormSchemaEmpty,
   PurchaseFormSchema,
+  PurchaseFormFieldType,
 } from '@/types/purchaseForm';
+
+const FRIENDLY_TYPE_LABELS: Record<PurchaseFormFieldType, string> = {
+  short_text: 'Short answer',
+  long_text: 'Paragraph',
+  select: 'Multiple choice',
+  checkbox: 'Single choice',
+  phone: 'Phone',
+  url: 'Website link',
+  number: 'Number',
+};
 import { PurchaseFormBuilder } from '@/components/create-event/PurchaseFormBuilder';
 
 interface EventPurchaseFormSectionProps {
@@ -201,8 +212,8 @@ export const EventPurchaseFormSection: React.FC<EventPurchaseFormSectionProps> =
                       {i + 1}. {f.label}
                       {f.required && <span className="text-red-500"> *</span>}
                     </span>
-                    <span className="text-xs text-gray-500 capitalize">
-                      {f.type.replace('_', ' ')}
+                    <span className="text-xs text-gray-500">
+                      {FRIENDLY_TYPE_LABELS[f.type] ?? f.type}
                     </span>
                   </li>
                 ))}

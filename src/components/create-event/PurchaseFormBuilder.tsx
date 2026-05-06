@@ -1,8 +1,7 @@
-import React, { useMemo, useRef } from 'react';
-import { ArrowDown, ArrowUp, ListChecks, Plus, Trash2, AlertTriangle } from 'lucide-react';
+import React, { useMemo, useRef, useState } from 'react';
+import { ArrowDown, ArrowUp, ListChecks, Plus, Trash2, AlertTriangle, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -11,7 +10,6 @@ import { Card, CardContent } from '@/components/ui/card';
 import {
   isPurchaseFormSchemaEmpty,
   isSensitiveLabel,
-  makeEmptyPurchaseFormSchema,
   PURCHASE_FORM_MAX_FIELDS,
   PURCHASE_FORM_MAX_LABEL_LENGTH,
   PURCHASE_FORM_MAX_HELP_LENGTH,
@@ -35,13 +33,13 @@ interface PurchaseFormBuilderProps {
 // Plain-language type options shown to creators. Internally maps to the
 // canonical PurchaseFormFieldType values used everywhere else.
 const SIMPLE_TYPE_OPTIONS: { value: PurchaseFormFieldType; label: string; description: string }[] = [
-  { value: 'short_text', label: 'Short answer', description: 'A single line of text' },
-  { value: 'long_text', label: 'Paragraph', description: 'Multiple lines of text' },
-  { value: 'select', label: 'Multiple choice', description: 'Pick one from a list' },
+  { value: 'short_text', label: 'Short answer', description: 'A single line of text (e.g. full name)' },
+  { value: 'long_text', label: 'Paragraph', description: 'Multiple lines of text (e.g. dietary needs)' },
+  { value: 'select', label: 'Multiple choice', description: 'Pick multiple options from a list (e.g. game modes: BR / MP / 1v1)' },
+  { value: 'checkbox', label: 'Single choice', description: 'Pick exactly one option — shown as radio buttons (e.g. Yes / No / Maybe)' },
   { value: 'phone', label: 'Phone number', description: 'A phone number' },
-  { value: 'url', label: 'Website link', description: 'An http(s) URL' },
-  { value: 'number', label: 'Number', description: 'Any number' },
-  { value: 'checkbox', label: 'Yes / No', description: 'A checkbox they tick' },
+  { value: 'url', label: 'Website link', description: 'A link starting with http or https' },
+  { value: 'number', label: 'Number', description: 'A number (e.g. age)' },
 ];
 
 // Defaults applied silently. We keep the canonical schema rich, but the UI
@@ -50,10 +48,10 @@ const DEFAULTS_FOR_TYPE: Record<PurchaseFormFieldType, Partial<PurchaseFormField
   short_text: { max_length: 200, options: null, min: null, max: null, integer_only: null },
   long_text: { max_length: 1000, options: null, min: null, max: null, integer_only: null },
   select: { max_length: null, options: [], min: null, max: null, integer_only: null },
+  checkbox: { max_length: null, options: [], min: null, max: null, integer_only: null },
   phone: { max_length: null, options: null, min: null, max: null, integer_only: null },
   url: { max_length: null, options: null, min: null, max: null, integer_only: null },
   number: { max_length: null, options: null, min: null, max: null, integer_only: false },
-  checkbox: { max_length: null, options: null, min: null, max: null, integer_only: null },
 };
 
 const newField = (existing: PurchaseFormField[]): PurchaseFormField => {
@@ -197,28 +195,32 @@ export const PurchaseFormBuilder: React.FC<PurchaseFormBuilderProps> = ({
     setFields(next);
   };
 
-  const handleOptionsChange = (index: number, raw: string) => {
-    const opts = raw
-      .split('\n')
-      .map((o) => o.trim())
-      .filter(Boolean)
-      .slice(0, PURCHASE_FORM_MAX_SELECT_OPTIONS)
-      .map((o) => o.slice(0, PURCHASE_FORM_MAX_OPTION_LENGTH));
-
-    if (additiveOnly && lockedIds.has(fields[index].id)) {
-      // Allow adding options but never removing them after tickets exist.
-      const prev = fields[index].options ?? [];
-      const newSet = new Set(opts);
-      const removed = prev.filter((o) => !newSet.has(o));
-      if (removed.length > 0) {
-        window.alert('You can add new choices, but you can\'t remove existing ones once people have started buying tickets.');
-        // Re-merge removed back in
-        for (const o of prev) if (!newSet.has(o)) opts.push(o);
-      }
-    }
-
+  const addOption = (index: number, raw: string) => {
+    const cleaned = raw.trim().slice(0, PURCHASE_FORM_MAX_OPTION_LENGTH);
+    if (!cleaned) return;
+    const current = fields[index].options ?? [];
+    if (current.includes(cleaned)) return;
+    if (current.length >= PURCHASE_FORM_MAX_SELECT_OPTIONS) return;
     const next = fields.slice();
-    next[index] = { ...next[index], options: opts };
+    next[index] = { ...next[index], options: [...current, cleaned] };
+    setFields(next);
+  };
+
+  const removeOption = (index: number, value: string) => {
+    const field = fields[index];
+    const wasOriginal =
+      additiveOnly &&
+      lockedIds.has(field.id) &&
+      (field.options ?? []).includes(value);
+    if (wasOriginal) {
+      window.alert("You can't remove existing choices once people have started buying tickets. You can still add new ones.");
+      return;
+    }
+    const next = fields.slice();
+    next[index] = {
+      ...next[index],
+      options: (field.options ?? []).filter((o) => o !== value),
+    };
     setFields(next);
   };
 
@@ -291,7 +293,7 @@ export const PurchaseFormBuilder: React.FC<PurchaseFormBuilderProps> = ({
                 const typeOpt = SIMPLE_TYPE_OPTIONS.find((o) => o.value === field.type);
                 return (
                   <div
-                    key={field.id}
+                    key={index}
                     className="rounded-lg border border-slate-200 bg-white p-4 space-y-3 shadow-sm"
                   >
                     <div className="flex items-start justify-between gap-2">
@@ -337,9 +339,9 @@ export const PurchaseFormBuilder: React.FC<PurchaseFormBuilderProps> = ({
                     </div>
 
                     <div className="space-y-1">
-                      <Label htmlFor={`pf-label-${field.id}`}>Question</Label>
+                      <Label htmlFor={`pf-label-${index}`}>Question</Label>
                       <Input
-                        id={`pf-label-${field.id}`}
+                        id={`pf-label-${index}`}
                         value={field.label}
                         maxLength={PURCHASE_FORM_MAX_LABEL_LENGTH}
                         onChange={(e) => handleLabelChange(index, e.target.value)}
@@ -348,24 +350,19 @@ export const PurchaseFormBuilder: React.FC<PurchaseFormBuilderProps> = ({
                     </div>
 
                     <div className="space-y-1">
-                      <Label htmlFor={`pf-type-${field.id}`}>Answer type</Label>
+                      <Label htmlFor={`pf-type-${index}`}>Answer type</Label>
                       <Select
                         value={field.type}
                         onValueChange={(v) => handleTypeChange(index, v as PurchaseFormFieldType)}
                         disabled={locked}
                       >
-                        <SelectTrigger id={`pf-type-${field.id}`}>
+                        <SelectTrigger id={`pf-type-${index}`}>
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
                           {SIMPLE_TYPE_OPTIONS.map((opt) => (
                             <SelectItem key={opt.value} value={opt.value}>
-                              <div>
-                                <div>{opt.label}</div>
-                                <div className="text-xs text-muted-foreground">
-                                  {opt.description}
-                                </div>
-                              </div>
+                              {opt.label}
                             </SelectItem>
                           ))}
                         </SelectContent>
@@ -375,23 +372,24 @@ export const PurchaseFormBuilder: React.FC<PurchaseFormBuilderProps> = ({
                       )}
                     </div>
 
-                    {field.type === 'select' && (
-                      <div className="space-y-1">
-                        <Label htmlFor={`pf-options-${field.id}`}>Choices (one per line)</Label>
-                        <Textarea
-                          id={`pf-options-${field.id}`}
-                          rows={4}
-                          value={(field.options ?? []).join('\n')}
-                          onChange={(e) => handleOptionsChange(index, e.target.value)}
-                          placeholder="Small\nMedium\nLarge"
-                        />
-                      </div>
+                    {(field.type === 'select' || field.type === 'checkbox') && (
+                      <ChoicesEditor
+                        fieldIndex={index}
+                        options={field.options ?? []}
+                        onAdd={(v) => addOption(index, v)}
+                        onRemove={(v) => removeOption(index, v)}
+                        lockedValues={
+                          additiveOnly && lockedIds.has(field.id)
+                            ? new Set(field.options ?? [])
+                            : new Set()
+                        }
+                      />
                     )}
 
                     <div className="space-y-1">
-                      <Label htmlFor={`pf-help-${field.id}`}>Hint (optional)</Label>
+                      <Label htmlFor={`pf-help-${index}`}>Hint (optional)</Label>
                       <Input
-                        id={`pf-help-${field.id}`}
+                        id={`pf-help-${index}`}
                         value={field.help_text ?? ''}
                         maxLength={PURCHASE_FORM_MAX_HELP_LENGTH}
                         onChange={(e) => handleHelpChange(index, e.target.value)}
@@ -401,11 +399,11 @@ export const PurchaseFormBuilder: React.FC<PurchaseFormBuilderProps> = ({
 
                     <div className="flex items-center gap-2 pt-1">
                       <Switch
-                        id={`pf-required-${field.id}`}
+                        id={`pf-required-${index}`}
                         checked={field.required}
                         onCheckedChange={(v) => handleRequiredChange(index, v)}
                       />
-                      <Label htmlFor={`pf-required-${field.id}`} className="text-sm">
+                      <Label htmlFor={`pf-required-${index}`} className="text-sm">
                         Must answer
                       </Label>
                     </div>
@@ -432,5 +430,110 @@ export const PurchaseFormBuilder: React.FC<PurchaseFormBuilderProps> = ({
         )}
       </CardContent>
     </Card>
+  );
+};
+
+/**
+ * Chip-style editor for the `select` field's choices. Familiar tag-input
+ * pattern: type a value, press Enter (or comma) to add, click X to remove,
+ * Backspace on empty input removes the last chip. Locked chips (existing
+ * choices on a published event with tickets) render without an X.
+ */
+interface ChoicesEditorProps {
+  fieldIndex: number;
+  options: string[];
+  onAdd: (value: string) => void;
+  onRemove: (value: string) => void;
+  lockedValues: Set<string>;
+}
+
+const ChoicesEditor: React.FC<ChoicesEditorProps> = ({
+  fieldIndex,
+  options,
+  onAdd,
+  onRemove,
+  lockedValues,
+}) => {
+  const [draft, setDraft] = useState('');
+  const inputId = `pf-options-${fieldIndex}`;
+  const atLimit = options.length >= PURCHASE_FORM_MAX_SELECT_OPTIONS;
+
+  const commit = () => {
+    const v = draft.trim();
+    if (!v) return;
+    onAdd(v);
+    setDraft('');
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter' || e.key === ',') {
+      e.preventDefault();
+      commit();
+    } else if (e.key === 'Backspace' && draft === '' && options.length > 0) {
+      const last = options[options.length - 1];
+      if (!lockedValues.has(last)) {
+        e.preventDefault();
+        onRemove(last);
+      }
+    }
+  };
+
+  return (
+    <div className="space-y-1">
+      <Label htmlFor={inputId}>Choices</Label>
+      <div
+        className="flex flex-wrap items-center gap-1.5 rounded-md border border-input bg-background px-2 py-2 min-h-[42px] focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-2"
+        onClick={() => document.getElementById(inputId)?.focus()}
+      >
+        {options.map((opt) => {
+          const isLocked = lockedValues.has(opt);
+          return (
+            <span
+              key={opt}
+              className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2.5 py-0.5 text-sm text-slate-800"
+            >
+              {opt}
+              {!isLocked && (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onRemove(opt);
+                  }}
+                  aria-label={`Remove ${opt}`}
+                  className="text-slate-500 hover:text-slate-900 rounded-full"
+                >
+                  <X className="w-3 h-3" />
+                </button>
+              )}
+            </span>
+          );
+        })}
+        <input
+          id={inputId}
+          type="text"
+          value={draft}
+          onChange={(e) =>
+            setDraft(e.target.value.slice(0, PURCHASE_FORM_MAX_OPTION_LENGTH))
+          }
+          onKeyDown={handleKeyDown}
+          onBlur={commit}
+          disabled={atLimit}
+          placeholder={
+            options.length === 0
+              ? 'Type a choice and press Enter (e.g. Male)'
+              : atLimit
+                ? `Max ${PURCHASE_FORM_MAX_SELECT_OPTIONS} choices`
+                : 'Add another...'
+          }
+          className="flex-1 min-w-[140px] bg-transparent outline-none text-sm py-1"
+        />
+      </div>
+      <p className="text-xs text-muted-foreground">
+        {options.length === 0
+          ? 'Press Enter after each choice to add it.'
+          : `${options.length} of ${PURCHASE_FORM_MAX_SELECT_OPTIONS} choices`}
+      </p>
+    </div>
   );
 };

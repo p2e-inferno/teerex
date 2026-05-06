@@ -1,8 +1,8 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { usePrivy } from '@privy-io/react-auth';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Loader2, Download, Inbox } from 'lucide-react';
+import { Loader2, Download, Inbox, Copy, Check } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/integrations/supabase/client';
 import {
@@ -37,12 +37,31 @@ interface ResponseRow {
 
 const PAGE_SIZE = 25;
 
-const truncate = (s: string, n = 16) => (s.length > n ? `${s.slice(0, n - 3)}...` : s);
+const formatAddress = (address: string): string => {
+  return `${address.slice(0, 6)}...${address.slice(-4)}`;
+};
 
-const formatValue = (v: unknown): string => {
-  if (v === null || v === undefined || v === '') return '—';
-  if (typeof v === 'boolean') return v ? 'Yes' : 'No';
-  return String(v);
+const CopyButton: React.FC<{ text: string }> = ({ text }) => {
+  const { toast } = useToast();
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    await navigator.clipboard.writeText(text);
+    setCopied(true);
+    toast({ title: 'Copied to clipboard' });
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  return (
+    <button
+      onClick={handleCopy}
+      className="ml-2 inline-flex items-center justify-center p-1 rounded hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition-colors"
+      title="Copy"
+    >
+      {copied ? <Check className="w-3 h-3 text-emerald-500" /> : <Copy className="w-3 h-3" />}
+    </button>
+  );
 };
 
 export const EventPurchaseResponsesSection: React.FC<EventPurchaseResponsesSectionProps> = ({
@@ -146,7 +165,6 @@ export const EventPurchaseResponsesSection: React.FC<EventPurchaseResponsesSecti
     }
   };
 
-  // If there's no form schema for this event, don't render the section.
   if (isPurchaseFormSchemaEmpty(schema) && rows.length === 0 && !isLoading) {
     return null;
   }
@@ -208,15 +226,23 @@ export const EventPurchaseResponsesSection: React.FC<EventPurchaseResponsesSecti
               <TableBody>
                 {rows.map((row) => (
                   <TableRow key={row.ticket_id}>
-                    <TableCell className="font-mono text-xs" title={row.owner_wallet}>
-                      {truncate(row.owner_wallet, 14)}
+                    <TableCell className="font-mono text-xs whitespace-nowrap">
+                      {formatAddress(row.owner_wallet)}
+                      <CopyButton text={row.owner_wallet} />
                     </TableCell>
-                    <TableCell className="text-sm">{row.user_email ?? '—'}</TableCell>
-                    {fields.map((f) => (
-                      <TableCell key={f.id} className="text-sm">
-                        {formatValue(row.values[f.id])}
-                      </TableCell>
-                    ))}
+                    <TableCell className="text-sm whitespace-nowrap">
+                      {row.user_email ?? '—'}
+                      {row.user_email && <CopyButton text={row.user_email} />}
+                    </TableCell>
+                    {fields.map((f) => {
+                      const value = String(row.values[f.id] ?? '—');
+                      return (
+                        <TableCell key={f.id} className="text-sm whitespace-nowrap">
+                          {value}
+                          {value !== '—' && <CopyButton text={value} />}
+                        </TableCell>
+                      );
+                    })}
                     <TableCell className="text-xs text-muted-foreground whitespace-nowrap">
                       {new Date(row.created_at).toLocaleDateString()}
                     </TableCell>
