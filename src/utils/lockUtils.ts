@@ -1839,19 +1839,27 @@ export async function updateLockPurchasability(
     }
 
     // Fetch current configurations to maintain them
-    const [expiration, maxKeysPerAcc] = await Promise.all([
+    const [expiration, maxKeysPerAcc, totalSupply] = await Promise.all([
       lock.expirationDuration(),
       lock.maxKeysPerAddress(),
+      lock.totalSupply(),
     ]);
 
     // Some lock versions revert if maxKeysPerAddress is 0; clamp to 1 when updating config
     const safeMaxKeysPerAcc = maxKeysPerAcc === 0n ? 1n : maxKeysPerAcc;
 
-    // If closing, set maxNumberOfKeys to 0 to disable purchases
-    // If opening, restore maxNumberOfKeys to original capacity
-    const newMaxKeys = isClosed ? 0n : BigInt(originalCapacity);
+    // Close: set maxNumberOfKeys = totalSupply (makes lock appear sold-out).
+    //   Setting to 0 reverts when totalSupply > 0 (CANT_BE_SMALLER_THAN_SUPPLY).
+    // Open: restore to originalCapacity. DB stores 0 for unlimited; on-chain unlimited = MaxUint256.
+    const newMaxKeys = isClosed
+      ? totalSupply
+      : originalCapacity === 0
+        ? ethers.MaxUint256
+        : BigInt(originalCapacity);
 
-    let gasLimit: bigint | undefined;
+    // Use estimateGas as a pre-flight check so we surface contract violations
+    // with a clear message before asking the user to sign anything.
+    let gasLimit: bigint;
     try {
       const estimated = await lock.updateLockConfig.estimateGas(
         expiration,
@@ -1859,8 +1867,16 @@ export async function updateLockPurchasability(
         safeMaxKeysPerAcc
       );
       gasLimit = (estimated * 120n) / 100n;
-    } catch (e) {
-      // Best-effort; we'll let the wallet/provider pick a default if estimation fails.
+    } catch (e: any) {
+      const msg: string = e?.message ?? '';
+      if (msg.includes('CANT_BE_SMALLER_THAN_SUPPLY') || msg.includes('282478df')) {
+        throw new Error(
+          'Cannot update registration: the capacity limit cannot be set below the number of tickets already sold.'
+        );
+      }
+      throw new Error(
+        `This transaction would fail on-chain: ${msg || 'the contract rejected the operation'}`
+      );
     }
 
     const tx = await lock.updateLockConfig(expiration, newMaxKeys, safeMaxKeysPerAcc, {
