@@ -534,14 +534,14 @@ export const EventPurchaseDialog: React.FC<EventPurchaseDialogProps> = ({
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="sm:max-w-[425px]">
-        <DialogHeader>
+      <DialogContent className="sm:max-w-[425px] max-h-[90vh] flex flex-col">
+        <DialogHeader className="flex-shrink-0">
           <DialogTitle>Get Ticket for {event.title}</DialogTitle>
           <DialogDescription>
             Confirm your purchase for a ticket to this event.
           </DialogDescription>
         </DialogHeader>
-        <div className="space-y-4 py-4">
+        <div className="space-y-4 py-4 overflow-y-auto flex-grow px-1">
           <div className="flex justify-between items-center">
             <span className="text-muted-foreground">Event</span>
             <span className="font-semibold">{event.title}</span>
@@ -590,7 +590,7 @@ export const EventPurchaseDialog: React.FC<EventPurchaseDialogProps> = ({
             prefillWallet={(wallets[0]?.address ?? user?.wallet?.address) ?? null}
           />
         </div>
-        <DialogFooter>
+        <DialogFooter className="flex-shrink-0">
           <Button variant="outline" onClick={onClose} disabled={isPurchasing}>
             Cancel
           </Button>

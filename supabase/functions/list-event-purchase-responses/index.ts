@@ -115,10 +115,15 @@ serve(async (req: Request) => {
 
       const lines: string[] = [header.map(csvEscape).join(",")];
       for (const row of rows) {
-        const cols = [row.ticket_id, row.owner_wallet, row.user_email ?? "", row.created_at];
+        const cols: unknown[] = [
+          row.ticket_id,
+          row.owner_wallet,
+          row.user_email ?? "",
+          row.created_at,
+        ];
         for (const fid of fieldOrder) {
           const v = (row.values as any)[fid];
-          cols.push(typeof v === "boolean" ? (v ? "yes" : "no") : v ?? "");
+          cols.push(v ?? "");
         }
         lines.push(cols.map(csvEscape).join(","));
       }
