@@ -802,17 +802,17 @@ export const EventManagementDialog: React.FC<EventManagementDialogProps> = ({
             <TabsContent value="checkout" className="space-y-4 outline-none">
               {eventAccess.isCreator && (
                 <div className="space-y-4">
+                  <EventPurchaseMessageSection
+                    event={event}
+                    isCreator={eventAccess.isCreator}
+                    onEventUpdated={onEventUpdated}
+                  />
                   <EventPurchaseFormSection
                     event={event}
                     isCreator={eventAccess.isCreator}
                     onEventUpdated={onEventUpdated}
                   />
                   <EventPurchaseResponsesSection event={event} />
-                  <EventPurchaseMessageSection
-                    event={event}
-                    isCreator={eventAccess.isCreator}
-                    onEventUpdated={onEventUpdated}
-                  />
                 </div>
               )}
             </TabsContent>

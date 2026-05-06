@@ -1,8 +1,7 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { usePrivy } from '@privy-io/react-auth';
-import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Loader2, Download, Inbox, Copy, Check } from 'lucide-react';
+import { Loader2, Download, Inbox, Copy, Check, Users } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/integrations/supabase/client';
 import {
@@ -172,31 +171,35 @@ export const EventPurchaseResponsesSection: React.FC<EventPurchaseResponsesSecti
   const fields = schema?.fields ?? [];
 
   return (
-    <Card>
-      <CardContent className="pt-6 space-y-4">
-        <div className="flex items-start justify-between gap-2">
+    <div className="rounded-xl border p-5 bg-white space-y-4">
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex items-start gap-3">
+          <div className="bg-purple-100 p-2.5 rounded-xl flex-shrink-0">
+            <Users className="w-5 h-5 text-purple-600" />
+          </div>
           <div>
-            <h3 className="font-semibold text-gray-900">Buyer answers</h3>
-            <p className="text-sm text-gray-600">
+            <h3 className="font-semibold text-base text-gray-900">Buyer answers</h3>
+            <p className="text-sm text-muted-foreground">
               {total > 0
                 ? `${total} ${total === 1 ? 'response' : 'responses'} so far.`
                 : 'No responses yet.'}
             </p>
           </div>
-          <Button
-            onClick={handleDownloadCsv}
-            disabled={isDownloading || total === 0}
-            size="sm"
-            variant="outline"
-          >
-            {isDownloading ? (
-              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-            ) : (
-              <Download className="w-4 h-4 mr-2" />
-            )}
-            Download CSV
-          </Button>
         </div>
+        <Button
+          onClick={handleDownloadCsv}
+          disabled={isDownloading || total === 0}
+          size="sm"
+          variant="outline"
+        >
+          {isDownloading ? (
+            <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+          ) : (
+            <Download className="w-4 h-4 mr-2" />
+          )}
+          Download CSV
+        </Button>
+      </div>
 
         {isLoading && rows.length === 0 ? (
           <div className="flex items-center gap-2 rounded-md border border-gray-200 bg-gray-50 p-3 text-sm text-gray-600">
@@ -266,7 +269,6 @@ export const EventPurchaseResponsesSection: React.FC<EventPurchaseResponsesSecti
             Load more
           </Button>
         )}
-      </CardContent>
-    </Card>
+    </div>
   );
 };

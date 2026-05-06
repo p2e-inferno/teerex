@@ -1,6 +1,5 @@
 import React, { useEffect, useState } from 'react';
 import { usePrivy } from '@privy-io/react-auth';
-import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Loader2, MessageSquareText, Pencil, Trash2 } from 'lucide-react';
 import { RichTextDisplay } from '@/components/ui/rich-text/RichTextDisplay';
@@ -186,19 +185,20 @@ export const EventPurchaseMessageSection: React.FC<EventPurchaseMessageSectionPr
   const hasMessage = Boolean(localMessage && !isEmptyHtml(localMessage));
 
   return (
-    <Card>
-      <CardContent className="pt-6 space-y-4">
-        <div className="flex items-start gap-2">
-          <MessageSquareText className="w-5 h-5 text-gray-600 mt-0.5" />
-          <div className="flex-1 space-y-1">
-            <h3 className="font-semibold text-gray-900">Purchase Message</h3>
-            <p className="text-sm text-gray-600">
-              {isCreator
-                ? 'Updates apply only to future ticket purchases. Existing ticket holders keep the message they received when they purchased.'
-                : 'Only the event creator can edit this message.'}
-            </p>
-          </div>
+    <div className="rounded-xl border p-5 bg-white space-y-4">
+      <div className="flex items-start gap-3">
+        <div className="bg-purple-100 p-2.5 rounded-xl flex-shrink-0">
+          <MessageSquareText className="w-5 h-5 text-purple-600" />
         </div>
+        <div className="flex-1 space-y-1">
+          <h3 className="font-semibold text-base text-gray-900">Purchase Message</h3>
+          <p className="text-sm text-muted-foreground">
+            {isCreator
+              ? 'Updates apply only to future ticket purchases. Existing ticket holders keep the message they received when they purchased.'
+              : 'Only the event creator can edit this message.'}
+          </p>
+        </div>
+      </div>
 
         {!isEditing && (
           <div className="space-y-3">
@@ -208,7 +208,7 @@ export const EventPurchaseMessageSection: React.FC<EventPurchaseMessageSectionPr
                 Loading message...
               </div>
             ) : hasMessage ? (
-              <div className="rounded-md border border-gray-200 bg-gray-50 p-3">
+              <div className="rounded-xl border border-gray-100 bg-gray-50/50 p-3">
                 <RichTextDisplay
                   content={localMessage as string}
                   className="prose prose-sm max-w-none leading-relaxed"
@@ -268,7 +268,6 @@ export const EventPurchaseMessageSection: React.FC<EventPurchaseMessageSectionPr
             </div>
           </div>
         )}
-      </CardContent>
-    </Card>
+    </div>
   );
 };
