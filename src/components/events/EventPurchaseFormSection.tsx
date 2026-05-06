@@ -1,6 +1,5 @@
 import React, { useEffect, useState } from 'react';
 import { usePrivy } from '@privy-io/react-auth';
-import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Loader2, ListChecks, Pencil, Trash2 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
@@ -179,23 +178,24 @@ export const EventPurchaseFormSection: React.FC<EventPurchaseFormSectionProps> =
   const hasSchema = !isPurchaseFormSchemaEmpty(savedSchema);
 
   return (
-    <Card>
-      <CardContent className="pt-6 space-y-4">
-        <div className="flex items-start gap-2">
-          <ListChecks className="w-5 h-5 text-gray-600 mt-0.5" />
-          <div className="flex-1 space-y-1">
-            <h3 className="font-semibold text-gray-900">Extra questions at purchase</h3>
-            <p className="text-sm text-gray-600">
-              Optional questions you ask each ticket buyer (besides their email).
-              {hasTickets && (
-                <>
-                  {' '}Tickets have already been sold, so existing questions can only be made optional or
-                  have their wording changed — they can&apos;t be deleted, retyped, or made required.
-                </>
-              )}
-            </p>
-          </div>
+    <div className="rounded-xl border p-5 bg-white space-y-4">
+      <div className="flex items-start gap-3">
+        <div className="bg-purple-100 p-2.5 rounded-xl flex-shrink-0">
+          <ListChecks className="w-5 h-5 text-purple-600" />
         </div>
+        <div className="flex-1 space-y-1">
+          <h3 className="font-semibold text-base text-gray-900">Extra questions at purchase</h3>
+          <p className="text-sm text-muted-foreground">
+            Optional questions you ask each ticket buyer (besides their email).
+            {hasTickets && (
+              <>
+                {' '}Tickets have already been sold, so existing questions can only be made optional or
+                have their wording changed — they can&apos;t be deleted, retyped, or made required.
+              </>
+            )}
+          </p>
+        </div>
+      </div>
 
         {isLoading ? (
           <div className="flex items-center gap-2 rounded-md border border-gray-200 bg-gray-50 p-3 text-sm text-gray-600">
@@ -205,7 +205,7 @@ export const EventPurchaseFormSection: React.FC<EventPurchaseFormSectionProps> =
         ) : !isEditing ? (
           <div className="space-y-3">
             {hasSchema ? (
-              <ul className="rounded-md border border-gray-200 bg-gray-50 p-3 text-sm text-gray-700 space-y-1">
+              <ul className="rounded-xl border border-gray-100 bg-white p-3 text-sm text-gray-700 space-y-2">
                 {savedSchema!.fields.map((f, i) => (
                   <li key={f.id} className="flex justify-between gap-3">
                     <span>
@@ -274,7 +274,6 @@ export const EventPurchaseFormSection: React.FC<EventPurchaseFormSectionProps> =
             </div>
           </div>
         )}
-      </CardContent>
-    </Card>
+    </div>
   );
 };
