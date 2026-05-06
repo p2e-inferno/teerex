@@ -198,65 +198,73 @@ export const EventManagersPanel: React.FC<EventManagersPanelProps> = ({ event, e
         <div className="text-sm text-destructive">{error}</div>
       )}
 
-      <div className="rounded-md border">
-        <div className="grid grid-cols-[1fr_1fr_1.2fr_auto] gap-3 border-b bg-muted/40 px-3 py-2 text-xs font-medium text-muted-foreground">
+      <div className="w-full overflow-hidden rounded-xl border border-gray-100 bg-white">
+        <div className="overflow-x-auto">
+          <div className="min-w-[600px]">
+            <div className="grid grid-cols-[1fr_1fr_1.5fr_auto] gap-3 border-b bg-gray-50/50 px-4 py-3 text-xs font-semibold uppercase tracking-wider text-gray-500">
           <span>Email</span>
           <span>Address</span>
           <span>Permissions</span>
           <span />
         </div>
-        {loading && managers.length === 0 ? (
-          <div className="flex items-center justify-center py-6">
-            <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
-          </div>
-        ) : managers.length === 0 ? (
-          <div className="px-3 py-6 text-center text-sm text-muted-foreground">No managers added yet</div>
-        ) : (
-          managers.map((manager) => (
-            <div
-              key={manager.id}
-              className="grid grid-cols-[1fr_1fr_1.2fr_auto] gap-3 border-b px-3 py-3 text-sm last:border-b-0"
-            >
-              <div className="min-w-0">
-                {manager.email ? (
-                  <div className="truncate" title={manager.email}>{manager.email}</div>
-                ) : (
-                  <span className="text-muted-foreground">Not provided</span>
-                )}
-                {manager.label && <div className="text-xs text-muted-foreground truncate">{manager.label}</div>}
+            {loading && managers.length === 0 ? (
+              <div className="flex items-center justify-center py-10">
+                <Loader2 className="w-6 h-6 animate-spin text-purple-600/50" />
               </div>
-              <div className="font-mono text-xs pt-0.5" title={manager.wallet_address}>
-                {shortAddress(manager.wallet_address)}
+            ) : managers.length === 0 ? (
+              <div className="px-4 py-12 text-center">
+                <Users className="w-8 h-8 text-gray-200 mx-auto mb-3" />
+                <p className="text-sm text-gray-500">No managers added yet</p>
               </div>
-              <div className="grid gap-2">
-                {PERMISSION_LABELS.map((item) => (
-                  <label
-                    key={item.key}
-                    className="flex items-start justify-between gap-3 rounded-md border px-2 py-1.5"
+            ) : (
+              managers.map((manager) => (
+                <div
+                  key={manager.id}
+                  className="grid grid-cols-[1fr_1fr_1.5fr_auto] gap-3 border-b px-4 py-4 text-sm last:border-b-0 hover:bg-gray-50/30 transition-colors"
+                >
+                  <div className="min-w-0">
+                    {manager.email ? (
+                      <div className="truncate font-medium text-gray-900" title={manager.email}>{manager.email}</div>
+                    ) : (
+                      <span className="text-gray-400 italic">Not provided</span>
+                    )}
+                    {manager.label && <div className="text-xs text-muted-foreground truncate mt-0.5">{manager.label}</div>}
+                  </div>
+                  <div className="font-mono text-xs pt-0.5 text-gray-600" title={manager.wallet_address}>
+                    {shortAddress(manager.wallet_address)}
+                  </div>
+                  <div className="grid gap-2">
+                    {PERMISSION_LABELS.map((item) => (
+                      <label
+                        key={item.key}
+                        className="flex items-start justify-between gap-3 rounded-lg border border-gray-100 bg-gray-50/50 px-2 py-2 shadow-sm"
+                      >
+                        <div className="space-y-0.5">
+                          <span className="text-[10px] font-bold uppercase tracking-tight text-gray-700">{item.label}</span>
+                          <p className="text-[10px] leading-3 text-muted-foreground">{item.description}</p>
+                        </div>
+                        <Switch
+                          className="scale-75 origin-right"
+                          checked={Boolean(manager.permissions?.[item.key])}
+                          onCheckedChange={(checked) => handleToggle(manager.id, manager.permissions, item.key, checked)}
+                        />
+                      </label>
+                    ))}
+                  </div>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-8 w-8 p-0 text-red-500 hover:text-red-600 hover:bg-red-50"
+                    onClick={() => setManagerToRemove(manager)}
+                    title="Remove manager"
                   >
-                    <div className="space-y-0.5">
-                      <span className="text-xs font-medium text-foreground">{item.label}</span>
-                      <p className="text-[11px] leading-4 text-muted-foreground">{item.description}</p>
-                    </div>
-                    <Switch
-                      checked={Boolean(manager.permissions?.[item.key])}
-                      onCheckedChange={(checked) => handleToggle(manager.id, manager.permissions, item.key, checked)}
-                    />
-                  </label>
-                ))}
-              </div>
-              <Button
-                variant="ghost"
-                size="sm"
-                className="h-8 w-8 p-0 text-destructive hover:text-destructive"
-                onClick={() => setManagerToRemove(manager)}
-                title="Remove manager"
-              >
-                <Trash2 className="w-4 h-4" />
-              </Button>
-            </div>
-          ))
-        )}
+                    <Trash2 className="w-4 h-4" />
+                  </Button>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
       </div>
       <AlertDialog open={Boolean(managerToRemove)} onOpenChange={(open) => !open && setManagerToRemove(null)}>
         <AlertDialogContent>
