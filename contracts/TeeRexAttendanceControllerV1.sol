@@ -52,7 +52,7 @@ interface IERC20 {
     function transfer(address to, uint256 amount) external returns (bool);
 }
 
-contract RefundableEventLockController is ReentrancyGuard, Ownable {
+contract TeeRexAttendanceControllerV1 is ReentrancyGuard, Ownable {
     bytes32 internal constant KEY_GRANTER_ROLE = keccak256("KEY_GRANTER");
 
     uint256 internal constant MAX_BOND_FEE_BUFFER_BPS = 500;
@@ -63,6 +63,7 @@ contract RefundableEventLockController is ReentrancyGuard, Ownable {
     uint256 internal constant POST_RELEASE_TRANSFER_FEE_BPS = 0;
     uint256 internal constant IMPRACTICAL_PRICE = type(uint256).max / 4;
 
+    uint16 public constant VERSION = 1;
     address public immutable unlockFactory;
     uint16 public immutable lockVersion;
     uint16 public bondFeeBufferBps;
