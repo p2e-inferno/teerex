@@ -165,7 +165,7 @@ export const EventManagersPanel: React.FC<EventManagersPanelProps> = ({ event, e
       <div className="grid gap-4">
         <div className="grid gap-1.5">
           <Label htmlFor="manager-identifier" className="flex items-center gap-1.5 text-sm font-medium">
-            Wallet address or Teerex email
+            Wallet address or email
             <Info className="w-3.5 h-3.5 text-muted-foreground" />
           </Label>
           <div className="relative">
@@ -173,7 +173,7 @@ export const EventManagersPanel: React.FC<EventManagersPanelProps> = ({ event, e
               id="manager-identifier"
               value={identifier}
               onChange={(e) => setIdentifier(e.target.value)}
-              placeholder="0x1234... or manager@teerex.com"
+              placeholder="0x1234... or user@email.com"
               className="pr-12"
             />
             <button
@@ -196,7 +196,7 @@ export const EventManagersPanel: React.FC<EventManagersPanelProps> = ({ event, e
             id="manager-label"
             value={label}
             onChange={(e) => setLabel(e.target.value)}
-            placeholder="Optional label for the manager"
+            placeholder="Optional label to identify the manager"
           />
         </div>
 
