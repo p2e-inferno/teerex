@@ -4,7 +4,7 @@ import { base, baseSepolia } from 'wagmi/chains';
 import { getRpcUrl, getExplorerTxUrl, getTokenAddressAsync, ZERO_ADDRESS, getNetworkConfigByChainId } from '@/lib/config/network-config';
 import { ethers } from 'ethers';
 import { supabase } from '@/integrations/supabase/client';
-import { getDivviBrowserProvider, getDivviEip1193Provider } from '@/lib/wallet/provider';
+import { getDivviBrowserProvider, getDivviEip1193Provider, getRawEip1193Provider } from '@/lib/wallet/provider';
 
 interface LockConfig {
   name: string;
@@ -19,11 +19,21 @@ interface LockConfig {
   requiresApproval?: boolean;
 }
 
-interface DeploymentResult {
+export interface DeploymentResult {
   success: boolean;
   transactionHash?: string;
   lockAddress?: string;
+  reserveBond?: string;
+  controllerAddress?: string;
   error?: string;
+}
+
+export interface ProtectedReserveBondPreview {
+  currentProtocolFeeBps: string;
+  effectiveFeeBps: string;
+  reserveBond: string;
+  decimals: number;
+  symbol: string;
 }
 
 interface PurchaseResult {
@@ -92,6 +102,80 @@ const UnlockABI = [
     "type": "function"
   }
 ];
+
+const RefundableEventManagerABI = [
+  {
+    inputs: [
+      { internalType: 'uint256', name: 'expirationDuration', type: 'uint256' },
+      { internalType: 'address', name: 'currency', type: 'address' },
+      { internalType: 'uint256', name: 'keyPrice_', type: 'uint256' },
+      { internalType: 'uint256', name: 'maxNumberOfKeys', type: 'uint256' },
+      { internalType: 'string', name: 'lockName', type: 'string' },
+      { internalType: 'uint256', name: 'minAttendees', type: 'uint256' },
+      { internalType: 'uint256', name: 'refundTriggerTime', type: 'uint256' },
+      { internalType: 'uint256', name: 'eventStartTime', type: 'uint256' },
+      { internalType: 'uint256', name: 'eventEndTime', type: 'uint256' },
+      { internalType: 'address', name: 'eventCreator_', type: 'address' },
+    ],
+    name: 'createProtectedEventLock',
+    outputs: [{ internalType: 'address', name: 'lock', type: 'address' }],
+    stateMutability: 'payable',
+    type: 'function',
+  },
+  {
+    inputs: [
+      { internalType: 'uint256', name: 'minAttendees', type: 'uint256' },
+      { internalType: 'uint256', name: 'keyPrice_', type: 'uint256' },
+    ],
+    name: 'previewReserveBond',
+    outputs: [
+      { internalType: 'uint256', name: 'currentProtocolFeeBps', type: 'uint256' },
+      { internalType: 'uint256', name: 'effectiveFeeBps', type: 'uint256' },
+      { internalType: 'uint256', name: 'reserveBond', type: 'uint256' },
+    ],
+    stateMutability: 'view',
+    type: 'function',
+  },
+  {
+    anonymous: false,
+    inputs: [
+      { indexed: true, internalType: 'address', name: 'lock', type: 'address' },
+      { indexed: true, internalType: 'address', name: 'creator', type: 'address' },
+      { indexed: true, internalType: 'address', name: 'currency', type: 'address' },
+      { indexed: false, internalType: 'uint256', name: 'keyPrice', type: 'uint256' },
+      { indexed: false, internalType: 'uint256', name: 'minAttendees', type: 'uint256' },
+      { indexed: false, internalType: 'uint256', name: 'refundTriggerTime', type: 'uint256' },
+      { indexed: false, internalType: 'uint256', name: 'eventStartTime', type: 'uint256' },
+      { indexed: false, internalType: 'uint256', name: 'eventEndTime', type: 'uint256' },
+      { indexed: false, internalType: 'uint256', name: 'protocolFeeBpsAtCreation', type: 'uint256' },
+      { indexed: false, internalType: 'uint256', name: 'effectiveBondFeeBps', type: 'uint256' },
+      { indexed: false, internalType: 'uint256', name: 'reserveBond', type: 'uint256' },
+    ],
+    name: 'ProtectedEventLockCreated',
+    type: 'event',
+  },
+  {
+    inputs: [{ internalType: 'address', name: 'lock', type: 'address' }],
+    name: 'releaseManagerToCreator',
+    outputs: [],
+    stateMutability: 'nonpayable',
+    type: 'function',
+  },
+  {
+    inputs: [
+      { internalType: 'address', name: 'lock', type: 'address' },
+      { internalType: 'uint256', name: 'batchSize', type: 'uint256' },
+    ],
+    name: 'cancelAndBatchRefundFailedEvent',
+    outputs: [
+      { internalType: 'uint256', name: 'processed', type: 'uint256' },
+      { internalType: 'uint256', name: 'nextCursor', type: 'uint256' },
+      { internalType: 'bool', name: 'complete', type: 'bool' },
+    ],
+    stateMutability: 'nonpayable',
+    type: 'function',
+  },
+] as const;
 
 // PublicLock ABI for encoding initialize function and purchasing keys
 const PublicLockABI = [
@@ -292,12 +376,24 @@ const PublicLockABI = [
     "outputs": [],
     "stateMutability": "nonpayable",
     "type": "function"
+  },
+  {
+    "inputs": [
+      { "internalType": "address", "name": "_tokenAddress", "type": "address" },
+      { "internalType": "address payable", "name": "_recipient", "type": "address" },
+      { "internalType": "uint256", "name": "_amount", "type": "uint256" }
+    ],
+    "name": "withdraw",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
   }
 ];
 
 // Minimal ERC20 ABI for decimals/allowance/approve
 const ERC20_ABI = [
   { inputs: [], name: 'decimals', outputs: [{ internalType: 'uint8', name: '', type: 'uint8' }], stateMutability: 'view', type: 'function' },
+  { inputs: [{ internalType: 'address', name: 'account', type: 'address' }], name: 'balanceOf', outputs: [{ internalType: 'uint256', name: '', type: 'uint256' }], stateMutability: 'view', type: 'function' },
   { inputs: [{ internalType: 'address', name: 'owner', type: 'address' }, { internalType: 'address', name: 'spender', type: 'address' }], name: 'allowance', outputs: [{ internalType: 'uint256', name: '', type: 'uint256' }], stateMutability: 'view', type: 'function' },
   { inputs: [{ internalType: 'address', name: 'spender', type: 'address' }, { internalType: 'uint256', name: 'value', type: 'uint256' }], name: 'approve', outputs: [{ internalType: 'bool', name: '', type: 'bool' }], stateMutability: 'nonpayable', type: 'function' },
 ] as const;
@@ -344,6 +440,53 @@ const getTokenInfo = async (chainId: number, symbol: string): Promise<{ address:
   const dec = Number(await token.decimals());
   decimalsCache[address] = dec;
   return { address, decimals: dec };
+};
+
+export const previewProtectedEventReserveBond = async (
+  chainId: number,
+  currency: string,
+  price: number,
+  minAttendees: number
+): Promise<ProtectedReserveBondPreview> => {
+  if (!chainId) {
+    throw new Error('Missing chainId for reserve bond preview.');
+  }
+
+  if (!Number.isFinite(price) || price <= 0) {
+    throw new Error('Ticket price must be greater than zero for reserve bond preview.');
+  }
+
+  if (!Number.isFinite(minAttendees) || minAttendees < 1) {
+    throw new Error('Minimum attendees must be at least 1 for reserve bond preview.');
+  }
+
+  const networkConfig = await getNetworkConfigByChainId(chainId);
+  const controllerAddress = networkConfig?.refundable_event_manager_address;
+  if (!controllerAddress || !ethers.isAddress(controllerAddress)) {
+    throw new Error('Refundable event manager is not configured for this network.');
+  }
+
+  const { decimals } = await getTokenInfo(chainId, currency);
+  const keyPriceWei = currency === 'ETH'
+    ? parseEther(price.toString())
+    : parseUnits(price.toString(), decimals);
+
+  const provider = new ethers.JsonRpcProvider(await getRpcUrlForChain(chainId));
+  const controller = new ethers.Contract(controllerAddress, RefundableEventManagerABI, provider);
+  const [currentProtocolFeeBps, effectiveFeeBps, reserveBond] = await controller.previewReserveBond(
+    minAttendees,
+    keyPriceWei
+  );
+
+  return {
+    currentProtocolFeeBps: currentProtocolFeeBps.toString(),
+    effectiveFeeBps: effectiveFeeBps.toString(),
+    reserveBond: reserveBond.toString(),
+    decimals,
+    symbol: currency === 'ETH'
+      ? (networkConfig.native_currency_symbol || 'ETH')
+      : currency,
+  };
 };
 
 const ensureCorrectNetwork = async (rawProvider: any, chainId: number) => {
@@ -394,6 +537,44 @@ const ensureCorrectNetwork = async (rawProvider: any, chainId: number) => {
       throw switchError;
     }
   }
+};
+
+const getProtectedEventControllerContract = async (
+  wallet: any,
+  controllerAddress: string,
+  chainId: number
+) => {
+  if (!wallet?.address) {
+    throw new Error('No wallet provided. Please connect your wallet first.');
+  }
+  if (!ethers.isAddress(controllerAddress)) {
+    throw new Error('Invalid protected event controller address.');
+  }
+
+  const provider = await getRawEip1193Provider(wallet);
+  await ensureCorrectNetwork(provider, chainId);
+  const ethersProvider = new ethers.BrowserProvider(provider);
+  const signer = await ethersProvider.getSigner();
+  return new ethers.Contract(controllerAddress, RefundableEventManagerABI, signer);
+};
+
+const getManagedLockContract = async (
+  wallet: any,
+  lockAddress: string,
+  chainId: number
+) => {
+  if (!wallet?.address) {
+    throw new Error('No wallet provided. Please connect your wallet first.');
+  }
+  if (!ethers.isAddress(lockAddress)) {
+    throw new Error('Invalid lock address.');
+  }
+
+  const provider = await getRawEip1193Provider(wallet);
+  await ensureCorrectNetwork(provider, chainId);
+  const ethersProvider = new ethers.BrowserProvider(provider);
+  const signer = await ethersProvider.getSigner();
+  return new ethers.Contract(lockAddress, PublicLockABI, signer);
 };
 
 /**
@@ -531,7 +712,7 @@ export const deployLock = async (
     }
 
     // Get the Ethereum provider from Privy wallet
-    const provider = await getDivviEip1193Provider(wallet);
+    const provider = await getRawEip1193Provider(wallet);
     await ensureCorrectNetwork(provider, chainId);
 
     // Get factory address from database
@@ -713,6 +894,261 @@ export const deployLock = async (
     return {
       success: false,
       error: errorMessage
+    };
+  }
+};
+
+export interface ProtectedLockConfig extends LockConfig {
+  minAttendees: number;
+  refundTriggerAt: string;
+  eventStartAt: string;
+  eventEndAt: string;
+  eventCreator: string;
+}
+
+export const deployProtectedEventLock = async (
+  config: ProtectedLockConfig,
+  wallet: any,
+  chainId: number
+): Promise<DeploymentResult> => {
+  try {
+    if (!wallet?.address) {
+      throw new Error('No wallet provided. Please connect your wallet first.');
+    }
+    if (!chainId) {
+      throw new Error('Missing chainId for deployment.');
+    }
+
+    const networkConfig = await getNetworkConfigByChainId(chainId);
+    const controllerAddress = networkConfig?.refundable_event_manager_address;
+    if (!controllerAddress || !ethers.isAddress(controllerAddress)) {
+      throw new Error('Refundable event manager is not configured for this network.');
+    }
+
+    const provider = await getRawEip1193Provider(wallet);
+    await ensureCorrectNetwork(provider, chainId);
+    const ethersProvider = new ethers.BrowserProvider(provider);
+    const signer = await ethersProvider.getSigner();
+    const signerAddress = await signer.getAddress();
+
+    const { address: tokenAddress, decimals } = await getTokenInfo(chainId, config.currency);
+    const keyPriceWei = tokenAddress === ZERO_ADDRESS
+      ? parseEther(config.price.toString())
+      : parseUnits(config.price.toString(), decimals);
+
+    const refundTriggerTime = Math.floor(new Date(config.refundTriggerAt).getTime() / 1000);
+    const eventStartTime = Math.floor(new Date(config.eventStartAt).getTime() / 1000);
+    const eventEndTime = Math.floor(new Date(config.eventEndAt).getTime() / 1000);
+    if (![refundTriggerTime, eventStartTime, eventEndTime].every(Number.isFinite)) {
+      throw new Error('Invalid refund protection dates.');
+    }
+    if (refundTriggerTime >= eventEndTime) {
+      throw new Error('Refund trigger time must be before event end time.');
+    }
+
+    const controller = new ethers.Contract(controllerAddress, RefundableEventManagerABI, signer);
+    const [, , reserveBond] = await controller.previewReserveBond(config.minAttendees, keyPriceWei);
+
+    if (tokenAddress !== ZERO_ADDRESS && reserveBond > 0n) {
+      const token = new ethers.Contract(tokenAddress, ERC20_ABI, signer);
+      const allowance = await token.allowance(signerAddress, controllerAddress);
+      if (allowance < reserveBond) {
+        try {
+          const approveTx = await token.approve(controllerAddress, reserveBond);
+          await approveTx.wait();
+        } catch (error: any) {
+          if (String(error?.message || '').toLowerCase().includes('must be zero')) {
+            const resetTx = await token.approve(controllerAddress, 0);
+            await resetTx.wait();
+            const approveTx = await token.approve(controllerAddress, reserveBond);
+            await approveTx.wait();
+          } else {
+            throw error;
+          }
+        }
+      }
+    }
+
+    const tx = await controller.createProtectedEventLock(
+      config.expirationDuration,
+      tokenAddress,
+      keyPriceWei,
+      config.maxNumberOfKeys,
+      config.name,
+      config.minAttendees,
+      refundTriggerTime,
+      eventStartTime,
+      eventEndTime,
+      config.eventCreator || signerAddress,
+      tokenAddress === ZERO_ADDRESS ? { value: reserveBond } : {}
+    );
+    const receipt = await tx.wait();
+    if (receipt.status !== 1) {
+      throw new Error('Protected lock deployment failed.');
+    }
+
+    let lockAddress = '';
+    const iface = new ethers.Interface(RefundableEventManagerABI);
+    for (const log of receipt.logs || []) {
+      try {
+        const parsed = iface.parseLog({ topics: log.topics, data: log.data });
+        if (parsed?.name === 'ProtectedEventLockCreated') {
+          lockAddress = parsed.args.lock;
+          break;
+        }
+      } catch {
+        // Ignore logs from other contracts.
+      }
+    }
+
+    if (!lockAddress || !ethers.isAddress(lockAddress)) {
+      throw new Error('Could not find protected lock address in deployment receipt.');
+    }
+
+    return {
+      success: true,
+      transactionHash: tx.hash,
+      lockAddress,
+      reserveBond: reserveBond.toString(),
+      controllerAddress,
+    };
+  } catch (error) {
+    console.error('Error deploying protected event lock:', error);
+    let errorMessage = 'Failed to deploy protected event lock';
+    if (error instanceof Error) {
+      if (error.message.toLowerCase().includes('user rejected')) {
+        errorMessage = 'Transaction was cancelled. Please try again when ready.';
+      } else if (error.message.toLowerCase().includes('insufficient funds')) {
+        errorMessage = 'Insufficient funds for the protected event deployment and reserve bond.';
+      } else {
+        errorMessage = error.message;
+      }
+    }
+    return { success: false, error: errorMessage };
+  }
+};
+
+export const releaseProtectedEventManager = async (
+  lockAddress: string,
+  controllerAddress: string,
+  wallet: any,
+  chainId: number
+): Promise<{ success: boolean; transactionHash?: string; error?: string }> => {
+  try {
+    if (!ethers.isAddress(lockAddress)) {
+      throw new Error('Invalid protected event lock address.');
+    }
+
+    const controller = await getProtectedEventControllerContract(
+      wallet,
+      controllerAddress,
+      chainId
+    );
+    const tx = await controller.releaseManagerToCreator(lockAddress);
+    const receipt = await tx.wait();
+    if (receipt.status !== 1) throw new Error('Release transaction failed.');
+    return { success: true, transactionHash: tx.hash };
+  } catch (error) {
+    console.error('Error releasing protected event:', error);
+    return { success: false, error: error instanceof Error ? error.message : 'Failed to release protected event' };
+  }
+};
+
+export const cancelAndRefundProtectedEvent = async (
+  lockAddress: string,
+  controllerAddress: string,
+  wallet: any,
+  chainId: number,
+  batchSize = 50
+): Promise<{ success: boolean; transactionHash?: string; error?: string }> => {
+  try {
+    if (!ethers.isAddress(lockAddress)) {
+      throw new Error('Invalid protected event lock address.');
+    }
+
+    const controller = await getProtectedEventControllerContract(
+      wallet,
+      controllerAddress,
+      chainId
+    );
+    const tx = await controller.cancelAndBatchRefundFailedEvent(lockAddress, batchSize);
+    const receipt = await tx.wait();
+    if (receipt.status !== 1) throw new Error('Refund transaction failed.');
+    return { success: true, transactionHash: tx.hash };
+  } catch (error) {
+    console.error('Error refunding protected event:', error);
+    return { success: false, error: error instanceof Error ? error.message : 'Failed to process refunds' };
+  }
+};
+
+export const getLockWithdrawableBalance = async (
+  lockAddress: string,
+  chainId: number
+): Promise<{
+  tokenAddress: string;
+  balance: bigint;
+  decimals: number;
+  isNative: boolean;
+}> => {
+  if (!ethers.isAddress(lockAddress)) {
+    throw new Error('Invalid lock address.');
+  }
+
+  const provider = await getReadOnlyProvider(chainId);
+  const lockContract = new ethers.Contract(lockAddress, PublicLockABI, provider);
+  const tokenAddress = await lockContract.tokenAddress();
+  const isNative = tokenAddress === ZERO_ADDRESS;
+
+  if (isNative) {
+    const balance = await provider.getBalance(lockAddress);
+    return {
+      tokenAddress,
+      balance,
+      decimals: 18,
+      isNative: true,
+    };
+  }
+
+  const token = new ethers.Contract(tokenAddress, ERC20_ABI, provider);
+  const [balance, decimals] = await Promise.all([
+    token.balanceOf(lockAddress),
+    token.decimals(),
+  ]);
+
+  return {
+    tokenAddress,
+    balance,
+    decimals: Number(decimals),
+    isNative: false,
+  };
+};
+
+export const withdrawLockBalance = async (
+  lockAddress: string,
+  recipient: string,
+  wallet: any,
+  chainId: number
+): Promise<{ success: boolean; transactionHash?: string; error?: string }> => {
+  try {
+    if (!ethers.isAddress(recipient)) {
+      throw new Error('Invalid withdrawal recipient.');
+    }
+
+    const lockContract = await getManagedLockContract(wallet, lockAddress, chainId);
+    const { tokenAddress, balance } = await getLockWithdrawableBalance(lockAddress, chainId);
+    if (balance <= 0n) {
+      throw new Error('No withdrawable funds are available in this lock.');
+    }
+
+    const tx = await lockContract.withdraw(tokenAddress, recipient, balance);
+    const receipt = await tx.wait();
+    if (receipt.status !== 1) throw new Error('Withdraw transaction failed.');
+    return { success: true, transactionHash: tx.hash };
+  } catch (error) {
+    console.error('Error withdrawing lock balance:', error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to withdraw lock balance',
     };
   }
 };
@@ -1057,11 +1493,11 @@ export const getMaxKeysPerAddress = async (lockAddress: string, userAddress: str
 export const getTransferabilityStatus = async (
   lockAddress: string,
   chainId: number
-): Promise<{ isTransferable: boolean; feeBasisPoints: number | null }> => {
+): Promise<{ isTransferable: boolean | null; feeBasisPoints: number | null }> => {
   try {
     if (!lockAddress || lockAddress === 'Unknown' || !ethers.isAddress(lockAddress)) {
       console.warn(`Invalid lock address for transferability check: ${lockAddress}`);
-      return { isTransferable: true, feeBasisPoints: null };
+      return { isTransferable: null, feeBasisPoints: null };
     }
 
     const provider = await getReadOnlyProvider(chainId);
@@ -1075,8 +1511,7 @@ export const getTransferabilityStatus = async (
     return { isTransferable, feeBasisPoints: feeBps };
   } catch (error) {
     console.error(`Error reading transfer fee basis points for ${lockAddress}:`, error);
-    // Fail open as transferable to avoid incorrectly labelling tickets as soul-bound
-    return { isTransferable: true, feeBasisPoints: null };
+    return { isTransferable: null, feeBasisPoints: null };
   }
 };
 
@@ -1404,19 +1839,27 @@ export async function updateLockPurchasability(
     }
 
     // Fetch current configurations to maintain them
-    const [expiration, maxKeysPerAcc] = await Promise.all([
+    const [expiration, maxKeysPerAcc, totalSupply] = await Promise.all([
       lock.expirationDuration(),
       lock.maxKeysPerAddress(),
+      lock.totalSupply(),
     ]);
 
     // Some lock versions revert if maxKeysPerAddress is 0; clamp to 1 when updating config
     const safeMaxKeysPerAcc = maxKeysPerAcc === 0n ? 1n : maxKeysPerAcc;
 
-    // If closing, set maxNumberOfKeys to 0 to disable purchases
-    // If opening, restore maxNumberOfKeys to original capacity
-    const newMaxKeys = isClosed ? 0n : BigInt(originalCapacity);
+    // Close: set maxNumberOfKeys = totalSupply (makes lock appear sold-out).
+    //   Setting to 0 reverts when totalSupply > 0 (CANT_BE_SMALLER_THAN_SUPPLY).
+    // Open: restore to originalCapacity. DB stores 0 for unlimited; on-chain unlimited = MaxUint256.
+    const newMaxKeys = isClosed
+      ? totalSupply
+      : originalCapacity === 0
+        ? ethers.MaxUint256
+        : BigInt(originalCapacity);
 
-    let gasLimit: bigint | undefined;
+    // Use estimateGas as a pre-flight check so we surface contract violations
+    // with a clear message before asking the user to sign anything.
+    let gasLimit: bigint;
     try {
       const estimated = await lock.updateLockConfig.estimateGas(
         expiration,
@@ -1424,8 +1867,16 @@ export async function updateLockPurchasability(
         safeMaxKeysPerAcc
       );
       gasLimit = (estimated * 120n) / 100n;
-    } catch (e) {
-      // Best-effort; we'll let the wallet/provider pick a default if estimation fails.
+    } catch (e: any) {
+      const msg: string = e?.message ?? '';
+      if (msg.includes('CANT_BE_SMALLER_THAN_SUPPLY') || msg.includes('282478df')) {
+        throw new Error(
+          'Cannot update registration: the capacity limit cannot be set below the number of tickets already sold.'
+        );
+      }
+      throw new Error(
+        `This transaction would fail on-chain: ${msg || 'the contract rejected the operation'}`
+      );
     }
 
     const tx = await lock.updateLockConfig(expiration, newMaxKeys, safeMaxKeysPerAcc, {

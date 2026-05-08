@@ -95,6 +95,9 @@ export function useNetworkConfigs() {
     getFactoryAddress: (chainId: number): string | null => {
       return networks.find(n => n.chain_id === chainId)?.unlock_factory_address || null;
     },
+    getRefundableEventManagerAddress: (chainId: number): string | null => {
+      return networks.find(n => n.chain_id === chainId)?.refundable_event_manager_address || null;
+    },
     getRpcUrl: (chainId: number): string | null => {
       return networks.find(n => n.chain_id === chainId)?.rpc_url || null;
     },

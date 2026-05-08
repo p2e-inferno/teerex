@@ -3,10 +3,11 @@ import React from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Calendar, Clock, MapPin, Users, Ticket, Save, Loader2 } from 'lucide-react';
+import { Calendar, Clock, MapPin, Users, Ticket, Save, Loader2, Shield, MessageSquareText } from 'lucide-react';
 import { EventFormData } from '@/pages/CreateEvent';
 import { RichTextDisplay } from '@/components/ui/rich-text/RichTextDisplay';
 import { formatEventDateRange } from '@/utils/dateUtils';
+import { isEmptyHtml } from '@/utils/textUtils';
 
 interface EventPreviewProps {
   formData: EventFormData;
@@ -119,8 +120,55 @@ export const EventPreview: React.FC<EventPreviewProps> = ({
             </div>
 
             {/* CTA Button Preview */}
+            {formData.refundProtectionEnabled && (
+              <div className="rounded-xl border border-purple-100 bg-purple-50/50 p-4 space-y-3">
+                <div className="flex items-center gap-2">
+                  <Shield className="w-4 h-4 text-purple-600" />
+                  <div className="text-sm font-semibold text-purple-950">Minimum Attendance Protection</div>
+                </div>
+                
+                <div className="space-y-2 text-sm text-purple-900">
+                  <div className="flex justify-between items-center">
+                    <span className="text-purple-700/70 font-medium">Required Attendees</span>
+                    <span className="font-bold">{formData.refundMinAttendees || 0} people</span>
+                  </div>
+                  
+                  {formData.refundTriggerAt && (
+                    <div className="flex flex-col gap-0.5 border-l-2 border-purple-200 pl-3 mt-2">
+                      <span className="text-[11px] uppercase tracking-tight text-purple-500 font-bold">Protection Deadline</span>
+                      <span className="text-purple-900 font-medium leading-tight">
+                        {new Date(formData.refundTriggerAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}
+                        <span className="text-purple-400 mx-1">at</span>
+                        {new Date(formData.refundTriggerAt).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}
+                      </span>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* Post-purchase message preview */}
+            {formData.purchaseConfirmationMessage && !isEmptyHtml(formData.purchaseConfirmationMessage) && (
+              <div className="rounded-xl border border-purple-100 bg-purple-50/50 p-4 space-y-2">
+                <div className="flex items-center gap-2">
+                  <MessageSquareText className="w-4 h-4 text-purple-600" />
+                  <div className="text-sm font-semibold text-purple-950">Message after purchase</div>
+                </div>
+                <p className="text-xs text-purple-700">
+                  Attendees will see this after their ticket is issued and in their confirmation email.
+                </p>
+                <div className="rounded-md bg-white/80 border border-purple-100 p-3 text-sm text-gray-800">
+                  <RichTextDisplay
+                    content={formData.purchaseConfirmationMessage}
+                    className="prose prose-sm leading-relaxed"
+                  />
+                </div>
+              </div>
+            )}
+
+            {/* CTA Button Preview */}
             <div className="pt-4">
-              <Button 
+              <Button
                 className="w-full bg-purple-600 hover:bg-purple-700 text-white font-medium"
                 disabled
               >

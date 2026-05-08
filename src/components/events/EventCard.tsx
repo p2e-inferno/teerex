@@ -11,8 +11,13 @@ import { RichTextDisplay } from '@/components/ui/rich-text/RichTextDisplay';
 import { stripHtml } from '@/utils/textUtils';
 import { WaitlistDialog } from './WaitlistDialog';
 import { formatEventDateRange } from '@/utils/dateUtils';
+import { formatEventLocalDateTime, formatEventLocalTime } from '@/utils/eventTime';
 import { hasMethod, isFreeEvent } from '@/lib/events/paymentMethods';
 import { isEventRegistrationClosed } from '@/lib/events/registration';
+import {
+  getRefundProtectionBadge,
+  getRefundProtectionPurchaseStateLabel,
+} from '@/lib/events/refundStatus';
 
 interface EventCardProps {
   event: PublishedEvent;
@@ -56,9 +61,25 @@ export const EventCard: React.FC<EventCardProps> = ({
   const navigate = useNavigate();
   const spotsLeft = event.capacity - keysSold;
   const isSoldOut = spotsLeft <= 0;
+  const refundBadgeAudience = (onEdit || onManage) ? 'creator' : 'public';
 
   // Check if registration has closed
   const isRegistrationClosed = isEventRegistrationClosed(event);
+  const isProtectedPurchaseClosed = Boolean(
+    event.refund_protection_enabled &&
+    event.refund_trigger_at &&
+    Date.now() >= new Date(event.refund_trigger_at).getTime() &&
+    event.refund_status !== 'released'
+  );
+  const refundBadge = getRefundProtectionBadge(event.refund_status, refundBadgeAudience);
+  const eventDisplayTime = formatEventLocalTime(event.starts_at, event.time);
+  const isMultiDayEvent = Boolean(
+    event.date &&
+    event.end_date &&
+    event.date.toDateString() !== event.end_date.toDateString()
+  );
+  const startDateTimeLabel = formatEventLocalDateTime(event.starts_at);
+  const endDateTimeLabel = formatEventLocalDateTime(event.ends_at);
 
   const handleCardClick = () => {
     if (!isTicketView) {
@@ -101,6 +122,9 @@ export const EventCard: React.FC<EventCardProps> = ({
     if (actionType === 'edit') return 'Edit';
     if (actionType === 'manage') return 'Manage';
     if (isUserTicketOwner) return 'View';
+    if (isProtectedPurchaseClosed) {
+      return getRefundProtectionPurchaseStateLabel(event.refund_status);
+    }
     if (isRegistrationClosed) return 'Registration Closed';
     if (isSoldOut && event.allow_waitlist) return 'Join Waitlist';
     if (isSoldOut) return 'Sold Out';
@@ -114,7 +138,7 @@ export const EventCard: React.FC<EventCardProps> = ({
 
   return (
     <Card
-      className={`border-0 shadow-sm hover:shadow-md transition-all duration-200 group ${!isTicketView ? 'cursor-pointer' : ''}`}
+      className={`border-0 shadow-sm hover:shadow-md transition-all duration-200 group h-full flex flex-col ${!isTicketView ? 'cursor-pointer' : ''}`}
       onClick={handleCardClick}
     >
       <CardHeader className="p-0">
@@ -167,7 +191,7 @@ export const EventCard: React.FC<EventCardProps> = ({
         )}
       </CardHeader>
 
-      <CardContent className="p-6">
+      <CardContent className="p-6 flex-1 flex flex-col">
         <div className="mb-3 flex items-center gap-2 flex-wrap">
           <Badge variant="secondary" className="text-xs">
             {event.category}
@@ -180,6 +204,11 @@ export const EventCard: React.FC<EventCardProps> = ({
           {isUserTicketOwner && (
             <Badge className="text-xs bg-green-100 text-green-700 border border-green-200">
               You own this
+            </Badge>
+          )}
+          {event.refund_protection_enabled && (
+            <Badge variant="outline" className={`text-xs ${refundBadge.className}`}>
+              {refundBadge.label}
             </Badge>
           )}
         </div>
@@ -202,17 +231,29 @@ export const EventCard: React.FC<EventCardProps> = ({
           {(event.date || event.time || event.location) && (
             <div className="flex flex-col gap-2 text-sm text-gray-600">
               {event.date && (
-                <div className="flex items-center">
-                  <Calendar className="w-4 h-4 mr-2 flex-shrink-0" />
-                  <span className="whitespace-nowrap">{formatEventDateRange({ startDate: event.date, endDate: event.end_date })}</span>
-                </div>
+                isMultiDayEvent && startDateTimeLabel ? (
+                  <div className="flex items-start">
+                    <Calendar className="w-4 h-4 mr-2 mt-0.5 flex-shrink-0" />
+                    <div className="min-w-0 space-y-0.5">
+                      <div className="whitespace-nowrap font-medium text-gray-700">Starts: {startDateTimeLabel}</div>
+                      <div className="whitespace-nowrap text-gray-500">
+                        Ends: {endDateTimeLabel || formatEventDateRange({ startDate: event.date, endDate: event.end_date })}
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="flex items-center">
+                    <Calendar className="w-4 h-4 mr-2 flex-shrink-0" />
+                    <span className="whitespace-nowrap">{formatEventDateRange({ startDate: event.date, endDate: event.end_date })}</span>
+                  </div>
+                )
               )}
               {(event.time || event.location) && (
                 <div className="flex flex-wrap items-center gap-4">
                   {event.time && (
                     <div className="flex items-center">
                       <Clock className="w-4 h-4 mr-2 flex-shrink-0" />
-                      <span className="whitespace-nowrap">{event.time}</span>
+                      <span className="whitespace-nowrap">{eventDisplayTime}</span>
                     </div>
                   )}
                   <div className="flex items-center min-w-0">
@@ -250,7 +291,7 @@ export const EventCard: React.FC<EventCardProps> = ({
           </div>
         </div>
 
-        <div className="flex items-center justify-between">
+        <div className="mt-auto flex items-center justify-between">
           <div className="font-semibold text-lg text-gray-900">
             {event.payment_methods?.includes('fiat') && event.ngn_price > 0 ? (
               <div className="space-y-1">
@@ -276,7 +317,7 @@ export const EventCard: React.FC<EventCardProps> = ({
                 <Button
                   size="sm"
                   onClick={handleButtonClick}
-                  disabled={isRegistrationClosed || (isSoldOut && !event.allow_waitlist) || (!authenticated && !onConnectWallet)}
+                  disabled={isRegistrationClosed || isProtectedPurchaseClosed || (isSoldOut && !event.allow_waitlist) || (!authenticated && !onConnectWallet)}
                   variant={getButtonVariant()}
                   className={
                     !authenticated

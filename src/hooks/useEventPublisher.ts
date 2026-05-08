@@ -1,12 +1,13 @@
 import { useState } from 'react';
 import { usePrivy, useWallets } from '@privy-io/react-auth';
 import { useToast } from '@/hooks/use-toast';
-import { deployLock, addLockManager } from '@/utils/lockUtils';
+import { deployLock, addLockManager, deployProtectedEventLock } from '@/utils/lockUtils';
 import { savePublishedEventViaEdge, deleteDraftViaEdge } from '@/utils/edgeFunctionStorage';
 import { supabase } from '@/integrations/supabase/client';
 import { useGaslessFallback } from '@/hooks/useGasless';
 import { EventCreateSchema } from '@/types/event.schema';
 import type { EventFormData } from '@/pages/CreateEvent';
+import { getEventEndIso, getEventStartIso } from '@/utils/eventTime';
 
 export interface PublishEventResult {
   success: boolean;
@@ -100,6 +101,16 @@ export function useEventPublisher() {
       toast({
         title: 'Invalid Date Range',
         description: 'End date must be on or after start date',
+        variant: 'destructive',
+      });
+      return false;
+    }
+    const startsAt = getEventStartIso(formData);
+    const endsAt = getEventEndIso(formData);
+    if (!startsAt || !endsAt || new Date(endsAt).getTime() <= new Date(startsAt).getTime()) {
+      toast({
+        title: 'Invalid Event End Time',
+        description: 'End time must be after the event start time.',
         variant: 'destructive',
       });
       return false;
@@ -207,20 +218,50 @@ export function useEventPublisher() {
         throw new Error('Please select a network for deployment.');
       }
 
-      // 4. Deploy lock (gasless with fallback)
-      const result: any = await deployLockWithGasless({
-        ...lockConfig,
-        chain_id: lockConfig.chainId,
-        maxKeysPerAddress: 1,
-        transferable: formData.transferable ?? false,
-        requiresApproval: false,
-        creator_address: wallet.address?.toLowerCase(),
-        // Fields for idempotency hash
-        eventDate: formData.date?.toISOString() || null,
-        eventTime: formData.time,
-        eventLocation: formData.location,
-        paymentMethod: formData.paymentMethod,
-      });
+      const startsAt = getEventStartIso(formData);
+      const endsAt = getEventEndIso(formData);
+      if (!startsAt || !endsAt) {
+        throw new Error('Invalid event start or end time.');
+      }
+
+      const isProtectedRefundEvent =
+        formData.paymentMethod === 'crypto' && formData.refundProtectionEnabled === true;
+      if (isProtectedRefundEvent) {
+        const triggerMs = formData.refundTriggerAt ? new Date(formData.refundTriggerAt).getTime() : NaN;
+        const startMs = new Date(startsAt).getTime();
+        const endMs = new Date(endsAt).getTime();
+        if (!formData.refundMinAttendees || formData.refundMinAttendees <= 0 || formData.refundMinAttendees > formData.capacity) {
+          throw new Error('Minimum attendees must be greater than zero and cannot exceed capacity.');
+        }
+        if (!Number.isFinite(triggerMs) || triggerMs > startMs || triggerMs >= endMs) {
+          throw new Error('Refund trigger must be before event end and no later than event start.');
+        }
+      }
+
+      // 4. Deploy lock
+      const result: any = isProtectedRefundEvent
+        ? await deployProtectedEventLock({
+            ...lockConfig,
+            minAttendees: formData.refundMinAttendees || 0,
+            refundTriggerAt: formData.refundTriggerAt || '',
+            eventStartAt: startsAt,
+            eventEndAt: endsAt,
+            eventCreator: wallet.address,
+            transferable: false,
+          }, wallet, lockConfig.chainId)
+        : await deployLockWithGasless({
+            ...lockConfig,
+            chain_id: lockConfig.chainId,
+            maxKeysPerAddress: 1,
+            transferable: formData.transferable ?? false,
+            requiresApproval: false,
+            creator_address: wallet.address?.toLowerCase(),
+            // Fields for idempotency hash
+            eventDate: formData.date?.toISOString() || null,
+            eventTime: formData.time,
+            eventLocation: formData.location,
+            paymentMethod: formData.paymentMethod,
+          });
 
       // Normalize response format (gasless returns {ok, lock_address, tx_hash}, client returns {success, lockAddress, transactionHash})
       const deploymentResult = result.ok
@@ -232,6 +273,11 @@ export function useEventPublisher() {
         toast({
           title: "Lock deployed!",
           description: "Gas sponsored by TeeRex ✨",
+        });
+      } else if (isProtectedRefundEvent && result.success) {
+        toast({
+          title: "Protected lock deployed!",
+          description: "Refund protection is now configured on-chain.",
         });
       }
 
@@ -319,7 +365,13 @@ export function useEventPublisher() {
         deploymentResult.transactionHash,
         user.id,
         accessToken,
-        serviceManagerAdded
+        serviceManagerAdded,
+        {
+          startsAt,
+          endsAt,
+          controllerAddress: result.controllerAddress,
+          reserveBond: result.reserveBond,
+        }
       );
 
       // 8. Delete draft if provided

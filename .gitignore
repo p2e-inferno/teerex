@@ -192,3 +192,6 @@ e2e/screenshots/
 .synpress/
 
 .mcp.json
+
+# Claude local agent artifacts
+.claude/

@@ -19,16 +19,14 @@
 
 import { serve } from 'https://deno.land/std@0.224.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.50.0';
-import { ethers } from 'https://esm.sh/ethers@6.14.4';
 import { corsHeaders, buildPreflightHeaders } from '../_shared/cors.ts';
-import { verifyPrivyToken, getUserWalletAddresses } from '../_shared/privy.ts';
+import { verifyPrivyToken } from '../_shared/privy.ts';
 import { sendEmail, getWaitlistSpotOpenEmail } from '../_shared/email-utils.ts';
 import { formatEventDate } from '../_shared/date-utils.ts';
 import { SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY } from '../_shared/constants.ts';
 import { enforcePost } from '../_shared/http.ts';
 import { handleError } from '../_shared/error-handler.ts';
-import PublicLockV15 from '../_shared/abi/PublicLockV15.json' assert { type: 'json' };
-import { validateChain } from '../_shared/network-helpers.ts';
+import { getEventAuthorization, requireEventAuthorization } from '../_shared/event-auth.ts';
 
 const BATCH_SIZE = 50;
 const SEND_DELAY_MS = Number(Deno.env.get('WAITLIST_EMAIL_DELAY_MS') || '150');
@@ -51,7 +49,7 @@ serve(async (req) => {
 
     // 2. Parse request
     const body = await req.json().catch(() => ({}));
-    const { event_id, event_url, target_title, target_date, page = 1 } = body;
+    const { event_id, event_url, target_event_id, target_title, target_date, page = 1 } = body;
 
     const pageNumber = Number(page) || 1;
     if (pageNumber < 1) {
@@ -84,45 +82,47 @@ serve(async (req) => {
       );
     }
 
-    // 4. Authorization check: event creator OR lock manager
-    let authorized = event.creator_id === privyUserId;
+    await requireEventAuthorization({
+      supabase,
+      event,
+      privyUserId,
+      permission: 'manage_waitlist',
+      errorMessage: 'Unauthorized: must be event creator, lock manager, or waitlist manager',
+    });
 
-    if (!authorized) {
-      // Check if user is a lock manager on-chain
-      const userWallets = await getUserWalletAddresses(privyUserId);
+    let targetEvent: any = null;
+    if (target_event_id) {
+      const { data, error } = await supabase
+        .from('events')
+        .select('id, title, date, starts_at, creator_id, lock_address, chain_id')
+        .eq('id', target_event_id)
+        .single();
 
-      if (userWallets && userWallets.length > 0) {
-        const networkConfig = await validateChain(supabase, event.chain_id);
-        if (!networkConfig?.rpc_url) {
-          console.error(`[notify-waitlist] RPC URL not configured for chain ${event.chain_id}`);
-        }
-
-        if (networkConfig?.rpc_url) {
-          const rpcUrl = networkConfig.rpc_url;
-          const provider = new ethers.JsonRpcProvider(rpcUrl);
-          const lock = new ethers.Contract(event.lock_address, PublicLockV15 as any, provider);
-
-          // Check if any user wallet is a lock manager
-          for (const wallet of userWallets) {
-            try {
-              const isManager = await lock.isLockManager(wallet);
-              if (isManager) {
-                authorized = true;
-                break;
-              }
-            } catch (err) {
-              console.error(`[NOTIFY-WAITLIST] Error checking lock manager for ${wallet}:`, err);
-            }
-          }
-        }
+      if (error || !data) {
+        return new Response(
+          JSON.stringify({ ok: false, error: 'Target event not found' }),
+          { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 404 }
+        );
       }
-    }
 
-    if (!authorized) {
-      return new Response(
-        JSON.stringify({ ok: false, error: 'Unauthorized: must be event creator or lock manager' }),
-        { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 403 }
-      );
+      const targetAuth = await getEventAuthorization({
+        supabase,
+        event: data,
+        privyUserId,
+        allowOnchainManager: true,
+      });
+
+      if (data.creator_id !== event.creator_id && !targetAuth.authorized) {
+        return new Response(
+          JSON.stringify({
+            ok: false,
+            error: 'Unauthorized: target event must belong to the original event creator or be manageable by you',
+          }),
+          { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 403 }
+        );
+      }
+
+      targetEvent = data;
     }
 
     // 5. Count remaining (for pagination metadata)
@@ -173,15 +173,18 @@ serve(async (req) => {
     console.log(`[NOTIFY-WAITLIST] Notifying ${waitlistMembers.length} members for event ${event_id}`);
 
     // 6. Prepare email content
-    const eventTitle = target_title || event.title;
-    const eventDate = target_date
-      ? formatEventDate(target_date)
+    const eventTitle = targetEvent?.title || target_title || event.title;
+    const eventDateSource = targetEvent?.starts_at || targetEvent?.date || target_date || event.date;
+    const eventDate = eventDateSource
+      ? formatEventDate(eventDateSource)
       : event.date
         ? formatEventDate(event.date)
         : 'TBA';
 
     // Use provided event_url or generate default
-    const finalEventUrl = event_url || `${DEFAULT_APP_URL}/event/${event_id}`;
+    const finalEventUrl = targetEvent
+      ? `${DEFAULT_APP_URL}/event/${targetEvent.lock_address}`
+      : event_url || `${DEFAULT_APP_URL}/event/${event.lock_address}`;
 
     const emailContent = getWaitlistSpotOpenEmail(eventTitle, eventDate, finalEventUrl);
 
@@ -260,7 +263,7 @@ serve(async (req) => {
         total_processed: waitlistMembers.length,
         total_pending: totalCount || 0,
         page: pageNumber,
-        next_page: hasMore ? pageNumber + 1 : null,
+        next_page: hasMore ? 1 : null,
         has_more: hasMore,
         remaining,
       }),

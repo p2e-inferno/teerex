@@ -36,6 +36,7 @@ export function useGaslessFallback<TArgs, TFallbackResult>(
           'event_not_found',
           'max_keys_reached',
           'ticket_already_claimed',
+          'invalid_purchase_form_response',
         ];
         if (noFallbackErrors.includes(data.error)) {
           console.warn(`Gasless ${edgeFunctionName} failed with no-fallback error:`, data.error);

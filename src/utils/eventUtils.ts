@@ -69,6 +69,7 @@ export const savePublishedEvent = async (
       description: formData.description,
       date: formData.date?.toISOString(),
       end_date: formData.endDate?.toISOString() || null,
+      ends_at: null,
       time: formData.time,
       location: formData.location,
       event_type: formData.eventType,
@@ -153,6 +154,7 @@ export const savePublishedEvent = async (
       created_at: new Date(data.created_at),
       updated_at: new Date(data.updated_at),
       starts_at: data.starts_at || null,
+      ends_at: data.ends_at || null,
       registration_cutoff: data.registration_cutoff || null,
       currency: data.currency,
       ngn_price: data.ngn_price || 0,
@@ -284,6 +286,7 @@ export const getUserEvents = async (userId: string): Promise<PublishedEvent[]> =
       ...event,
       date: event.date ? new Date(event.date) : null,
       end_date: event.end_date ? new Date(event.end_date) : null,
+      ends_at: event.ends_at || null,
       created_at: new Date(event.created_at),
       updated_at: new Date(event.updated_at),
       currency: event.currency,
@@ -297,6 +300,22 @@ export const getUserEvents = async (userId: string): Promise<PublishedEvent[]> =
     return [];
   }
 };
+
+export const mapPublishedEventRow = (event: any): PublishedEvent => ({
+  ...event,
+  date: event.date ? new Date(event.date) : null,
+  end_date: event.end_date ? new Date(event.end_date) : null,
+  starts_at: event.starts_at || null,
+  ends_at: event.ends_at || null,
+  registration_cutoff: event.registration_cutoff || null,
+  created_at: new Date(event.created_at),
+  updated_at: new Date(event.updated_at),
+  currency: event.currency,
+  ngn_price: event.ngn_price || 0,
+  ngn_price_kobo: event.ngn_price_kobo || 0,
+  payment_methods: event.payment_methods || [],
+  paystack_public_key: event.paystack_public_key,
+});
 
 /**
  * Fetches all published events and filters them to return only those

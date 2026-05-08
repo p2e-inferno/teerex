@@ -30,11 +30,11 @@ export const EventInteractionsCard: React.FC<EventInteractionsCardProps> = ({
   refreshToken,
 }) => {
   const navigate = useNavigate();
-  const { posts, isLoading, error: postsError, refetch: refetchPosts } = useEventPosts(eventId);
+  const { posts, isLoading, canManageDiscussions, error: postsError, refetch: refetchPosts } = useEventPosts(eventId);
   const { hasTicket, isChecking, error, refetch } = useTicketVerification(lockAddress, chainId);
   const { isLockManager, isChecking: isCheckingManager, error: lockManagerError } = useLockManagerVerification(lockAddress, chainId);
   const { isCreator } = useCreatorPermissions(creatorAddress, creatorId);
-  const canManagePosts = isCreator || isLockManager;
+  const canManagePosts = isCreator || isLockManager || canManageDiscussions;
 
   // Track if this is the initial mount to avoid refetching on first render
   const isInitialMountRef = useRef(true);
@@ -98,7 +98,7 @@ export const EventInteractionsCard: React.FC<EventInteractionsCardProps> = ({
     );
   }
 
-  if ((error || lockManagerError) && !(isCreator || isLockManager)) {
+  if ((error || lockManagerError) && !(isCreator || isLockManager || canManageDiscussions)) {
     return (
       <Card className="border-0 shadow-sm border-yellow-200 bg-yellow-50/50">
         <CardContent className="py-8 text-center space-y-3">
@@ -123,7 +123,7 @@ export const EventInteractionsCard: React.FC<EventInteractionsCardProps> = ({
     );
   }
 
-  if (!hasTicket && !isCreator && !isLockManager) {
+  if (!hasTicket && !isCreator && !isLockManager && !canManageDiscussions) {
     return (
       <Card className="border-0 shadow-sm">
         <CardContent className="py-8 text-center">
@@ -174,31 +174,31 @@ export const EventInteractionsCard: React.FC<EventInteractionsCardProps> = ({
   return (
     <Card className="border-0 shadow-sm hover:shadow-md transition-shadow overflow-hidden ring-1 ring-indigo-200/60 bg-gradient-to-br from-indigo-50 via-white to-purple-50 dark:from-indigo-950/30 dark:via-background dark:to-purple-950/20">
       <CardHeader className="pb-4">
-        <div className="flex items-start justify-between gap-3">
-          <div className="flex items-start gap-2">
-            <div className="mt-0.5">
-              <MessageSquare className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
+          <div className="space-y-3">
+            <div className="flex items-center gap-2">
+              {hasRecentUpdate && (
+                <Badge className="bg-indigo-600 hover:bg-indigo-600 text-white text-[10px] px-2 py-0.5 w-fit uppercase tracking-tight font-bold">
+                  <Sparkles className="w-3 h-3 mr-1" />
+                  New Update
+                </Badge>
+              )}
+              <Badge variant="secondary" className="text-[10px] uppercase tracking-tight font-bold bg-indigo-50 text-indigo-700 border-indigo-100/50">
+                {totalPosts} {totalPosts === 1 ? 'Post' : 'Posts'}
+              </Badge>
             </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <h3 className="font-semibold text-foreground">Event Discussions</h3>
-                {hasRecentUpdate && (
-                  <Badge className="bg-indigo-600 hover:bg-indigo-600 text-white text-[10px] px-2 py-0.5">
-                    <Sparkles className="w-3 h-3 mr-1" />
-                    New
-                  </Badge>
-                )}
+            
+            <div className="space-y-2">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 rounded-lg bg-indigo-50 dark:bg-indigo-950/30">
+                  <MessageSquare className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
+                </div>
+                <h3 className="text-lg font-bold text-foreground tracking-tight">Event Discussions</h3>
               </div>
-              <p className="text-sm text-muted-foreground">
-                Updates, announcements, and comments
+              <p className="text-sm text-muted-foreground leading-relaxed">
+                Updates, announcements, and comments from the community
               </p>
             </div>
           </div>
-
-          <Badge variant="outline" className="text-xs whitespace-nowrap bg-white/60 dark:bg-background/60">
-            {totalPosts} {totalPosts === 1 ? 'Post' : 'Posts'}
-          </Badge>
-        </div>
       </CardHeader>
 
       <CardContent className="space-y-3">

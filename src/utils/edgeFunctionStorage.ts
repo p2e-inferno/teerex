@@ -7,6 +7,9 @@
 import { supabase } from '@/integrations/supabase/client';
 import { EventDraft, PublishedEvent } from '@/types/event';
 import { EventFormData } from '@/pages/CreateEvent';
+import { getEventEndIso, getEventStartIso } from '@/utils/eventTime';
+import { normalizePurchaseMessage } from '@/utils/purchaseMessage';
+import { isPurchaseFormSchemaEmpty } from '@/types/purchaseForm';
 
 /**
  * Save a new draft using the manage-drafts edge function
@@ -24,12 +27,18 @@ export const saveDraftViaEdge = async (
     const isCrypto = formData.paymentMethod === 'crypto';
     const isFiat = formData.paymentMethod === 'fiat';
 
+    const startsAt = getEventStartIso(formData);
+    const endsAt = getEventEndIso(formData);
+    const isProtectedRefundEvent = isCrypto && formData.refundProtectionEnabled === true;
+
     const payload = {
       action: 'CREATE',
       title: formData.title,
       description: formData.description,
       date: formData.date?.toISOString(),
       end_date: formData.endDate?.toISOString() || null,
+      starts_at: startsAt,
+      ends_at: endsAt,
       time: formData.time,
       timezone_offset_minutes: new Date().getTimezoneOffset(),
       location: formData.location,
@@ -48,8 +57,17 @@ export const saveDraftViaEdge = async (
       is_public: formData.isPublic,
       allow_waitlist: formData.allowWaitlist,
       has_allow_list: formData.hasAllowList,
-      transferable: formData.transferable ?? false,
-      chain_id: (formData as any).chainId
+      transferable: isProtectedRefundEvent ? false : (formData.transferable ?? false),
+      chain_id: (formData as any).chainId,
+      refund_protection_enabled: isProtectedRefundEvent,
+      refund_min_attendees: isProtectedRefundEvent ? formData.refundMinAttendees : null,
+      refund_trigger_at: isProtectedRefundEvent ? formData.refundTriggerAt : null,
+      refund_event_end_at: isProtectedRefundEvent ? endsAt : null,
+      refund_status: isProtectedRefundEvent ? 'draft' : null,
+      purchase_confirmation_message: normalizePurchaseMessage(formData.purchaseConfirmationMessage),
+      purchase_form_schema: isPurchaseFormSchemaEmpty(formData.purchaseFormSchema)
+        ? null
+        : formData.purchaseFormSchema,
     };
 
     const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
@@ -95,6 +113,10 @@ export const updateDraftViaEdge = async (
     const isCrypto = formData.paymentMethod === 'crypto';
     const isFiat = formData.paymentMethod === 'fiat';
 
+    const startsAt = getEventStartIso(formData);
+    const endsAt = getEventEndIso(formData);
+    const isProtectedRefundEvent = isCrypto && formData.refundProtectionEnabled === true;
+
     const payload = {
       action: 'UPDATE',
       draftId: id,
@@ -102,6 +124,8 @@ export const updateDraftViaEdge = async (
       description: formData.description,
       date: formData.date?.toISOString(),
       end_date: formData.endDate?.toISOString() || null,
+      starts_at: startsAt,
+      ends_at: endsAt,
       time: formData.time,
       timezone_offset_minutes: new Date().getTimezoneOffset(),
       location: formData.location,
@@ -120,8 +144,17 @@ export const updateDraftViaEdge = async (
       is_public: formData.isPublic,
       allow_waitlist: formData.allowWaitlist,
       has_allow_list: formData.hasAllowList,
-      transferable: formData.transferable ?? false,
-      chain_id: (formData as any).chainId
+      transferable: isProtectedRefundEvent ? false : (formData.transferable ?? false),
+      chain_id: (formData as any).chainId,
+      refund_protection_enabled: isProtectedRefundEvent,
+      refund_min_attendees: isProtectedRefundEvent ? formData.refundMinAttendees : null,
+      refund_trigger_at: isProtectedRefundEvent ? formData.refundTriggerAt : null,
+      refund_event_end_at: isProtectedRefundEvent ? endsAt : null,
+      refund_status: isProtectedRefundEvent ? 'draft' : null,
+      purchase_confirmation_message: normalizePurchaseMessage(formData.purchaseConfirmationMessage),
+      purchase_form_schema: isPurchaseFormSchemaEmpty(formData.purchaseFormSchema)
+        ? null
+        : formData.purchaseFormSchema,
     };
 
     const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
@@ -177,6 +210,8 @@ export const getDraftsViaEdge = async (
       ...draft,
       date: draft.date ? new Date(draft.date) : null,
       end_date: draft.end_date ? new Date(draft.end_date) : null,
+      starts_at: draft.starts_at || null,
+      ends_at: draft.ends_at || null,
       created_at: new Date(draft.created_at),
       updated_at: new Date(draft.updated_at),
       currency: draft.currency,
@@ -187,7 +222,16 @@ export const getDraftsViaEdge = async (
       image_url: draft.image_url,
       ticket_duration: draft.ticket_duration,
       custom_duration_days: draft.custom_duration_days,
-      chain_id: draft.chain_id
+      chain_id: draft.chain_id,
+      refund_protection_enabled: draft.refund_protection_enabled ?? false,
+      refund_min_attendees: draft.refund_min_attendees ?? null,
+      refund_trigger_at: draft.refund_trigger_at ?? null,
+      refund_event_end_at: draft.refund_event_end_at ?? null,
+      refund_controller_address: draft.refund_controller_address ?? null,
+      refund_reserve_bond: draft.refund_reserve_bond ?? null,
+      refund_status: draft.refund_status ?? null,
+      refund_last_tx_hash: draft.refund_last_tx_hash ?? null,
+      refund_last_synced_at: draft.refund_last_synced_at ?? null
     }));
   } catch (error) {
     console.error('Error fetching drafts via edge function:', error);
@@ -231,6 +275,8 @@ export const getDraftViaEdge = async (
       ...draft,
       date: draft.date ? new Date(draft.date) : null,
       end_date: draft.end_date ? new Date(draft.end_date) : null,
+      starts_at: draft.starts_at || null,
+      ends_at: draft.ends_at || null,
       created_at: new Date(draft.created_at),
       updated_at: new Date(draft.updated_at),
       currency: draft.currency,
@@ -243,7 +289,16 @@ export const getDraftViaEdge = async (
       image_crop_y: draft.image_crop_y || undefined,
       ticket_duration: draft.ticket_duration || undefined,
       custom_duration_days: draft.custom_duration_days || undefined,
-      chain_id: draft.chain_id
+      chain_id: draft.chain_id,
+      refund_protection_enabled: draft.refund_protection_enabled ?? false,
+      refund_min_attendees: draft.refund_min_attendees ?? null,
+      refund_trigger_at: draft.refund_trigger_at ?? null,
+      refund_event_end_at: draft.refund_event_end_at ?? null,
+      refund_controller_address: draft.refund_controller_address ?? null,
+      refund_reserve_bond: draft.refund_reserve_bond ?? null,
+      refund_status: draft.refund_status ?? null,
+      refund_last_tx_hash: draft.refund_last_tx_hash ?? null,
+      refund_last_synced_at: draft.refund_last_synced_at ?? null
     };
   } catch (error) {
     console.error('Error fetching draft via edge function:', error);
@@ -292,7 +347,13 @@ export const savePublishedEventViaEdge = async (
   transactionHash: string,
   creatorId: string,
   privyToken: string,
-  serviceManagerAdded: boolean = false
+  serviceManagerAdded: boolean = false,
+  deploymentMeta?: {
+    startsAt?: string | null;
+    endsAt?: string | null;
+    controllerAddress?: string | null;
+    reserveBond?: string | null;
+  }
 ): Promise<PublishedEvent> => {
   try {
     const isCrypto = formData.paymentMethod === 'crypto';
@@ -319,11 +380,17 @@ export const savePublishedEventViaEdge = async (
       paymentMethod: formData.paymentMethod,
     });
 
+    const startsAt = deploymentMeta?.startsAt || getEventStartIso(formData);
+    const endsAt = deploymentMeta?.endsAt || getEventEndIso(formData);
+    const isProtectedRefundEvent = isCrypto && formData.refundProtectionEnabled === true;
+
     const payload = {
       title: formData.title,
       description: formData.description,
       date: formData.date?.toISOString(),
       end_date: formData.endDate?.toISOString() || null,
+      starts_at: startsAt,
+      ends_at: endsAt,
       time: formData.time,
       timezone_offset_minutes: new Date().getTimezoneOffset(),
       location: formData.location,
@@ -348,9 +415,20 @@ export const savePublishedEventViaEdge = async (
       is_public: formData.isPublic,
       allow_waitlist: formData.allowWaitlist,
       has_allow_list: formData.hasAllowList,
-      transferable: formData.transferable ?? false,
-      nft_metadata_set: true,
+      transferable: isProtectedRefundEvent ? false : (formData.transferable ?? false),
+      nft_metadata_set: isProtectedRefundEvent ? false : true,
       nft_base_uri: `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/nft-metadata/${lockAddress}/`,
+      refund_protection_enabled: isProtectedRefundEvent,
+      refund_min_attendees: isProtectedRefundEvent ? formData.refundMinAttendees : null,
+      refund_trigger_at: isProtectedRefundEvent ? formData.refundTriggerAt : null,
+      refund_event_end_at: isProtectedRefundEvent ? endsAt : null,
+      refund_controller_address: isProtectedRefundEvent ? deploymentMeta?.controllerAddress : null,
+      refund_reserve_bond: isProtectedRefundEvent ? deploymentMeta?.reserveBond : null,
+      refund_status: isProtectedRefundEvent ? 'protected' : null,
+      purchase_confirmation_message: normalizePurchaseMessage(formData.purchaseConfirmationMessage),
+      purchase_form_schema: isPurchaseFormSchemaEmpty(formData.purchaseFormSchema)
+        ? null
+        : formData.purchaseFormSchema,
     };
 
     const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
@@ -388,6 +466,8 @@ export const savePublishedEventViaEdge = async (
       ...data,
       date: data.date ? new Date(data.date) : null,
       end_date: data.end_date ? new Date(data.end_date) : null,
+      starts_at: data.starts_at || null,
+      ends_at: data.ends_at || null,
       created_at: new Date(data.created_at),
       updated_at: new Date(data.updated_at),
       currency: data.currency,

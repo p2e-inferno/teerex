@@ -36,6 +36,7 @@ export const EventDiscussionsPanel: React.FC<EventDiscussionsPanelProps> = ({
   const {
     posts,
     isLoading,
+    canManageDiscussions,
     error: postsError,
     refetch: refetchPosts,
     createPost,
@@ -53,8 +54,8 @@ export const EventDiscussionsPanel: React.FC<EventDiscussionsPanelProps> = ({
   const [activeTab, setActiveTab] = useState<'all' | 'pinned'>('all');
   const [highlightId, setHighlightId] = useState<string | null>(highlightPostId || null);
   const missingPostToastRef = useRef<string | null>(null);
-  const canView = isCreator || isLockManager || hasTicket;
-  const canManagePosts = isCreator || isLockManager;
+  const canView = isCreator || isLockManager || canManageDiscussions || hasTicket;
+  const canManagePosts = isCreator || isLockManager || canManageDiscussions;
 
   const totalPosts = posts?.length || 0;
   const totalComments = posts?.reduce((sum, post) => sum + (post.comment_count || 0), 0) || 0;

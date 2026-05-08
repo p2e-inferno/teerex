@@ -15,13 +15,22 @@ import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
 import type { PublishedEvent } from '@/types/event';
 import { purchaseKey, getBlockExplorerUrl, isFreeOnchain } from '@/utils/lockUtils';
-import { Loader2, ExternalLink } from 'lucide-react';
+import { Loader2, ExternalLink, MessageSquareText } from 'lucide-react';
 import { format } from 'date-fns';
 import { supabase } from '@/integrations/supabase/client';
 import { isEventRegistrationClosed } from '@/lib/events/registration';
 import { useGaslessFallback } from '@/hooks/useGasless';
 import { normalizeEmail } from '@/utils/emailUtils';
 import { isFreeEvent } from '@/lib/events/paymentMethods';
+import { RichTextDisplay } from '@/components/ui/rich-text/RichTextDisplay';
+import { isEmptyHtml } from '@/utils/textUtils';
+import { PurchaseFormFields } from '@/components/events/PurchaseFormFields';
+import {
+  isPurchaseFormSchemaEmpty,
+  PurchaseFormResponseValues,
+  PurchaseFormSchema,
+  validatePurchaseFormResponse,
+} from '@/types/purchaseForm';
 
 interface EventPurchaseDialogProps {
   event: PublishedEvent | null;
@@ -42,6 +51,45 @@ export const EventPurchaseDialog: React.FC<EventPurchaseDialogProps> = ({
   const [isPurchasing, setIsPurchasing] = useState(false);
   const [email, setEmail] = useState('');
   const [isOnchainFree, setIsOnchainFree] = useState(false);
+  const [purchaseSuccessMessage, setPurchaseSuccessMessage] = useState<string | null>(null);
+  const [purchaseSuccess, setPurchaseSuccess] = useState(false);
+  const [formSchema, setFormSchema] = useState<PurchaseFormSchema | null>(null);
+  const [formValues, setFormValues] = useState<PurchaseFormResponseValues>({});
+  const [formErrors, setFormErrors] = useState<Record<string, string>>({});
+
+  // Reset success state whenever the dialog opens for a new attempt.
+  useEffect(() => {
+    if (isOpen) {
+      setPurchaseSuccess(false);
+      setPurchaseSuccessMessage(null);
+      setFormErrors({});
+    }
+  }, [isOpen]);
+
+  // Load the event's purchase form schema (if any).
+  useEffect(() => {
+    if (!event?.id) {
+      setFormSchema(null);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      const { data, error } = await supabase
+        .from('event_purchase_form_schemas')
+        .select('schema_json')
+        .eq('event_id', event.id)
+        .maybeSingle();
+      if (cancelled) return;
+      if (error) {
+        setFormSchema(null);
+        return;
+      }
+      setFormSchema((data?.schema_json as PurchaseFormSchema | null) ?? null);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [event?.id]);
 
   // Check if event is free on-chain (catches bug-affected events)
   useEffect(() => {
@@ -81,19 +129,21 @@ export const EventPurchaseDialog: React.FC<EventPurchaseDialogProps> = ({
     chain_id: number;
     recipient: string;
     user_email: string;
+    purchase_form_response?: PurchaseFormResponseValues | null;
   };
 
   // Use shared hook for gasless FREE purchase (with auto-fallback)
   // Enabled if marked as free in DB OR detected as free on-chain (catches bug-affected events)
   const purchaseFreeTicketWithGasless = useGaslessFallback<GaslessPurchaseArgs, any>(
     'gasless-purchase',
-    async (args) => await handleClientSidePurchase(args.user_email, { currency: 'FREE', price: 0 }),
+    async (args) => await handleClientSidePurchase(args.user_email, args.purchase_form_response ?? null, { currency: 'FREE', price: 0 }),
     isFreeEvent(event) || isOnchainFree
   );
 
   // Client-side purchase handler (ALL currencies: FREE, ETH, USDC)
   const handleClientSidePurchase = async (
     userEmail: string,
+    purchaseFormResponse: PurchaseFormResponseValues | null,
     override?: { currency: string; price: number }
   ) => {
     if (!event) return { success: false };
@@ -125,12 +175,13 @@ export const EventPurchaseDialog: React.FC<EventPurchaseDialogProps> = ({
       if (result.success && result.transactionHash) {
         // Register ticket via edge function (service_role bypasses RLS)
         const accessToken = await getAccessToken?.();
-        const { error: registerError } = await supabase.functions.invoke('register-ticket', {
+        const { data: registerData, error: registerError } = await supabase.functions.invoke('register-ticket', {
           body: {
             event_id: event.id,
             owner_wallet: wallet.address.toLowerCase(),
             grant_tx_hash: result.transactionHash,
             user_email: userEmail || null,
+            purchase_form_response: purchaseFormResponse,
           },
           headers: accessToken ? { 'X-Privy-Authorization': `Bearer ${accessToken}` } : undefined,
         });
@@ -139,6 +190,9 @@ export const EventPurchaseDialog: React.FC<EventPurchaseDialogProps> = ({
           console.error('Failed to register ticket:', registerError);
           // Don't fail the purchase - ticket is already on-chain
         }
+
+        const snapshotMessage =
+          (registerData as any)?.purchase_confirmation_message_snapshot ?? null;
 
         const explorerUrl = await getBlockExplorerUrl(result.transactionHash, event.chain_id);
         toast({
@@ -172,6 +226,13 @@ export const EventPurchaseDialog: React.FC<EventPurchaseDialogProps> = ({
             console.warn('[TICKET EMAIL] Failed to send ticket email:', err instanceof Error ? err.message : String(err));
           }
         })();
+
+        if (snapshotMessage && !isEmptyHtml(snapshotMessage)) {
+          setPurchaseSuccessMessage(snapshotMessage);
+          setPurchaseSuccess(true);
+          return { success: true };
+        }
+
         onClose();
         return { success: true };
       } else {
@@ -201,6 +262,23 @@ export const EventPurchaseDialog: React.FC<EventPurchaseDialogProps> = ({
         variant: 'destructive',
       });
       return;
+    }
+
+    // Validate any creator-defined purchase form fields.
+    let cleanedFormValues: PurchaseFormResponseValues | null = null;
+    if (!isPurchaseFormSchemaEmpty(formSchema)) {
+      const { errors, values } = validatePurchaseFormResponse(formSchema, formValues);
+      if (Object.keys(errors).length > 0) {
+        setFormErrors(errors);
+        toast({
+          title: 'Please fix the highlighted fields',
+          description: Object.values(errors)[0],
+          variant: 'destructive',
+        });
+        return;
+      }
+      setFormErrors({});
+      cleanedFormValues = values;
     }
 
     if (!event) {
@@ -309,6 +387,7 @@ export const EventPurchaseDialog: React.FC<EventPurchaseDialogProps> = ({
           chain_id: event.chain_id,
           recipient: walletAddress,
           user_email: normalizedEmail,
+          purchase_form_response: cleanedFormValues,
         };
 
         const result: any = await purchaseFreeTicketWithGasless(gaslessArgs);
@@ -371,7 +450,15 @@ export const EventPurchaseDialog: React.FC<EventPurchaseDialogProps> = ({
             ),
           });
           onPurchaseSuccess?.({ increment: true });
-          onClose();
+
+          const snapshotMessage =
+            result.purchase_confirmation_message_snapshot ?? null;
+          if (snapshotMessage && !isEmptyHtml(snapshotMessage)) {
+            setPurchaseSuccessMessage(snapshotMessage);
+            setPurchaseSuccess(true);
+          } else {
+            onClose();
+          }
         } else if (result.error) {
           // Gasless returned an error before fallback
           toast({
@@ -388,7 +475,7 @@ export const EventPurchaseDialog: React.FC<EventPurchaseDialogProps> = ({
     }
 
     // ETH/USDC tickets: client-side purchase with email storage
-    await handleClientSidePurchase(normalizedEmail);
+    await handleClientSidePurchase(normalizedEmail, cleanedFormValues);
   };
 
   // Helper to convert error codes to user-friendly messages
@@ -405,22 +492,56 @@ export const EventPurchaseDialog: React.FC<EventPurchaseDialogProps> = ({
       'limit_exceeded': 'Daily gasless limit exceeded. Please use your wallet instead.',
       'max_keys_reached': 'You have reached the maximum number of tickets allowed for this event.',
       'ticket_already_claimed': 'You have already claimed a ticket for this event.',
+      'invalid_purchase_form_response': 'One of your answers didn\'t pass validation. Please review and try again.',
     };
     return errorMessages[errorCode] || errorCode;
   };
 
   if (!event) return null;
 
+  if (purchaseSuccess && purchaseSuccessMessage) {
+    return (
+      <Dialog open={isOpen} onOpenChange={onClose}>
+        <DialogContent className="sm:max-w-[480px]">
+          <DialogHeader>
+            <DialogTitle>You're In! 🎟️</DialogTitle>
+            <DialogDescription>
+              Your ticket for {event.title} has been issued.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3 py-2">
+            <div className="flex items-center gap-2 text-sm font-medium text-purple-700">
+              <MessageSquareText className="w-4 h-4" />
+              Message from the organiser
+            </div>
+            <div className="rounded-md border border-purple-100 bg-purple-50/60 p-3 max-h-[40vh] overflow-y-auto">
+              <RichTextDisplay
+                content={purchaseSuccessMessage}
+                className="prose prose-sm max-w-none leading-relaxed"
+              />
+            </div>
+            <p className="text-xs text-muted-foreground">
+              We've also included this in your ticket confirmation email.
+            </p>
+          </div>
+          <DialogFooter>
+            <Button onClick={onClose} className="w-full sm:w-auto">Done</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    );
+  }
+
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="sm:max-w-[425px]">
-        <DialogHeader>
+      <DialogContent className="sm:max-w-[425px] max-h-[90vh] flex flex-col">
+        <DialogHeader className="flex-shrink-0">
           <DialogTitle>Get Ticket for {event.title}</DialogTitle>
           <DialogDescription>
             Confirm your purchase for a ticket to this event.
           </DialogDescription>
         </DialogHeader>
-        <div className="space-y-4 py-4">
+        <div className="space-y-4 py-4 overflow-y-auto flex-grow px-1">
           <div className="flex justify-between items-center">
             <span className="text-muted-foreground">Event</span>
             <span className="font-semibold">{event.title}</span>
@@ -458,8 +579,18 @@ export const EventPurchaseDialog: React.FC<EventPurchaseDialogProps> = ({
               We'll use this to send you event updates and your ticket invoice
             </p>
           </div>
+
+          {/* Creator-defined extra purchase fields */}
+          <PurchaseFormFields
+            schema={formSchema}
+            values={formValues}
+            errors={formErrors}
+            onChange={setFormValues}
+            disabled={isPurchasing}
+            prefillWallet={(wallets[0]?.address ?? user?.wallet?.address) ?? null}
+          />
         </div>
-        <DialogFooter>
+        <DialogFooter className="flex-shrink-0">
           <Button variant="outline" onClick={onClose} disabled={isPurchasing}>
             Cancel
           </Button>

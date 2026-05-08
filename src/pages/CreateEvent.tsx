@@ -1,5 +1,5 @@
 ﻿
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { EventCreateSchema } from '@/types/event.schema';
 import { usePrivy, useWallets } from '@privy-io/react-auth';
 import { useNavigate, useSearchParams } from 'react-router-dom';
@@ -26,6 +26,88 @@ import { isCryptoPriceValid, isFiatPriceValid } from '@/utils/priceUtils';
 import type { CryptoCurrency } from '@/types/currency';
 import { useEventPublisher } from '@/hooks/useEventPublisher';
 import { getDefaultChainId } from '@/lib/config/network-config';
+import { getEventEndIso, getEventStartIso } from '@/utils/eventTime';
+import type { PurchaseFormSchema } from '@/types/purchaseForm';
+
+const timeFromIso = (value?: string | null): string => {
+  if (!value) return '';
+  const date = new Date(value);
+  if (!Number.isFinite(date.getTime())) return '';
+  return `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
+};
+
+const dateToIsoOrNull = (value?: Date | null): string | null => {
+  if (!value) return null;
+  const time = value.getTime();
+  return Number.isFinite(time) ? value.toISOString() : null;
+};
+
+const getDefaultFormData = (): EventFormData => ({
+  title: '',
+  description: '',
+  date: null,
+  time: '',
+  endTime: '',
+  location: '',
+  eventType: 'physical',
+  capacity: 100,
+  price: 0,
+  currency: 'ETH',
+  ngnPrice: 0,
+  paymentMethod: 'free',
+  category: '',
+  imageUrl: '',
+  chainId: getDefaultChainId(),
+  ticketDuration: 'event',
+  customDurationDays: undefined,
+  isPublic: true,
+  allowWaitlist: false,
+  hasAllowList: false,
+  transferable: false,
+  refundProtectionEnabled: false,
+  refundMinAttendees: undefined,
+  refundTriggerAt: null,
+  refundEventEndAt: null,
+  refundReserveBond: null,
+  refundStatus: null,
+  purchaseConfirmationMessage: null,
+  purchaseFormSchema: null
+});
+
+const buildEventUpdatePatch = (
+  initial: EventFormData,
+  current: EventFormData
+): Partial<EventFormData> => {
+  const patch: Partial<EventFormData> = {};
+
+  const assignIfChanged = <K extends keyof EventFormData>(
+    key: K,
+    normalize?: (value: EventFormData[K]) => unknown
+  ) => {
+    const normalizeValue = normalize ?? ((value: EventFormData[K]) => value);
+    if (normalizeValue(current[key]) !== normalizeValue(initial[key])) {
+      patch[key] = current[key];
+    }
+  };
+
+  assignIfChanged("title");
+  assignIfChanged("description");
+  assignIfChanged("date", value => dateToIsoOrNull(value as Date | null | undefined));
+  assignIfChanged("endDate", value => dateToIsoOrNull(value as Date | null | undefined));
+  assignIfChanged("time");
+  assignIfChanged("endTime");
+  assignIfChanged("location");
+  assignIfChanged("eventType");
+  assignIfChanged("category");
+  assignIfChanged("imageUrl");
+  assignIfChanged("imageCropX", value => value ?? null);
+  assignIfChanged("imageCropY", value => value ?? null);
+  assignIfChanged("transferable", value => value ?? false);
+  assignIfChanged("allowWaitlist", value => value ?? false);
+  assignIfChanged("isPublic", value => value ?? true);
+
+  return patch;
+};
 
 export interface EventFormData {
   title: string;
@@ -33,6 +115,7 @@ export interface EventFormData {
   date: Date | null;
   endDate?: Date | null;
   time: string;
+  endTime: string;
   location: string;
   eventType: 'physical' | 'virtual';
   capacity: number;
@@ -57,6 +140,17 @@ export interface EventFormData {
   hasAllowList: boolean;
   // Transferability setting
   transferable?: boolean;
+  refundProtectionEnabled?: boolean;
+  refundMinAttendees?: number;
+  refundTriggerAt?: string | null;
+  refundEventEndAt?: string | null;
+  refundReserveBond?: string | null;
+  refundStatus?: string | null;
+  // Optional rich-text message shown after a successful purchase / claim and
+  // included in the ticket confirmation email. Editable later from Manage Event.
+  purchaseConfirmationMessage?: string | null;
+  // Optional creator-defined purchase form (extra required inputs beyond email).
+  purchaseFormSchema?: PurchaseFormSchema | null;
 }
 
 const CreateEvent = () => {
@@ -76,33 +170,23 @@ const CreateEvent = () => {
   const [showSuccessModal, setShowSuccessModal] = useState(false);
   const [createdEvent, setCreatedEvent] = useState<any>(null);
   const [editingMeta, setEditingMeta] = useState<{ lockAddress: string; chainId: number; initialTransferable: boolean } | null>(null);
-  const [formData, setFormData] = useState<EventFormData>({
-    title: '',
-    description: '',
-    date: null,
-    time: '',
-    location: '',
-    eventType: 'physical',
-    capacity: 100,
-    price: 0,
-    currency: 'ETH',
-    ngnPrice: 0,
-    paymentMethod: 'free',
-    category: '',
-    imageUrl: '',
-    chainId: getDefaultChainId(),
-    ticketDuration: 'event',
-    customDurationDays: undefined,
-    isPublic: true,
-    allowWaitlist: false,
-    hasAllowList: false,
-    transferable: false
-  });
+  const [initialEditFormData, setInitialEditFormData] = useState<EventFormData | null>(null);
+  const [formData, setFormData] = useState<EventFormData>(getDefaultFormData);
 
   // Shared event publisher hook
   const { publishEvent, isPublishing: isPublishingEvent } = useEventPublisher();
 
   useEffect(() => {
+    if (!draftId && !eventId) {
+      setFormData(getDefaultFormData());
+      setCurrentStep(1);
+      setCurrentDraftId(null);
+      setEditingEventId(null);
+      setEditingMeta(null);
+      setInitialEditFormData(null);
+      return;
+    }
+
     if (draftId && user?.id) {
       const loadDraft = async () => {
         const accessToken = await getAccessToken();
@@ -120,6 +204,7 @@ const CreateEvent = () => {
             date: draft.date,
             endDate: draft.end_date,
             time: draft.time,
+            endTime: timeFromIso((draft as any).ends_at) || draft.time,
             location: draft.location,
             eventType: (draft as any).event_type || 'physical',
             capacity: draft.capacity,
@@ -139,7 +224,15 @@ const CreateEvent = () => {
             isPublic: (draft as any).is_public ?? true,
             allowWaitlist: (draft as any).allow_waitlist ?? false,
             hasAllowList: (draft as any).has_allow_list ?? false,
-            transferable: draft.transferable ?? false
+            transferable: draft.transferable ?? false,
+            refundProtectionEnabled: (draft as any).refund_protection_enabled ?? false,
+            refundMinAttendees: (draft as any).refund_min_attendees ?? undefined,
+            refundTriggerAt: (draft as any).refund_trigger_at ?? null,
+            refundEventEndAt: (draft as any).refund_event_end_at ?? (draft as any).ends_at ?? null,
+            refundReserveBond: (draft as any).refund_reserve_bond ?? null,
+            refundStatus: (draft as any).refund_status ?? null,
+            purchaseConfirmationMessage: (draft as any).purchase_confirmation_message ?? null,
+            purchaseFormSchema: (draft as any).purchase_form_schema ?? null
           });
           setCurrentDraftId(draftId);
           setEditingEventId(null);
@@ -150,12 +243,13 @@ const CreateEvent = () => {
       const loadEvent = async () => {
         const event = await getPublishedEvent(eventId, user.id);
         if (event) {
-          setFormData({
+          const loadedFormData: EventFormData = {
             title: event.title,
             description: event.description,
             date: event.date,
             endDate: event.end_date,
             time: event.time,
+            endTime: timeFromIso((event as any).ends_at) || event.time,
             location: event.location,
             eventType: (event as any).event_type || 'physical',
             capacity: event.capacity,
@@ -175,8 +269,18 @@ const CreateEvent = () => {
             isPublic: (event as any).is_public ?? true,
             allowWaitlist: (event as any).allow_waitlist ?? false,
             hasAllowList: (event as any).has_allow_list ?? false,
-            transferable: (event as any).transferable ?? false
-          });
+            transferable: (event as any).transferable ?? false,
+            refundProtectionEnabled: (event as any).refund_protection_enabled ?? false,
+            refundMinAttendees: (event as any).refund_min_attendees ?? undefined,
+            refundTriggerAt: (event as any).refund_trigger_at ?? null,
+            refundEventEndAt: (event as any).refund_event_end_at ?? (event as any).ends_at ?? null,
+            refundReserveBond: (event as any).refund_reserve_bond ?? null,
+            refundStatus: (event as any).refund_status ?? null,
+            purchaseConfirmationMessage: (event as any).purchase_confirmation_message ?? null,
+            purchaseFormSchema: (event as any).purchase_form_schema ?? null
+          };
+          setFormData(loadedFormData);
+          setInitialEditFormData(loadedFormData);
           setEditingEventId(eventId);
           setCurrentDraftId(null);
           setEditingMeta({
@@ -184,8 +288,8 @@ const CreateEvent = () => {
             chainId: event.chain_id || 0,
             initialTransferable: (event as any).transferable ?? false,
           });
-        } else {
-          toast({
+      } else {
+        toast({
             title: "Event not found",
             description: "Could not load the event to edit.",
             variant: "destructive"
@@ -217,15 +321,24 @@ const CreateEvent = () => {
     }
   };
 
-  const updateFormData = (updates: Partial<EventFormData>) => {
+  const updateFormData = useCallback((updates: Partial<EventFormData>) => {
     console.log('Updating form data:', updates);
     setFormData(prev => ({ ...prev, ...updates }));
-  };
+  }, []);
 
   const isStepValid = (step: number): boolean => {
     switch (step) {
       case 1:
-        return !!(formData.title.trim() && formData.description.trim() && formData.date && formData.time);
+        return !!(
+          formData.title.trim() &&
+          formData.description.trim() &&
+          formData.date &&
+          formData.time &&
+          formData.endTime &&
+          getEventStartIso(formData) &&
+          getEventEndIso(formData) &&
+          new Date(getEventEndIso(formData)!).getTime() > new Date(getEventStartIso(formData)!).getTime()
+        );
       case 2: {
         // Validate basic details
         const hasBasicDetails = !!(formData.category && (editingEventId || formData.capacity > 0));
@@ -247,7 +360,18 @@ const CreateEvent = () => {
           if (!formData.currency) {
             return false;
           }
-          return isCryptoPriceValid(formData.price, formData.currency);
+          if (!isCryptoPriceValid(formData.price, formData.currency)) {
+            return false;
+          }
+          if (formData.refundProtectionEnabled) {
+            const min = formData.refundMinAttendees || 0;
+            const trigger = formData.refundTriggerAt ? new Date(formData.refundTriggerAt) : null;
+            const start = getEventStartIso(formData);
+            const end = getEventEndIso(formData);
+            if (min <= 0 || min > formData.capacity || !trigger || !start || !end) return false;
+            return trigger.getTime() <= new Date(start).getTime() && trigger.getTime() < new Date(end).getTime();
+          }
+          return true;
         }
         if (formData.paymentMethod === 'fiat') {
           // Fiat is only available if VITE_ENABLE_FIAT is true (checked by TicketSettings)
@@ -290,6 +414,16 @@ const CreateEvent = () => {
       toast({
         title: 'Invalid Date Range',
         description: 'End date must be on or after start date',
+        variant: 'destructive',
+      });
+      return false;
+    }
+    const startsAt = getEventStartIso(formData);
+    const endsAt = getEventEndIso(formData);
+    if (!startsAt || !endsAt || new Date(endsAt).getTime() <= new Date(startsAt).getTime()) {
+      toast({
+        title: 'Invalid Event End Time',
+        description: 'End time must be after the event start time.',
         variant: 'destructive',
       });
       return false;
@@ -422,7 +556,7 @@ const CreateEvent = () => {
   };
 
   const updateEvent = async () => {
-    if (!editingEventId || !user?.id) return;
+    if (!editingEventId || !user?.id || !initialEditFormData) return;
     setIsCreating(true);
 
     try {
@@ -465,11 +599,21 @@ const CreateEvent = () => {
         throw new Error("Authentication token not available. Please log in again.");
       }
 
+      const formPatch = buildEventUpdatePatch(initialEditFormData, formData);
+      if (Object.keys(formPatch).length === 0) {
+        toast({
+          title: "No Changes",
+          description: "There are no updates to save.",
+        });
+        setIsCreating(false);
+        return;
+      }
+
       const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
       const { data, error } = await supabase.functions.invoke('update-event', {
         body: {
           eventId: editingEventId,
-          formData: { ...formData, timezone_offset_minutes: new Date().getTimezoneOffset() },
+          formData: { ...formPatch, timezone_offset_minutes: new Date().getTimezoneOffset() },
         },
         headers: {
           Authorization: `Bearer ${anonKey}`,
@@ -491,6 +635,7 @@ const CreateEvent = () => {
         title: "Event Updated",
         description: "Your event details have been updated successfully.",
       });
+      setInitialEditFormData(formData);
       navigate('/my-events');
     } catch (error) {
       console.error('Error updating event:', error);
@@ -517,31 +662,12 @@ const CreateEvent = () => {
     setShowSuccessModal(false);
     setCreatedEvent(null);
     // Reset form to initial state
-    setFormData({
-      title: '',
-      description: '',
-      date: null,
-      time: '',
-      location: '',
-      eventType: 'physical',
-      capacity: 100,
-      price: 0,
-      currency: 'ETH',
-      ngnPrice: 0,
-      paymentMethod: 'free',
-      category: '',
-      imageUrl: '',
-      chainId: getDefaultChainId(),
-      ticketDuration: 'event',
-      customDurationDays: undefined,
-      isPublic: true,
-      allowWaitlist: false,
-      hasAllowList: false,
-      transferable: false
-    });
+    setFormData(getDefaultFormData());
     setCurrentStep(1);
     setCurrentDraftId(null);
     setEditingEventId(null);
+    setEditingMeta(null);
+    setInitialEditFormData(null);
   };
 
   const handleCloseSuccessModal = () => {

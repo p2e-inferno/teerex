@@ -22,6 +22,7 @@ export const useEventPosts = (eventId: string): UseEventPostsReturn => {
   const [posts, setPosts] = useState<EventPost[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [canManageDiscussions, setCanManageDiscussions] = useState(false);
   const [error, setError] = useState<Error | null>(null);
 
   const normalizePost = useCallback((post: EventPost): EventPost => {
@@ -57,6 +58,7 @@ export const useEventPosts = (eventId: string): UseEventPostsReturn => {
       });
       if (!token) {
         setPosts([]);
+        setCanManageDiscussions(false);
         return;
       }
 
@@ -78,9 +80,11 @@ export const useEventPosts = (eventId: string): UseEventPostsReturn => {
 
       if (!data.allowed) {
         setPosts([]);
+        setCanManageDiscussions(false);
         return;
       }
 
+      setCanManageDiscussions(Boolean(data.can_manage_discussions));
       setPosts(((data.posts as EventPost[]) || []).map(normalizePost));
     } catch (err) {
       console.error('useEventPosts: error fetching posts', { eventId, walletKey }, err);
@@ -305,6 +309,7 @@ export const useEventPosts = (eventId: string): UseEventPostsReturn => {
     posts,
     isLoading,
     isRefreshing,
+    canManageDiscussions,
     error,
     createPost,
     deletePost,

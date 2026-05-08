@@ -181,6 +181,72 @@ function wrapHtmlContent(title: string, bodyContent: string) {
   `;
 }
 
+// Sanitize a creator-authored HTML snippet for use in transactional emails.
+// Strips dangerous tags/attrs and limits to a safe tag set. Mirrors the client
+// allow-list used by RichTextDisplay so what users see in-app matches the
+// email rendering.
+const EMAIL_ALLOWED_TAG_REGEX =
+  /^(p|br|strong|em|b|i|u|s|code|pre|h1|h2|h3|h4|h5|h6|ul|ol|li|blockquote|a|span|hr)$/i;
+const EMAIL_VOID_TAGS = new Set(['br', 'hr']);
+
+function sanitizeRichTextForEmail(html: string): string {
+  if (!html) return '';
+
+  let cleaned = html;
+  // Remove script/style blocks with content first
+  cleaned = cleaned.replace(/<\s*(script|style)\b[^>]*>[\s\S]*?<\s*\/\s*\1\s*>/gi, '');
+  // Remove dangerous tags entirely (script/iframe/object/embed/style/link/meta/form/input)
+  cleaned = cleaned.replace(/<\s*\/?\s*(script|iframe|object|embed|style|link|meta|form|input|button|svg)\b[\s\S]*?>/gi, '');
+  // Strip event handler attributes
+  cleaned = cleaned.replace(/\s+on[a-z]+\s*=\s*("[^"]*"|'[^']*'|[^\s>]+)/gi, '');
+  // Strip javascript: URLs
+  cleaned = cleaned.replace(/(href|src|xlink:href)\s*=\s*("|')\s*javascript:[^"'>]*\2/gi, '$1=$2#$2');
+
+  // Tag allow-list pass: drop tags not in allow-list (keep their text content)
+  cleaned = cleaned.replace(/<\/?\s*([a-z][a-z0-9]*)\b[^>]*>/gi, (match, tag) => {
+    const tagName = String(tag).toLowerCase();
+    const isClosingTag = /^<\s*\//.test(match);
+    if (!EMAIL_ALLOWED_TAG_REGEX.test(tagName)) return '';
+    if (tagName === 'a') {
+      // Force safe link attributes on anchors
+      const hrefMatch = match.match(/href\s*=\s*"([^"]*)"|href\s*=\s*'([^']*)'/i);
+      const href = hrefMatch ? (hrefMatch[1] || hrefMatch[2] || '#') : '#';
+      const safeHref = /^(https?:|mailto:|#)/i.test(href) ? href : '#';
+      if (isClosingTag) return '</a>';
+      return `<a href="${safeHref}" target="_blank" rel="noopener noreferrer" style="color: ${BRAND_COLOR}; text-decoration: underline;">`;
+    }
+    if (EMAIL_VOID_TAGS.has(tagName)) {
+      return isClosingTag ? '' : `<${tagName}>`;
+    }
+    return isClosingTag ? `</${tagName}>` : `<${tagName}>`;
+  });
+
+  return cleaned;
+}
+
+function htmlToPlainText(html: string): string {
+  if (!html) return '';
+  let text = html;
+  // Drop script/style blocks
+  text = text.replace(/<\s*(script|style|title)\b[^>]*>[\s\S]*?<\s*\/\s*\1\s*>/gi, '');
+  // Convert <br> and block-level closes to newlines
+  text = text.replace(/<\s*(br|hr)\s*\/?>/gi, '\n');
+  text = text.replace(/<\s*\/\s*(p|div|h[1-6]|li|tr|blockquote|article|section|pre)\s*>/gi, '\n');
+  // Strip remaining tags
+  text = text.replace(/<[^>]+>/g, '');
+  // Decode a few common entities
+  text = text
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'");
+  // Collapse extra whitespace
+  text = text.replace(/[ \t]+/g, ' ').replace(/^\s+|\s+$/gm, '').replace(/\n{3,}/g, '\n\n');
+  return text.trim();
+}
+
 /**
  * Generate ticket confirmation email content
  */
@@ -189,7 +255,8 @@ export function getTicketEmail(
   eventDate: string,
   txHash?: string,
   chainId?: number,
-  explorerUrl?: string
+  explorerUrl?: string,
+  purchaseConfirmationMessage?: string | null
 ) {
   const txLinkHtml = txHash && explorerUrl
     ? `
@@ -197,6 +264,21 @@ export function getTicketEmail(
         <p style="margin: 0 0 8px; font-size: 12px; color: #6B7280; text-transform: uppercase; letter-spacing: 0.05em;">Transaction Details</p>
         <a href="${explorerUrl}" style="color: ${BRAND_COLOR}; text-decoration: none; font-size: 14px; word-break: break-all;">View on Explorer &rarr;</a>
       </div>`
+    : '';
+
+  const sanitizedMessage = purchaseConfirmationMessage
+    ? sanitizeRichTextForEmail(purchaseConfirmationMessage)
+    : '';
+  const messagePlainText = sanitizedMessage ? htmlToPlainText(sanitizedMessage) : '';
+  const messageHtml = sanitizedMessage && messagePlainText
+    ? `
+      <div style="margin-top: 24px; padding: 20px; border-radius: 8px; background-color: #F5F3FF; border: 1px solid #E0E7FF;">
+        <p style="margin: 0 0 12px; font-size: 12px; color: #6B7280; text-transform: uppercase; letter-spacing: 0.05em;">Message from the organiser</p>
+        <div style="font-size: 14px; line-height: 22px; color: ${TEXT_COLOR};">${sanitizedMessage}</div>
+      </div>`
+    : '';
+  const messageTextBlock = messagePlainText
+    ? `\n\n--- Message from the organiser ---\n${messagePlainText}\n`
     : '';
 
   const bodyHtml = `
@@ -213,12 +295,13 @@ export function getTicketEmail(
       <p style="margin: 0; font-size: 16px; font-weight: 500; color: ${TEXT_COLOR};">${eventDate}</p>
     </div>
 
+    ${messageHtml}
     ${txLinkHtml}
   `;
 
   return {
     subject: `Ticket Confirmed: ${eventTitle}`,
-    text: `Your ticket for ${eventTitle} is confirmed.\n\nDate: ${eventDate}\n\n${txHash && explorerUrl ? `View Transaction: ${explorerUrl}` : ''}\n\nThank you for using TeeRex!`,
+    text: `Your ticket for ${eventTitle} is confirmed.\n\nDate: ${eventDate}\n\n${txHash && explorerUrl ? `View Transaction: ${explorerUrl}` : ''}${messageTextBlock}\n\nThank you for using TeeRex!`,
     html: wrapHtmlContent(`Your Ticket for ${eventTitle}`, bodyHtml),
   };
 }

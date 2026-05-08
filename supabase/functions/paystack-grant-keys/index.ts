@@ -9,6 +9,7 @@ import { sendEmail, getTicketEmail, normalizeEmail } from "../_shared/email-util
 import { formatEventDate } from "../_shared/date-utils.ts";
 import { validateChain } from "../_shared/network-helpers.ts";
 import { appendDivviTagToCalldataAsync, submitDivviReferralBestEffort } from "../_shared/divvi.ts";
+import { getEventPurchaseMessageSnapshot } from "../_shared/purchase-message.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -59,7 +60,7 @@ serve(async (req) => {
     // Find Paystack transaction and related event
     const { data: tx, error: txError } = await supabase
       .from("paystack_transactions")
-      .select("*, events:events(id, title, date, creator_id, lock_address, chain_id)")
+      .select("*, purchase_form_response, events:events(id, title, date, creator_id, lock_address, chain_id)")
       .eq("reference", transactionReference)
       .single();
     if (txError || !tx) return new Response(JSON.stringify({ error: "Transaction not found" }), { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 404 });
@@ -127,14 +128,44 @@ serve(async (req) => {
     }
 
     // Store ticket record with email from paystack transaction
-    await supabase.from('tickets').insert({
+    const purchaseMessageSnapshot = await getEventPurchaseMessageSnapshot(supabase, event.id);
+    const formResponseSnapshot = (tx as any).purchase_form_response ?? null;
+    const formSchemaVersionAt = formResponseSnapshot?.schema_updated_at ?? null;
+    const ticketCreatedAt = new Date().toISOString();
+    const { error: ticketInsertError } = await supabase.from('tickets').insert({
       event_id: event.id,
       owner_wallet: recipient.toLowerCase(),
       payment_transaction_id: tx.id,
       grant_tx_hash: receipt.transactionHash,
       status: 'active',
       user_email: tx.user_email || null, // Copy email from paystack_transactions
+      purchase_confirmation_message_snapshot: purchaseMessageSnapshot,
+      purchase_confirmation_message_snapshot_at: purchaseMessageSnapshot ? ticketCreatedAt : null,
+      purchase_form_response_snapshot: formResponseSnapshot,
+      purchase_form_schema_version_at: formResponseSnapshot ? formSchemaVersionAt : null,
     });
+
+    let dbSyncStatus = 'complete';
+    if (ticketInsertError) {
+      console.error('Failed to persist ticket after successful on-chain purchase:', ticketInsertError);
+      dbSyncStatus = 'partial';
+      
+      // Store purchase_message_snapshot into paystack_transactions.gateway_response as fallback
+      if (purchaseMessageSnapshot) {
+        const updatedGatewayResponse = {
+          ...(tx.gateway_response || {}),
+          purchase_message_snapshot: purchaseMessageSnapshot
+        };
+        try {
+          await supabase
+            .from('paystack_transactions')
+            .update({ gateway_response: updatedGatewayResponse })
+            .eq('id', tx.id);
+        } catch (updateError) {
+          console.error('Failed to update paystack transaction with fallback snapshot:', updateError);
+        }
+      }
+    }
 
     // Send ticket confirmation email (non-blocking)
     const userEmail = normalizeEmail(tx.user_email);
@@ -145,7 +176,14 @@ serve(async (req) => {
         ? `https://${event.chain_id === 8453 ? 'basescan.org' : 'sepolia.basescan.org'}/tx/${receipt.transactionHash}`
         : undefined;
 
-      const emailContent = getTicketEmail(eventTitle, eventDate, receipt.transactionHash, event.chain_id, explorerUrl);
+      const emailContent = getTicketEmail(
+        eventTitle,
+        eventDate,
+        receipt.transactionHash,
+        event.chain_id,
+        explorerUrl,
+        purchaseMessageSnapshot,
+      );
 
       // Fire and forget - don't block response
       sendEmail({
@@ -157,7 +195,12 @@ serve(async (req) => {
       });
     }
 
-    return new Response(JSON.stringify({ success: true, txHash: txSend.hash || receipt.transactionHash }), { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 200 });
+    return new Response(JSON.stringify({ 
+      success: true, 
+      txHash: txSend.hash || receipt.transactionHash,
+      db_sync_status: dbSyncStatus,
+      purchase_confirmation_message_snapshot: purchaseMessageSnapshot
+    }), { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 200 });
   } catch (e: any) {
     return new Response(JSON.stringify({ error: e?.message || "Internal error" }), { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 400 });
   }

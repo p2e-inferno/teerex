@@ -11,8 +11,10 @@ import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 import type { PublishedEvent } from "@/types/event";
 import { supabase } from "@/integrations/supabase/client";
-import { AlertCircle, CheckCircle, ExternalLink, Loader2 } from "lucide-react";
+import { AlertCircle, CheckCircle, ExternalLink, Loader2, MessageSquareText } from "lucide-react";
 import { format } from "date-fns";
+import { RichTextDisplay } from "@/components/ui/rich-text/RichTextDisplay";
+import { isEmptyHtml } from "@/utils/textUtils";
 
 interface PaymentData {
   reference: string;
@@ -46,6 +48,7 @@ export const TicketProcessingDialog: React.FC<TicketProcessingDialogProps> = ({
   const [progressMessage, setProgressMessage] = useState("Processing your payment...");
   const [transactionHash, setTransactionHash] = useState<string | null>(null);
   const [explorerUrl, setExplorerUrl] = useState<string>('#');
+  const [purchaseMessage, setPurchaseMessage] = useState<string | null>(null);
   // Track if we've already called onPurchaseSuccess to prevent multiple calls
   const hasCalledSuccessRef = useRef(false);
 
@@ -65,6 +68,7 @@ export const TicketProcessingDialog: React.FC<TicketProcessingDialogProps> = ({
       setStatus("processing");
       setProgressMessage("Processing your payment...");
       setTransactionHash(null);
+      setPurchaseMessage(null);
       hasCalledSuccessRef.current = false; // Reset on new dialog open
       startWebhookMonitoring();
     }
@@ -107,7 +111,12 @@ export const TicketProcessingDialog: React.FC<TicketProcessingDialogProps> = ({
         );
         const { data, error } = await supabase.functions.invoke(
           "get-transaction-status",
-          { body: { reference: paymentData.reference } }
+          {
+            body: {
+              reference: paymentData.reference,
+              wallet_address: paymentData.walletAddress,
+            },
+          }
         );
 
         if (error) {
@@ -137,9 +146,13 @@ export const TicketProcessingDialog: React.FC<TicketProcessingDialogProps> = ({
           gatewayResponse?.key_grant_tx_hash;
 
         if (isKeyGranted) {
+          const snapshot = (data as any)?.purchase_confirmation_message_snapshot ?? null;
           setTransactionHash(txHash || null);
           setStatus("success");
           setProgressMessage("Your NFT ticket has been issued successfully!");
+          if (snapshot && !isEmptyHtml(snapshot)) {
+            setPurchaseMessage(snapshot);
+          }
           toast({
             title: "Ticket Issued!",
             description: `Your NFT ticket has been sent to ${paymentData.walletAddress}`,
@@ -297,6 +310,21 @@ export const TicketProcessingDialog: React.FC<TicketProcessingDialogProps> = ({
                   Your NFT ticket has been successfully sent to your wallet address.
                   You can view it in your wallet or on the My Tickets page.
                 </p>
+              </div>
+            )}
+
+            {status === "success" && purchaseMessage && (
+              <div className="rounded-lg border border-purple-100 bg-purple-50/60 p-4 space-y-2">
+                <div className="flex items-center gap-2 text-sm font-medium text-purple-700">
+                  <MessageSquareText className="w-4 h-4" />
+                  Message from the organiser
+                </div>
+                <div className="rounded-md bg-white/80 border border-purple-100 p-3 max-h-[40vh] overflow-y-auto">
+                  <RichTextDisplay
+                    content={purchaseMessage}
+                    className="prose prose-sm max-w-none leading-relaxed"
+                  />
+                </div>
               </div>
             )}
 

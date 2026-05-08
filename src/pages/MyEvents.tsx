@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { usePrivy } from '@privy-io/react-auth';
 import { useNavigate } from 'react-router-dom';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -7,35 +7,56 @@ import { Badge } from '@/components/ui/badge';
 import { Plus, Calendar, TrendingUp, Users, DollarSign, AlertTriangle } from 'lucide-react';
 import { EventCard } from '@/components/events/EventCard';
 import { EventManagementDialog } from '@/components/events/EventManagementDialog';
-import { getUserEvents } from '@/utils/eventUtils';
+import { getUserEvents, mapPublishedEventRow } from '@/utils/eventUtils';
 import { PublishedEvent } from '@/types/event';
 import { useToast } from '@/hooks/use-toast';
 import { WalletConnectionGate } from '@/components/WalletConnectionGate';
 import { isFreeEvent } from '@/lib/events/paymentMethods';
 import { useMultiEventTicketRealtime } from '@/hooks/useMultiEventTicketRealtime';
+import { supabase } from '@/integrations/supabase/client';
 
 const MyEvents = () => {
-  const { authenticated, user } = usePrivy();
+  const { authenticated, user, getAccessToken } = usePrivy();
   const navigate = useNavigate();
   const { toast } = useToast();
   const [events, setEvents] = useState<PublishedEvent[]>([]);
+  const [managedEvents, setManagedEvents] = useState<PublishedEvent[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [selectedEvent, setSelectedEvent] = useState<PublishedEvent | null>(null);
   const [isManagementDialogOpen, setIsManagementDialogOpen] = useState(false);
+  const visibleEvents = useMemo(() => [...events, ...managedEvents], [events, managedEvents]);
 
   // Real-time ticket counts for all displayed events
-  const { keysSoldMap } = useMultiEventTicketRealtime(events);
+  const { keysSoldMap } = useMultiEventTicketRealtime(visibleEvents);
 
   const loadUserEvents = async () => {
     try {
       if (user?.id) {
         console.log('Loading events for user:', user.id);
-        const userEvents = await getUserEvents(user.id);
-        console.log('Loaded events:', userEvents);
+        const accessToken = await getAccessToken?.();
+        let userEvents: PublishedEvent[] = [];
+        let delegatedEvents: PublishedEvent[] = [];
+
+        if (accessToken) {
+          const { data, error } = await supabase.functions.invoke('list-my-manageable-events', {
+            body: {},
+            headers: { 'X-Privy-Authorization': `Bearer ${accessToken}` },
+          });
+          if (error || !data?.ok) {
+            throw error || new Error(data?.error || 'Failed to load manageable events');
+          }
+          userEvents = (data.created_events || []).map(mapPublishedEventRow);
+          delegatedEvents = (data.managed_events || []).map(mapPublishedEventRow);
+        } else {
+          userEvents = await getUserEvents(user.id);
+        }
+
+        console.log('Loaded events:', userEvents, delegatedEvents);
         setEvents(userEvents);
+        setManagedEvents(delegatedEvents);
         setSelectedEvent((prev) => {
           if (!prev) return prev;
-          return userEvents.find((ev) => ev.id === prev.id) ?? prev;
+          return [...userEvents, ...delegatedEvents].find((ev) => ev.id === prev.id) ?? prev;
         });
       }
     } catch (error) {
@@ -52,7 +73,7 @@ const MyEvents = () => {
 
   useEffect(() => {
     loadUserEvents();
-  }, [user?.id]);
+  }, [user?.id, getAccessToken]);
 
   const handleManageEvent = (event: PublishedEvent) => {
     setSelectedEvent(event);
@@ -173,7 +194,7 @@ const MyEvents = () => {
         )}
 
         {/* Events Grid */}
-        {events.length === 0 ? (
+        {events.length === 0 && managedEvents.length === 0 ? (
           <Card className="border-0 shadow-sm">
             <CardHeader className="text-center py-12">
               <div className="mx-auto w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mb-4">
@@ -194,7 +215,7 @@ const MyEvents = () => {
               </Button>
             </CardContent>
           </Card>
-        ) : (
+        ) : events.length > 0 ? (
           <div>
             <div className="mb-6 flex items-center justify-between">
               <div>
@@ -235,6 +256,33 @@ const MyEvents = () => {
               })}
             </div>
           </div>
+        ) : null}
+
+        {managedEvents.length > 0 && (
+          <div className={events.length > 0 ? 'mt-10' : ''}>
+            <div className="mb-6">
+              <h2 className="text-xl font-semibold text-gray-900">Managed by You</h2>
+              <p className="text-gray-600">Events where the creator delegated offchain manager access</p>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {managedEvents.map((event) => (
+                <div key={event.id} className="relative">
+                  <Badge
+                    variant="outline"
+                    className="absolute -top-2 -right-2 z-10 border-purple-200 bg-purple-50 text-purple-700"
+                  >
+                    Manager
+                  </Badge>
+                  <EventCard
+                    event={event}
+                    keysSold={keysSoldMap[event.id]}
+                    onManage={handleManageEvent}
+                    showShareButton={true}
+                  />
+                </div>
+              ))}
+            </div>
+          </div>
         )}
 
         {/* Management Dialog */}
@@ -252,4 +300,3 @@ const MyEvents = () => {
 };
 
 export default MyEvents;
-

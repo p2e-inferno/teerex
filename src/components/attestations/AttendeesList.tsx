@@ -220,16 +220,16 @@ export const AttendeesList: React.FC<AttendeesListProps> = ({
   return (
     <Card className="border-0 shadow-sm">
       <CardHeader>
-        <div className="space-y-2">
+        <div className="space-y-3">
+          <Badge variant="outline" className="text-[10px] w-fit uppercase tracking-tight font-bold bg-primary/5 text-primary border-primary/20">
+            Community Verified
+          </Badge>
           <div className="flex items-center space-x-2">
             <Users className="w-5 h-5 text-primary flex-shrink-0" />
             <h3 className="font-semibold text-foreground">
               Verified Attendees ({attendees.length})
             </h3>
           </div>
-          <Badge variant="outline" className="text-xs w-fit">
-            Community Verified
-          </Badge>
         </div>
       </CardHeader>
       <CardContent className="space-y-4">

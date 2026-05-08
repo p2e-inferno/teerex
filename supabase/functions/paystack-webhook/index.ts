@@ -9,6 +9,7 @@ import { validateChain } from "../_shared/network-helpers.ts";
 import { appendDivviTagToCalldataAsync, submitDivviReferralBestEffort } from "../_shared/divvi.ts";
 import { getExpectedFiatCurrency, getExpectedPaystackAmountKobo, verifyPaystackAmountAndCurrency } from "../_shared/paystack.ts";
 import { grantLockKey } from "../_shared/unlock.ts";
+import { getEventPurchaseMessageSnapshot } from "../_shared/purchase-message.ts";
 
 const PAYSTACK_SUCCESS_EVENT = "charge.success";
 
@@ -135,7 +136,7 @@ serve(async (req) => {
     const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
     const { data: tx } = await supabase
       .from("paystack_transactions")
-      .select("id, reference, status, amount, currency, user_email, gateway_response, verified_at, issuance_lock_id, issuance_locked_at, issuance_attempts, events:events(id, title, date, lock_address, chain_id)")
+      .select("id, reference, status, amount, currency, user_email, purchase_form_response, gateway_response, verified_at, issuance_lock_id, issuance_locked_at, issuance_attempts, events:events(id, title, date, lock_address, chain_id)")
       .eq("reference", reference)
       .maybeSingle();
 
@@ -495,6 +496,10 @@ serve(async (req) => {
       key_granted: true,
     };
     if (grantTxHash) gatewayPatch.key_grant_tx_hash = grantTxHash;
+    const purchaseMessageSnapshot = await getEventPurchaseMessageSnapshot(supabase, txEvent?.id);
+    if (purchaseMessageSnapshot) {
+      gatewayPatch.purchase_message_snapshot = purchaseMessageSnapshot;
+    }
 
     await supabase
       .from('paystack_transactions')
@@ -515,6 +520,9 @@ serve(async (req) => {
 
     // Store ticket record with token_id if key was granted
     if (granted && grantTxHash) {
+      const ticketCreatedAt = new Date().toISOString();
+      const formResponseSnapshot = (tx as any).purchase_form_response ?? null;
+      const formSchemaVersionAt = formResponseSnapshot?.schema_updated_at ?? null;
       await supabase.from('tickets').insert({
         event_id: txEvent?.id,
         owner_wallet: recipient.toLowerCase(),
@@ -522,6 +530,10 @@ serve(async (req) => {
         grant_tx_hash: grantTxHash,
         token_id: tokenId,
         status: 'active',
+        purchase_confirmation_message_snapshot: purchaseMessageSnapshot,
+        purchase_confirmation_message_snapshot_at: purchaseMessageSnapshot ? ticketCreatedAt : null,
+        purchase_form_response_snapshot: formResponseSnapshot,
+        purchase_form_schema_version_at: formResponseSnapshot ? formSchemaVersionAt : null,
       });
     }
 
@@ -536,7 +548,14 @@ serve(async (req) => {
         ? `https://${chainId === 8453 ? 'basescan.org' : 'sepolia.basescan.org'}/tx/${grantTxHash}`
         : undefined;
 
-      const emailContent = getTicketEmail(eventTitle, eventDate, grantTxHash, chainId, explorerUrl);
+      const emailContent = getTicketEmail(
+        eventTitle,
+        eventDate,
+        grantTxHash,
+        chainId,
+        explorerUrl,
+        purchaseMessageSnapshot,
+      );
 
       // Fire and forget - don't block webhook response
       sendEmail({

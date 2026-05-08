@@ -2,14 +2,13 @@
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.50.0";
 import { corsHeaders, buildPreflightHeaders } from "../_shared/cors.ts";
-import { getUserWalletAddresses } from "../_shared/privy.ts";
-import { isAnyUserWalletIsLockManagerParallel } from "../_shared/unlock.ts";
 import {
   createRemoteJWKSet,
   jwtVerify,
   importSPKI,
 } from "https://deno.land/x/jose@v4.14.4/index.ts";
-import { validateChain } from "../_shared/network-helpers.ts";
+import { getUserWalletAddresses } from "../_shared/privy.ts";
+import { getEventAuthorization, requireEventAuthorization } from "../_shared/event-auth.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -103,7 +102,7 @@ serve(async (req) => {
     // 4. Get event details
     const { data: event, error: eventError } = await supabase
       .from("events")
-      .select("id, lock_address, chain_id")
+      .select("id, creator_id, lock_address, chain_id")
       .eq("id", post.event_id)
       .maybeSingle();
 
@@ -121,31 +120,19 @@ serve(async (req) => {
       throw new Error("No wallet addresses found for user");
     }
 
-    // 6. Validate chain and get network configuration
-    const networkConfig = await validateChain(supabase, event.chain_id);
-    if (!networkConfig) {
-      throw new Error("Chain not supported or not active");
-    }
-
-    if (!networkConfig.rpc_url) {
-      throw new Error("Network not fully configured (missing RPC URL)");
-    }
-
     // 7. Authorization based on update type
     const isModeration = "is_pinned" in updates || "comments_enabled" in updates;
     const isDelete = "is_deleted" in updates;
 
     if (isModeration) {
-      // Moderation actions: ONLY lock managers
-      const { anyIsManager } = await isAnyUserWalletIsLockManagerParallel(
-        event.lock_address,
+      await requireEventAuthorization({
+        supabase,
+        event,
+        privyUserId,
+        permission: "manage_discussions",
         userWallets,
-        networkConfig.rpc_url
-      );
-
-      if (!anyIsManager) {
-        throw new Error("Unauthorized: Only lock managers can moderate posts");
-      }
+        errorMessage: "Unauthorized: Only event creators, lock managers, or discussions managers can moderate posts",
+      });
     }
 
     if (isDelete) {
@@ -154,14 +141,17 @@ serve(async (req) => {
         (w) => w.toLowerCase() === post.creator_address.toLowerCase()
       );
 
-      const { anyIsManager } = await isAnyUserWalletIsLockManagerParallel(
-        event.lock_address,
-        userWallets,
-        networkConfig.rpc_url
-      );
-
-      if (!isPostCreator && !anyIsManager) {
-        throw new Error("Unauthorized: Only post creator or lock manager can delete posts");
+      if (!isPostCreator) {
+        const auth = await getEventAuthorization({
+          supabase,
+          event,
+          privyUserId,
+          permission: "manage_discussions",
+          userWallets,
+        });
+        if (!auth.authorized) {
+          throw new Error("Unauthorized: Only post creator, event creator, lock manager, or discussions manager can delete posts");
+        }
       }
     }
 

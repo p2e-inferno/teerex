@@ -22,6 +22,7 @@ interface NetworkConfig {
   g_token_address: string | null;
   up_token_address: string | null;
   unlock_factory_address: string | null;
+  refundable_event_manager_address: string | null;
   native_currency_symbol: string;
   native_currency_name: string | null;
   native_currency_decimals: number | null;
@@ -41,6 +42,7 @@ interface NetworkFormData {
   g_token_address: string;
   up_token_address: string;
   unlock_factory_address: string;
+  refundable_event_manager_address: string;
   native_currency_symbol: string;
   native_currency_name: string;
   native_currency_decimals: number;
@@ -66,6 +68,7 @@ const AdminNetworks: React.FC = () => {
     g_token_address: '',
     up_token_address: '',
     unlock_factory_address: '',
+    refundable_event_manager_address: '',
     native_currency_symbol: 'ETH',
     native_currency_name: 'Ethereum',
     native_currency_decimals: 18,
@@ -132,6 +135,7 @@ const AdminNetworks: React.FC = () => {
         g_token_address: formData.g_token_address || null,
         up_token_address: formData.up_token_address || null,
         unlock_factory_address: formData.unlock_factory_address || null,
+        refundable_event_manager_address: formData.refundable_event_manager_address || null,
         native_currency_symbol: formData.native_currency_symbol,
         native_currency_name: formData.native_currency_name,
         native_currency_decimals: formData.native_currency_decimals,
@@ -213,6 +217,7 @@ const AdminNetworks: React.FC = () => {
       g_token_address: network.g_token_address || '',
       up_token_address: network.up_token_address || '',
       unlock_factory_address: network.unlock_factory_address || '',
+      refundable_event_manager_address: network.refundable_event_manager_address || '',
       native_currency_symbol: network.native_currency_symbol,
       native_currency_name: network.native_currency_name || '',
       native_currency_decimals: network.native_currency_decimals || 18,
@@ -296,6 +301,7 @@ const AdminNetworks: React.FC = () => {
           g_token_address: network.g_token_address,
           up_token_address: network.up_token_address,
           unlock_factory_address: network.unlock_factory_address,
+          refundable_event_manager_address: network.refundable_event_manager_address,
           native_currency_symbol: network.native_currency_symbol,
           native_currency_name: network.native_currency_name,
           native_currency_decimals: network.native_currency_decimals,
@@ -351,6 +357,7 @@ const AdminNetworks: React.FC = () => {
       g_token_address: '',
       up_token_address: '',
       unlock_factory_address: '',
+      refundable_event_manager_address: '',
       native_currency_symbol: 'ETH',
       native_currency_name: 'Ethereum',
       native_currency_decimals: 18,
@@ -532,6 +539,19 @@ const AdminNetworks: React.FC = () => {
                 </div>
 
                 <div className="space-y-2">
+                  <Label htmlFor="refundable_event_manager_address">Refundable Event Manager Address (Optional)</Label>
+                  <Input
+                    id="refundable_event_manager_address"
+                    value={formData.refundable_event_manager_address}
+                    onChange={(e) => setFormData(prev => ({ ...prev, refundable_event_manager_address: e.target.value }))}
+                    placeholder="0x..."
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Required for protected paid crypto events. Deploy the controller in Remix, then paste its address here.
+                  </p>
+                </div>
+
+                <div className="space-y-2">
                   <Label htmlFor="rpc_url">RPC URL</Label>
                   <Input
                     id="rpc_url"
@@ -639,6 +659,9 @@ const AdminNetworks: React.FC = () => {
                     )}
                     {network.unlock_factory_address && (
                       <div><strong>Unlock Factory:</strong> {network.unlock_factory_address.slice(0, 6)}...{network.unlock_factory_address.slice(-4)}</div>
+                    )}
+                    {network.refundable_event_manager_address && (
+                      <div><strong>Refund Manager:</strong> {network.refundable_event_manager_address.slice(0, 6)}...{network.refundable_event_manager_address.slice(-4)}</div>
                     )}
                     {network.rpc_url && (
                       <div><strong>RPC:</strong> {network.rpc_url.replace('https://', '')}</div>
