@@ -5,7 +5,7 @@ import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import { useToast } from '@/hooks/use-toast';
 import { useAttestations } from '@/hooks/useAttestations';
-import { supabase } from '@/integrations/supabase/client';
+import { callEdgeFunction } from '@/lib/edgeFunctions';
 import { usePrivy, useWallets } from '@privy-io/react-auth';
 import { useTeeRexDelegatedAttestation } from '@/hooks/useTeeRexDelegatedAttestation';
 import { useAttestationEncoding } from '@/hooks/useAttestationEncoding';
@@ -355,23 +355,18 @@ export const EventAttestationCard: React.FC<EventAttestationCardProps & {
       });
       
       const token = await getAccessToken?.();
-      const { data, error } = await supabase.functions.invoke('attest-by-delegation', {
-        body: {
-          eventId,
-          chainId,
-          schemaUid: goingSchemaUid,
-          recipient: wallet.address,
-          data: encoded,
-          deadline: Number(sa.deadline),
-          signature: sa.signature,
-          lockAddress,
-          contractAddress: getBatchAttestationAddress(chainId || 84532),
-          revocable: true,
-        },
-        headers: token ? { 'X-Privy-Authorization': `Bearer ${token}` } : undefined,
-      });
-      
-      if (error || !data?.ok) throw new Error(error?.message || data?.error || 'Failed');
+      const data = await callEdgeFunction<any>('attest-by-delegation', {
+        eventId,
+        chainId,
+        schemaUid: goingSchemaUid,
+        recipient: wallet.address,
+        data: encoded,
+        deadline: Number(sa.deadline),
+        signature: sa.signature,
+        lockAddress,
+        contractAddress: getBatchAttestationAddress(chainId || 84532),
+        revocable: true,
+      }, { privyToken: token });
       setMyGoingUid(data.uid || null);
       setStats(prev => ({ ...prev, goingCount: prev.goingCount + 1, userGoingStatus: true }));
       toast({ title: '✅ Going Status Updated!', description: `You are going to ${eventTitle}` });
@@ -434,23 +429,17 @@ export const EventAttestationCard: React.FC<EventAttestationCardProps & {
 
       // Call TeeRex proxy edge function to submit attestation
       const token = await getAccessToken?.();
-      const { data, error } = await supabase.functions.invoke('attest-by-delegation', {
-        body: {
-          eventId,
-          chainId,
-          schemaUid: attendanceSchemaUid,
-          recipient: wallet.address,
-          data: dataEncoded,
-          deadline: Number(sa.deadline),
-          signature: sa.signature,
-          lockAddress,
-          contractAddress: getBatchAttestationAddress(chainId || 84532),
-        },
-        headers: token ? { 'X-Privy-Authorization': `Bearer ${token}` } : undefined,
-      });
-      
-
-      if (error || !data?.ok) throw new Error(error?.message || data?.error || 'Failed to attest');
+      const data = await callEdgeFunction<any>('attest-by-delegation', {
+        eventId,
+        chainId,
+        schemaUid: attendanceSchemaUid,
+        recipient: wallet.address,
+        data: dataEncoded,
+        deadline: Number(sa.deadline),
+        signature: sa.signature,
+        lockAddress,
+        contractAddress: getBatchAttestationAddress(chainId || 84532),
+      }, { privyToken: token });
 
       setMyAttendanceUid(data.uid || null);
       setStats(prev => ({

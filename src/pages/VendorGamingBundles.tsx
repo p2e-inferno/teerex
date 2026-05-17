@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { usePrivy, useWallets } from '@privy-io/react-auth';
 import { useQueryClient } from '@tanstack/react-query';
 import { useSearchParams } from 'react-router-dom';
-import { supabase } from '@/integrations/supabase/client';
+import { callEdgeFunction } from '@/lib/edgeFunctions';
 import { useToast } from '@/hooks/use-toast';
 import { useGamingBundles } from '@/hooks/useGamingBundles';
 import { useNetworkConfigs } from '@/hooks/useNetworkConfigs';
@@ -355,8 +355,8 @@ const VendorGamingBundles = () => {
           const finalLockAddr = pendingDataRef.current.lockAddress;
           if (!finalLockAddr) throw new Error("Lock address not found");
 
-          const resp = await supabase.functions.invoke('get-service-address');
-          const serviceAddress = resp.data?.address;
+          const resp = await callEdgeFunction<any>('get-service-address', {}, {});
+          const serviceAddress = resp?.address;
           if (!serviceAddress) throw new Error("Service address not found");
 
           const result = await addLockManager(finalLockAddr, serviceAddress, wallet);
@@ -377,30 +377,25 @@ const VendorGamingBundles = () => {
         if (!finalLockAddr) throw new Error("Lock address not found");
 
         const token = await getAccessToken();
-        const { data, error } = await supabase.functions.invoke('create-gaming-bundle', {
-          body: {
-            title: form.title,
-            description: form.description,
-            game_title: form.gameTitle,
-            console: form.console,
-            location: form.location,
-            image_url: form.imageUrl,
-            bundle_type: form.bundleType,
-            quantity_units: form.quantityUnits,
-            unit_label: form.unitLabel,
-            price_fiat: form.enableFiat ? form.priceFiat : 0,
-            price_dg: form.priceDg,
-            chain_id: form.chainId,
-            bundle_address: finalLockAddr,
-            key_expiration_duration_seconds: expirationDuration,
-            service_manager_added: form.enableFiat && pendingDataRef.current.serviceManagerAdded,
-            metadata_set: pendingDataRef.current.metadataSet,
-            is_active: form.isActive
-          },
-          headers: token ? { 'X-Privy-Authorization': `Bearer ${token}` } : undefined,
-        });
-
-        if (error || !data?.ok) throw new Error(error?.message || data?.error || 'Database save failed');
+        await callEdgeFunction('create-gaming-bundle', {
+          title: form.title,
+          description: form.description,
+          game_title: form.gameTitle,
+          console: form.console,
+          location: form.location,
+          image_url: form.imageUrl,
+          bundle_type: form.bundleType,
+          quantity_units: form.quantityUnits,
+          unit_label: form.unitLabel,
+          price_fiat: form.enableFiat ? form.priceFiat : 0,
+          price_dg: form.priceDg,
+          chain_id: form.chainId,
+          bundle_address: finalLockAddr,
+          key_expiration_duration_seconds: expirationDuration,
+          service_manager_added: form.enableFiat && pendingDataRef.current.serviceManagerAdded,
+          metadata_set: pendingDataRef.current.metadataSet,
+          is_active: form.isActive
+        }, { privyToken: token });
         return { ok: true };
       }
     });
@@ -516,27 +511,20 @@ const VendorGamingBundles = () => {
       }
 
       const token = await getAccessToken();
-      const { error: updateError } = await supabase.functions.invoke('update-gaming-bundle', {
-        body: {
-          bundle_id: editingBundle.id,
-          title: form.title,
-          description: form.description,
-          game_title: form.gameTitle,
-          console: form.console,
-          location: form.location,
-          image_url: form.imageUrl,
-          price_fiat: form.priceFiat,
-          price_dg: form.priceDg,
-          quantity_units: form.quantityUnits,
-          unit_label: form.unitLabel,
-          is_active: form.isActive,
-        },
-        headers: token ? { 'X-Privy-Authorization': `Bearer ${token}` } : undefined,
-      });
-
-      if (updateError) {
-        throw new Error(updateError.message || 'Failed to update bundle');
-      }
+      await callEdgeFunction('update-gaming-bundle', {
+        bundle_id: editingBundle.id,
+        title: form.title,
+        description: form.description,
+        game_title: form.gameTitle,
+        console: form.console,
+        location: form.location,
+        image_url: form.imageUrl,
+        price_fiat: form.priceFiat,
+        price_dg: form.priceDg,
+        quantity_units: form.quantityUnits,
+        unit_label: form.unitLabel,
+        is_active: form.isActive,
+      }, { privyToken: token });
 
       toast({ title: 'Bundle updated!', description: 'Your changes have been saved.' });
       queryClient.invalidateQueries({ queryKey: ['gaming-bundles'] });

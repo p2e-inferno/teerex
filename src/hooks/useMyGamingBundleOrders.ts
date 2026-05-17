@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { usePrivy } from '@privy-io/react-auth';
-import { supabase } from '@/integrations/supabase/client';
+import { callEdgeFunction } from '@/lib/edgeFunctions';
 
 export type MyGamingBundleOrderListItem = {
   id: string;
@@ -46,14 +46,7 @@ export function useMyGamingBundleOrders(params: MyGamingBundleOrdersQuery = {}, 
     queryKey: ['my-gaming-bundle-orders', params],
     queryFn: async () => {
       const token = await getAccessToken?.();
-      const { data, error } = await supabase.functions.invoke('list-my-gaming-bundle-orders', {
-        body: params,
-        headers: token ? { 'X-Privy-Authorization': `Bearer ${token}` } : undefined,
-      });
-
-      if (error) throw error;
-      if (!data?.ok) throw new Error(data?.error || 'Failed to load bundle orders');
-
+      const data = await callEdgeFunction<any>('list-my-gaming-bundle-orders', params as Record<string, unknown>, { privyToken: token });
       return data.orders as MyGamingBundleOrderListItem[];
     },
     enabled: options?.enabled ?? true,

@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { usePrivy } from '@privy-io/react-auth';
-import { supabase } from '@/integrations/supabase/client';
+import { callEdgeFunction } from '@/lib/edgeFunctions';
 import { useToast } from '@/hooks/use-toast';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -39,21 +39,14 @@ const GamingBundleRedemption = () => {
     setIsSubmitting(true);
     try {
       const token = await getAccessToken?.();
-      const { data, error } = await supabase.functions.invoke('redeem-gaming-bundle', {
-        body: {
-          order_id: lookupMethod === 'orderId' ? orderId : null,
-          claim_code: lookupMethod === 'claimCode' ? claimCode : null,
-          token_id: lookupMethod === 'tokenId' ? tokenId : null,
-          bundle_address: lookupMethod === 'tokenId' && bundleAddress ? bundleAddress : null,
-          redeemer_address: redeemerAddress || null,
-          redemption_location: redemptionLocation || null,
-        },
-        headers: token ? { 'X-Privy-Authorization': `Bearer ${token}` } : undefined,
-      });
-
-      if (error || !data?.ok) {
-        throw new Error(error?.message || data?.error || 'Failed to redeem bundle');
-      }
+      const data = await callEdgeFunction<any>('redeem-gaming-bundle', {
+        order_id: lookupMethod === 'orderId' ? orderId : null,
+        claim_code: lookupMethod === 'claimCode' ? claimCode : null,
+        token_id: lookupMethod === 'tokenId' ? tokenId : null,
+        bundle_address: lookupMethod === 'tokenId' && bundleAddress ? bundleAddress : null,
+        redeemer_address: redeemerAddress || null,
+        redemption_location: redemptionLocation || null,
+      }, { privyToken: token });
 
       setLastRedemption(data.redemption);
       setOrderId('');

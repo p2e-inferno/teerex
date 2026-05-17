@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
+import { callEdgeFunction } from '@/lib/edgeFunctions';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -93,19 +94,7 @@ const AdminVendorLock: React.FC = () => {
       if (!token) {
         throw new Error('Failed to get access token');
       }
-      const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
-
-      const { data, error } = await supabase.functions.invoke('admin-manage-vendor-lock', {
-        method: 'GET',
-        headers: {
-          Authorization: `Bearer ${anonKey}`,
-          'X-Privy-Authorization': `Bearer ${token}`,
-        },
-      });
-
-      if (error) throw error;
-      if (!data.ok) throw new Error(data.error);
-
+      const data = await callEdgeFunction<any>('admin-manage-vendor-lock', {}, { privyToken: token, withAnonKey: true, method: 'GET' });
       setCurrentLock(data.settings);
       if (data.on_chain_price) {
         setOnChainPrice(data.on_chain_price);
@@ -360,20 +349,7 @@ const AdminVendorLock: React.FC = () => {
       if (!token) {
         throw new Error('Failed to get access token');
       }
-      const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
-
-      const { data, error } = await supabase.functions.invoke('admin-manage-vendor-lock', {
-        method: 'POST',
-        body: createFormData,
-        headers: {
-          Authorization: `Bearer ${anonKey}`,
-          'X-Privy-Authorization': `Bearer ${token}`,
-        },
-      });
-
-      if (error) throw error;
-      if (!data.ok) throw new Error(data.error);
-
+      await callEdgeFunction('admin-manage-vendor-lock', createFormData as Record<string, unknown>, { privyToken: token, withAnonKey: true, method: 'POST' });
       toast({
         title: 'Vendor Lock Created',
         description: 'Successfully created new vendor lock configuration.',
@@ -411,23 +387,7 @@ const AdminVendorLock: React.FC = () => {
       if (!token) {
         throw new Error('Failed to get access token');
       }
-      const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
-
-      const { data, error } = await supabase.functions.invoke('admin-manage-vendor-lock', {
-        method: 'PUT',
-        body: {
-          id: currentLock.id,
-          ...editFormData,
-        },
-        headers: {
-          Authorization: `Bearer ${anonKey}`,
-          'X-Privy-Authorization': `Bearer ${token}`,
-        },
-      });
-
-      if (error) throw error;
-      if (!data.ok) throw new Error(data.error);
-
+      await callEdgeFunction('admin-manage-vendor-lock', { id: currentLock.id, ...editFormData }, { privyToken: token, withAnonKey: true, method: 'PUT' });
       toast({
         title: 'Lock Updated',
         description: 'Successfully updated vendor lock settings.',
@@ -460,20 +420,7 @@ const AdminVendorLock: React.FC = () => {
       if (!token) {
         throw new Error('Failed to get access token');
       }
-      const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
-
-      const { data, error } = await supabase.functions.invoke('admin-manage-vendor-lock', {
-        method: 'DELETE',
-        body: { id: currentLock.id },
-        headers: {
-          Authorization: `Bearer ${anonKey}`,
-          'X-Privy-Authorization': `Bearer ${token}`,
-        },
-      });
-
-      if (error) throw error;
-      if (!data.ok) throw new Error(data.error);
-
+      await callEdgeFunction('admin-manage-vendor-lock', { id: currentLock.id }, { privyToken: token, withAnonKey: true, method: 'DELETE' });
       toast({
         title: 'Lock Deactivated',
         description: 'Vendor lock has been deactivated.',

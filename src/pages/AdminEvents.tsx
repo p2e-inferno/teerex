@@ -14,6 +14,7 @@ import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { toast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
+import { callEdgeFunction } from "@/lib/edgeFunctions";
 import { usePrivy, useWallets } from "@privy-io/react-auth";
 
 import {
@@ -90,15 +91,8 @@ const AdminEvents: React.FC = () => {
   useEffect(() => {
     const checkAdmin = async () => {
       try {
-        const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
         const accessToken = await getAccessToken?.();
-        const { data, error } = await supabase.functions.invoke('is-admin', {
-          headers: {
-            ...(anonKey ? { Authorization: `Bearer ${anonKey}` } : {}),
-            ...(accessToken ? { 'X-Privy-Authorization': `Bearer ${accessToken}` } : {}),
-          },
-        });
-        if (error) throw error;
+        const data = await callEdgeFunction<any>('is-admin', {}, { privyToken: accessToken, withAnonKey: true });
         setIsAdmin(Boolean(data?.is_admin));
       } catch (e) {
         setIsAdmin(false);
@@ -139,11 +133,7 @@ const AdminEvents: React.FC = () => {
 
   const fetchServiceAddress = async () => {
     try {
-      const { data, error } = await supabase.functions.invoke(
-        "get-service-address"
-      );
-
-      if (error) throw error;
+      const data = await callEdgeFunction<any>("get-service-address", {}, {});
       if (data?.address) {
         setServiceAddress(data.address);
       }
@@ -157,21 +147,13 @@ const AdminEvents: React.FC = () => {
     try {
       // Use admin function to bypass RLS
       const accessToken = await getAccessToken?.();
-      const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
-      const { data, error } = await supabase.functions.invoke(
+      const data = await callEdgeFunction<any>(
         "admin-get-transactions",
-        {
-          body: { eventId },
-          headers: {
-            ...(anonKey ? { Authorization: `Bearer ${anonKey}` } : {}),
-            ...(accessToken ? { "X-Privy-Authorization": `Bearer ${accessToken}` } : {}),
-          },
-        }
+        { eventId },
+        { privyToken: accessToken, withAnonKey: true }
       );
 
-      console.log("Transaction query result:", { data, error });
-      if (error) throw error;
-
+      console.log("Transaction query result:", data);
       setTransactions(data?.transactions || []);
     } catch (error) {
       console.error("Error fetching transactions:", error);
@@ -226,24 +208,10 @@ const AdminEvents: React.FC = () => {
       }
 
       // Call secure edge function to perform manual grant server-side
-      const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
       const accessToken = await getAccessToken();
-      const { data: grantData, error: grantError } =
-        await supabase.functions.invoke("paystack-grant-keys", {
-          body: { transactionReference: transactionRef.trim() },
-          headers: {
-            Authorization: `Bearer ${anonKey}`,
-            "X-Privy-Authorization": `Bearer ${accessToken}`,
-          },
-        });
-
-      if (grantError) {
-        throw new Error(grantError?.message || "Failed to grant keys");
-      }
-
-      if (!grantData?.ok) {
-        throw new Error(grantData?.error || "Failed to grant keys");
-      }
+      const grantData = await callEdgeFunction<any>("paystack-grant-keys", {
+        transactionReference: transactionRef.trim(),
+      }, { privyToken: accessToken, withAnonKey: true });
 
       toast({
         title: "Key Granted Successfully!",
@@ -1001,21 +969,15 @@ const AdminEvents: React.FC = () => {
                     onClick={async () => {
                       try {
                         // Call Edge Function to execute from persisted delegations
-                        const { data, error } = await supabase.functions.invoke(
+                        const data = await callEdgeFunction<any>(
                           "execute-batch-attestations",
                           {
-                            body: {
-                              eventId: selectedEvent?.id,
-                              chainId: batch.chainId,
-                              contractAddress: batch.contractAddress,
-                            },
-                          }
+                            eventId: selectedEvent?.id,
+                            chainId: batch.chainId,
+                            contractAddress: batch.contractAddress,
+                          },
+                          {}
                         );
-                        if (error || !data?.ok) {
-                          throw new Error(
-                            error?.message || data?.error || "Failed"
-                          );
-                        }
                         const res = { success: true, hash: data.txHash };
                         if (res.success) {
                           toast({
@@ -1097,29 +1059,21 @@ const AdminEvents: React.FC = () => {
                         });
                         const deadlineTs = Number(sa.deadline);
                         const token = await getAccessToken?.();
-                        const { data, error } = await supabase.functions.invoke(
+                        const data = await callEdgeFunction<any>(
                           "attest-by-delegation",
                           {
-                            body: {
-                              eventId: selectedEvent.id,
-                              chainId: batch.chainId,
-                              contractAddress: batch.contractAddress,
-                              schemaUid: schemaUidInput,
-                              recipient: recipientInput,
-                              data: encoded,
-                              deadline: deadlineTs,
-                              signature: sa.signature,
-                              lockAddress: selectedEvent.lock_address,
-                            },
-                            headers: token
-                              ? { "X-Privy-Authorization": `Bearer ${token}` }
-                              : undefined,
-                          }
+                            eventId: selectedEvent.id,
+                            chainId: batch.chainId,
+                            contractAddress: batch.contractAddress,
+                            schemaUid: schemaUidInput,
+                            recipient: recipientInput,
+                            data: encoded,
+                            deadline: deadlineTs,
+                            signature: sa.signature,
+                            lockAddress: selectedEvent.lock_address,
+                          },
+                          { privyToken: token }
                         );
-                        if (error || !data?.ok)
-                          throw new Error(
-                            error?.message || data?.error || "Failed"
-                          );
                         setSingleResult(
                           `TX: ${data.txHash} UID: ${data.uid || "unknown"}`
                         );

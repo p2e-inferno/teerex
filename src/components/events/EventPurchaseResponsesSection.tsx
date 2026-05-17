@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Loader2, Download, Inbox, Copy, Check, Users } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/integrations/supabase/client';
+import { callEdgeFunction } from '@/lib/edgeFunctions';
 import {
   Table,
   TableBody,
@@ -80,21 +81,12 @@ export const EventPurchaseResponsesSection: React.FC<EventPurchaseResponsesSecti
     try {
       const accessToken = await getAccessToken();
       if (!accessToken) return;
-      const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
-      const { data, error } = await supabase.functions.invoke('list-event-purchase-responses', {
-        body: {
-          event_id: event.id,
-          format: 'json',
-          limit: PAGE_SIZE,
-          offset: nextOffset,
-        },
-        headers: {
-          Authorization: `Bearer ${anonKey}`,
-          'X-Privy-Authorization': `Bearer ${accessToken}`,
-        },
-      });
-      if (error) throw new Error(error.message || 'Failed to load responses');
-      if (data?.error || data?.ok === false) throw new Error(data.error || 'Failed to load');
+      const data = await callEdgeFunction<any>('list-event-purchase-responses', {
+        event_id: event.id,
+        format: 'json',
+        limit: PAGE_SIZE,
+        offset: nextOffset,
+      }, { privyToken: accessToken, withAnonKey: true });
       setSchema((data.schema as PurchaseFormSchema | null) ?? null);
       setRows((prev) => (append ? [...prev, ...(data.rows ?? [])] : data.rows ?? []));
       setTotal(data.total ?? 0);

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { usePrivy, useWallets } from '@privy-io/react-auth';
-import { supabase } from '@/integrations/supabase/client';
+import { callEdgeFunction } from '@/lib/edgeFunctions';
 import { useToast } from '@/hooks/use-toast';
 import { useGamingBundles } from '@/hooks/useGamingBundles';
 import { purchaseKey } from '@/utils/lockUtils';
@@ -120,21 +120,12 @@ const GamingBundleDetails = () => {
       let tokenId: string | null = null;
       try {
         const token = await getAccessToken?.();
-        const { data, error } = await supabase.functions.invoke('record-gaming-bundle-crypto-purchase', {
-          body: {
-            bundle_id: bundle.id,
-            wallet_address: wallet.address,
-            tx_hash: result.transactionHash,
-          },
-          headers: token ? { 'X-Privy-Authorization': `Bearer ${token}` } : undefined,
-        });
-
-        if (error || !data?.ok) {
-          recordFailed = true;
-          console.warn('[BUNDLE CRYPTO] Failed to record purchase:', error?.message || data?.error);
-        } else {
-          tokenId = data?.order?.token_id || null;
-        }
+        const data = await callEdgeFunction<any>('record-gaming-bundle-crypto-purchase', {
+          bundle_id: bundle.id,
+          wallet_address: wallet.address,
+          tx_hash: result.transactionHash,
+        }, { privyToken: token });
+        tokenId = data?.order?.token_id || null;
       } catch (err) {
         recordFailed = true;
         console.warn('[BUNDLE CRYPTO] Failed to record purchase:', err);
@@ -203,13 +194,10 @@ const GamingBundleDetails = () => {
 
       // Update database
       const token = await getAccessToken?.();
-      const { error: updateError } = await supabase.functions.invoke('update-gaming-bundle', {
-        body: { bundle_id: bundle.id, metadata_set: true },
-        headers: token ? { 'X-Privy-Authorization': `Bearer ${token}` } : undefined,
-      });
-
-      if (updateError) {
-        console.warn('Failed to update metadata status in database:', updateError);
+      try {
+        await callEdgeFunction('update-gaming-bundle', { bundle_id: bundle.id, metadata_set: true }, { privyToken: token });
+      } catch (updateErr) {
+        console.warn('Failed to update metadata status in database:', updateErr);
       }
 
       toast({ title: 'Metadata set!', description: 'NFT metadata URI has been set successfully.' });
@@ -274,26 +262,19 @@ const GamingBundleDetails = () => {
 
       // Update database fields
       const token = await getAccessToken?.();
-      const { error: updateError } = await supabase.functions.invoke('update-gaming-bundle', {
-        body: {
-          bundle_id: bundle.id,
-          title: editForm.title,
-          description: editForm.description,
-          game_title: editForm.game_title || null,
-          console: editForm.console || null,
-          location: editForm.location,
-          price_fiat: editForm.price_fiat,
-          price_dg: editForm.price_dg,
-          quantity_units: editForm.quantity_units,
-          unit_label: editForm.unit_label,
-          is_active: editForm.is_active,
-        },
-        headers: token ? { 'X-Privy-Authorization': `Bearer ${token}` } : undefined,
-      });
-
-      if (updateError) {
-        throw new Error(updateError.message || 'Failed to update bundle');
-      }
+      await callEdgeFunction('update-gaming-bundle', {
+        bundle_id: bundle.id,
+        title: editForm.title,
+        description: editForm.description,
+        game_title: editForm.game_title || null,
+        console: editForm.console || null,
+        location: editForm.location,
+        price_fiat: editForm.price_fiat,
+        price_dg: editForm.price_dg,
+        quantity_units: editForm.quantity_units,
+        unit_label: editForm.unit_label,
+        is_active: editForm.is_active,
+      }, { privyToken: token });
 
       toast({ title: 'Bundle updated!', description: 'Your changes have been saved.' });
       queryClient.invalidateQueries({ queryKey: ['gaming-bundles'] });

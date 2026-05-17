@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import { supabase } from '@/integrations/supabase/client';
+import { callEdgeFunction } from '@/lib/edgeFunctions';
 
 export interface Bank {
   code: string;
@@ -8,7 +8,6 @@ export interface Bank {
   type: string;
 }
 
-const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
 const isDevelopment = import.meta.env.VITE_NODE_ENV === 'development';
 
 /**
@@ -35,16 +34,7 @@ async function fetchBanks(): Promise<Bank[]> {
   }
 
   // Production: fetch real bank list from Paystack
-  const { data, error } = await supabase.functions.invoke('list-nigerian-banks', {
-    method: 'GET',
-    headers: {
-      Authorization: `Bearer ${anonKey}`,
-    },
-  });
-
-  if (error) throw error;
-  if (!data?.ok) throw new Error(data?.error || 'Failed to fetch bank list');
-
+  const data = await callEdgeFunction<any>('list-nigerian-banks', {}, { withAnonKey: true });
   return data.banks || [];
 }
 

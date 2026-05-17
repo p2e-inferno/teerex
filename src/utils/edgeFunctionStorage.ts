@@ -4,12 +4,14 @@
  * Uses service role on the server side to bypass RLS issues.
  */
 
+import { FunctionsHttpError } from '@supabase/supabase-js';
 import { supabase } from '@/integrations/supabase/client';
 import { EventDraft, PublishedEvent } from '@/types/event';
 import { EventFormData } from '@/pages/CreateEvent';
 import { getEventEndIso, getEventStartIso } from '@/utils/eventTime';
 import { normalizePurchaseMessage } from '@/utils/purchaseMessage';
 import { isPurchaseFormSchemaEmpty } from '@/types/purchaseForm';
+import { callEdgeFunction } from '@/lib/edgeFunctions';
 
 /**
  * Save a new draft using the manage-drafts edge function
@@ -70,29 +72,16 @@ export const saveDraftViaEdge = async (
         : formData.purchaseFormSchema,
     };
 
-    const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
-    const { data, error } = await supabase.functions.invoke('manage-drafts', {
-      body: payload,
-      headers: {
-        Authorization: `Bearer ${anonKey}`,
-        'X-Privy-Authorization': `Bearer ${privyToken}`,
-      },
-    });
+    const data = await callEdgeFunction<{ id: string }>('manage-drafts', payload, { privyToken, withAnonKey: true });
 
-    if (error) {
-      console.error('Error saving draft via edge function:', error);
-      return null;
-    }
-
-    if (!data || !data.id) {
-      console.error('No draft ID returned from edge function');
-      return null;
+    if (!data?.id) {
+      throw new Error('No draft ID returned. Please try again.');
     }
 
     return data.id;
   } catch (error) {
     console.error('Error saving draft via edge function:', error);
-    return null;
+    throw error;
   }
 };
 
@@ -157,19 +146,7 @@ export const updateDraftViaEdge = async (
         : formData.purchaseFormSchema,
     };
 
-    const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
-    const { error } = await supabase.functions.invoke('manage-drafts', {
-      body: payload,
-      headers: {
-        Authorization: `Bearer ${anonKey}`,
-        'X-Privy-Authorization': `Bearer ${privyToken}`,
-      },
-    });
-
-    if (error) {
-      console.error('Error updating draft via edge function:', error);
-      throw error;
-    }
+    await callEdgeFunction('manage-drafts', payload, { privyToken, withAnonKey: true });
   } catch (error) {
     console.error('Error updating draft via edge function:', error);
     throw error;
@@ -188,21 +165,9 @@ export const getDraftsViaEdge = async (
       return [];
     }
 
-    const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
-    const { data, error } = await supabase.functions.invoke('manage-drafts', {
-      body: { action: 'LIST' },
-      headers: {
-        Authorization: `Bearer ${anonKey}`,
-        'X-Privy-Authorization': `Bearer ${privyToken}`,
-      },
-    });
+    const data = await callEdgeFunction<{ drafts: any[] }>('manage-drafts', { action: 'LIST' }, { privyToken, withAnonKey: true });
 
-    if (error) {
-      console.error('Error fetching drafts via edge function:', error);
-      return [];
-    }
-
-    if (!data || !data.drafts) {
+    if (!data?.drafts) {
       return [];
     }
 
@@ -234,7 +199,7 @@ export const getDraftsViaEdge = async (
       refund_last_synced_at: draft.refund_last_synced_at ?? null
     }));
   } catch (error) {
-    console.error('Error fetching drafts via edge function:', error);
+    console.error('Error fetching drafts:', error);
     return [];
   }
 };
@@ -252,21 +217,9 @@ export const getDraftViaEdge = async (
       return null;
     }
 
-    const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
-    const { data, error } = await supabase.functions.invoke('manage-drafts', {
-      body: { action: 'GET', draftId: id },
-      headers: {
-        Authorization: `Bearer ${anonKey}`,
-        'X-Privy-Authorization': `Bearer ${privyToken}`,
-      },
-    });
+    const data = await callEdgeFunction<{ draft: any }>('manage-drafts', { action: 'GET', draftId: id }, { privyToken, withAnonKey: true });
 
-    if (error) {
-      console.error('Error fetching draft via edge function:', error);
-      return null;
-    }
-
-    if (!data || !data.draft) {
+    if (!data?.draft) {
       return null;
     }
 
@@ -301,7 +254,7 @@ export const getDraftViaEdge = async (
       refund_last_synced_at: draft.refund_last_synced_at ?? null
     };
   } catch (error) {
-    console.error('Error fetching draft via edge function:', error);
+    console.error('Error fetching draft:', error);
     return null;
   }
 };
@@ -319,21 +272,9 @@ export const deleteDraftViaEdge = async (
       throw new Error('User ID is required to delete draft');
     }
 
-    const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
-    const { error } = await supabase.functions.invoke('manage-drafts', {
-      body: { action: 'DELETE', draftId: id },
-      headers: {
-        Authorization: `Bearer ${anonKey}`,
-        'X-Privy-Authorization': `Bearer ${privyToken}`,
-      },
-    });
-
-    if (error) {
-      console.error('Error deleting draft via edge function:', error);
-      throw error;
-    }
+    await callEdgeFunction('manage-drafts', { action: 'DELETE', draftId: id }, { privyToken, withAnonKey: true });
   } catch (error) {
-    console.error('Error deleting draft via edge function:', error);
+    console.error('Error deleting draft:', error);
     throw error;
   }
 };
@@ -441,18 +382,23 @@ export const savePublishedEventViaEdge = async (
     });
 
     if (error) {
-      console.error('Error saving published event via edge function:', error);
+      if (error instanceof FunctionsHttpError) {
+        try {
+          const body = await error.context.json();
+          if (body?.error === 'DUPLICATE_EVENT') {
+            const duplicateError = new Error('DUPLICATE_EVENT') as any;
+            duplicateError.eventId = body.event?.id;
+            duplicateError.eventTitle = body.event?.title;
+            duplicateError.lockAddress = body.event?.lock_address;
+            throw duplicateError;
+          }
+          throw new Error(body?.error || body?.message || 'Failed to publish event. Please try again.');
+        } catch (parseErr: any) {
+          if (parseErr.message === 'DUPLICATE_EVENT' || parseErr.eventId) throw parseErr;
+          throw new Error('Failed to publish event. Please try again.');
+        }
+      }
       throw error;
-    }
-
-    // Handle duplicate event response (409 status from edge function)
-    if (data && data.error === 'DUPLICATE_EVENT') {
-      console.log('Duplicate event detected:', data.event?.id);
-      const duplicateError = new Error('DUPLICATE_EVENT') as any;
-      duplicateError.eventId = data.event?.id;
-      duplicateError.eventTitle = data.event?.title;
-      duplicateError.lockAddress = data.event?.lock_address;
-      throw duplicateError;
     }
 
     if (!data) {

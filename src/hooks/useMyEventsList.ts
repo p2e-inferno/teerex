@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import { usePrivy } from '@privy-io/react-auth';
 import { getUserEvents, mapPublishedEventRow } from '@/utils/eventUtils';
-import { supabase } from '@/integrations/supabase/client';
+import { callEdgeFunction } from '@/lib/edgeFunctions';
 import type { PublishedEvent } from '@/types/event';
 
 type UseMyEventsListState = {
@@ -26,13 +26,7 @@ export function useMyEventsList() {
       let events: PublishedEvent[];
 
       if (accessToken) {
-        const { data, error } = await supabase.functions.invoke('list-my-manageable-events', {
-          body: {},
-          headers: { 'X-Privy-Authorization': `Bearer ${accessToken}` },
-        });
-        if (error || !data?.ok) {
-          throw error || new Error(data?.error || 'Failed to load manageable events');
-        }
+        const data = await callEdgeFunction<any>('list-my-manageable-events', {}, { privyToken: accessToken });
         const createdEvents = (data.created_events || []).map(mapPublishedEventRow);
         const managedEvents = (data.managed_events || []).map(mapPublishedEventRow);
         events = [...createdEvents, ...managedEvents];

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { usePrivy } from '@privy-io/react-auth';
-import { supabase } from '@/integrations/supabase/client';
+import { callEdgeFunction } from '@/lib/edgeFunctions';
 
 export type EventManagerPermissions = {
   manage_access: boolean;
@@ -36,13 +36,7 @@ export function useEventManagers(eventId: string | null, enabled: boolean) {
   const call = useCallback(async (body: Record<string, unknown>) => {
     const token = await getAccessToken?.();
     if (!token) throw new Error('Authentication required');
-    const { data, error: invokeError } = await supabase.functions.invoke('manage-event-managers', {
-      body,
-      headers: { 'X-Privy-Authorization': `Bearer ${token}` },
-    });
-    if (invokeError) throw invokeError;
-    if (!data?.ok) throw new Error(data?.error || 'Manager operation failed');
-    return data;
+    return callEdgeFunction('manage-event-managers', body, { privyToken: token });
   }, [getAccessToken]);
 
   const refresh = useCallback(async () => {

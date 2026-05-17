@@ -15,6 +15,7 @@ import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import type { PublishedEvent } from "@/types/event";
 import { supabase } from "@/integrations/supabase/client";
+import { callEdgeFunction } from "@/lib/edgeFunctions";
 import { Loader2, CreditCard } from "lucide-react";
 import { format } from "date-fns";
 import { PurchaseFormFields } from "@/components/events/PurchaseFormFields";
@@ -144,45 +145,26 @@ export const PaystackPaymentDialog: React.FC<PaystackPaymentDialogProps> = ({
     purchaseFormResponse: PurchaseFormResponseValues | null
   ): Promise<{ subaccountCode: string | null; amountKobo: number }> => {
     if (!event) throw new Error("Missing event");
-    try {
-      const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
-      const accessToken = await getAccessToken?.();
-      const { data, error } = await supabase.functions.invoke(
-        "init-paystack-transaction",
-        {
-          body: {
-            event_id: event.id,
-            reference: paymentReference,
-            email: userEmail,
-            wallet_address: userWalletAddress,
-            ...(typeof (event as any)?.ngn_price_kobo === 'number' || typeof amountKobo === 'number'
-              ? { amount: (amountKobo ?? (event as any)?.ngn_price_kobo) }
-              : {}),
-            purchase_form_response: purchaseFormResponse,
-          },
-          headers: {
-            ...(anonKey ? { Authorization: `Bearer ${anonKey}` } : {}),
-            ...(accessToken ? { "X-Privy-Authorization": `Bearer ${accessToken}` } : {}),
-          },
-        }
-      );
-      if (error) {
-        throw new Error(error?.message || "Failed to create transaction record");
-      } else if (data && !data.ok) {
-        throw new Error(data?.error || "Failed to create transaction record");
-      }
+    const accessToken = await getAccessToken?.();
+    const data = await callEdgeFunction<any>("init-paystack-transaction", {
+      event_id: event.id,
+      reference: paymentReference,
+      email: userEmail,
+      wallet_address: userWalletAddress,
+      ...(typeof (event as any)?.ngn_price_kobo === 'number' || typeof amountKobo === 'number'
+        ? { amount: (amountKobo ?? (event as any)?.ngn_price_kobo) }
+        : {}),
+      purchase_form_response: purchaseFormResponse,
+    }, { privyToken: accessToken, withAnonKey: true });
 
-      if (typeof data?.amount_kobo !== "number" || Number.isNaN(data.amount_kobo)) {
-        throw new Error("Missing amount from server");
-      }
-
-      return {
-        subaccountCode: data?.subaccount_code ?? null,
-        amountKobo: data.amount_kobo,
-      };
-    } catch (e: any) {
-      throw new Error(e?.message || "Failed to create transaction record");
+    if (typeof data?.amount_kobo !== "number" || Number.isNaN(data.amount_kobo)) {
+      throw new Error("Missing amount from server");
     }
+
+    return {
+      subaccountCode: data?.subaccount_code ?? null,
+      amountKobo: data.amount_kobo,
+    };
   };
 
   const handlePaymentSuccess = (reference: { reference: string }) => {

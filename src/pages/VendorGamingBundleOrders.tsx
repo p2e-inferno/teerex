@@ -3,7 +3,7 @@ import { usePrivy } from '@privy-io/react-auth';
 import { useQueryClient } from '@tanstack/react-query';
 import { QRCodeCanvas } from 'qrcode.react';
 import { Copy, ExternalLink, Loader2, RefreshCw, RotateCcw, Search } from 'lucide-react';
-import { supabase } from '@/integrations/supabase/client';
+import { callEdgeFunction } from '@/lib/edgeFunctions';
 import { useToast } from '@/hooks/use-toast';
 import { useDebounce } from '@/hooks/useDebounce';
 import { useGamingBundleOrders } from '@/hooks/useGamingBundleOrders';
@@ -66,14 +66,10 @@ const VendorGamingBundleOrders = () => {
     setRotatingOrderId(orderId);
     try {
       const token = await getAccessToken?.();
-      const { data, error: invokeError } = await supabase.functions.invoke('rotate-gaming-bundle-claim-code', {
-        body: { order_id: orderId },
-        headers: token ? { 'X-Privy-Authorization': `Bearer ${token}` } : undefined,
-      });
-
-      if (invokeError || !data?.ok) {
-        throw new Error(invokeError?.message || data?.error || 'Failed to reissue receipt');
-      }
+      const data = await callEdgeFunction<any>('rotate-gaming-bundle-claim-code',
+        { order_id: orderId },
+        { privyToken: token }
+      );
 
       setReceipt({ order_id: data.order_id, claim_code: data.claim_code });
       toast({ title: 'Receipt reissued', description: 'A new claim code was generated.' });
@@ -93,14 +89,10 @@ const VendorGamingBundleOrders = () => {
     setRetryingOrderId(orderId);
     try {
       const token = await getAccessToken?.();
-      const { data, error: invokeError } = await supabase.functions.invoke('retry-gaming-bundle-issuance', {
-        body: { order_id: orderId },
-        headers: token ? { 'X-Privy-Authorization': `Bearer ${token}` } : undefined,
-      });
-
-      if (invokeError || !data?.ok) {
-        throw new Error(invokeError?.message || data?.error || 'Failed to retry issuance');
-      }
+      const data = await callEdgeFunction<any>('retry-gaming-bundle-issuance',
+        { order_id: orderId },
+        { privyToken: token }
+      );
 
       toast({
         title: 'Issuance retried',

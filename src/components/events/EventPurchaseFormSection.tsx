@@ -3,7 +3,7 @@ import { usePrivy } from '@privy-io/react-auth';
 import { Button } from '@/components/ui/button';
 import { Loader2, ListChecks, Pencil, Trash2 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
-import { supabase } from '@/integrations/supabase/client';
+import { callEdgeFunction } from '@/lib/edgeFunctions';
 import type { PublishedEvent } from '@/types/event';
 import {
   isPurchaseFormSchemaEmpty,
@@ -51,16 +51,9 @@ export const EventPurchaseFormSection: React.FC<EventPurchaseFormSectionProps> =
       try {
         const accessToken = await getAccessToken();
         if (!accessToken) return;
-        const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
 
-        const [schemaResult, ticketResult] = await Promise.all([
-          supabase.functions.invoke('manage-event-purchase-form', {
-            body: { action: 'get', event_id: event.id },
-            headers: {
-              Authorization: `Bearer ${anonKey}`,
-              'X-Privy-Authorization': `Bearer ${accessToken}`,
-            },
-          }),
+        const [schemaData, ticketResult] = await Promise.all([
+          callEdgeFunction<any>('manage-event-purchase-form', { action: 'get', event_id: event.id }, { privyToken: accessToken, withAnonKey: true }),
           supabase
             .from('tickets_public')
             .select('id', { count: 'exact', head: true })
@@ -69,12 +62,7 @@ export const EventPurchaseFormSection: React.FC<EventPurchaseFormSectionProps> =
 
         if (cancelled) return;
 
-        if (schemaResult.error || schemaResult.data?.error) {
-          throw new Error(
-            schemaResult.error?.message || schemaResult.data?.error || 'Failed to load form',
-          );
-        }
-        const incoming = (schemaResult.data?.purchase_form_schema as PurchaseFormSchema | null) ?? null;
+        const incoming = (schemaData?.purchase_form_schema as PurchaseFormSchema | null) ?? null;
         setSavedSchema(incoming);
         setDraftSchema(incoming);
         setHasTickets((ticketResult.count ?? 0) > 0);
@@ -99,20 +87,11 @@ export const EventPurchaseFormSection: React.FC<EventPurchaseFormSectionProps> =
     if (!accessToken) {
       throw new Error('Authentication session expired. Please refresh and try again.');
     }
-    const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
-    const { data, error } = await supabase.functions.invoke('manage-event-purchase-form', {
-      body: {
-        action: 'upsert',
-        event_id: event.id,
-        purchase_form_schema: next,
-      },
-      headers: {
-        Authorization: `Bearer ${anonKey}`,
-        'X-Privy-Authorization': `Bearer ${accessToken}`,
-      },
-    });
-    if (error) throw new Error(error.message || 'Failed to save form');
-    if (data?.error || data?.ok === false) throw new Error(data.error || 'Failed to save form');
+    const data = await callEdgeFunction<any>('manage-event-purchase-form', {
+      action: 'upsert',
+      event_id: event.id,
+      purchase_form_schema: next,
+    }, { privyToken: accessToken, withAnonKey: true });
     return (data?.purchase_form_schema as PurchaseFormSchema | null) ?? null;
   };
 

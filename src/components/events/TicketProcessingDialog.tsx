@@ -10,7 +10,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 import type { PublishedEvent } from "@/types/event";
-import { supabase } from "@/integrations/supabase/client";
+import { callEdgeFunction } from "@/lib/edgeFunctions";
 import { AlertCircle, CheckCircle, ExternalLink, Loader2, MessageSquareText } from "lucide-react";
 import { format } from "date-fns";
 import { RichTextDisplay } from "@/components/ui/rich-text/RichTextDisplay";
@@ -109,18 +109,14 @@ export const TicketProcessingDialog: React.FC<TicketProcessingDialogProps> = ({
         console.log(
           `🔍 [WEBHOOK MONITOR] Checking status (attempt ${attempts}/${maxAttempts})`
         );
-        const { data, error } = await supabase.functions.invoke(
-          "get-transaction-status",
-          {
-            body: {
-              reference: paymentData.reference,
-              wallet_address: paymentData.walletAddress,
-            },
-          }
-        );
-
-        if (error) {
-          console.warn("[WEBHOOK MONITOR] Status check error:", error.message);
+        let data: any;
+        try {
+          data = await callEdgeFunction<any>("get-transaction-status", {
+            reference: paymentData.reference,
+            wallet_address: paymentData.walletAddress,
+          }, {});
+        } catch (err: any) {
+          console.warn("[WEBHOOK MONITOR] Status check error:", err?.message);
           if (attempts < maxAttempts) return setTimeout(pollForStatus, pollInterval);
           setStatus("timeout");
           return setProgressMessage(

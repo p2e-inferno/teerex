@@ -39,6 +39,7 @@ import { PaymentMethodDialog } from "@/components/events/PaymentMethodDialog";
 import { WaitlistDialog } from "@/components/events/WaitlistDialog";
 // import { AttestationButton } from "@/components/attestations/AttestationButton";
 import { supabase } from "@/integrations/supabase/client";
+import { callEdgeFunction } from "@/lib/edgeFunctions";
 import { base, baseSepolia } from "wagmi/chains";
 import { EventAttestationCard } from "@/components/attestations/EventAttestationCard";
 import { AttendeesList } from "@/components/attestations/AttendeesList";
@@ -473,22 +474,18 @@ const EventDetailsContent = () => {
       });
       //
       const token = await getAccessToken?.();
-      const { data, error } = await supabase.functions.invoke('attest-by-delegation', {
-        body: {
-          eventId: event.id,
-          chainId: event.chain_id,
-          schemaUid: likeSchemaUid,
-          recipient: wallet.address,
-          data: dataEncoded,
-          deadline: Number(sa.deadline),
-          signature: sa.signature,
-          revocable: true,
-          lockAddress: event.lock_address,
-          contractAddress: getBatchAttestationAddress(event.chain_id || 84532),
-        },
-        headers: token ? { 'X-Privy-Authorization': `Bearer ${token}` } : undefined,
-      });
-      if (error || !data?.ok) throw new Error(error?.message || data?.error || 'Failed');
+      const data = await callEdgeFunction<any>('attest-by-delegation', {
+        eventId: event.id,
+        chainId: event.chain_id,
+        schemaUid: likeSchemaUid,
+        recipient: wallet.address,
+        data: dataEncoded,
+        deadline: Number(sa.deadline),
+        signature: sa.signature,
+        revocable: true,
+        lockAddress: event.lock_address,
+        contractAddress: getBatchAttestationAddress(event.chain_id || 84532),
+      }, { privyToken: token });
       setUserLikeUid(data.uid || null);
       setLikeCount((c) => c + 1);
       toast({ title: 'Liked' });
@@ -597,21 +594,17 @@ const EventDetailsContent = () => {
       });
       //
       const token = await getAccessToken?.();
-      const { data, error } = await supabase.functions.invoke('attest-by-delegation', {
-        body: {
-          eventId: event.id,
-          chainId: event.chain_id,
-          schemaUid: attendanceSchemaUid,
-          recipient: wallet.address,
-          data: encoded,
-          deadline: Number(sa.deadline),
-          signature: sa.signature,
-          lockAddress: event.lock_address,
-          contractAddress: getBatchAttestationAddress(event.chain_id || 84532),
-        },
-        headers: token ? { 'X-Privy-Authorization': `Bearer ${token}` } : undefined,
-      });
-      if (error || !data?.ok) throw new Error(error?.message || data?.error || 'Failed');
+      const data = await callEdgeFunction<any>('attest-by-delegation', {
+        eventId: event.id,
+        chainId: event.chain_id,
+        schemaUid: attendanceSchemaUid,
+        recipient: wallet.address,
+        data: encoded,
+        deadline: Number(sa.deadline),
+        signature: sa.signature,
+        lockAddress: event.lock_address,
+        contractAddress: getBatchAttestationAddress(event.chain_id || 84532),
+      }, { privyToken: token });
       setMyAttendanceUidTop(data.uid || null);
       toast({ title: '🎉 Attendance Verified!' });
     } catch (e: any) {
