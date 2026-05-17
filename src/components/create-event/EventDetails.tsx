@@ -21,6 +21,7 @@ export const EventDetails: React.FC<EventDetailsProps> = ({
   editingEventId
 }) => {
   const categories = [
+    'Tournament',
     'Conference',
     'Workshop',
     'Networking',
@@ -103,7 +104,7 @@ export const EventDetails: React.FC<EventDetailsProps> = ({
 
       {formData.eventType === 'virtual' && (
         <div className="space-y-2">
-          <Label htmlFor="location">Virtual Link *</Label>
+          <Label htmlFor="location">Virtual Link  (can be added later)</Label>
           <Input
             id="location"
             type="url"
@@ -111,9 +112,6 @@ export const EventDetails: React.FC<EventDetailsProps> = ({
             value={formData.location}
             onChange={(e) => updateFormData({ location: e.target.value })}
           />
-          {!formData.location && (
-            <p className="text-sm text-red-600">Virtual meeting link is required</p>
-          )}
         </div>
       )}
 
