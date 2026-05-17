@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { usePrivy } from '@privy-io/react-auth';
-import { supabase } from '@/integrations/supabase/client';
+import { callEdgeFunction } from '@/lib/edgeFunctions';
 import { toast } from 'sonner';
 import {
   BarChart3,
@@ -77,24 +77,9 @@ const AdminAnalytics: React.FC = () => {
       // Get user's wallet address for testing (or use a default)
       const testUser = user?.wallet?.address || '0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb';
 
-      const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
       const accessToken = await getAccessToken();
-
-      const { data, error } = await supabase.functions.invoke('divvi-debug-test', {
-        body: { testUser },
-        headers: {
-          Authorization: `Bearer ${anonKey}`,
-          'X-Privy-Authorization': accessToken ? `Bearer ${accessToken}` : '',
-        },
-      });
-
-      if (error) {
-        console.error('Divvi debug test error:', error);
-        toast.error(`Test failed: ${error.message}`);
-        return;
-      }
-
-      setTestResults(data as DivviTestResponse);
+      const data = await callEdgeFunction<DivviTestResponse>('divvi-debug-test', { testUser }, { privyToken: accessToken, withAnonKey: true });
+      setTestResults(data);
 
       if (data.success) {
         toast.success('Divvi SDK test passed!');

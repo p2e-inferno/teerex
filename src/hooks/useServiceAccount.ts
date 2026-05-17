@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from 'react';
-import { supabase } from '@/integrations/supabase/client';
+import { callEdgeFunction } from '@/lib/edgeFunctions';
 import { usePrivy } from '@privy-io/react-auth';
 
 type ServiceBalance = {
@@ -58,15 +58,6 @@ type GasActivity = {
   created_at: string;
 };
 
-const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
-
-const buildHeaders = async (getAccessToken?: () => Promise<string | null>) => {
-  const accessToken = await getAccessToken?.();
-  return {
-    ...(anonKey ? { Authorization: `Bearer ${anonKey}` } : {}),
-    ...(accessToken ? { 'X-Privy-Authorization': `Bearer ${accessToken}` } : {}),
-  };
-};
 
 export function useServiceBalances() {
   const { getAccessToken } = usePrivy();
@@ -82,12 +73,8 @@ export function useServiceBalances() {
     try {
       setLoading(true);
       setError(null);
-      const headers = await buildHeaders(getAccessToken);
-      const { data, error } = await supabase.functions.invoke('service-account-balances', {
-        headers,
-      });
-      if (error) throw error;
-      if (!data?.ok) throw new Error(data?.error || 'Failed to load balances');
+      const token = await getAccessToken?.();
+      const data = await callEdgeFunction<any>('service-account-balances', {}, { privyToken: token, withAnonKey: true });
       setData({
         primary_chain_id: data.primary_chain_id,
         service_address: data.service_address,
@@ -120,12 +107,8 @@ export function useServiceKeyHealth() {
     try {
       setLoading(true);
       setError(null);
-      const headers = await buildHeaders(getAccessToken);
-      const { data, error } = await supabase.functions.invoke('service-account-key-health', {
-        headers,
-      });
-      if (error) throw error;
-      if (!data?.ok) throw new Error(data?.error || 'Failed to load key health');
+      const token = await getAccessToken?.();
+      const data = await callEdgeFunction<any>('service-account-key-health', {}, { privyToken: token, withAnonKey: true });
       setStats(data.stats || { success: 0, pending: 0, failed: 0 });
       setStuck(data.stuck || []);
       setAttempts(data.attempts || []);
@@ -158,12 +141,8 @@ export function useServiceGasStats() {
     try {
       setLoading(true);
       setError(null);
-      const headers = await buildHeaders(getAccessToken);
-      const { data, error } = await supabase.functions.invoke('service-account-gas-stats', {
-        headers,
-      });
-      if (error) throw error;
-      if (!data?.ok) throw new Error(data?.error || 'Failed to load gas stats');
+      const token = await getAccessToken?.();
+      const data = await callEdgeFunction<any>('service-account-gas-stats', {}, { privyToken: token, withAnonKey: true });
       setTotals(data.totals || []);
       setRecent(data.recent || []);
       setActivity(data.activity || []);

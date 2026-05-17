@@ -63,6 +63,7 @@ import { useUserAddresses } from '@/hooks/useUserAddresses';
 import { useRefundableEventStatus } from '@/hooks/useRefundableEventStatus';
 import { getRefundProtectionBadge } from '@/lib/events/refundStatus';
 import { useEventManagerPermissions } from '@/hooks/useEventManagerPermissions';
+import { callEdgeFunction } from '@/lib/edgeFunctions';
 
 interface EventManagementDialogProps {
   event: PublishedEvent;
@@ -138,7 +139,7 @@ export const EventManagementDialog: React.FC<EventManagementDialogProps> = ({
     refundableStatus.status !== 'protected'
   );
   const registrationStatus = getEventRegistrationStatus(event);
-  const hasEventStarted = registrationStatus.reason === 'event_started';
+  const hasEventStarted = registrationStatus.reason === 'event_started' || registrationStatus.reason === 'legacy_date_passed';
   const registrationStatusDescription = hasEventStarted
     ? 'Registration is closed because the event has already started.'
     : localRegistrationClosed
@@ -261,15 +262,7 @@ export const EventManagementDialog: React.FC<EventManagementDialogProps> = ({
         newCutoff = now > defaultCutoff ? event.starts_at : defaultCutoff.toISOString();
       }
 
-      const { error } = await supabase.functions.invoke('update-event', {
-        body: {
-          eventId: event.id,
-          formData: { registration_cutoff: newCutoff }
-        },
-        headers: accessToken ? { 'X-Privy-Authorization': `Bearer ${accessToken}` } : undefined,
-      });
-
-      if (error) throw error;
+      await callEdgeFunction('update-event', { eventId: event.id, formData: { registration_cutoff: newCutoff } }, { privyToken: accessToken! });
 
       setLocalRegistrationClosed(isClosing);
       setPendingRegistrationClosed(null);
@@ -322,24 +315,7 @@ export const EventManagementDialog: React.FC<EventManagementDialogProps> = ({
       if (result.success) {
         const accessToken = await getAccessToken();
 
-        const { data, error } = await supabase.functions.invoke('update-event', {
-          body: {
-            eventId: event.id,
-            formData: {
-              nft_metadata_set: true,
-              nft_base_uri: baseTokenURI
-            }
-          },
-          headers: accessToken ? { 'X-Privy-Authorization': `Bearer ${accessToken}` } : undefined,
-        });
-
-        if (error) {
-          throw new Error(error.message);
-        }
-
-        if (data?.error) {
-          throw new Error(data.error);
-        }
+        await callEdgeFunction('update-event', { eventId: event.id, formData: { nft_metadata_set: true, nft_base_uri: baseTokenURI } }, { privyToken: accessToken! });
 
         toast({
           title: 'Success',
@@ -365,17 +341,7 @@ export const EventManagementDialog: React.FC<EventManagementDialogProps> = ({
     setIsUpdatingWaitlist(true);
     try {
       const accessToken = await getAccessToken();
-      const { error } = await supabase.functions.invoke('update-event', {
-        body: {
-          eventId: event.id,
-          formData: { allow_waitlist: enabled }
-        },
-        headers: accessToken ? { 'X-Privy-Authorization': `Bearer ${accessToken}` } : undefined,
-      });
-
-      if (error) {
-        throw new Error('Failed to update waitlist setting');
-      }
+      await callEdgeFunction('update-event', { eventId: event.id, formData: { allow_waitlist: enabled } }, { privyToken: accessToken! });
 
       setLocalAllowWaitlist(enabled);
 

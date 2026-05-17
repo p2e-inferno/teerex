@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { supabase } from '@/integrations/supabase/client';
+import { callEdgeFunction } from '@/lib/edgeFunctions';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -89,19 +89,7 @@ const AdminNetworks: React.FC = () => {
       }
 
       const token = await getAccessToken?.();
-      const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
-
-      const { data, error } = await supabase.functions.invoke('manage-network-config', {
-        method: 'GET',
-        headers: {
-          Authorization: `Bearer ${anonKey}`,
-          'X-Privy-Authorization': `Bearer ${token}`,
-        },
-      });
-
-      if (error) throw error;
-      if (!data.success) throw new Error(data.error);
-
+      const data = await callEdgeFunction<any>('manage-network-config', {}, { privyToken: token, withAnonKey: true, method: 'GET' });
       setNetworks(data.networks || []);
     } catch (error) {
       console.error('Error loading networks:', error);
@@ -125,8 +113,6 @@ const AdminNetworks: React.FC = () => {
       setIsSaving(true);
 
       const token = await getAccessToken?.();
-      const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
-
       const payload = {
         chain_id: formData.chain_id,
         chain_name: formData.chain_name,
@@ -147,44 +133,20 @@ const AdminNetworks: React.FC = () => {
 
       if (editingNetwork) {
         // Update existing network
-        const { data, error } = await supabase.functions.invoke('manage-network-config', {
-          method: 'PUT',
-          body: { id: editingNetwork.id, ...payload },
-          headers: {
-            Authorization: `Bearer ${anonKey}`,
-            'X-Privy-Authorization': `Bearer ${token}`,
-          },
-        });
-
-        if (error) throw error;
-        if (!data.success) throw new Error(data.error);
-
+        await callEdgeFunction('manage-network-config', { id: editingNetwork.id, ...payload }, { privyToken: token, withAnonKey: true, method: 'PUT' });
         // Clear caches across contexts (memory, Privy, React Query)
         clearAllNetworkCaches();
         clearNetworkConfigsCache();
-
         toast({
           title: "Network Updated",
           description: `${formData.chain_name} has been updated successfully. Cache cleared for all users.`,
         });
       } else {
         // Create new network
-        const { data, error } = await supabase.functions.invoke('manage-network-config', {
-          method: 'POST',
-          body: payload,
-          headers: {
-            Authorization: `Bearer ${anonKey}`,
-            'X-Privy-Authorization': `Bearer ${token}`,
-          },
-        });
-
-        if (error) throw error;
-        if (!data.success) throw new Error(data.error);
-
+        await callEdgeFunction('manage-network-config', payload, { privyToken: token, withAnonKey: true, method: 'POST' });
         // Clear caches across contexts (memory, Privy, React Query)
         clearAllNetworkCaches();
         clearNetworkConfigsCache();
-
         toast({
           title: "Network Added",
           description: `${formData.chain_name} has been added successfully. Cache cleared for all users.`,
@@ -236,20 +198,7 @@ const AdminNetworks: React.FC = () => {
 
     try {
       const token = await getAccessToken?.();
-      const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
-
-      const { data, error } = await supabase.functions.invoke('manage-network-config', {
-        method: 'DELETE',
-        body: { id: network.id },
-        headers: {
-          Authorization: `Bearer ${anonKey}`,
-          'X-Privy-Authorization': `Bearer ${token}`,
-        },
-      });
-
-      if (error) throw error;
-      if (!data.success) throw new Error(data.error);
-
+      await callEdgeFunction('manage-network-config', { id: network.id }, { privyToken: token, withAnonKey: true, method: 'DELETE' });
       // Clear caches across contexts (memory, Privy, React Query)
       clearAllNetworkCaches();
       clearNetworkConfigsCache();
@@ -288,37 +237,24 @@ const AdminNetworks: React.FC = () => {
       );
 
       const token = await getAccessToken?.();
-      const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
-
-      const { data, error } = await supabase.functions.invoke('manage-network-config', {
-        method: 'PUT',
-        body: {
-          id: network.id,
-          chain_id: network.chain_id,
-          chain_name: network.chain_name,
-          usdc_token_address: network.usdc_token_address,
-          dg_token_address: network.dg_token_address,
-          g_token_address: network.g_token_address,
-          up_token_address: network.up_token_address,
-          unlock_factory_address: network.unlock_factory_address,
-          refundable_event_manager_address: network.refundable_event_manager_address,
-          native_currency_symbol: network.native_currency_symbol,
-          native_currency_name: network.native_currency_name,
-          native_currency_decimals: network.native_currency_decimals,
-          rpc_url: network.rpc_url,
-          block_explorer_url: network.block_explorer_url,
-          is_mainnet: network.is_mainnet,
-          is_active: newActiveState,
-        },
-        headers: {
-          Authorization: `Bearer ${anonKey}`,
-          'X-Privy-Authorization': `Bearer ${token}`,
-        },
-      });
-
-      if (error) throw error;
-      if (!data.success) throw new Error(data.error);
-
+      await callEdgeFunction('manage-network-config', {
+        id: network.id,
+        chain_id: network.chain_id,
+        chain_name: network.chain_name,
+        usdc_token_address: network.usdc_token_address,
+        dg_token_address: network.dg_token_address,
+        g_token_address: network.g_token_address,
+        up_token_address: network.up_token_address,
+        unlock_factory_address: network.unlock_factory_address,
+        refundable_event_manager_address: network.refundable_event_manager_address,
+        native_currency_symbol: network.native_currency_symbol,
+        native_currency_name: network.native_currency_name,
+        native_currency_decimals: network.native_currency_decimals,
+        rpc_url: network.rpc_url,
+        block_explorer_url: network.block_explorer_url,
+        is_mainnet: network.is_mainnet,
+        is_active: newActiveState,
+      }, { privyToken: token, withAnonKey: true, method: 'PUT' });
       // Clear caches across contexts (memory, Privy, React Query)
       clearAllNetworkCaches();
       clearNetworkConfigsCache();

@@ -11,6 +11,7 @@ import { Switch } from '@/components/ui/switch';
 import { CalendarIcon, Upload, X, Loader2, Crop } from 'lucide-react';
 import { format, isSameDay, startOfDay } from 'date-fns';
 import { EventFormData } from '@/pages/CreateEvent';
+import { getEventStartIso, getEventEndIso } from '@/utils/eventTime';
 import { uploadEventImage } from '@/utils/supabaseDraftStorage';
 import { useToast } from '@/hooks/use-toast';
 import { RichTextEditor } from '@/components/ui/rich-text/RichTextEditor';
@@ -489,6 +490,18 @@ export const EventBasicInfo: React.FC<EventBasicInfoProps> = ({
         {!formData.endTime && (
           <p className="text-sm text-red-600">Event end time is required</p>
         )}
+        {formData.endTime && (() => {
+          const startIso = getEventStartIso(formData);
+          const endIso = getEventEndIso(formData);
+          if (startIso && endIso && new Date(endIso).getTime() <= new Date(startIso).getTime()) {
+            return (
+              <p className="text-sm text-red-600">
+                End time must be after the start time. If your event runs past midnight, set the end date to the following day.
+              </p>
+            );
+          }
+          return null;
+        })()}
       </div>
 
       {/* Transferability Setting */}

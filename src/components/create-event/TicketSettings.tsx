@@ -22,7 +22,7 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { validateCryptoPrice, validateFiatPrice, getPricePlaceholder, getPriceStep, MIN_NATIVE_TOKEN_PRICE, MIN_NGN_PRICE, getWholeNumberTokenMinimum } from '@/utils/priceUtils';
 import type { CryptoCurrency } from '@/types/currency';
 import { usesWholeNumberPricing } from '@/types/currency';
-import { supabase } from '@/integrations/supabase/client';
+import { callEdgeFunction } from '@/lib/edgeFunctions';
 import { useQueries } from '@tanstack/react-query';
 import { CACHE_TIMES } from '@/lib/config/react-query-config';
 import { getDefaultRefundTriggerIso, getEventEndIso, getEventStartIso } from '@/utils/eventTime';
@@ -77,7 +77,6 @@ export const TicketSettings: React.FC<TicketSettingsProps> = ({
 }) => {
   const { authenticated, getAccessToken } = usePrivy();
   const { networks, isLoading, error, getNetworkByChainId, getAvailableTokens, getTokenAddress } = useNetworkConfigs();
-  const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
 
   // Check if current network supports selected currency
   const currentChainId = (formData as any).chainId;
@@ -221,15 +220,7 @@ export const TicketSettings: React.FC<TicketSettingsProps> = ({
     setPayoutAccountLoading(true);
     try {
       const token = await getAccessToken();
-      const { data, error } = await supabase.functions.invoke('get-vendor-payout-account', {
-        method: 'GET',
-        headers: {
-          Authorization: `Bearer ${anonKey}`,
-          'X-Privy-Authorization': `Bearer ${token}`,
-        },
-      });
-
-      if (error) throw error;
+      const data = await callEdgeFunction<any>('get-vendor-payout-account', {}, { privyToken: token, withAnonKey: true });
 
       setHasPayoutAccount(data?.can_receive_fiat_payments === true);
 
@@ -244,7 +235,7 @@ export const TicketSettings: React.FC<TicketSettingsProps> = ({
     } finally {
       setPayoutAccountLoading(false);
     }
-  }, [authenticated, fiatEnabled, getAccessToken, anonKey]);
+  }, [authenticated, fiatEnabled, getAccessToken]);
 
   useEffect(() => {
     checkPayoutAccount();

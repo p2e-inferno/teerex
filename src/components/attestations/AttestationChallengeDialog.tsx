@@ -3,7 +3,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/hooks/use-toast';
-import { supabase } from '@/integrations/supabase/client';
+import { callEdgeFunction } from '@/lib/edgeFunctions';
 import { useWallets, usePrivy } from '@privy-io/react-auth';
 import {
   Dialog,
@@ -64,25 +64,14 @@ export const AttestationChallengeDialog: React.FC<AttestationChallengeDialogProp
 
     try {
       const accessToken = await getAccessToken();
-      const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
-
-      const { data, error } = await supabase.functions.invoke('create-attestation-challenge', {
-        body: {
-          attestation_id: attestationId,
-          challenged_address: challengedUserAddress,
-          challenge_reason: challengeReason.trim(),
-          evidence_description: evidenceDescription.trim() || undefined,
-          evidence_url: evidenceUrl.trim() || undefined,
-          challenger_wallet: wallet.address,
-        },
-        headers: {
-          Authorization: `Bearer ${anonKey}`,
-          'X-Privy-Authorization': `Bearer ${accessToken}`,
-        },
-      });
-
-      if (error) throw error;
-      if (data?.ok === false) throw new Error(data.error || 'Challenge failed');
+      await callEdgeFunction('create-attestation-challenge', {
+        attestation_id: attestationId,
+        challenged_address: challengedUserAddress,
+        challenge_reason: challengeReason.trim(),
+        evidence_description: evidenceDescription.trim() || undefined,
+        evidence_url: evidenceUrl.trim() || undefined,
+        challenger_wallet: wallet.address,
+      }, { privyToken: accessToken, withAnonKey: true });
 
       toast({
         title: '🚨 Challenge Submitted',

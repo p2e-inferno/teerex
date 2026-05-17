@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
+import { callEdgeFunction } from '@/lib/edgeFunctions';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -102,15 +103,8 @@ export default function AdminGaslessConfig() {
   useEffect(() => {
     const checkAdmin = async () => {
       try {
-        const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
         const accessToken = await getAccessToken?.();
-        const { data, error } = await supabase.functions.invoke('is-admin', {
-          headers: {
-            ...(anonKey ? { Authorization: `Bearer ${anonKey}` } : {}),
-            ...(accessToken ? { 'X-Privy-Authorization': `Bearer ${accessToken}` } : {}),
-          },
-        });
-        if (error) throw error;
+        const data = await callEdgeFunction<any>('is-admin', {}, { privyToken: accessToken, withAnonKey: true });
         setIsAdmin(Boolean(data?.is_admin));
       } catch (e) {
         setIsAdmin(false);

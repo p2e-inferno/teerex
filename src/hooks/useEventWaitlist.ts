@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
-import { supabase } from '@/integrations/supabase/client';
 import { usePrivy } from '@privy-io/react-auth';
+import { callEdgeFunction } from '@/lib/edgeFunctions';
 
 export type WaitlistFilter = 'all' | 'notified' | 'unnotified';
 
@@ -40,19 +40,7 @@ export function useEventWaitlist(eventId: string | null, filter: WaitlistFilter 
       if (!accessToken) {
         throw new Error('Authentication required to load waitlist');
       }
-      const { data, error } = await supabase.functions.invoke('get-waitlist', {
-        body: {
-          event_id: eventId,
-          filter,
-          page: pageToLoad,
-        },
-        headers: {
-          ...(accessToken ? { 'X-Privy-Authorization': `Bearer ${accessToken}` } : {}),
-        },
-      });
-
-      if (error) throw error;
-      if (!data?.ok) throw new Error(data?.error || 'Failed to load waitlist');
+      const data = await callEdgeFunction<any>('get-waitlist', { event_id: eventId, filter, page: pageToLoad }, { privyToken: accessToken });
 
       setCounts({
         total: data.counts?.total || 0,

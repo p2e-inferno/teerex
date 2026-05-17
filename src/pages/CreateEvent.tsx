@@ -20,6 +20,7 @@ import {
   getDraftViaEdge,
 } from '@/utils/edgeFunctionStorage';
 import { supabase } from '@/integrations/supabase/client';
+import { callEdgeFunction } from '@/lib/edgeFunctions';
 import { EventCreationSuccessModal } from '@/components/events/EventCreationSuccessModal';
 import { WalletConnectionGate } from '@/components/WalletConnectionGate';
 import { isCryptoPriceValid, isFiatPriceValid } from '@/utils/priceUtils';
@@ -343,10 +344,9 @@ const CreateEvent = () => {
         // Validate basic details
         const hasBasicDetails = !!(formData.category && (editingEventId || formData.capacity > 0));
 
-        // Validate location based on event type
         const hasValidLocation = formData.eventType === 'physical'
           ? !!formData.location.trim()
-          : !!formData.location.trim(); // Virtual events also need a link
+          : true; // Virtual link is optional — can be added later via Edit
 
         return hasBasicDetails && hasValidLocation;
       }
@@ -609,27 +609,10 @@ const CreateEvent = () => {
         return;
       }
 
-      const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
-      const { data, error } = await supabase.functions.invoke('update-event', {
-        body: {
-          eventId: editingEventId,
-          formData: { ...formPatch, timezone_offset_minutes: new Date().getTimezoneOffset() },
-        },
-        headers: {
-          Authorization: `Bearer ${anonKey}`,
-          'X-Privy-Authorization': `Bearer ${accessToken}`,
-        },
-      });
-
-      if (error) {
-        // Network or function invocation error
-        throw new Error(error.message);
-      }
-      
-      // Check for application-level errors returned from the function
-      if (data.error) {
-        throw new Error(data.error);
-      }
+      await callEdgeFunction('update-event', {
+        eventId: editingEventId,
+        formData: { ...formPatch, timezone_offset_minutes: new Date().getTimezoneOffset() },
+      }, { privyToken: accessToken, withAnonKey: true });
 
       toast({
         title: "Event Updated",

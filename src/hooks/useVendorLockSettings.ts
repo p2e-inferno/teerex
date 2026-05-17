@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import { supabase } from '@/integrations/supabase/client';
+import { callEdgeFunction } from '@/lib/edgeFunctions';
 
 export interface VendorLockSettings {
   id: string;
@@ -29,17 +29,7 @@ export function useVendorLockSettings() {
   return useQuery({
     queryKey: ['vendor-lock-settings'],
     queryFn: async (): Promise<VendorLockSettings | null> => {
-      const { data, error } = await supabase.functions.invoke('get-vendor-lock-settings');
-
-      if (error) {
-        console.error('[useVendorLockSettings] Error:', error);
-        throw error;
-      }
-
-      if (!data.ok) {
-        throw new Error(data.error || 'Failed to fetch vendor lock settings');
-      }
-
+      const data = await callEdgeFunction<any>('get-vendor-lock-settings', {}, {});
       return data.settings;
     },
     staleTime: 5 * 60 * 1000, // 5 minutes

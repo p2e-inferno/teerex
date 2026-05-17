@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { usePrivy, useWallets } from '@privy-io/react-auth';
 import { Loader2 } from 'lucide-react';
-import { supabase } from '@/integrations/supabase/client';
+import { callEdgeFunction } from '@/lib/edgeFunctions';
 import { useToast } from '@/hooks/use-toast';
 import { Button } from '@/components/ui/button';
 import { addLockManager, checkIfLockManager } from '@/utils/lockUtils';
@@ -63,9 +63,9 @@ export const ServiceManagerControls = ({
   useEffect(() => {
     const fetchServiceAddress = async () => {
       try {
-        const { data, error } = await supabase.functions.invoke('get-service-address');
-        if (error || !data?.address) {
-          console.error('Failed to get service address:', error);
+        const data = await callEdgeFunction<any>('get-service-address', {}, {});
+        if (!data?.address) {
+          console.error('Failed to get service address: no address in response');
           return;
         }
         setServiceWalletAddress(data.address);
@@ -98,19 +98,13 @@ export const ServiceManagerControls = ({
 
   const updateServiceManagerFlag = async (added: boolean) => {
     const accessToken = await getAccessToken?.();
-    const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
     const body =
       entityType === 'event'
         ? { eventId: entityId, formData: { service_manager_added: added } }
         : { bundle_id: entityId, service_manager_added: added };
-    const { error } = await supabase.functions.invoke(updateFn, {
-      body,
-      headers: {
-        Authorization: `Bearer ${anonKey}`,
-        ...(accessToken ? { 'X-Privy-Authorization': `Bearer ${accessToken}` } : {}),
-      },
-    });
-    if (error) {
+    try {
+      await callEdgeFunction(updateFn, body, { privyToken: accessToken, withAnonKey: true });
+    } catch (error) {
       console.error('Failed to update service manager flag:', error);
     }
   };
@@ -152,21 +146,8 @@ export const ServiceManagerControls = ({
     setIsRemoving(true);
     try {
       const accessToken = await getAccessToken?.();
-      const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
       const body = entityType === 'event' ? { eventId: entityId } : { bundle_id: entityId };
-      const { data, error } = await supabase.functions.invoke(removeFn, {
-        body,
-        headers: {
-          Authorization: `Bearer ${anonKey}`,
-          ...(accessToken ? { 'X-Privy-Authorization': `Bearer ${accessToken}` } : {}),
-        },
-      });
-
-      const removeOk = data?.ok ?? data?.success;
-      if (error || !removeOk) {
-        throw new Error(data?.error || 'Failed to remove service manager');
-      }
-
+      await callEdgeFunction(removeFn, body, { privyToken: accessToken, withAnonKey: true });
       setIsServiceManager(false);
       await updateServiceManagerFlag(false);
       toast({ title: labels[entityType].remove, description: 'Service wallet is now removed as manager.' });

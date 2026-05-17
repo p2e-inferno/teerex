@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { supabase } from '@/integrations/supabase/client';
+import { callEdgeFunction } from '@/lib/edgeFunctions';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { toast } from 'sonner';
@@ -30,14 +30,7 @@ export default function AdminGasSponsorship() {
     setIsLoading(true);
     try {
       const token = await getAccessToken?.();
-      const { data, error } = await supabase.functions.invoke('gasless-admin-stats', {
-        headers: token ? { 'X-Privy-Authorization': `Bearer ${token}` } : undefined,
-      });
-
-      if (error || !data?.ok) {
-        throw new Error(error?.message || data?.error || 'Failed to load stats');
-      }
-
+      const data = await callEdgeFunction<any>('gasless-admin-stats', {}, { privyToken: token });
       setActivityLog(data.activity || []);
       setStats({
         totalDeploys: data.stats.totalDeploys,

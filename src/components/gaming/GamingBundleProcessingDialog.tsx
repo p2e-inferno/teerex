@@ -10,7 +10,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/use-toast';
 import { usePrivy } from '@privy-io/react-auth';
-import { supabase } from '@/integrations/supabase/client';
+import { callEdgeFunction } from '@/lib/edgeFunctions';
 import { AlertCircle, CheckCircle, Loader2 } from 'lucide-react';
 import type { GamingBundle } from '@/types/gaming';
 
@@ -72,15 +72,11 @@ export const GamingBundleProcessingDialog: React.FC<GamingBundleProcessingDialog
       hasTriggeredConfirmRef.current = true;
       (async () => {
         const token = await getAccessToken?.();
-        return supabase.functions.invoke('confirm-gaming-bundle-paystack', {
-          body: { reference: paymentData.reference },
-          headers: token ? { 'X-Privy-Authorization': `Bearer ${token}` } : undefined,
-        });
+        return callEdgeFunction('confirm-gaming-bundle-paystack',
+          { reference: paymentData.reference },
+          { privyToken: token }
+        );
       })()
-        .then(({ data, error }) => {
-          if (error) throw error;
-          if (data?.ok === false) throw new Error(data?.error || 'Unable to confirm Paystack payment');
-        })
         .catch((err) => {
           console.warn('[BUNDLE MONITOR] confirm-gaming-bundle-paystack failed:', err);
           toast({
@@ -104,11 +100,12 @@ export const GamingBundleProcessingDialog: React.FC<GamingBundleProcessingDialog
       if (monitorSessionRef.current !== sessionId) return;
       attempts++;
       try {
-        const { data, error } = await supabase.functions.invoke('get-gaming-bundle-order-status', {
-          body: { reference: paymentData.reference },
-        });
+        const data = await callEdgeFunction<any>('get-gaming-bundle-order-status',
+          { reference: paymentData.reference },
+          {}
+        );
 
-        if (error || !data?.found) {
+        if (!data?.found) {
           if (attempts < maxAttempts) {
             pollTimeoutRef.current = window.setTimeout(poll, pollInterval);
             return;

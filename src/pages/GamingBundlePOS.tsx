@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { usePrivy } from '@privy-io/react-auth';
-import { supabase } from '@/integrations/supabase/client';
+import { callEdgeFunction } from '@/lib/edgeFunctions';
 import { useToast } from '@/hooks/use-toast';
 import { useGamingBundles } from '@/hooks/useGamingBundles';
 import { Button } from '@/components/ui/button';
@@ -42,19 +42,12 @@ const GamingBundlePOS = () => {
     setIsSubmitting(true);
     try {
       const token = await getAccessToken?.();
-      const { data, error } = await supabase.functions.invoke('record-gaming-bundle-sale', {
-        body: {
-          bundle_id: selectedBundleId,
-          buyer_display_name: buyerName || null,
-          buyer_phone: buyerPhone || null,
-          buyer_address: buyerAddress || null,
-        },
-        headers: token ? { 'X-Privy-Authorization': `Bearer ${token}` } : undefined,
-      });
-
-      if (error || !data?.ok) {
-        throw new Error(error?.message || data?.error || 'Failed to record sale');
-      }
+      const data = await callEdgeFunction<any>('record-gaming-bundle-sale', {
+        bundle_id: selectedBundleId,
+        buyer_display_name: buyerName || null,
+        buyer_phone: buyerPhone || null,
+        buyer_address: buyerAddress || null,
+      }, { privyToken: token });
 
       setReceipt({
         order_id: data.order?.id,

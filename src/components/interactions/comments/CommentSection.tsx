@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { usePrivy, useWallets } from '@privy-io/react-auth';
-import { supabase } from '@/integrations/supabase/client';
+import { callEdgeFunction } from '@/lib/edgeFunctions';
 import { CommentList } from './CommentList';
 import { CommentInput } from './CommentInput';
 import { Loader2 } from 'lucide-react';
@@ -50,13 +50,7 @@ export const CommentSection: React.FC<CommentSectionProps> = ({
         return;
       }
 
-      const { data, error: invokeError } = await supabase.functions.invoke('get-post-comments', {
-        body: { postId },
-        headers: { 'X-Privy-Authorization': `Bearer ${token}` },
-      });
-
-      if (invokeError) throw invokeError;
-      if (!data?.ok) throw new Error(data?.error || 'Failed to load comments');
+      const data = await callEdgeFunction<any>('get-post-comments', { postId }, { privyToken: token });
 
       if (!data.allowed) {
         setComments([]);
@@ -86,22 +80,7 @@ export const CommentSection: React.FC<CommentSectionProps> = ({
         throw new Error('Authentication required');
       }
 
-      const { data, error } = await supabase.functions.invoke('create-comment', {
-        body: { postId, content: content.trim() },
-        headers: { 'X-Privy-Authorization': `Bearer ${token}` },
-      });
-
-      if (error) {
-        console.error('Error creating comment:', error);
-        throw error;
-      }
-
-      if (!data?.ok) {
-        const errorMessage = data?.error || 'Failed to create comment';
-        console.error('Error creating comment:', errorMessage);
-        throw new Error(errorMessage);
-      }
-
+      const data = await callEdgeFunction<any>('create-comment', { postId, content: content.trim() }, { privyToken: token });
       const created = (data.comment as PostComment) || null;
       if (created) {
         setComments((prev) => [...prev, created]);

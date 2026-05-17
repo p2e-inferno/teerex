@@ -13,7 +13,7 @@ import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
 import type { PublishedEvent } from '@/types/event';
 import { Loader2, Trash2, Plus, Upload } from 'lucide-react';
-import { supabase } from '@/integrations/supabase/client';
+import { callEdgeFunction } from '@/lib/edgeFunctions';
 import { Card, CardContent } from '@/components/ui/card';
 import { usePrivy } from '@privy-io/react-auth';
 import { normalizeEmail } from '@/utils/emailUtils';
@@ -95,18 +95,7 @@ export const AllowListManager: React.FC<AllowListManagerProps> = ({ event, isOpe
       throw new Error('Authentication required to manage allow list');
     }
 
-    const { data, error } = await supabase.functions.invoke('manage-allow-list', {
-      body: payload,
-      headers: {
-        'X-Privy-Authorization': `Bearer ${accessToken}`,
-      },
-    });
-
-    if (error) throw error;
-    if (!data?.ok) {
-      throw new Error(data?.error || 'Allow list operation failed');
-    }
-    return data;
+    return callEdgeFunction('manage-allow-list', payload as Record<string, unknown>, { privyToken: accessToken });
   };
 
   useEffect(() => {

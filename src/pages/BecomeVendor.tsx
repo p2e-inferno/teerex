@@ -8,7 +8,7 @@ import { useToast } from '@/hooks/use-toast';
 import { useVendorLockSettings } from '@/hooks/useVendorLockSettings';
 import { useIsVendor } from '@/hooks/useIsVendor';
 import { purchaseKey, getBlockExplorerUrl } from '@/utils/lockUtils';
-import { supabase } from '@/integrations/supabase/client';
+import { callEdgeFunction } from '@/lib/edgeFunctions';
 import { Loader2, ExternalLink, CheckCircle2, Lock, Shield, Wallet } from 'lucide-react';
 
 /**
@@ -81,15 +81,14 @@ export default function BecomeVendor() {
         // Record purchase in database
         try {
           const accessToken = await getAccessToken();
-          const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
 
           // Validate currency address is configured
           if (!settings.currency_address) {
             throw new Error('Invalid lock configuration: missing currency address');
           }
 
-          const { error: purchaseError } = await supabase.functions.invoke('record-vendor-purchase', {
-            body: {
+          try {
+            await callEdgeFunction('record-vendor-purchase', {
               vendor_lock_id: settings.id,
               wallet_address: wallet.address.toLowerCase(),
               tx_hash: result.transactionHash,
@@ -97,14 +96,8 @@ export default function BecomeVendor() {
               lock_address: settings.lock_address,
               price_paid_wei: settings.key_price_wei,
               currency: settings.currency,
-            },
-            headers: {
-              Authorization: `Bearer ${anonKey}`,
-              'X-Privy-Authorization': `Bearer ${accessToken}`,
-            },
-          });
-
-          if (purchaseError) {
+            }, { privyToken: accessToken, withAnonKey: true });
+          } catch (purchaseError) {
             console.error('[BecomeVendor] Failed to record purchase:', purchaseError);
             // Don't fail the purchase - key is already on-chain
           }

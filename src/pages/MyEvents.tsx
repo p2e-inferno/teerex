@@ -13,7 +13,7 @@ import { useToast } from '@/hooks/use-toast';
 import { WalletConnectionGate } from '@/components/WalletConnectionGate';
 import { isFreeEvent } from '@/lib/events/paymentMethods';
 import { useMultiEventTicketRealtime } from '@/hooks/useMultiEventTicketRealtime';
-import { supabase } from '@/integrations/supabase/client';
+import { callEdgeFunction } from '@/lib/edgeFunctions';
 
 const MyEvents = () => {
   const { authenticated, user, getAccessToken } = usePrivy();
@@ -38,13 +38,7 @@ const MyEvents = () => {
         let delegatedEvents: PublishedEvent[] = [];
 
         if (accessToken) {
-          const { data, error } = await supabase.functions.invoke('list-my-manageable-events', {
-            body: {},
-            headers: { 'X-Privy-Authorization': `Bearer ${accessToken}` },
-          });
-          if (error || !data?.ok) {
-            throw error || new Error(data?.error || 'Failed to load manageable events');
-          }
+          const data = await callEdgeFunction<any>('list-my-manageable-events', {}, { privyToken: accessToken });
           userEvents = (data.created_events || []).map(mapPublishedEventRow);
           delegatedEvents = (data.managed_events || []).map(mapPublishedEventRow);
         } else {
