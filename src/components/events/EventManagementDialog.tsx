@@ -138,7 +138,7 @@ export const EventManagementDialog: React.FC<EventManagementDialogProps> = ({
     refundableStatus.status !== 'protected'
   );
   const registrationStatus = getEventRegistrationStatus(event);
-  const hasEventStarted = registrationStatus.reason === 'event_started';
+  const hasEventStarted = registrationStatus.reason === 'event_started' || registrationStatus.reason === 'legacy_date_passed';
   const registrationStatusDescription = hasEventStarted
     ? 'Registration is closed because the event has already started.'
     : localRegistrationClosed

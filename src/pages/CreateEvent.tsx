@@ -343,10 +343,9 @@ const CreateEvent = () => {
         // Validate basic details
         const hasBasicDetails = !!(formData.category && (editingEventId || formData.capacity > 0));
 
-        // Validate location based on event type
         const hasValidLocation = formData.eventType === 'physical'
           ? !!formData.location.trim()
-          : !!formData.location.trim(); // Virtual events also need a link
+          : true; // Virtual link is optional — can be added later via Edit
 
         return hasBasicDetails && hasValidLocation;
       }
