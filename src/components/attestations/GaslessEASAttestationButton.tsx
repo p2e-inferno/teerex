@@ -4,7 +4,7 @@ import { toast } from '@/hooks/use-toast';
 import { usePrivy } from '@privy-io/react-auth';
 import { useTeeRexDelegatedAttestation } from '@/hooks/useTeeRexDelegatedAttestation';
 import { useAttestationEncoding } from '@/hooks/useAttestationEncoding';
-import { supabase } from '@/integrations/supabase/client';
+import { callEdgeFunction } from '@/lib/edgeFunctions';
 import { Sparkles, Loader2 } from 'lucide-react';
 
 interface Event {
@@ -96,15 +96,7 @@ export const GaslessEASAttestationButton: React.FC<GaslessEASAttestationButtonPr
       
 
       const token = await getAccessToken?.();
-      const { data, error } = await supabase.functions.invoke('eas-gasless-attestation', {
-        body: requestBody,
-        headers: token ? { 'X-Privy-Authorization': `Bearer ${token}` } : undefined,
-      });
-
-      if (error || !data?.ok) {
-        const errorDetail = error?.message || data?.error || JSON.stringify(data) || 'Failed';
-        throw new Error(errorDetail);
-      }
+      const data = await callEdgeFunction<any>('eas-gasless-attestation', requestBody, { privyToken: token });
 
       const successMsg = `✅ Gasless Success! You paid NO gas! UID: ${data.uid}`;
       onResult?.(successMsg);

@@ -7,7 +7,7 @@ import { useNetworkConfigs } from '@/hooks/useNetworkConfigs';
 import { useEventLockState } from '@/hooks/useEventLockState';
 import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { supabase } from '@/integrations/supabase/client';
+import { callEdgeFunction } from '@/lib/edgeFunctions';
 import { usePrivy } from '@privy-io/react-auth';
 import { toast } from 'sonner';
 
@@ -49,21 +49,7 @@ export const TicketSettingsDisplay: React.FC<TicketSettingsDisplayProps> = ({
     setIsSyncing(true);
     try {
       const accessToken = await getAccessToken();
-      const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
-
-      const { data, error } = await supabase.functions.invoke('sync-event-pricing-from-chain', {
-        body: { event_id: eventId },
-        headers: {
-          Authorization: `Bearer ${anonKey}`,
-          'X-Privy-Authorization': `Bearer ${accessToken}`,
-        },
-      });
-
-      if (error) throw error;
-
-      if (!data.ok) {
-        throw new Error(data.error || 'Failed to sync pricing');
-      }
+      await callEdgeFunction('sync-event-pricing-from-chain', { event_id: eventId }, { privyToken: accessToken, withAnonKey: true });
 
       toast.success('Pricing synced successfully! Refreshing...');
 

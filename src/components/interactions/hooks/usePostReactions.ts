@@ -1,6 +1,6 @@
 import { useState, useCallback } from 'react';
 import { usePrivy } from '@privy-io/react-auth';
-import { supabase } from '@/integrations/supabase/client';
+import { callEdgeFunction } from '@/lib/edgeFunctions';
 import type { UsePostReactionsReturn } from '../types';
 
 /**
@@ -24,22 +24,7 @@ export const usePostReactions = (): UsePostReactionsReturn => {
         setIsLoading(true);
         setError(null);
 
-        const { data, error: invokeError } = await supabase.functions.invoke('create-reaction', {
-          body: { postId, reactionType },
-          headers: { 'X-Privy-Authorization': `Bearer ${token}` },
-        });
-
-        if (invokeError) {
-          console.error('Error creating reaction:', invokeError);
-          throw invokeError;
-        }
-
-        if (!data?.ok) {
-          const errorMessage = data?.error || 'Failed to create reaction';
-          console.error('Error creating reaction:', errorMessage);
-          throw new Error(errorMessage);
-        }
-
+        const data = await callEdgeFunction<any>('create-reaction', { postId, reactionType }, { privyToken: token });
         return data?.action as 'added' | 'removed' | 'switched' | undefined;
       } catch (err) {
         const error = err instanceof Error ? err : new Error('Unknown error occurred');

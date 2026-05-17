@@ -3,7 +3,7 @@ import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
-import { supabase } from '@/integrations/supabase/client';
+import { callEdgeFunction } from '@/lib/edgeFunctions';
 import { useWallets, usePrivy } from '@privy-io/react-auth';
 import { AttestationChallengeDialog } from './AttestationChallengeDialog';
 import { ReputationBadge } from './ReputationBadge';
@@ -149,24 +149,11 @@ export const AttendeesList: React.FC<AttendeesListProps> = ({
 
     try {
       const accessToken = await getAccessToken();
-      const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
-
-      const { data, error } = await supabase.functions.invoke('create-attestation-vote', {
-        body: {
-          attestation_id: attestationId,
-          vote_type: voteType,
-          voter_address: wallet.address,
-        },
-        headers: {
-          Authorization: `Bearer ${anonKey}`,
-          'X-Privy-Authorization': `Bearer ${accessToken}`,
-        },
-      });
-
-      if (error) throw error;
-      if (data?.ok === false && !data?.duplicate) {
-        throw new Error(data.error || 'Vote failed');
-      }
+      await callEdgeFunction('create-attestation-vote', {
+        attestation_id: attestationId,
+        vote_type: voteType,
+        voter_address: wallet.address,
+      }, { privyToken: accessToken, withAnonKey: true });
 
       loadAttendees();
     } catch (error) {

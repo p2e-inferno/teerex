@@ -11,7 +11,7 @@ import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/use-toast';
 import type { PublishedEvent } from '@/types/event';
 import { Loader2, Mail, Users, Filter, Link as LinkIcon, AlertCircle, CheckCircle2 } from 'lucide-react';
-import { supabase } from '@/integrations/supabase/client';
+import { callEdgeFunction } from '@/lib/edgeFunctions';
 import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -89,24 +89,14 @@ export const WaitlistManager: React.FC<WaitlistManagerProps> = ({ event, isOpen,
       }
 
       do {
-        const { data, error } = await supabase.functions.invoke('notify-waitlist', {
-          body: {
-            event_id: event.id,
-            target_event_id: selectedTarget?.id,
-            page,
-            event_url: targetUrl,
-            target_title: selectedTarget?.title,
-            target_date: selectedTarget?.starts_at,
-          },
-          headers: {
-            ...(accessToken ? { 'X-Privy-Authorization': `Bearer ${accessToken}` } : {}),
-          },
-        });
-
-        if (error) throw error;
-        if (!data?.ok) {
-          throw new Error(data?.error || 'Failed to notify waitlist');
-        }
+        const data = await callEdgeFunction<any>('notify-waitlist', {
+          event_id: event.id,
+          target_event_id: selectedTarget?.id,
+          page,
+          event_url: targetUrl,
+          target_title: selectedTarget?.title,
+          target_date: selectedTarget?.starts_at,
+        }, { privyToken: accessToken });
 
         totalNotified += data.notified || 0;
         totalFailed += data.failed || 0;

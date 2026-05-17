@@ -1,13 +1,11 @@
 import { useQuery } from '@tanstack/react-query';
-import { supabase } from '@/integrations/supabase/client';
+import { callEdgeFunction } from '@/lib/edgeFunctions';
 
 export interface ResolvedAccount {
   account_number: string;
   account_name: string;
   bank_id: number;
 }
-
-const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
 
 /**
  * Resolve bank account details using Paystack API
@@ -17,16 +15,7 @@ const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
 async function resolveAccount(accountNumber: string, bankCode: string): Promise<ResolvedAccount> {
   const functionName = `resolve-bank-account?account_number=${encodeURIComponent(accountNumber)}&bank_code=${encodeURIComponent(bankCode)}`;
 
-  const { data, error } = await supabase.functions.invoke(functionName, {
-    method: 'GET',
-    headers: {
-      Authorization: `Bearer ${anonKey}`,
-    },
-  });
-
-  if (error) throw error;
-  if (!data?.ok) throw new Error(data?.error || 'Failed to resolve account');
-
+  const data = await callEdgeFunction<any>(functionName, {}, { withAnonKey: true });
   return {
     account_number: data.account_number,
     account_name: data.account_name,

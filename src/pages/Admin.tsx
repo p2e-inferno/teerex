@@ -8,7 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "@/hooks/use-toast";
-import { supabase } from '@/integrations/supabase/client';
+import { callEdgeFunction } from '@/lib/edgeFunctions';
 import { registerSchema, getAttestationSchemas, checkSchemaExists, importExistingSchema } from '@/utils/schemaUtils';
 import { checkKeyOwnership } from '@/utils/lockUtils';
 import { usePrivy, useWallets } from '@privy-io/react-auth';
@@ -93,15 +93,8 @@ const Admin: React.FC = () => {
   useEffect(() => {
     const checkAdmin = async () => {
       try {
-        const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
         const accessToken = await getAccessToken?.();
-        const { data, error } = await supabase.functions.invoke('is-admin', {
-          headers: {
-            ...(anonKey ? { Authorization: `Bearer ${anonKey}` } : {}),
-            ...(accessToken ? { 'X-Privy-Authorization': `Bearer ${accessToken}` } : {}),
-          },
-        });
-        if (error) throw error;
+        const data = await callEdgeFunction<any>('is-admin', {}, { privyToken: accessToken, withAnonKey: true });
         setIsAdmin(Boolean(data?.is_admin));
       } catch (e) {
         setIsAdmin(false);

@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import { usePrivy } from '@privy-io/react-auth';
-import { supabase } from '@/integrations/supabase/client';
+import { callEdgeFunction } from '@/lib/edgeFunctions';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -80,7 +80,6 @@ interface Pagination {
 
 const AdminPayoutAccounts: React.FC = () => {
   const { getAccessToken } = usePrivy();
-  const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
 
   // State
   const [isLoading, setIsLoading] = useState(true);
@@ -109,20 +108,14 @@ const AdminPayoutAccounts: React.FC = () => {
     const checkAdmin = async () => {
       try {
         const accessToken = await getAccessToken?.();
-        const { data, error } = await supabase.functions.invoke('is-admin', {
-          headers: {
-            Authorization: `Bearer ${anonKey}`,
-            'X-Privy-Authorization': `Bearer ${accessToken}`,
-          },
-        });
-        if (error) throw error;
+        const data = await callEdgeFunction<any>('is-admin', {}, { privyToken: accessToken, withAnonKey: true });
         setIsAdmin(Boolean(data?.is_admin));
       } catch {
         setIsAdmin(false);
       }
     };
     checkAdmin();
-  }, [getAccessToken, anonKey]);
+  }, [getAccessToken]);
 
   // Fetch accounts
   const fetchAccounts = useCallback(async () => {
@@ -138,31 +131,20 @@ const AdminPayoutAccounts: React.FC = () => {
       params.set('limit', String(pagination.limit));
       params.set('offset', String(pagination.offset));
 
-      const { data, error } = await supabase.functions.invoke(
+      const data = await callEdgeFunction<any>(
         `admin-list-payout-accounts?${params.toString()}`,
-        {
-          headers: {
-            Authorization: `Bearer ${anonKey}`,
-            'X-Privy-Authorization': `Bearer ${token}`,
-          },
-        }
+        {},
+        { privyToken: token, withAnonKey: true }
       );
-
-      if (error) throw error;
-
-      if (data?.ok) {
-        setAccounts(data.payout_accounts || []);
-        setPagination(data.pagination);
-      } else {
-        toast.error(data?.error || 'Failed to load payout accounts');
-      }
+      setAccounts(data.payout_accounts || []);
+      setPagination(data.pagination);
     } catch (err) {
       console.error('Error fetching payout accounts:', err);
       toast.error('Failed to load payout accounts');
     } finally {
       setIsLoading(false);
     }
-  }, [isAdmin, getAccessToken, anonKey, statusFilter, providerFilter, searchQuery, pagination.limit, pagination.offset]);
+  }, [isAdmin, getAccessToken, statusFilter, providerFilter, searchQuery, pagination.limit, pagination.offset]);
 
   // Load accounts when admin status confirmed
   useEffect(() => {
@@ -183,29 +165,16 @@ const AdminPayoutAccounts: React.FC = () => {
     setIsActioning(true);
     try {
       const token = await getAccessToken();
-      const { data, error } = await supabase.functions.invoke('admin-suspend-payout-account', {
-        body: {
-          payout_account_id: targetAccount.id,
-          action,
-          reason: action === 'suspend' ? suspendReason.trim() : undefined,
-        },
-        headers: {
-          Authorization: `Bearer ${anonKey}`,
-          'X-Privy-Authorization': `Bearer ${token}`,
-        },
-      });
-
-      if (error) throw error;
-
-      if (data?.ok) {
-        toast.success(data.message);
-        setSuspendDialogOpen(false);
-        setSelectedAccount(null);
-        setSuspendReason('');
-        fetchAccounts();
-      } else {
-        toast.error(data?.error || 'Action failed');
-      }
+      const data = await callEdgeFunction<any>('admin-suspend-payout-account', {
+        payout_account_id: targetAccount.id,
+        action,
+        reason: action === 'suspend' ? suspendReason.trim() : undefined,
+      }, { privyToken: token, withAnonKey: true });
+      toast.success(data.message);
+      setSuspendDialogOpen(false);
+      setSelectedAccount(null);
+      setSuspendReason('');
+      fetchAccounts();
     } catch (err) {
       console.error('Error performing action:', err);
       toast.error('Failed to perform action');

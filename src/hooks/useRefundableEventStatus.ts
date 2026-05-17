@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { supabase } from '@/integrations/supabase/client';
+import { callEdgeFunction } from '@/lib/edgeFunctions';
 import type { PublishedEvent } from '@/types/event';
 
 export type RefundableEventStatus =
@@ -61,49 +61,28 @@ export const useRefundableEventStatus = (
     if (!event?.id || !event.refund_protection_enabled) return;
 
     setState((current) => ({ ...current, isLoading: true, error: null }));
-    const { data, error } = await supabase.functions.invoke('sync-refundable-event-status', {
-      body: {
-        event_id: event.id,
-        accounts,
-        tx_hash: txHash,
-      },
-    });
-
-    if (error) {
-      setState((current) => ({
-        ...current,
+    try {
+      const data = await callEdgeFunction<any>('sync-refundable-event-status', { event_id: event.id, accounts, tx_hash: txHash }, {});
+      setState({
+        status: data.status,
+        attendeeCount: Number(data.attendee_count || 0),
+        minAttendees: Number(data.min_attendees || event.refund_min_attendees || 0),
+        thresholdMet: Boolean(data.threshold_met),
+        currentRefundReserve: data.current_refund_reserve || null,
+        requiredFullRefund: data.required_full_refund || null,
+        refundComplete: Boolean(data.refund_complete),
+        cancelInitiated: Boolean(data.cancel_initiated),
+        managerReleased: Boolean(data.manager_released),
+        authorizedRefundCaller: Boolean(data.authorized_refund_caller),
+        authorizedRefundAddress: data.authorized_refund_address || null,
+        controllerAddress: data.controller_address || event.refund_controller_address || null,
+        creatorAddress: data.creator || null,
         isLoading: false,
-        error: error.message || 'Failed to sync refundable event status',
-      }));
-      return;
+        error: null,
+      });
+    } catch (err: any) {
+      setState((current) => ({ ...current, isLoading: false, error: err?.message || 'Failed to sync status' }));
     }
-
-    if (!data?.ok) {
-      setState((current) => ({
-        ...current,
-        isLoading: false,
-        error: data?.error || null,
-      }));
-      return;
-    }
-
-    setState({
-      status: data.status,
-      attendeeCount: Number(data.attendee_count || 0),
-      minAttendees: Number(data.min_attendees || event.refund_min_attendees || 0),
-      thresholdMet: Boolean(data.threshold_met),
-      currentRefundReserve: data.current_refund_reserve || null,
-      requiredFullRefund: data.required_full_refund || null,
-      refundComplete: Boolean(data.refund_complete),
-      cancelInitiated: Boolean(data.cancel_initiated),
-      managerReleased: Boolean(data.manager_released),
-      authorizedRefundCaller: Boolean(data.authorized_refund_caller),
-      authorizedRefundAddress: data.authorized_refund_address || null,
-      controllerAddress: data.controller_address || event.refund_controller_address || null,
-      creatorAddress: data.creator || null,
-      isLoading: false,
-      error: null,
-    });
   }, [accounts, event?.id, event?.refund_controller_address, event?.refund_min_attendees, event?.refund_protection_enabled]);
 
   useEffect(() => {

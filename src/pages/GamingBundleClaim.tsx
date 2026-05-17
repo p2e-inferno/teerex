@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { usePrivy, useWallets } from '@privy-io/react-auth';
-import { supabase } from '@/integrations/supabase/client';
+import { callEdgeFunction } from '@/lib/edgeFunctions';
 import { useToast } from '@/hooks/use-toast';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -49,17 +49,10 @@ const GamingBundleClaim = () => {
     setIsSubmitting(true);
     try {
       const token = await getAccessToken?.();
-      const { data, error } = await supabase.functions.invoke('claim-gaming-bundle', {
-        body: {
-          claim_code: claimCode.trim(),
-          recipient_address: walletAddress.trim(),
-        },
-        headers: token ? { 'X-Privy-Authorization': `Bearer ${token}` } : undefined,
-      });
-
-      if (error || !data?.ok) {
-        throw new Error(error?.message || data?.error || 'Failed to claim bundle');
-      }
+      await callEdgeFunction('claim-gaming-bundle', {
+        claim_code: claimCode.trim(),
+        recipient_address: walletAddress.trim(),
+      }, { privyToken: token });
 
       toast({ title: 'Bundle claimed', description: 'Your NFT ticket has been issued.' });
     } catch (error) {

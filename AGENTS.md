@@ -3,6 +3,110 @@
 This repo uses Supabase Edge Functions for Paystack → Unlock ticket issuance.
 Follow these notes when updating or deploying.
 
+## Calling Edge Functions from the Frontend
+
+**Always use `callEdgeFunction` from `src/lib/edgeFunctions.ts`. Never call `supabase.functions.invoke` directly from components or hooks.**
+
+This is a hard rule. Raw `supabase.functions.invoke` calls caused fragmented error handling, inconsistent auth header construction, and silent failures across the codebase. The wrapper was introduced and all call sites were migrated to it — do not reintroduce raw invocations.
+
+```typescript
+import { callEdgeFunction } from '@/lib/edgeFunctions';
+
+// Authenticated call
+const data = await callEdgeFunction<MyType>('my-function', { param: value }, {
+  privyToken: token,
+});
+
+// With anon key (some functions require both headers)
+const data = await callEdgeFunction<MyType>('my-function', { param: value }, {
+  privyToken: token,
+  withAnonKey: true,
+});
+
+// REST-style GET (body is omitted)
+const data = await callEdgeFunction<MyType>('my-function', {}, {
+  privyToken: token,
+  method: 'GET',
+});
+
+// Unauthenticated public endpoint
+const data = await callEdgeFunction<MyType>('my-function', { param: value }, {});
+```
+
+The wrapper throws `EdgeFunctionError` for both HTTP errors and `{ ok: false }` application responses. Callers use try/catch; no `if (error || !data?.ok)` checks needed.
+
+**The only acceptable exceptions** (document with a comment when used):
+1. Fire-and-forget calls with no auth and no needed error handling.
+2. Functions that return partial useful data on `ok: false` (e.g. `can_retry`, `payout_account`) — the wrapper discards that context.
+3. Call sites that need to catch the raw error to trigger a client-side fallback (e.g. `useGasless.ts`).
+4. Non-standard error shapes like `DUPLICATE_EVENT`.
+
+---
+
+## Edge Function Response Standard
+
+Every edge function MUST follow this response contract so `callEdgeFunction` works correctly:
+
+**Success → HTTP 200:**
+```typescript
+return new Response(JSON.stringify({ ok: true, ...payload }), {
+  headers: { ...corsHeaders, "Content-Type": "application/json" },
+});
+```
+
+**Failure → HTTP 4xx/5xx:**
+```typescript
+return new Response(JSON.stringify({ ok: false, error: "Human-readable message" }), {
+  status: 400, // 400 | 401 | 403 | 404 | 500 as appropriate
+  headers: { ...corsHeaders, "Content-Type": "application/json" },
+});
+```
+
+**Rules:**
+- `ok` field is required on every response — `true` for success, `false` for failure.
+- `error` (string) is required when `ok: false` — this is the message shown to users.
+- Never return `{ error }` without `ok`. Never return `{ ok: false }` without `error`.
+- Prefer accurate HTTP status codes. Use `4xx` for client errors, `5xx` for server errors.
+- If a failure response must carry actionable partial data (e.g. `can_retry: true`), document it explicitly. These calls cannot use `callEdgeFunction` on the client and require raw `supabase.functions.invoke` with manual `{ data, error }` handling.
+
+**Standard function skeleton:**
+```typescript
+import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { corsHeaders } from "../_shared/cors.ts";
+import { verifyPrivyToken } from "../_shared/privy.ts";
+
+serve(async (req) => {
+  if (req.method === "OPTIONS") {
+    return new Response("ok", { headers: corsHeaders });
+  }
+
+  try {
+    const user = await verifyPrivyToken(req);
+    if (!user) {
+      return new Response(JSON.stringify({ ok: false, error: "Unauthorized" }), {
+        status: 401,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    const body = await req.json();
+    // ... business logic ...
+
+    return new Response(JSON.stringify({ ok: true, result: data }), {
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  } catch (err) {
+    console.error("[function-name]", err);
+    return new Response(JSON.stringify({ ok: false, error: err.message || "Internal error" }), {
+      status: 500,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  }
+});
+```
+
+---
+
 ## Edge Functions
 
 Functions used by the ticketing flow:

@@ -156,21 +156,54 @@ Key tables:
 ## Key Code Patterns
 
 ### 1. Calling Edge Functions
+
+**Always use `callEdgeFunction` from `src/lib/edgeFunctions.ts`. Never call `supabase.functions.invoke` directly from components or hooks.**
+
+The wrapper handles both HTTP-level errors (`FunctionsHttpError`) and application-level `{ ok: false }` responses, throwing a single `EdgeFunctionError` with a user-readable message in both cases. This eliminates scattered `if (error || !data?.ok)` checks and keeps error handling consistent across the codebase.
+
 ```typescript
-import { supabase } from '@/integrations/supabase/client';
+import { callEdgeFunction } from '@/lib/edgeFunctions';
 import { usePrivy } from '@privy-io/react-auth';
 
 const { getAccessToken } = usePrivy();
-const accessToken = await getAccessToken();
-const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
+const token = await getAccessToken();
 
-const { data, error } = await supabase.functions.invoke('function-name', {
-  body: { /* request payload */ },
-  headers: {
-    Authorization: `Bearer ${anonKey}`,
-    'X-Privy-Authorization': `Bearer ${accessToken}`,
-  },
+// Standard authenticated call
+const data = await callEdgeFunction<ResponseType>('function-name', {
+  key: value,
+}, { privyToken: token });
+
+// With anon key (required by some functions)
+const data = await callEdgeFunction<ResponseType>('function-name', {
+  key: value,
+}, { privyToken: token, withAnonKey: true });
+
+// REST-style: GET (body omitted automatically)
+const data = await callEdgeFunction<ResponseType>('function-name', {}, {
+  privyToken: token,
+  method: 'GET',
 });
+
+// Unauthenticated (public endpoint)
+const data = await callEdgeFunction<ResponseType>('function-name', { key: value }, {});
+```
+
+**Acceptable exceptions** — keep raw `supabase.functions.invoke` only when:
+1. The call is intentional fire-and-forget (no auth, no error handling) — e.g. `send-ticket-email`
+2. The function returns partial useful data even on `ok: false` (e.g. `can_retry` + `payout_account` fields) — the wrapper would swallow that context
+3. The call site needs to catch errors to trigger a client-side fallback path — e.g. `useGasless.ts`
+4. The function uses a non-standard `DUPLICATE_EVENT` error shape — e.g. `edgeFunctionStorage.ts`
+
+Document the reason with a comment when keeping a raw invoke.
+
+**`CallOptions` reference:**
+```typescript
+interface CallOptions {
+  privyToken?: string | null;   // Privy JWT → sets X-Privy-Authorization header
+  withAnonKey?: boolean;        // Also sets Authorization: Bearer <anon-key>
+  extraHeaders?: Record<string, string>;
+  method?: 'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH'; // default: POST
+}
 ```
 
 ### 2. Signing EIP-712 Messages
@@ -228,10 +261,73 @@ const result = await contract.someMethod();
 - Handle transaction failures gracefully with retry options
 
 ### Error Handling
-- Edge functions return `{ ok: boolean, error?: string, ... }` structure
-- Client-side uses try/catch with toast notifications (sonner)
-- Validation errors shown inline on forms
-- Network errors prompt for retry
+- **Edge function response shape** — all edge functions MUST return `{ ok: true, ...data }` on success and `{ ok: false, error: string }` on failure (see Edge Function Response Standard below). The `callEdgeFunction` wrapper enforces this contract automatically.
+- Client-side catches `EdgeFunctionError` (thrown by `callEdgeFunction`) via try/catch; display the message in a toast notification.
+- Validation errors shown inline on forms.
+- Network errors prompt for retry.
+- Do not add `if (error || !data?.ok)` checks after `callEdgeFunction` — it already throws for both cases.
+
+### Edge Function Response Standard
+
+Every new edge function MUST follow this response shape:
+
+**Success:**
+```typescript
+return new Response(JSON.stringify({ ok: true, ...payload }), {
+  headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+});
+```
+
+**Failure (4xx/5xx):**
+```typescript
+return new Response(JSON.stringify({ ok: false, error: 'Human-readable message' }), {
+  status: 400, // or 401, 403, 404, 500 as appropriate
+  headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+});
+```
+
+**Rules:**
+- Always include `ok: true | false` at the top level.
+- Always include a string `error` field on failure — this is what `callEdgeFunction` surfaces to the user.
+- Never return bare `{ error }` without `ok`, and never return `{ ok: false }` without `error`.
+- For functions where `ok: false` needs to carry actionable partial data back to the client (e.g. `can_retry`, `payout_account`), document this explicitly — the `callEdgeFunction` wrapper cannot be used on the client side for such calls (they require raw `supabase.functions.invoke`).
+- Use `status: 200` for application-level failures only when the response body provides sufficient context and the HTTP status is not semantically important. Prefer accurate HTTP status codes (400, 401, 403, 500) so the wrapper can surface them in `EdgeFunctionError.status`.
+
+**Deno edge function skeleton:**
+```typescript
+import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { corsHeaders } from "../_shared/cors.ts";
+import { verifyPrivyToken } from "../_shared/privy.ts";
+
+serve(async (req) => {
+  if (req.method === "OPTIONS") {
+    return new Response("ok", { headers: corsHeaders });
+  }
+
+  try {
+    const user = await verifyPrivyToken(req);
+    if (!user) {
+      return new Response(JSON.stringify({ ok: false, error: "Unauthorized" }), {
+        status: 401,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    const body = await req.json();
+    // ... business logic ...
+
+    return new Response(JSON.stringify({ ok: true, result: data }), {
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  } catch (err) {
+    console.error("[function-name]", err);
+    return new Response(JSON.stringify({ ok: false, error: err.message || "Internal error" }), {
+      status: 500,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  }
+});
+```
 
 ### Client Interaction UX (Optimistic + Localized)
 - Default to optimistic/local updates with background refetch: keep existing UI visible, update local state first, then reconcile via background refetch (no full-component spinners after a single action).

@@ -13,7 +13,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
-import { supabase } from '@/integrations/supabase/client';
+import { callEdgeFunction } from '@/lib/edgeFunctions';
 import { Loader2, CreditCard } from 'lucide-react';
 import type { GamingBundle } from '@/types/gaming';
 
@@ -105,41 +105,22 @@ export const GamingBundlePaystackDialog: React.FC<GamingBundlePaystackDialogProp
     paymentReference: string
   ): Promise<{ subaccountCode: string | null; amountKobo: number }> => {
     if (!bundle) throw new Error('Missing bundle');
-    try {
-      const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
-      const accessToken = await getAccessToken?.();
-      const { data, error } = await supabase.functions.invoke('init-gaming-bundle-transaction', {
-        body: {
-          bundle_id: bundle.id,
-          reference: paymentReference,
-          email: userEmail,
-          wallet_address: userWalletAddress,
-          ...(typeof (bundle as any)?.price_fiat_kobo === 'number' || typeof amountKobo === 'number'
-            ? { amount: (amountKobo ?? (bundle as any)?.price_fiat_kobo) }
-            : {}),
-        },
-        headers: {
-          ...(anonKey ? { Authorization: `Bearer ${anonKey}` } : {}),
-          ...(accessToken ? { 'X-Privy-Authorization': `Bearer ${accessToken}` } : {}),
-        },
-      });
+    const accessToken = await getAccessToken?.();
+    const data = await callEdgeFunction<any>('init-gaming-bundle-transaction', {
+      bundle_id: bundle.id,
+      reference: paymentReference,
+      email: userEmail,
+      wallet_address: userWalletAddress,
+      ...(typeof (bundle as any)?.price_fiat_kobo === 'number' || typeof amountKobo === 'number'
+        ? { amount: (amountKobo ?? (bundle as any)?.price_fiat_kobo) }
+        : {}),
+    }, { privyToken: accessToken, withAnonKey: true });
 
-      if (error) {
-        throw new Error(error?.message || 'Failed to create bundle order');
-      }
-
-      if (data && !data.ok) {
-        throw new Error(data?.error || 'Failed to create bundle order');
-      }
-
-      if (typeof data?.amount_kobo !== 'number' || Number.isNaN(data.amount_kobo)) {
-        throw new Error('Missing amount from server');
-      }
-
-      return { subaccountCode: data?.subaccount_code || null, amountKobo: data.amount_kobo };
-    } catch (e: any) {
-      throw new Error(e?.message || 'Failed to create bundle order');
+    if (typeof data?.amount_kobo !== 'number' || Number.isNaN(data.amount_kobo)) {
+      throw new Error('Missing amount from server');
     }
+
+    return { subaccountCode: data?.subaccount_code || null, amountKobo: data.amount_kobo };
   };
 
   const handlePaymentSuccess = useCallback((reference: { reference: string }) => {

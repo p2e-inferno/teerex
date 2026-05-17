@@ -18,6 +18,7 @@ import { purchaseKey, getBlockExplorerUrl, isFreeOnchain } from '@/utils/lockUti
 import { Loader2, ExternalLink, MessageSquareText } from 'lucide-react';
 import { format } from 'date-fns';
 import { supabase } from '@/integrations/supabase/client';
+import { callEdgeFunction } from '@/lib/edgeFunctions';
 import { isEventRegistrationClosed } from '@/lib/events/registration';
 import { useGaslessFallback } from '@/hooks/useGasless';
 import { normalizeEmail } from '@/utils/emailUtils';
@@ -175,19 +176,17 @@ export const EventPurchaseDialog: React.FC<EventPurchaseDialogProps> = ({
       if (result.success && result.transactionHash) {
         // Register ticket via edge function (service_role bypasses RLS)
         const accessToken = await getAccessToken?.();
-        const { data: registerData, error: registerError } = await supabase.functions.invoke('register-ticket', {
-          body: {
+        let registerData: any = null;
+        try {
+          registerData = await callEdgeFunction('register-ticket', {
             event_id: event.id,
             owner_wallet: wallet.address.toLowerCase(),
             grant_tx_hash: result.transactionHash,
             user_email: userEmail || null,
             purchase_form_response: purchaseFormResponse,
-          },
-          headers: accessToken ? { 'X-Privy-Authorization': `Bearer ${accessToken}` } : undefined,
-        });
-
-        if (registerError) {
-          console.error('Failed to register ticket:', registerError);
+          }, { privyToken: accessToken });
+        } catch (err) {
+          console.error('Failed to register ticket:', err);
           // Don't fail the purchase - ticket is already on-chain
         }
 

@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { usePrivy, useWallets } from '@privy-io/react-auth';
-import { supabase } from '@/integrations/supabase/client';
+import { callEdgeFunction } from '@/lib/edgeFunctions';
 import type { EventPost, UseEventPostsReturn } from '../types';
 
 /**
@@ -62,21 +62,7 @@ export const useEventPosts = (eventId: string): UseEventPostsReturn => {
         return;
       }
 
-      const { data, error: invokeError } = await supabase.functions.invoke('get-event-discussions', {
-        body: { eventId },
-        headers: { 'X-Privy-Authorization': `Bearer ${token}` },
-      });
-
-      console.debug('useEventPosts: get-event-discussions response', {
-        eventId,
-        ok: data?.ok,
-        allowed: data?.allowed,
-        postCount: data?.posts?.length,
-        invokeError: invokeError?.message,
-      });
-
-      if (invokeError) throw invokeError;
-      if (!data?.ok) throw new Error(data?.error || 'Failed to load discussions');
+      const data = await callEdgeFunction<any>('get-event-discussions', { eventId }, { privyToken: token });
 
       if (!data.allowed) {
         setPosts([]);
@@ -120,22 +106,7 @@ export const useEventPosts = (eventId: string): UseEventPostsReturn => {
         throw new Error('Authentication required');
       }
 
-      const { data, error } = await supabase.functions.invoke('create-post', {
-        body: { eventId, content },
-        headers: { 'X-Privy-Authorization': `Bearer ${token}` },
-      });
-
-      if (error) {
-        console.error('Error creating post:', error);
-        throw error;
-      }
-
-      if (!data?.ok) {
-        const errorMessage = data?.error || 'Failed to create post';
-        console.error('Error creating post:', errorMessage);
-        throw new Error(errorMessage);
-      }
-
+      const data = await callEdgeFunction<any>('create-post', { eventId, content }, { privyToken: token });
       const newPost = normalizePost((data.post as EventPost) || { id: data.postId, event_id: eventId, content });
       setPosts((prev) => [newPost, ...prev]);
       fetchPostsRef.current({ background: true });
@@ -151,22 +122,7 @@ export const useEventPosts = (eventId: string): UseEventPostsReturn => {
         throw new Error('Authentication required');
       }
 
-      const { data, error } = await supabase.functions.invoke('update-post', {
-        body: { postId, updates: { is_deleted: true } },
-        headers: { 'X-Privy-Authorization': `Bearer ${token}` },
-      });
-
-      if (error) {
-        console.error('Error deleting post:', error);
-        throw error;
-      }
-
-      if (!data?.ok) {
-        const errorMessage = data?.error || 'Failed to delete post';
-        console.error('Error deleting post:', errorMessage);
-        throw new Error(errorMessage);
-      }
-
+      await callEdgeFunction('update-post', { postId, updates: { is_deleted: true } }, { privyToken: token });
       setPosts((prev) => prev.filter((p) => p.id !== postId));
       fetchPostsRef.current({ background: true });
     },
@@ -181,22 +137,7 @@ export const useEventPosts = (eventId: string): UseEventPostsReturn => {
         throw new Error('Authentication required');
       }
 
-      const { data, error } = await supabase.functions.invoke('update-post', {
-        body: { postId, updates: { is_pinned: isPinned } },
-        headers: { 'X-Privy-Authorization': `Bearer ${token}` },
-      });
-
-      if (error) {
-        console.error('Error pinning post:', error);
-        throw error;
-      }
-
-      if (!data?.ok) {
-        const errorMessage = data?.error || 'Failed to pin post';
-        console.error('Error pinning post:', errorMessage);
-        throw new Error(errorMessage);
-      }
-
+      await callEdgeFunction('update-post', { postId, updates: { is_pinned: isPinned } }, { privyToken: token });
       setPosts((prev) =>
         prev.map((p) => (p.id === postId ? { ...p, is_pinned: isPinned } : p))
       );
@@ -213,22 +154,7 @@ export const useEventPosts = (eventId: string): UseEventPostsReturn => {
         throw new Error('Authentication required');
       }
 
-      const { data, error } = await supabase.functions.invoke('update-post', {
-        body: { postId, updates: { comments_enabled: enabled } },
-        headers: { 'X-Privy-Authorization': `Bearer ${token}` },
-      });
-
-      if (error) {
-        console.error('Error toggling comments:', error);
-        throw error;
-      }
-
-      if (!data?.ok) {
-        const errorMessage = data?.error || 'Failed to toggle comments';
-        console.error('Error toggling comments:', errorMessage);
-        throw new Error(errorMessage);
-      }
-
+      await callEdgeFunction('update-post', { postId, updates: { comments_enabled: enabled } }, { privyToken: token });
       setPosts((prev) =>
         prev.map((p) => (p.id === postId ? { ...p, comments_enabled: enabled } : p))
       );

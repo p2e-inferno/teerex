@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import { usePrivy } from '@privy-io/react-auth';
 import { useQueryClient } from '@tanstack/react-query';
 import { ExternalLink, Loader2, Package, RefreshCw, User } from 'lucide-react';
-import { supabase } from '@/integrations/supabase/client';
+import { callEdgeFunction } from '@/lib/edgeFunctions';
 import { useToast } from '@/hooks/use-toast';
 import { useMyGamingBundleOrders } from '@/hooks/useMyGamingBundleOrders';
 import { Button } from '@/components/ui/button';
@@ -58,15 +58,12 @@ const MyBundles = () => {
     setCheckingOrderId(orderId);
     try {
       console.log(`[MyBundles] Invoking get-gaming-bundle-order-status for ${orderId}...`);
-      const { data, error: invokeError } = await supabase.functions.invoke('get-gaming-bundle-order-status', {
-        body: { order_id: orderId },
-      });
+      const data = await callEdgeFunction<any>('get-gaming-bundle-order-status',
+        { order_id: orderId },
+        {}
+      );
 
       console.log(`[MyBundles] Edge Function Response:`, data);
-      if (invokeError) {
-        console.error(`[MyBundles] Edge Function Invoke Error:`, invokeError);
-        throw invokeError;
-      }
       if (!data?.found) throw new Error('Order not found');
 
       const repairLogs = Array.isArray(data.repair_logs) && data.repair_logs.length > 0

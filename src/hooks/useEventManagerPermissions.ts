@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { usePrivy } from '@privy-io/react-auth';
-import { supabase } from '@/integrations/supabase/client';
+import { callEdgeFunction } from '@/lib/edgeFunctions';
 import type { EventManagerPermissions } from '@/hooks/useEventManagers';
 
 type PermissionState = {
@@ -39,20 +39,14 @@ export function useEventManagerPermissions(eventId: string | null) {
     try {
       const token = await getAccessToken?.();
       if (!token) return;
-      const { data, error } = await supabase.functions.invoke('manage-event-managers', {
-        body: { action: 'my_permissions', event_id: eventId },
-        headers: { 'X-Privy-Authorization': `Bearer ${token}` },
+      const data = await callEdgeFunction<any>('manage-event-managers', { action: 'my_permissions', event_id: eventId }, { privyToken: token });
+      setState({
+        authorized: Boolean(data.authorized),
+        isCreator: Boolean(data.isCreator),
+        isOnchainManager: Boolean(data.isOnchainManager),
+        isOffchainManager: Boolean(data.isOffchainManager),
+        permissions: { ...EMPTY_PERMISSIONS, ...(data.permissions || {}) },
       });
-      if (error) throw error;
-      if (data?.ok) {
-        setState({
-          authorized: Boolean(data.authorized),
-          isCreator: Boolean(data.isCreator),
-          isOnchainManager: Boolean(data.isOnchainManager),
-          isOffchainManager: Boolean(data.isOffchainManager),
-          permissions: { ...EMPTY_PERMISSIONS, ...(data.permissions || {}) },
-        });
-      }
     } finally {
       setLoading(false);
       setChecked(true);

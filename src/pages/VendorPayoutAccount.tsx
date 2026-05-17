@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { usePrivy } from '@privy-io/react-auth';
+import { callEdgeFunction } from '@/lib/edgeFunctions';
 import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -62,7 +63,6 @@ interface PayoutAccount {
 
 const VendorPayoutAccount: React.FC = () => {
   const { authenticated, ready, getAccessToken, login } = usePrivy();
-  const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
 
   // React Query hooks
   const { data: banks = [], isLoading: banksLoading, error: banksError } = useBanks();
@@ -101,29 +101,16 @@ const VendorPayoutAccount: React.FC = () => {
     setIsLoading(true);
     try {
       const token = await getAccessToken();
-      const { data, error } = await supabase.functions.invoke('get-vendor-payout-account', {
-        method: 'GET',
-        headers: {
-          Authorization: `Bearer ${anonKey}`,
-          'X-Privy-Authorization': `Bearer ${token}`,
-        },
-      });
-
-      if (error) throw error;
-
-      if (data?.ok) {
-        setPayoutAccount(data.payout_account);
-        setCanReceiveFiat(data.can_receive_fiat_payments);
-      } else {
-        throw new Error(data?.error || 'Failed to fetch payout account');
-      }
+      const data = await callEdgeFunction<any>('get-vendor-payout-account', {}, { privyToken: token, withAnonKey: true, method: 'GET' });
+      setPayoutAccount(data.payout_account);
+      setCanReceiveFiat(data.can_receive_fiat_payments);
     } catch (err) {
       console.error('Error fetching payout account:', err);
       toast.error('Failed to load payout account status');
     } finally {
       setIsLoading(false);
     }
-  }, [authenticated, getAccessToken, anonKey]);
+  }, [authenticated, getAccessToken]);
 
   // Initial load
   useEffect(() => {
@@ -157,9 +144,10 @@ const VendorPayoutAccount: React.FC = () => {
       const selectedBank = banks.find((b) => b.code === selectedBankCode);
 
       // Use the verified account holder name from Paystack as the business name
+      const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
       const { data, error } = await supabase.functions.invoke('submit-payout-account', {
         body: {
-          business_name: resolvedAccount.account_name, // Use verified name
+          business_name: resolvedAccount.account_name,
           settlement_bank_code: selectedBankCode,
           settlement_bank_name: selectedBank?.name,
           account_number: accountNumber,
@@ -177,7 +165,7 @@ const VendorPayoutAccount: React.FC = () => {
         setPayoutAccount(data.payout_account);
         setCanReceiveFiat(true);
       } else {
-        // Handle verification failure
+        // Handle verification failure with partial data
         if (data?.can_retry) {
           toast.error(data.error || 'Verification failed', {
             description: data.retry_hint || 'Please check your details and try again',
@@ -208,10 +196,11 @@ const VendorPayoutAccount: React.FC = () => {
       const token = await getAccessToken();
       const selectedBank = banks.find((b) => b.code === selectedBankCode);
 
+      const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
       const { data, error } = await supabase.functions.invoke('retry-payout-verification', {
         body: {
           payout_account_id: payoutAccount.id,
-          business_name: resolvedAccount.account_name, // Use verified name
+          business_name: resolvedAccount.account_name,
           settlement_bank_code: selectedBankCode || undefined,
           settlement_bank_name: selectedBank?.name,
           account_number: accountNumber || undefined,

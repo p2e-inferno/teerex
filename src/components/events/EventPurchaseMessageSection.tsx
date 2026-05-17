@@ -5,7 +5,7 @@ import { Loader2, MessageSquareText, Pencil, Trash2 } from 'lucide-react';
 import { RichTextDisplay } from '@/components/ui/rich-text/RichTextDisplay';
 import { RichTextEditor } from '@/components/ui/rich-text/RichTextEditor';
 import { useToast } from '@/hooks/use-toast';
-import { supabase } from '@/integrations/supabase/client';
+import { callEdgeFunction } from '@/lib/edgeFunctions';
 import { isEmptyHtml } from '@/utils/textUtils';
 import { normalizePurchaseMessage, PURCHASE_MESSAGE_MAX_LENGTH } from '@/utils/purchaseMessage';
 import type { PublishedEvent } from '@/types/event';
@@ -39,19 +39,10 @@ export const EventPurchaseMessageSection: React.FC<EventPurchaseMessageSectionPr
       try {
         const accessToken = await getAccessToken();
         if (!accessToken) return;
-        const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
-        const { data, error } = await supabase.functions.invoke('manage-event-purchase-message', {
-          body: {
-            action: 'get',
-            event_id: event.id,
-          },
-          headers: {
-            Authorization: `Bearer ${anonKey}`,
-            'X-Privy-Authorization': `Bearer ${accessToken}`,
-          },
-        });
-        if (error) throw new Error(error.message || 'Failed to load purchase message');
-        if (data?.error) throw new Error(data.error);
+        const data = await callEdgeFunction<any>('manage-event-purchase-message', {
+          action: 'get',
+          event_id: event.id,
+        }, { privyToken: accessToken, withAnonKey: true });
         if (!cancelled) {
           const message = data?.purchase_confirmation_message ?? null;
           setLocalMessage(message);
@@ -91,20 +82,11 @@ export const EventPurchaseMessageSection: React.FC<EventPurchaseMessageSectionPr
     if (!accessToken) {
       throw new Error('Authentication session expired. Please refresh and try again.');
     }
-    const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
-    const { data, error } = await supabase.functions.invoke('manage-event-purchase-message', {
-      body: {
-        action: nextMessage ? 'upsert' : 'delete',
-        event_id: event.id,
-        purchase_confirmation_message: nextMessage,
-      },
-      headers: {
-        Authorization: `Bearer ${anonKey}`,
-        'X-Privy-Authorization': `Bearer ${accessToken}`,
-      },
-    });
-    if (error) throw new Error(error.message || 'Failed to update purchase message');
-    if (data?.error) throw new Error(data.error);
+    const data = await callEdgeFunction<any>('manage-event-purchase-message', {
+      action: nextMessage ? 'upsert' : 'delete',
+      event_id: event.id,
+      purchase_confirmation_message: nextMessage,
+    }, { privyToken: accessToken, withAnonKey: true });
     return data?.purchase_confirmation_message ?? null;
   };
 
