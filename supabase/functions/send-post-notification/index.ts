@@ -5,9 +5,8 @@ import { corsHeaders, buildPreflightHeaders } from '../_shared/cors.ts';
 import { enforcePost } from '../_shared/http.ts';
 import { handleError } from '../_shared/error-handler.ts';
 import { getUserWalletAddresses, verifyPrivyToken } from '../_shared/privy.ts';
-import { isAnyUserWalletIsLockManagerParallel } from '../_shared/unlock.ts';
 import { sendEmail, getPostNotificationEmail, normalizeEmail } from '../_shared/email-utils.ts';
-import { validateChain } from '../_shared/network-helpers.ts';
+import { getEventAuthorization } from '../_shared/event-auth.ts';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
@@ -63,37 +62,17 @@ serve(async (req) => {
 
     if (evErr || !event) throw new Error('event_not_found');
 
-    let authorized = event.creator_id === privyUserId;
-    if (!authorized) {
-      // Validate chain and get network configuration
-      const networkConfig = await validateChain(supabaseAdmin, event.chain_id);
-      if (!networkConfig) {
-        console.error('[send-post-notification] Chain not supported:', event.chain_id);
-        return new Response(
-          JSON.stringify({ ok: false, error: 'chain_not_supported' }),
-          { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 200 }
-        );
-      }
+    // Allow creators, on-chain lock managers, and offchain discussion managers
+    // with manage_discussions permission to send notification emails.
+    const auth = await getEventAuthorization({
+      supabase: supabaseAdmin,
+      event,
+      privyUserId,
+      permission: 'manage_discussions',
+      userWallets,
+    });
 
-      if (!networkConfig.rpc_url) {
-        console.error('[send-post-notification] RPC URL not configured for chain:', event.chain_id);
-        return new Response(
-          JSON.stringify({ ok: false, error: 'rpc_not_configured' }),
-          { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 200 }
-        );
-      }
-
-      const rpcUrl = networkConfig.rpc_url;
-
-      const { anyIsManager } = await isAnyUserWalletIsLockManagerParallel(
-        event.lock_address,
-        userWallets,
-        rpcUrl
-      );
-      authorized = anyIsManager;
-    }
-
-    if (!authorized) {
+    if (!auth.authorized) {
       return new Response(JSON.stringify({ ok: false, error: 'unauthorized' }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         status: 403,
