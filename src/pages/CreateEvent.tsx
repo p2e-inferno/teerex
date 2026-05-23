@@ -172,6 +172,7 @@ const CreateEvent = () => {
   const [createdEvent, setCreatedEvent] = useState<any>(null);
   const [editingMeta, setEditingMeta] = useState<{ lockAddress: string; chainId: number; initialTransferable: boolean } | null>(null);
   const [initialEditFormData, setInitialEditFormData] = useState<EventFormData | null>(null);
+  const [editingEventVisibilityLocked, setEditingEventVisibilityLocked] = useState(false);
   const [formData, setFormData] = useState<EventFormData>(getDefaultFormData);
 
   // Shared event publisher hook
@@ -185,11 +186,13 @@ const CreateEvent = () => {
       setEditingEventId(null);
       setEditingMeta(null);
       setInitialEditFormData(null);
+      setEditingEventVisibilityLocked(false);
       return;
     }
 
     if (draftId && user?.id) {
       const loadDraft = async () => {
+        setEditingEventVisibilityLocked(false);
         const accessToken = await getAccessToken();
         if (!accessToken) {
           console.error('No access token available for loading draft');
@@ -242,8 +245,20 @@ const CreateEvent = () => {
       loadDraft();
     } else if (eventId && user?.id) {
       const loadEvent = async () => {
+        setEditingEventVisibilityLocked(true);
         const event = await getPublishedEvent(eventId, user.id);
         if (event) {
+          try {
+            const { count, error } = await supabase
+              .from('tickets_public')
+              .select('id', { count: 'exact', head: true })
+              .eq('event_id', eventId);
+            if (error) throw error;
+            setEditingEventVisibilityLocked((count ?? 0) > 0);
+          } catch (err) {
+            console.error('Failed to load event ticket count:', err);
+          }
+
           const loadedFormData: EventFormData = {
             title: event.title,
             description: event.description,
@@ -289,8 +304,9 @@ const CreateEvent = () => {
             chainId: event.chain_id || 0,
             initialTransferable: (event as any).transferable ?? false,
           });
-      } else {
-        toast({
+        } else {
+          setEditingEventVisibilityLocked(false);
+          toast({
             title: "Event not found",
             description: "Could not load the event to edit.",
             variant: "destructive"
@@ -651,6 +667,7 @@ const CreateEvent = () => {
     setEditingEventId(null);
     setEditingMeta(null);
     setInitialEditFormData(null);
+    setEditingEventVisibilityLocked(false);
   };
 
   const handleCloseSuccessModal = () => {
@@ -664,7 +681,8 @@ const CreateEvent = () => {
       formData,
       updateFormData,
       onNext: nextStep,
-      editingEventId: editingEventId || undefined
+      editingEventId: editingEventId || undefined,
+      editingEventVisibilityLocked,
     };
 
     switch (currentStep) {
