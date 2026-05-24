@@ -10,6 +10,7 @@ import { ethers } from "https://esm.sh/ethers@6.14.4";
 import { getUserWalletAddresses } from "../_shared/privy.ts";
 import { validateChain } from "../_shared/network-helpers.ts";
 import { buildStartsAtUtcIso, toDateOnly } from "../_shared/datetime.ts";
+import { eventHasAnyTickets } from "../_shared/purchase-form.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -35,6 +36,7 @@ const SAFE_METADATA_FIELDS = new Set([
   "imageUrl",
   "imageCropX",
   "imageCropY",
+  "isPublic",
   "allowWaitlist",
 ]);
 
@@ -150,7 +152,7 @@ serve(async (req) => {
     );
     const { data: event, error: fetchError } = await serviceRoleClient
       .from("events")
-      .select("creator_id, lock_address, chain_id, date, end_date, time, starts_at, ends_at, registration_cutoff, refund_protection_enabled")
+      .select("creator_id, lock_address, chain_id, is_public, date, end_date, time, starts_at, ends_at, registration_cutoff, refund_protection_enabled")
       .eq("id", eventId)
       .single();
 
@@ -169,6 +171,23 @@ serve(async (req) => {
     const isSafeMetadataOnlyUpdate =
       requestedKeys.length > 0 &&
       requestedKeys.every((key) => SAFE_METADATA_FIELDS.has(key));
+
+    const isVisibilityUpdate = "isPublic" in formData;
+    if (isVisibilityUpdate) {
+      const nextIsPublic = Boolean((formData as any).isPublic);
+      const hasExistingTickets = await eventHasAnyTickets(serviceRoleClient, eventId);
+      if (nextIsPublic !== Boolean(event.is_public) && hasExistingTickets) {
+        return new Response(
+          JSON.stringify({
+            error: "Event visibility cannot be changed after tickets have been sold.",
+          }),
+          {
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+            status: 400,
+          }
+        );
+      }
+    }
 
     if (isSafeMetadataOnlyUpdate) {
       if (event.creator_id !== privyUserId) {
@@ -250,18 +269,6 @@ serve(async (req) => {
     };
 
     if (formData && typeof formData === "object") {
-      if ("isPublic" in formData) {
-        return new Response(
-          JSON.stringify({
-            error: "Event visibility cannot be edited after creation.",
-          }),
-          {
-            headers: { ...corsHeaders, "Content-Type": "application/json" },
-            status: 400,
-          }
-        );
-      }
-
       if (event.refund_protection_enabled) {
         const normalizeIso = (value: unknown): string | null => {
           if (!value) return null;
@@ -406,6 +413,9 @@ serve(async (req) => {
         eventData.allow_waitlist = !!formData.allowWaitlist;
       } else if ("allow_waitlist" in formData) {
         eventData.allow_waitlist = !!formData.allow_waitlist;
+      }
+      if ("isPublic" in formData) {
+        eventData.is_public = !!formData.isPublic;
       }
 
     }
