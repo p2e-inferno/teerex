@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import { useToast } from '@/hooks/use-toast';
+import { supabase } from '@/integrations/supabase/client';
 import { useAttestations } from '@/hooks/useAttestations';
 import { callEdgeFunction } from '@/lib/edgeFunctions';
 import { usePrivy, useWallets } from '@privy-io/react-auth';
