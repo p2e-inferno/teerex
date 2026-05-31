@@ -26,9 +26,13 @@ export const PrivyProvider: React.FC<PrivyProviderProps> = ({ children }) => {
   const appId = import.meta.env.VITE_PRIVY_APP_ID;
 
   useEffect(() => {
-    async function loadPrivyConfig() {
+    async function loadPrivyConfig({ silent = false }: { silent?: boolean } = {}) {
       try {
-        setIsLoading(true);
+        // Only show the full-screen loading state on the initial mount.
+        // Background refreshes (e.g. triggered by an admin editing a network)
+        // must not flip `isLoading`, otherwise the whole app tree unmounts and
+        // remounts — which looks identical to a page refresh.
+        if (!silent) setIsLoading(true);
         const config = await getPrivyConfig();
         setPrivyConfig(config);
         setError(null); // Clear any previous errors
@@ -68,7 +72,7 @@ export const PrivyProvider: React.FC<PrivyProviderProps> = ({ children }) => {
           ],
         });
       } finally {
-        setIsLoading(false);
+        if (!silent) setIsLoading(false);
       }
     }
 
@@ -89,8 +93,9 @@ export const PrivyProvider: React.FC<PrivyProviderProps> = ({ children }) => {
 
     // Listen for cache clear events
     const unsubscribe = onCacheClear(() => {
-      console.log('Cache clear event received, reloading Privy config...');
-      loadPrivyConfig();
+      console.log('Cache clear event received, refreshing Privy config in background...');
+      // Silent refresh: update config in place without tearing down the app tree.
+      loadPrivyConfig({ silent: true });
       loadWagmi();
     });
 
