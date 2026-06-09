@@ -12,7 +12,7 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
-import { updateLockTransferability } from '@/utils/lockUtils';
+import { updateLockTransferability, getTicketExpirationSeconds, MIN_PROTECTED_EXPIRATION_SECONDS } from '@/utils/lockUtils';
 import { getPublishedEvent } from '@/utils/supabaseDraftStorage';
 import {
   saveDraftViaEdge,
@@ -385,6 +385,15 @@ const CreateEvent = () => {
             const start = getEventStartIso(formData);
             const end = getEventEndIso(formData);
             if (min <= 0 || min > formData.capacity || !trigger || !start || !end) return false;
+            // Protected events must keep keys valid through the refund window — block
+            // the step until the ticket duration meets the minimum (mirrors the
+            // publish-time guard in useEventPublisher).
+            if (
+              getTicketExpirationSeconds(formData.ticketDuration, formData.customDurationDays) <
+              MIN_PROTECTED_EXPIRATION_SECONDS
+            ) {
+              return false;
+            }
             return trigger.getTime() <= new Date(start).getTime() && trigger.getTime() < new Date(end).getTime();
           }
           return true;
