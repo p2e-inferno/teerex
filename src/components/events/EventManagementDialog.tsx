@@ -61,7 +61,7 @@ import { base, baseSepolia } from 'wagmi/chains';
 import { getDivviBrowserProvider } from '@/lib/wallet/provider';
 import { useUserAddresses } from '@/hooks/useUserAddresses';
 import { useRefundableEventStatus } from '@/hooks/useRefundableEventStatus';
-import { getRefundProtectionBadge } from '@/lib/events/refundStatus';
+import { getRefundProtectionBadge, shouldAutoReleaseAfterRefund, RELEASE_AFTER_REFUND_PROMPT } from '@/lib/events/refundStatus';
 import { useEventManagerPermissions } from '@/hooks/useEventManagerPermissions';
 import { callEdgeFunction } from '@/lib/edgeFunctions';
 
@@ -377,9 +377,10 @@ export const EventManagementDialog: React.FC<EventManagementDialogProps> = ({
   const showWarning = hasFiatPayment && !event.service_manager_added && canManageSensitiveControls;
 
   const refreshProtectedControls = async (txHash?: string) => {
-    await refundableStatus.refresh(txHash);
+    const snapshot = await refundableStatus.refresh(txHash);
     await refreshLockManagerState();
     onEventUpdated();
+    return snapshot;
   };
 
   const handleReleaseProtected = async () => {
@@ -441,7 +442,17 @@ export const EventManagementDialog: React.FC<EventManagementDialogProps> = ({
       }
 
       toast({ title: 'Refund transaction confirmed' });
-      await refreshProtectedControls(result.transactionHash);
+      const snapshot = await refreshProtectedControls(result.transactionHash);
+
+      // Chain the release ONLY when this batch completed the refunds and the connected
+      // wallet is the on-chain creator (the only address the controller lets release).
+      // Partial batches or non-creator callers fall back to the standalone release button.
+      // `isRefundingProtected` stays true through the chained release so the refund
+      // control can't be re-triggered mid-release; the `finally` clears it.
+      if (shouldAutoReleaseAfterRefund(snapshot, creatorMatchesWallet)) {
+        toast(RELEASE_AFTER_REFUND_PROMPT);
+        await handleReleaseProtected();
+      }
     } catch (error) {
       toast({
         title: 'Refund failed',

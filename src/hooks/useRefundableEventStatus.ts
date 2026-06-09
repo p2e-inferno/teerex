@@ -27,8 +27,10 @@ export interface RefundableEventStatusState {
   creatorAddress: string | null;
   isLoading: boolean;
   error: string | null;
-  refresh: (txHash?: string) => Promise<void>;
+  refresh: (txHash?: string) => Promise<RefundableEventStatusSnapshot | null>;
 }
+
+export type RefundableEventStatusSnapshot = Omit<RefundableEventStatusState, 'refresh'>;
 
 export const useRefundableEventStatus = (
   event: PublishedEvent | null,
@@ -57,13 +59,13 @@ export const useRefundableEventStatus = (
     [userAddresses]
   );
 
-  const refresh = useCallback(async (txHash?: string) => {
-    if (!event?.id || !event.refund_protection_enabled) return;
+  const refresh = useCallback(async (txHash?: string): Promise<RefundableEventStatusSnapshot | null> => {
+    if (!event?.id || !event.refund_protection_enabled) return null;
 
     setState((current) => ({ ...current, isLoading: true, error: null }));
     try {
       const data = await callEdgeFunction<any>('sync-refundable-event-status', { event_id: event.id, accounts, tx_hash: txHash }, {});
-      setState({
+      const snapshot: RefundableEventStatusSnapshot = {
         status: data.status,
         attendeeCount: Number(data.attendee_count || 0),
         minAttendees: Number(data.min_attendees || event.refund_min_attendees || 0),
@@ -79,9 +81,12 @@ export const useRefundableEventStatus = (
         creatorAddress: data.creator || null,
         isLoading: false,
         error: null,
-      });
+      };
+      setState(snapshot);
+      return snapshot;
     } catch (err: any) {
       setState((current) => ({ ...current, isLoading: false, error: err?.message || 'Failed to sync status' }));
+      return null;
     }
   }, [accounts, event?.id, event?.refund_controller_address, event?.refund_min_attendees, event?.refund_protection_enabled]);
 
