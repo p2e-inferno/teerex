@@ -36,6 +36,57 @@ export interface ProtectedReserveBondPreview {
   symbol: string;
 }
 
+/**
+ * Minimum key expiration duration for protected (refund-enabled) events.
+ *
+ * The TeeRexAttendanceControllerV1 contract skips any key that has already
+ * expired when the refund batch runs (`expireAndRefundFor` is guarded behind
+ * `isValidKey`). A key that expires before/around the refund trigger time means
+ * its holder is silently skipped and never refunded, with their funds ultimately
+ * claimable by the event creator. The deployed contract cannot be changed, so we
+ * enforce a generous minimum expiration on the TeeRex client: every paid key
+ * stays valid well past any realistic refund window. A determined user can call
+ * the contract directly with a shorter expiration, but such an event will not be
+ * surfaced on the TeeRex platform, which is the intended scope of protection.
+ */
+export const MIN_PROTECTED_EXPIRATION_DAYS = 365;
+export const MIN_PROTECTED_EXPIRATION_SECONDS = MIN_PROTECTED_EXPIRATION_DAYS * 24 * 60 * 60;
+
+export type TicketDuration = 'event' | '30' | '365' | 'unlimited' | 'custom';
+
+/**
+ * Canonical mapping from a ticket-duration selection to the on-chain key
+ * expiration in seconds. This is the single source of truth used both for
+ * deployment (the value sent to the lock) and for validation (compared against
+ * MIN_PROTECTED_EXPIRATION_SECONDS for protected events). Keep all duration→time
+ * logic here so the deploy path and the guards can never drift apart.
+ *
+ * Notes:
+ * - 'unlimited' uses a large sentinel (~31 years), which naturally exceeds any
+ *   protected-event minimum.
+ * - 'custom' floors at 1 day; the lock contract rejects a zero expiration.
+ * - 'event' (valid until the event ends) maps to 1 day.
+ */
+export const getTicketExpirationSeconds = (
+  duration?: TicketDuration | string,
+  customDays?: number
+): number => {
+  const DAY = 24 * 60 * 60;
+  switch (duration) {
+    case '30':
+      return 30 * DAY;
+    case '365':
+      return 365 * DAY;
+    case 'unlimited':
+      return 999999999; // ~31 years (effectively unlimited)
+    case 'custom':
+      return (customDays || 1) * DAY;
+    case 'event':
+    default:
+      return DAY; // 1 day (valid until event ends)
+  }
+};
+
 interface PurchaseResult {
   success: boolean;
   transactionHash?: string;

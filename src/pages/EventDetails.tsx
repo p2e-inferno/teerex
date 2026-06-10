@@ -23,6 +23,8 @@ import {
   Shield,
   Loader2,
   AlertCircle,
+  Zap,
+  CheckCircle2,
 } from "lucide-react";
 import { getPublishedEventById } from "@/utils/eventUtils";
 import type { PublishedEvent } from "@/types/event";
@@ -281,7 +283,8 @@ const EventDetailsContent = () => {
     protectedActionEvent,
     wallet,
     refundableStatus.authorizedRefundAddress,
-    refundableStatus.refresh
+    refundableStatus.refresh,
+    refundableStatus.creatorAddress
   );
   const isProtectedRefundEvent = Boolean(event?.refund_protection_enabled);
   const refundTriggerMillis = event?.refund_trigger_at ? new Date(event.refund_trigger_at).getTime() : null;
@@ -296,6 +299,17 @@ const EventDetailsContent = () => {
     wallet?.address &&
     refundableStatus.authorizedRefundAddress &&
     wallet.address.toLowerCase() === refundableStatus.authorizedRefundAddress.toLowerCase()
+  );
+  const signerMatchesCreator = refundActions.signerIsCreator;
+  // The creator must release lock management back to their wallet after a protected
+  // event resolves — both when refunds finish (failure path) and when the attendance
+  // threshold is met (success path). Surface it here as the discoverable fallback to
+  // the buried Advanced-tab control in the management modal.
+  const canReleaseProtected = Boolean(
+    isProtectedRefundEvent &&
+    signerMatchesCreator &&
+    !refundableStatus.managerReleased &&
+    (refundableStatus.refundComplete || refundableStatus.status === 'threshold_met')
   );
   const refundWindowCountdown = formatCountdownLabel(event?.refund_trigger_at, nowMs);
   const refundWindowClosesCountdown = formatCountdownLabel(event?.refund_event_end_at || event?.ends_at, nowMs);
@@ -1312,9 +1326,10 @@ const EventDetailsContent = () => {
                         <Button
                           variant="destructive"
                           className="w-full shadow-sm"
-                          onClick={() => refundActions.cancelAndRefund(50)}
+                          onClick={() => refundActions.cancelAndRefundThenMaybeRelease(50)}
                           disabled={
                             refundActions.isRefunding ||
+                            refundActions.isReleasing ||
                             !refundableStatus.authorizedRefundCaller ||
                             !signerMatchesAuthorizedRefundCaller
                           }
@@ -1328,6 +1343,30 @@ const EventDetailsContent = () => {
                             ? 'Continue refunds'
                             : 'Cancel and refund'}
                         </Button>
+                      )}
+
+                      {canReleaseProtected && (
+                        <Button
+                          className="w-full bg-purple-600 text-white hover:bg-purple-700 shadow-sm"
+                          onClick={() => refundActions.releaseEvent()}
+                          disabled={refundActions.isReleasing || refundActions.isRefunding}
+                        >
+                          {refundActions.isReleasing ? (
+                            <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                          ) : (
+                            <Zap className="w-4 h-4 mr-2" />
+                          )}
+                          {refundableStatus.refundComplete
+                            ? 'Release event to your wallet'
+                            : 'Release your event'}
+                        </Button>
+                      )}
+
+                      {isProtectedRefundEvent && refundableStatus.managerReleased && (
+                        <div className="flex items-center gap-2 text-sm font-medium text-purple-800">
+                          <CheckCircle2 className="w-4 h-4 text-purple-600" />
+                          Released to your wallet
+                        </div>
                       )}
                     </div>
                   )}

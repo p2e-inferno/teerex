@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { usePrivy, useWallets } from '@privy-io/react-auth';
 import { useToast } from '@/hooks/use-toast';
-import { deployLock, addLockManager, deployProtectedEventLock } from '@/utils/lockUtils';
+import { deployLock, addLockManager, deployProtectedEventLock, getTicketExpirationSeconds, MIN_PROTECTED_EXPIRATION_SECONDS, MIN_PROTECTED_EXPIRATION_DAYS } from '@/utils/lockUtils';
 import { savePublishedEventViaEdge, deleteDraftViaEdge } from '@/utils/edgeFunctionStorage';
 import { supabase } from '@/integrations/supabase/client';
 import { useGaslessFallback } from '@/hooks/useGasless';
@@ -48,25 +48,6 @@ export function useEventPublisher() {
     },
     true // enabled by default
   );
-
-  /**
-   * Calculate ticket expiration duration based on settings
-   */
-  const getExpirationDuration = (duration: string, customDays?: number): number => {
-    switch (duration) {
-      case '30':
-        return 30 * 24 * 60 * 60;      // 30 days in seconds
-      case '365':
-        return 365 * 24 * 60 * 60;    // 1 year in seconds
-      case 'unlimited':
-        return 999999999;              // ~31 years (effectively unlimited)
-      case 'custom':
-        return (customDays || 1) * 24 * 60 * 60; // Custom days in seconds
-      case 'event':
-      default:
-        return 86400;                  // 1 day (valid until event)
-    }
-  };
 
   /**
    * Validate required form fields
@@ -203,7 +184,7 @@ export function useEventPublisher() {
         symbol: `${formData.title.slice(0, 3).toUpperCase()}TIX`,
         keyPrice: formData.paymentMethod === 'crypto' ? formData.price.toString() : '0',
         maxNumberOfKeys: formData.capacity,
-        expirationDuration: getExpirationDuration(
+        expirationDuration: getTicketExpirationSeconds(
           formData.ticketDuration,
           formData.customDurationDays
         ),
@@ -235,6 +216,13 @@ export function useEventPublisher() {
         }
         if (!Number.isFinite(triggerMs) || triggerMs > startMs || triggerMs >= endMs) {
           throw new Error('Refund trigger must be before event end and no later than event start.');
+        }
+        // Protected events must keep every paid key valid through the refund window.
+        // The controller skips already-expired keys when refunding, so a short
+        // expiration would let holders go unrefunded. Enforce the minimum here as a
+        // backstop regardless of how the duration was set (UI, restored draft, etc.).
+        if (lockConfig.expirationDuration < MIN_PROTECTED_EXPIRATION_SECONDS) {
+          throw new Error(`Protected events require a ticket duration of at least ${MIN_PROTECTED_EXPIRATION_DAYS} days so refunds can reach every attendee. Please update the ticket duration.`);
         }
       }
 

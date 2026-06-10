@@ -26,7 +26,7 @@ import { callEdgeFunction } from '@/lib/edgeFunctions';
 import { useQueries } from '@tanstack/react-query';
 import { CACHE_TIMES } from '@/lib/config/react-query-config';
 import { getDefaultRefundTriggerIso, getEventEndIso, getEventStartIso } from '@/utils/eventTime';
-import { previewProtectedEventReserveBond, type ProtectedReserveBondPreview } from '@/utils/lockUtils';
+import { previewProtectedEventReserveBond, type ProtectedReserveBondPreview, getTicketExpirationSeconds, MIN_PROTECTED_EXPIRATION_SECONDS, MIN_PROTECTED_EXPIRATION_DAYS } from '@/utils/lockUtils';
 import { PurchaseFormBuilder } from '@/components/create-event/PurchaseFormBuilder';
 
 interface PayoutAccountInfo {
@@ -83,6 +83,15 @@ export const TicketSettings: React.FC<TicketSettingsProps> = ({
   const currentNetwork = currentChainId ? getNetworkByChainId(currentChainId) : undefined;
   const hasRefundManager = Boolean(currentNetwork?.refundable_event_manager_address);
   const isPaidCrypto = formData.paymentMethod === 'crypto' && Number(formData.price) > 0;
+
+  // Protected (refund-enabled) events must keep keys valid through the refund
+  // window, otherwise the controller skips expired keys and those holders go
+  // unrefunded. Enforce a minimum ticket duration on the client.
+  const protectionActive = Boolean(formData.refundProtectionEnabled);
+  const protectedDurationInvalid =
+    protectionActive &&
+    getTicketExpirationSeconds(formData.ticketDuration, formData.customDurationDays) < MIN_PROTECTED_EXPIRATION_SECONDS;
+
   const refundTriggerValue = toDateTimeLocalValue(formData.refundTriggerAt);
   const refundEndAt = useMemo(() => {
     try {
@@ -127,6 +136,11 @@ export const TicketSettings: React.FC<TicketSettingsProps> = ({
       Math.max(1, Math.ceil((Number(formData.capacity) || 1) / 2))
     );
 
+    // If the current ticket duration would expire keys before the refund window,
+    // snap it up to "1 year" so protected refunds can reach every attendee.
+    const durationNeedsBump =
+      getTicketExpirationSeconds(formData.ticketDuration, formData.customDurationDays) < MIN_PROTECTED_EXPIRATION_SECONDS;
+
     updateFormData({
       refundProtectionEnabled: true,
       refundMinAttendees: formData.refundMinAttendees || defaultMin,
@@ -134,6 +148,9 @@ export const TicketSettings: React.FC<TicketSettingsProps> = ({
       refundEventEndAt: endsAt,
       refundReserveBond: null,
       transferable: false,
+      ...(durationNeedsBump
+        ? { ticketDuration: '365' as any, customDurationDays: undefined }
+        : {}),
     } as any);
   };
 
@@ -453,13 +470,23 @@ export const TicketSettings: React.FC<TicketSettingsProps> = ({
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="event">Until event ends</SelectItem>
-                <SelectItem value="30">30 days</SelectItem>
+                <SelectItem value="event" disabled={protectionActive}>Until event ends</SelectItem>
+                <SelectItem value="30" disabled={protectionActive}>30 days</SelectItem>
                 <SelectItem value="365">1 year</SelectItem>
                 <SelectItem value="unlimited">Unlimited</SelectItem>
                 <SelectItem value="custom">Custom duration</SelectItem>
               </SelectContent>
             </Select>
+            {protectionActive && (
+              <p className="text-xs text-gray-500">
+                Protected events require tickets to stay valid for at least {MIN_PROTECTED_EXPIRATION_DAYS} days so refunds can reach every attendee if the event fails.
+              </p>
+            )}
+            {protectedDurationInvalid && (
+              <p className="text-xs text-red-600">
+                Ticket duration must be at least {MIN_PROTECTED_EXPIRATION_DAYS} days for protected events.
+              </p>
+            )}
           </div>
 
           <div className="space-y-2">
@@ -524,8 +551,9 @@ export const TicketSettings: React.FC<TicketSettingsProps> = ({
                 placeholder="Enter number of days"
                 value={formData.customDurationDays || ''}
                 onChange={(e) => updateFormData({ customDurationDays: parseInt(e.target.value) || 1 })}
-                min="1"
+                min={protectionActive ? MIN_PROTECTED_EXPIRATION_DAYS.toString() : '1'}
                 step="1"
+                className={protectedDurationInvalid ? 'border-red-500' : ''}
               />
             </div>
           )}
