@@ -540,7 +540,7 @@ export const previewProtectedEventReserveBond = async (
   };
 };
 
-const ensureCorrectNetwork = async (rawProvider: any, chainId: number) => {
+export const ensureCorrectNetwork = async (rawProvider: any, chainId: number) => {
   // Fetch network config from database (with 60s in-memory cache)
   const networkConfig = await getNetworkConfigByChainId(chainId);
 
