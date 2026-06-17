@@ -14,7 +14,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Switch } from '@/components/ui/switch';
 import { useToast } from '@/hooks/use-toast';
 import type { PublishedEvent } from '@/types/event';
-import { checkIfLockManager, updateLockPurchasability } from '@/utils/lockUtils';
+import { checkIfLockManager, ensureCorrectNetwork, updateLockPurchasability } from '@/utils/lockUtils';
 import {
   cancelAndRefundProtectedEvent,
   getLockWithdrawableBalance,
@@ -22,7 +22,6 @@ import {
   withdrawLockBalance,
 } from '@/utils/lockUtils';
 import { getEventRegistrationStatus, isEventRegistrationClosed } from '@/lib/events/registration';
-import { supabase } from '@/integrations/supabase/client';
 import {
   ExternalLink,
   Copy,
@@ -40,8 +39,7 @@ import {
   Zap,
   Settings2,
   FileText,
-  ShieldCheck,
-  LayoutDashboard
+  ShieldCheck
 } from 'lucide-react';
 import {
   Tabs,
@@ -58,7 +56,7 @@ import { EventPurchaseFormSection } from './EventPurchaseFormSection';
 import { EventPurchaseResponsesSection } from './EventPurchaseResponsesSection';
 import { useNetworkConfigs } from '@/hooks/useNetworkConfigs';
 import { base, baseSepolia } from 'wagmi/chains';
-import { getDivviBrowserProvider } from '@/lib/wallet/provider';
+import { getDivviBrowserProvider, getDivviEip1193Provider } from '@/lib/wallet/provider';
 import { useUserAddresses } from '@/hooks/useUserAddresses';
 import { useRefundableEventStatus } from '@/hooks/useRefundableEventStatus';
 import { getRefundProtectionBadge, shouldAutoReleaseAfterRefund, RELEASE_AFTER_REFUND_PROMPT } from '@/lib/events/refundStatus';
@@ -71,6 +69,44 @@ interface EventManagementDialogProps {
   onOpenChange: (open: boolean) => void;
   onEventUpdated: () => void;
 }
+
+const getMetadataUpdateErrorMessage = (error: any, networkLabel: string) => {
+  const code = error?.code ?? error?.error?.code;
+  const message = String(error?.shortMessage || error?.reason || error?.message || '');
+  const lowerMessage = message.toLowerCase();
+
+  if (
+    code === 4001 ||
+    code === 'ACTION_REJECTED' ||
+    lowerMessage.includes('user rejected') ||
+    lowerMessage.includes('user denied')
+  ) {
+    return 'Transaction cancelled. No metadata changes were made.';
+  }
+
+  if (lowerMessage.includes('unsupported or inactive chainid')) {
+    return `The ${networkLabel} network is not active in TeeRex configuration.`;
+  }
+
+  if (lowerMessage.includes('insufficient funds')) {
+    return `Insufficient funds for network fees on ${networkLabel}.`;
+  }
+
+  if (lowerMessage.includes('not lock manager')) {
+    return 'Only a lock manager can update this event metadata.';
+  }
+
+  if (
+    code === -32603 ||
+    lowerMessage.includes('could not coalesce error') ||
+    lowerMessage.includes('missing revert data') ||
+    lowerMessage.includes('execution reverted')
+  ) {
+    return `The wallet could not complete the metadata transaction on ${networkLabel}. Check that the wallet has gas and manager access, then try again.`;
+  }
+
+  return 'Failed to update metadata. Please try again.';
+};
 
 export const EventManagementDialog: React.FC<EventManagementDialogProps> = ({
   event,
@@ -113,7 +149,6 @@ export const EventManagementDialog: React.FC<EventManagementDialogProps> = ({
   const isManagementAccessLoading = open && (!eventAccess.checked || eventAccess.loading);
   const canManageSensitiveControls = eventAccess.isCreator || isLockManager;
   const canManageAccess = eventAccess.canManageAccess;
-  const canManageWaitlist = eventAccess.canManageWaitlist;
   const canManageManagers = eventAccess.canManageManagers;
   const refundBadge = getRefundProtectionBadge(refundableStatus.status || event.refund_status, 'creator');
   const creatorMatchesWallet = Boolean(
@@ -299,7 +334,9 @@ export const EventManagementDialog: React.FC<EventManagementDialogProps> = ({
     try {
       const { setLockMetadata, getBaseTokenURI, TEEREX_NFT_SYMBOL } = await import('@/utils/lockMetadata');
 
-      const ethersProvider = await getDivviBrowserProvider(wallets[0]);
+      const provider = await getDivviEip1193Provider(wallets[0]);
+      await ensureCorrectNetwork(provider, event.chain_id);
+      const ethersProvider = new ethers.BrowserProvider(provider);
       const signer = await ethersProvider.getSigner();
 
       const baseTokenURI = getBaseTokenURI(event.lock_address);
@@ -329,7 +366,7 @@ export const EventManagementDialog: React.FC<EventManagementDialogProps> = ({
       console.error('Error updating metadata:', error);
       toast({
         title: 'Failed to update metadata',
-        description: error.message || 'An error occurred',
+        description: getMetadataUpdateErrorMessage(error, networkLabel),
         variant: 'destructive'
       });
     } finally {
