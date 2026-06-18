@@ -56,7 +56,7 @@ import { EventPurchaseFormSection } from './EventPurchaseFormSection';
 import { EventPurchaseResponsesSection } from './EventPurchaseResponsesSection';
 import { useNetworkConfigs } from '@/hooks/useNetworkConfigs';
 import { base, baseSepolia } from 'wagmi/chains';
-import { getDivviBrowserProvider, getDivviEip1193Provider } from '@/lib/wallet/provider';
+import { getDivviBrowserProvider, getRawEip1193Provider } from '@/lib/wallet/provider';
 import { useUserAddresses } from '@/hooks/useUserAddresses';
 import { useRefundableEventStatus } from '@/hooks/useRefundableEventStatus';
 import { getRefundProtectionBadge, shouldAutoReleaseAfterRefund, RELEASE_AFTER_REFUND_PROMPT } from '@/lib/events/refundStatus';
@@ -321,7 +321,9 @@ export const EventManagementDialog: React.FC<EventManagementDialogProps> = ({
   };
 
   const handleUpdateMetadata = async () => {
-    if (!wallets[0]) {
+    const selectedWallet = wallets[0];
+
+    if (!selectedWallet) {
       toast({
         title: 'No wallet',
         description: 'Please connect your wallet',
@@ -334,7 +336,7 @@ export const EventManagementDialog: React.FC<EventManagementDialogProps> = ({
     try {
       const { setLockMetadata, getBaseTokenURI, TEEREX_NFT_SYMBOL } = await import('@/utils/lockMetadata');
 
-      const provider = await getDivviEip1193Provider(wallets[0]);
+      const provider = await getRawEip1193Provider(selectedWallet);
       await ensureCorrectNetwork(provider, event.chain_id);
       const ethersProvider = new ethers.BrowserProvider(provider);
       const signer = await ethersProvider.getSigner();
