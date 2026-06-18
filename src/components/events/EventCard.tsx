@@ -15,7 +15,7 @@ import { formatEventLocalDateTime, formatEventLocalTime } from '@/utils/eventTim
 import { hasMethod, isFreeEvent } from '@/lib/events/paymentMethods';
 import { isEventRegistrationClosed } from '@/lib/events/registration';
 import {
-  getRefundProtectionBadge,
+  getRefundProtectionBadges,
   getRefundProtectionPurchaseStateLabel,
 } from '@/lib/events/refundStatus';
 
@@ -62,16 +62,16 @@ export const EventCard: React.FC<EventCardProps> = ({
   const spotsLeft = event.capacity - keysSold;
   const isSoldOut = spotsLeft <= 0;
   const refundBadgeAudience = (onEdit || onManage) ? 'creator' : 'public';
+  const managerReleased = Boolean(event.refund_manager_released || event.refund_status === 'released');
 
   // Check if registration has closed
   const isRegistrationClosed = isEventRegistrationClosed(event);
   const isProtectedPurchaseClosed = Boolean(
     event.refund_protection_enabled &&
     event.refund_trigger_at &&
-    Date.now() >= new Date(event.refund_trigger_at).getTime() &&
-    event.refund_status !== 'released'
+    Date.now() >= new Date(event.refund_trigger_at).getTime()
   );
-  const refundBadge = getRefundProtectionBadge(event.refund_status, refundBadgeAudience);
+  const refundBadges = getRefundProtectionBadges(event.refund_status, refundBadgeAudience, managerReleased);
   const eventDisplayTime = formatEventLocalTime(event.starts_at, event.time);
   const isMultiDayEvent = Boolean(
     event.date &&
@@ -207,9 +207,11 @@ export const EventCard: React.FC<EventCardProps> = ({
             </Badge>
           )}
           {event.refund_protection_enabled && (
-            <Badge variant="outline" className={`text-xs ${refundBadge.className}`}>
-              {refundBadge.label}
-            </Badge>
+            refundBadges.map((badge) => (
+              <Badge key={badge.label} variant="outline" className={`text-xs ${badge.className}`}>
+                {badge.label}
+              </Badge>
+            ))
           )}
         </div>
 

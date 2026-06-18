@@ -74,7 +74,7 @@ import { RichTextDisplay } from "@/components/ui/rich-text/RichTextDisplay";
 import { hasMethod, isFreeEvent } from "@/lib/events/paymentMethods";
 import { EventDetailsRefreshProvider, useEventDetailsRefresh } from "@/pages/event-details/eventDetailsRefresh";
 import {
-  getRefundProtectionBadge,
+  getRefundProtectionBadges,
   getRefundProtectionPurchaseStateLabel,
 } from "@/lib/events/refundStatus";
 
@@ -291,10 +291,19 @@ const EventDetailsContent = () => {
   const protectionTriggered = Boolean(refundTriggerMillis && Date.now() >= refundTriggerMillis);
   const isProtectedPurchaseClosed = Boolean(
     isProtectedRefundEvent &&
-    protectionTriggered &&
-    refundableStatus.status !== 'released'
+    protectionTriggered
   );
-  const refundBadge = getRefundProtectionBadge(refundableStatus.status || event?.refund_status);
+  const managerReleased = Boolean(
+    refundableStatus.managerReleased ||
+    event?.refund_manager_released ||
+    refundableStatus.status === 'released' ||
+    event?.refund_status === 'released'
+  );
+  const refundBadges = getRefundProtectionBadges(
+    refundableStatus.status || event?.refund_status,
+    'public',
+    managerReleased
+  );
   const signerMatchesAuthorizedRefundCaller = Boolean(
     wallet?.address &&
     refundableStatus.authorizedRefundAddress &&
@@ -834,6 +843,8 @@ const EventDetailsContent = () => {
             ? 'This event has been cancelled and refunds are being processed.'
             : protectedPurchaseStateLabel === 'Event Successful'
               ? 'This protected event met its attendance threshold and ticket sales are closed.'
+              : protectedPurchaseStateLabel === 'Protection Released'
+                ? 'This protected event has resolved and lock control has been released to the creator.'
               : 'This protected event is still resolving.';
 
       toast({
@@ -955,9 +966,11 @@ const EventDetailsContent = () => {
                       {event.category}
                     </Badge>
                     {isProtectedRefundEvent && (
-                      <Badge variant="outline" className={`mb-3 ml-2 text-xs ${refundBadge.className}`}>
-                        {refundBadge.label}
-                      </Badge>
+                      refundBadges.map((badge) => (
+                        <Badge key={badge.label} variant="outline" className={`mb-3 ml-2 text-xs ${badge.className}`}>
+                          {badge.label}
+                        </Badge>
+                      ))
                     )}
                     <h1 className="text-3xl font-bold text-gray-900 mb-2">
                       {event.title}
@@ -1263,9 +1276,13 @@ const EventDetailsContent = () => {
                   {isProtectedRefundEvent && (
                     <div className="rounded-xl border border-purple-100 bg-purple-50/50 p-4 space-y-4">
                       <div className="space-y-3">
-                        <Badge variant="outline" className={`text-[10px] uppercase tracking-wider font-bold w-fit ${refundBadge.className}`}>
-                          {refundBadge.label}
-                        </Badge>
+                        <div className="flex flex-wrap gap-2">
+                          {refundBadges.map((badge) => (
+                            <Badge key={badge.label} variant="outline" className={`text-[10px] uppercase tracking-wider font-bold w-fit ${badge.className}`}>
+                              {badge.label}
+                            </Badge>
+                          ))}
+                        </div>
                         <div className="flex items-center gap-2">
                           <Shield className="w-4 h-4 text-purple-600" />
                           <div className="text-sm font-bold text-purple-950">Protected Event</div>

@@ -97,6 +97,8 @@ export interface PublishedEvent {
   refund_controller_address?: string | null;
   refund_reserve_bond?: string | null;
   refund_status?: string | null;
+  refund_manager_released?: boolean;
+  refund_manager_released_at?: string | null;
   refund_last_tx_hash?: string | null;
   refund_last_synced_at?: string | null;
 }
