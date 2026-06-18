@@ -59,7 +59,7 @@ import { base, baseSepolia } from 'wagmi/chains';
 import { getDivviBrowserProvider, getRawEip1193Provider } from '@/lib/wallet/provider';
 import { useUserAddresses } from '@/hooks/useUserAddresses';
 import { useRefundableEventStatus } from '@/hooks/useRefundableEventStatus';
-import { getRefundProtectionBadge, shouldAutoReleaseAfterRefund, RELEASE_AFTER_REFUND_PROMPT } from '@/lib/events/refundStatus';
+import { getRefundProtectionBadges, shouldAutoReleaseAfterRefund, RELEASE_AFTER_REFUND_PROMPT } from '@/lib/events/refundStatus';
 import { useEventManagerPermissions } from '@/hooks/useEventManagerPermissions';
 import { callEdgeFunction } from '@/lib/edgeFunctions';
 
@@ -150,7 +150,17 @@ export const EventManagementDialog: React.FC<EventManagementDialogProps> = ({
   const canManageSensitiveControls = eventAccess.isCreator || isLockManager;
   const canManageAccess = eventAccess.canManageAccess;
   const canManageManagers = eventAccess.canManageManagers;
-  const refundBadge = getRefundProtectionBadge(refundableStatus.status || event.refund_status, 'creator');
+  const managerReleased = Boolean(
+    refundableStatus.managerReleased ||
+    event.refund_manager_released ||
+    refundableStatus.status === 'released' ||
+    event.refund_status === 'released'
+  );
+  const refundBadges = getRefundProtectionBadges(
+    refundableStatus.status || event.refund_status,
+    'creator',
+    managerReleased
+  );
   const creatorMatchesWallet = Boolean(
     wallet?.address &&
     refundableStatus.creatorAddress &&
@@ -894,9 +904,13 @@ export const EventManagementDialog: React.FC<EventManagementDialogProps> = ({
                           {refundableStatus.attendeeCount || 0} / {refundableStatus.minAttendees || event.refund_min_attendees || 0} Attendees
                         </p>
                       </div>
-                      <Badge variant="outline" className={refundBadge.className}>
-                        {refundBadge.label}
-                      </Badge>
+                      <div className="flex flex-wrap justify-end gap-2">
+                        {refundBadges.map((badge) => (
+                          <Badge key={badge.label} variant="outline" className={badge.className}>
+                            {badge.label}
+                          </Badge>
+                        ))}
+                      </div>
                     </div>
 
                     {canRecoverOrReleaseManager && (

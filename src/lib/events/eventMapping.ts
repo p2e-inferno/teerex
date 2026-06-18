@@ -29,6 +29,8 @@ export const mapEventRow = (event: any): MappedEvent => {
     refund_controller_address: event.refund_controller_address ?? null,
     refund_reserve_bond: event.refund_reserve_bond ?? null,
     refund_status: event.refund_status ?? null,
+    refund_manager_released: event.refund_manager_released ?? (event.refund_status === 'released'),
+    refund_manager_released_at: event.refund_manager_released_at ?? null,
     refund_last_tx_hash: event.refund_last_tx_hash ?? null,
     refund_last_synced_at: event.refund_last_synced_at ?? null,
     isHidden: event.is_public === false,

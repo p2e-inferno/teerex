@@ -21,6 +21,7 @@ export interface RefundableEventStatusState {
   refundComplete: boolean;
   cancelInitiated: boolean;
   managerReleased: boolean;
+  managerReleasedAt: string | null;
   authorizedRefundCaller: boolean;
   authorizedRefundAddress: string | null;
   controllerAddress: string | null;
@@ -45,7 +46,8 @@ export const useRefundableEventStatus = (
     requiredFullRefund: null,
     refundComplete: false,
     cancelInitiated: false,
-    managerReleased: false,
+    managerReleased: Boolean(event?.refund_manager_released || event?.refund_status === 'released'),
+    managerReleasedAt: event?.refund_manager_released_at || null,
     authorizedRefundCaller: false,
     authorizedRefundAddress: null,
     controllerAddress: event?.refund_controller_address || null,
@@ -75,6 +77,7 @@ export const useRefundableEventStatus = (
         refundComplete: Boolean(data.refund_complete),
         cancelInitiated: Boolean(data.cancel_initiated),
         managerReleased: Boolean(data.manager_released),
+        managerReleasedAt: data.manager_released_at || null,
         authorizedRefundCaller: Boolean(data.authorized_refund_caller),
         authorizedRefundAddress: data.authorized_refund_address || null,
         controllerAddress: data.controller_address || event.refund_controller_address || null,
@@ -95,11 +98,20 @@ export const useRefundableEventStatus = (
       ...current,
       status: (event?.refund_status as RefundableEventStatus | null) || null,
       minAttendees: event?.refund_min_attendees || 0,
+      managerReleased: Boolean(event?.refund_manager_released || event?.refund_status === 'released'),
+      managerReleasedAt: event?.refund_manager_released_at || null,
       controllerAddress: event?.refund_controller_address || null,
       authorizedRefundAddress: current.authorizedRefundAddress,
       creatorAddress: current.creatorAddress,
     }));
-  }, [event?.id, event?.refund_controller_address, event?.refund_min_attendees, event?.refund_status]);
+  }, [
+    event?.id,
+    event?.refund_controller_address,
+    event?.refund_manager_released,
+    event?.refund_manager_released_at,
+    event?.refund_min_attendees,
+    event?.refund_status
+  ]);
 
   useEffect(() => {
     refresh();

@@ -153,10 +153,13 @@ serve(async (req: Request) => {
     }
 
     const nowSeconds = BigInt(Math.floor(Date.now() / 1000));
+    const managerReleased = Boolean(cfg.managerReleased);
+    const managerReleasedAt =
+      managerReleased
+        ? event.refund_manager_released_at || new Date().toISOString()
+        : null;
     let status = "protected";
-    if (cfg.managerReleased) {
-      status = "released";
-    } else if (cfg.refundComplete) {
+    if (cfg.refundComplete) {
       status = "refunded";
     } else if (nowSeconds < BigInt(cfg.refundTriggerTime)) {
       status = "protected";
@@ -172,6 +175,8 @@ serve(async (req: Request) => {
 
     const updatePayload: Record<string, unknown> = {
       refund_status: status,
+      refund_manager_released: managerReleased,
+      refund_manager_released_at: managerReleasedAt,
       refund_last_synced_at: new Date().toISOString(),
       refund_reserve_bond: cfg.reserveBond.toString(),
       refund_controller_address: controllerAddress
@@ -204,7 +209,8 @@ serve(async (req: Request) => {
         required_full_refund: requiredReserve.toString(),
         refund_complete: Boolean(cfg.refundComplete),
         cancel_initiated: Boolean(cfg.cancelInitiated),
-        manager_released: Boolean(cfg.managerReleased),
+        manager_released: managerReleased,
+        manager_released_at: managerReleasedAt,
         refund_cursor: cfg.refundCursor.toString(),
         refund_upper_token_id: cfg.refundUpperTokenId.toString(),
         creator: cfg.creator,
