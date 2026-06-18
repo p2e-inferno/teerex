@@ -1,5 +1,10 @@
 export type RefundProtectionBadgeAudience = 'public' | 'creator';
 
+export interface RefundProtectionBadge {
+  label: string;
+  className: string;
+}
+
 const MISSED_THRESHOLD_STATUSES = new Set([
   'refund_available',
   'creator_only_refund_window',
@@ -12,16 +17,12 @@ const CANCELLED_STATUSES = new Set([
 
 const SUCCESS_STATUSES = new Set([
   'threshold_met',
-  'released',
 ]);
 
 export function getRefundProtectionBadge(
   status?: string | null,
   audience: RefundProtectionBadgeAudience = 'public'
-): {
-  label: string;
-  className: string;
-} {
+): RefundProtectionBadge {
   if (MISSED_THRESHOLD_STATUSES.has(status || '')) {
     return {
       label: 'Threshold Missed',
@@ -36,23 +37,57 @@ export function getRefundProtectionBadge(
     };
   }
 
-  if (status === 'threshold_met' || status === 'released') {
+  if (status === 'threshold_met') {
     return {
-      label: audience === 'creator'
-        ? (status === 'released' ? 'Manager Released' : 'Threshold Met')
-        : 'Successful',
+      label: audience === 'creator' ? 'Threshold Met' : 'Successful',
       className: audience === 'creator'
-        ? (status === 'released'
-            ? 'border-slate-200 bg-slate-50 text-slate-700'
-            : 'border-emerald-200 bg-emerald-50 text-emerald-700')
+        ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
         : 'border-emerald-200 bg-emerald-50 text-emerald-700',
     };
+  }
+
+  if (status === 'released') {
+    return getRefundProtectionReleaseBadge(true, audience)!;
   }
 
   return {
     label: 'Protected',
     className: 'border-purple-200 bg-purple-50 text-purple-700',
   };
+}
+
+export function getRefundProtectionReleaseBadge(
+  managerReleased?: boolean | null,
+  audience: RefundProtectionBadgeAudience = 'public'
+): RefundProtectionBadge | null {
+  if (!managerReleased) return null;
+
+  return {
+    label: audience === 'creator' ? 'Manager Released' : 'Protection Released',
+    className: 'border-slate-200 bg-slate-50 text-slate-700',
+  };
+}
+
+export function getRefundProtectionBadges(
+  status?: string | null,
+  audience: RefundProtectionBadgeAudience = 'public',
+  managerReleased?: boolean | null
+): RefundProtectionBadge[] {
+  const badges: RefundProtectionBadge[] = [];
+
+  if (status !== 'released') {
+    badges.push(getRefundProtectionBadge(status, audience));
+  }
+
+  const releaseBadge = getRefundProtectionReleaseBadge(
+    Boolean(managerReleased || status === 'released'),
+    audience
+  );
+  if (releaseBadge) {
+    badges.push(releaseBadge);
+  }
+
+  return badges;
 }
 
 /**
@@ -81,6 +116,10 @@ export function getRefundProtectionPurchaseStateLabel(status?: string | null): s
 
   if (CANCELLED_STATUSES.has(status || '')) {
     return 'Cancelled';
+  }
+
+  if (status === 'released') {
+    return 'Protection Released';
   }
 
   if (SUCCESS_STATUSES.has(status || '')) {
