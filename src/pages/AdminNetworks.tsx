@@ -21,6 +21,12 @@ interface NetworkConfig {
   dg_token_address: string | null;
   g_token_address: string | null;
   up_token_address: string | null;
+  dg_vendor_address: string | null;
+  uniswap_v3_quoter_address: string | null;
+  uniswap_v3_weth_address: string | null;
+  uniswap_v3_eth_usdc_pool_address: string | null;
+  uniswap_v3_up_weth_fee: number | null;
+  uniswap_v3_weth_usdc_fee: number | null;
   unlock_factory_address: string | null;
   refundable_event_manager_address: string | null;
   native_currency_symbol: string;
@@ -41,6 +47,12 @@ interface NetworkFormData {
   dg_token_address: string;
   g_token_address: string;
   up_token_address: string;
+  dg_vendor_address: string;
+  uniswap_v3_quoter_address: string;
+  uniswap_v3_weth_address: string;
+  uniswap_v3_eth_usdc_pool_address: string;
+  uniswap_v3_up_weth_fee: number | '';
+  uniswap_v3_weth_usdc_fee: number | '';
   unlock_factory_address: string;
   refundable_event_manager_address: string;
   native_currency_symbol: string;
@@ -67,6 +79,12 @@ const AdminNetworks: React.FC = () => {
     dg_token_address: '',
     g_token_address: '',
     up_token_address: '',
+    dg_vendor_address: '',
+    uniswap_v3_quoter_address: '',
+    uniswap_v3_weth_address: '',
+    uniswap_v3_eth_usdc_pool_address: '',
+    uniswap_v3_up_weth_fee: '',
+    uniswap_v3_weth_usdc_fee: '',
     unlock_factory_address: '',
     refundable_event_manager_address: '',
     native_currency_symbol: 'ETH',
@@ -120,6 +138,12 @@ const AdminNetworks: React.FC = () => {
         dg_token_address: formData.dg_token_address || null,
         g_token_address: formData.g_token_address || null,
         up_token_address: formData.up_token_address || null,
+        dg_vendor_address: formData.dg_vendor_address || null,
+        uniswap_v3_quoter_address: formData.uniswap_v3_quoter_address || null,
+        uniswap_v3_weth_address: formData.uniswap_v3_weth_address || null,
+        uniswap_v3_eth_usdc_pool_address: formData.uniswap_v3_eth_usdc_pool_address || null,
+        uniswap_v3_up_weth_fee: formData.uniswap_v3_up_weth_fee === '' ? null : formData.uniswap_v3_up_weth_fee,
+        uniswap_v3_weth_usdc_fee: formData.uniswap_v3_weth_usdc_fee === '' ? null : formData.uniswap_v3_weth_usdc_fee,
         unlock_factory_address: formData.unlock_factory_address || null,
         refundable_event_manager_address: formData.refundable_event_manager_address || null,
         native_currency_symbol: formData.native_currency_symbol,
@@ -178,6 +202,12 @@ const AdminNetworks: React.FC = () => {
       dg_token_address: network.dg_token_address || '',
       g_token_address: network.g_token_address || '',
       up_token_address: network.up_token_address || '',
+      dg_vendor_address: network.dg_vendor_address || '',
+      uniswap_v3_quoter_address: network.uniswap_v3_quoter_address || '',
+      uniswap_v3_weth_address: network.uniswap_v3_weth_address || '',
+      uniswap_v3_eth_usdc_pool_address: network.uniswap_v3_eth_usdc_pool_address || '',
+      uniswap_v3_up_weth_fee: network.uniswap_v3_up_weth_fee ?? '',
+      uniswap_v3_weth_usdc_fee: network.uniswap_v3_weth_usdc_fee ?? '',
       unlock_factory_address: network.unlock_factory_address || '',
       refundable_event_manager_address: network.refundable_event_manager_address || '',
       native_currency_symbol: network.native_currency_symbol,
@@ -245,6 +275,12 @@ const AdminNetworks: React.FC = () => {
         dg_token_address: network.dg_token_address,
         g_token_address: network.g_token_address,
         up_token_address: network.up_token_address,
+        dg_vendor_address: network.dg_vendor_address,
+        uniswap_v3_quoter_address: network.uniswap_v3_quoter_address,
+        uniswap_v3_weth_address: network.uniswap_v3_weth_address,
+        uniswap_v3_eth_usdc_pool_address: network.uniswap_v3_eth_usdc_pool_address,
+        uniswap_v3_up_weth_fee: network.uniswap_v3_up_weth_fee,
+        uniswap_v3_weth_usdc_fee: network.uniswap_v3_weth_usdc_fee,
         unlock_factory_address: network.unlock_factory_address,
         refundable_event_manager_address: network.refundable_event_manager_address,
         native_currency_symbol: network.native_currency_symbol,
@@ -292,6 +328,12 @@ const AdminNetworks: React.FC = () => {
       dg_token_address: '',
       g_token_address: '',
       up_token_address: '',
+      dg_vendor_address: '',
+      uniswap_v3_quoter_address: '',
+      uniswap_v3_weth_address: '',
+      uniswap_v3_eth_usdc_pool_address: '',
+      uniswap_v3_up_weth_fee: '',
+      uniswap_v3_weth_usdc_fee: '',
       unlock_factory_address: '',
       refundable_event_manager_address: '',
       native_currency_symbol: 'ETH',
@@ -462,6 +504,72 @@ const AdminNetworks: React.FC = () => {
                 </div>
 
                 <div className="space-y-2">
+                  <Label htmlFor="dg_vendor_address">DG Vendor Address (Optional)</Label>
+                  <Input
+                    id="dg_vendor_address"
+                    value={formData.dg_vendor_address}
+                    onChange={(e) => setFormData(prev => ({ ...prev, dg_vendor_address: e.target.value }))}
+                    placeholder="0x..."
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="uniswap_v3_quoter_address">Uniswap V3 Quoter (Optional)</Label>
+                    <Input
+                      id="uniswap_v3_quoter_address"
+                      value={formData.uniswap_v3_quoter_address}
+                      onChange={(e) => setFormData(prev => ({ ...prev, uniswap_v3_quoter_address: e.target.value }))}
+                      placeholder="0x..."
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="uniswap_v3_weth_address">WETH Address (Optional)</Label>
+                    <Input
+                      id="uniswap_v3_weth_address"
+                      value={formData.uniswap_v3_weth_address}
+                      onChange={(e) => setFormData(prev => ({ ...prev, uniswap_v3_weth_address: e.target.value }))}
+                      placeholder="0x..."
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="uniswap_v3_eth_usdc_pool_address">Uniswap V3 ETH/USDC Pool (Optional)</Label>
+                  <Input
+                    id="uniswap_v3_eth_usdc_pool_address"
+                    value={formData.uniswap_v3_eth_usdc_pool_address}
+                    onChange={(e) => setFormData(prev => ({ ...prev, uniswap_v3_eth_usdc_pool_address: e.target.value }))}
+                    placeholder="0x..."
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="uniswap_v3_up_weth_fee">UP/WETH Fee Tier</Label>
+                    <Input
+                      id="uniswap_v3_up_weth_fee"
+                      type="number"
+                      value={formData.uniswap_v3_up_weth_fee}
+                      onChange={(e) => setFormData(prev => ({ ...prev, uniswap_v3_up_weth_fee: e.target.value === '' ? '' : Number(e.target.value) }))}
+                      min={1}
+                      placeholder="3000"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="uniswap_v3_weth_usdc_fee">WETH/USDC Fee Tier</Label>
+                    <Input
+                      id="uniswap_v3_weth_usdc_fee"
+                      type="number"
+                      value={formData.uniswap_v3_weth_usdc_fee}
+                      onChange={(e) => setFormData(prev => ({ ...prev, uniswap_v3_weth_usdc_fee: e.target.value === '' ? '' : Number(e.target.value) }))}
+                      min={1}
+                      placeholder="500"
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-2">
                   <Label htmlFor="unlock_factory_address">Unlock Factory Address (Optional)</Label>
                   <Input
                     id="unlock_factory_address"
@@ -592,6 +700,18 @@ const AdminNetworks: React.FC = () => {
                     )}
                     {network.up_token_address && (
                       <div><strong>UP:</strong> {network.up_token_address.slice(0, 6)}...{network.up_token_address.slice(-4)}</div>
+                    )}
+                    {network.dg_vendor_address && (
+                      <div><strong>DG Vendor:</strong> {network.dg_vendor_address.slice(0, 6)}...{network.dg_vendor_address.slice(-4)}</div>
+                    )}
+                    {network.uniswap_v3_quoter_address && (
+                      <div><strong>Uniswap Quoter:</strong> {network.uniswap_v3_quoter_address.slice(0, 6)}...{network.uniswap_v3_quoter_address.slice(-4)}</div>
+                    )}
+                    {network.uniswap_v3_eth_usdc_pool_address && (
+                      <div><strong>ETH/USDC Pool:</strong> {network.uniswap_v3_eth_usdc_pool_address.slice(0, 6)}...{network.uniswap_v3_eth_usdc_pool_address.slice(-4)}</div>
+                    )}
+                    {network.uniswap_v3_up_weth_fee && network.uniswap_v3_weth_usdc_fee && (
+                      <div><strong>Uniswap Fees:</strong> {network.uniswap_v3_up_weth_fee} / {network.uniswap_v3_weth_usdc_fee}</div>
                     )}
                     {network.unlock_factory_address && (
                       <div><strong>Unlock Factory:</strong> {network.unlock_factory_address.slice(0, 6)}...{network.unlock_factory_address.slice(-4)}</div>

@@ -1,0 +1,70 @@
+[
+  {
+    "type": "function",
+    "name": "grantAndDispense",
+    "stateMutability": "nonpayable",
+    "inputs": [
+      { "name": "lock", "type": "address" },
+      { "name": "recipient", "type": "address" },
+      { "name": "orderRef", "type": "bytes32" }
+    ],
+    "outputs": [{ "name": "tokenId", "type": "uint256" }]
+  },
+  {
+    "type": "function",
+    "name": "dispense",
+    "stateMutability": "nonpayable",
+    "inputs": [
+      { "name": "lock", "type": "address" },
+      { "name": "tokenId", "type": "uint256" }
+    ],
+    "outputs": []
+  },
+  {
+    "type": "function",
+    "name": "processedOrder",
+    "stateMutability": "view",
+    "inputs": [{ "name": "orderRef", "type": "bytes32" }],
+    "outputs": [{ "name": "", "type": "bool" }]
+  },
+  {
+    "type": "function",
+    "name": "remainingCopies",
+    "stateMutability": "view",
+    "inputs": [{ "name": "lock", "type": "address" }],
+    "outputs": [{ "name": "", "type": "uint256" }]
+  },
+  {
+    "type": "function",
+    "name": "passByLock",
+    "stateMutability": "view",
+    "inputs": [{ "name": "lock", "type": "address" }],
+    "outputs": [
+      { "name": "exists", "type": "bool" },
+      { "name": "closed", "type": "bool" },
+      { "name": "issuanceEnabled", "type": "bool" },
+      { "name": "creator", "type": "address" },
+      { "name": "payoutToken", "type": "address" },
+      { "name": "tokenPerCopy", "type": "uint256" },
+      { "name": "ethPerCopy", "type": "uint256" },
+      { "name": "maxCopies", "type": "uint256" },
+      { "name": "keyExpiration", "type": "uint256" },
+      { "name": "tokenEscrow", "type": "uint256" },
+      { "name": "ethEscrow", "type": "uint256" },
+      { "name": "redeemedCount", "type": "uint256" }
+    ]
+  },
+  {
+    "type": "event",
+    "name": "PassGrantedAndDispensed",
+    "anonymous": false,
+    "inputs": [
+      { "name": "lock", "type": "address", "indexed": true },
+      { "name": "recipient", "type": "address", "indexed": true },
+      { "name": "tokenId", "type": "uint256", "indexed": true },
+      { "name": "orderRef", "type": "bytes32", "indexed": false },
+      { "name": "tokenAmount", "type": "uint256", "indexed": false },
+      { "name": "ethAmount", "type": "uint256", "indexed": false }
+    ]
+  }
+]
