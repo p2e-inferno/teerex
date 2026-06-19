@@ -54,3 +54,10 @@ enabled = true
 [functions.get-post-comments]
   # Browser calls this with Privy JWT (not Supabase JWT)
   verify_jwt = false
+
+[functions.get-price-conversion]
+  verify_jwt = false
+
+[functions.ticket-pass-metadata]
+  # Public endpoint - NFT marketplaces and wallets need unauthenticated access
+  verify_jwt = false

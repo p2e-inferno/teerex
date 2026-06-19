@@ -38,6 +38,10 @@ import GamingBundleDetails from "./pages/GamingBundleDetails";
 import GamingBundleClaim from "./pages/GamingBundleClaim";
 import GamingBundles from "./pages/GamingBundles";
 import VendorGamingBundleOrders from "./pages/VendorGamingBundleOrders";
+import TicketPasses from "./pages/TicketPasses";
+import TicketPassDetails from "./pages/TicketPassDetails";
+import MyTicketPasses from "./pages/MyTicketPasses";
+import MyTicketPassOrders from "./pages/MyTicketPassOrders";
 import NotFound from "./pages/NotFound";
 
 const App = () => {
@@ -53,6 +57,10 @@ const App = () => {
                 <Route path="/" element={<Index />} />
                 <Route path="/explore" element={<Explore />} />
                 <Route path="/gaming-bundles" element={<GamingBundles />} />
+                <Route path="/ticket-passes" element={<TicketPasses />} />
+                <Route path="/my-ticket-passes" element={<MyTicketPasses />} />
+                <Route path="/my-pass-orders" element={<MyTicketPassOrders />} />
+                <Route path="/ticket-passes/:id" element={<TicketPassDetails />} />
                 <Route path="/create" element={<CreateEvent />} />
                 <Route path="/events" element={<MyEvents />} />
                 <Route path="/my-events" element={<MyEvents />} />
