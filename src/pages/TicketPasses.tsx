@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { usePrivy } from '@privy-io/react-auth';
 import { Loader2, Plus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -9,7 +9,11 @@ import { useTicketPasses } from '@/hooks/useTicketPasses';
 
 const TicketPasses = () => {
   const { authenticated } = usePrivy();
-  const { data: passes = [], isLoading, refetch } = useTicketPasses();
+  const [searchParams] = useSearchParams();
+  const eventAddress = searchParams.get('event');
+  const { data: passes = [], isLoading, refetch } = useTicketPasses(
+    eventAddress ? { target_event_address: eventAddress } : {},
+  );
   const [createOpen, setCreateOpen] = useState(false);
 
   return (
@@ -18,7 +22,11 @@ const TicketPasses = () => {
         <div className="mb-8 flex items-start justify-between gap-4 flex-wrap">
           <div>
             <h1 className="text-3xl font-bold text-gray-900">Ticket Passes</h1>
-            <p className="text-gray-600">Buy a pass with Naira and get the on-chain value to enter token-gated events.</p>
+            <p className="text-gray-600">
+              {eventAddress
+                ? 'Passes that unlock this event — pay with Naira to receive the on-chain value.'
+                : 'Buy a pass with Naira and get the on-chain value to enter token-gated events.'}
+            </p>
           </div>
           <div className="flex items-center gap-2">
             <Button asChild variant="outline"><Link to="/my-pass-orders">My passes</Link></Button>
@@ -46,6 +54,7 @@ const TicketPasses = () => {
         isOpen={createOpen}
         onClose={() => setCreateOpen(false)}
         onCreated={() => { setCreateOpen(false); refetch(); }}
+        initialTargetEventAddress={eventAddress}
       />
     </div>
   );

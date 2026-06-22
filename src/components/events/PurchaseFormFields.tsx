@@ -3,7 +3,8 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
-import { supabase } from '@/integrations/supabase/client';
+import { usePrivy } from '@privy-io/react-auth';
+import { callEdgeFunction } from '@/lib/edgeFunctions';
 import {
   isPurchaseFormSchemaEmpty,
   PurchaseFormField,
@@ -29,6 +30,7 @@ export const PurchaseFormFields: React.FC<PurchaseFormFieldsProps> = ({
   disabled,
   prefillWallet,
 }) => {
+  const { getAccessToken } = usePrivy();
   const empty = isPurchaseFormSchemaEmpty(schema);
   const fields = schema?.fields ?? [];
   const [prefillLoaded, setPrefillLoaded] = useState(false);
@@ -38,11 +40,15 @@ export const PurchaseFormFields: React.FC<PurchaseFormFieldsProps> = ({
     let cancelled = false;
     (async () => {
       try {
-        const { data, error } = await supabase.rpc('get_my_purchase_form_prefill', {
-          p_owner_wallet: prefillWallet.toLowerCase(),
-        });
-        if (cancelled || error || !data) return;
-        const prefill = (data ?? {}) as PurchaseFormResponseValues;
+        const token = await getAccessToken?.();
+        if (!token) return;
+        const data = await callEdgeFunction<{ prefill: PurchaseFormResponseValues }>(
+          'get-purchase-form-prefill',
+          { wallet_address: prefillWallet.toLowerCase() },
+          { privyToken: token },
+        );
+        if (cancelled || !data?.prefill) return;
+        const prefill = data.prefill;
         const merged: PurchaseFormResponseValues = { ...values };
         for (const f of fields) {
           const existing = merged[f.id];
@@ -62,6 +68,8 @@ export const PurchaseFormFields: React.FC<PurchaseFormFieldsProps> = ({
           merged[f.id] = candidate as any;
         }
         onChange(merged);
+      } catch {
+        // Prefill is optional; the buyer can continue with empty fields.
       } finally {
         if (!cancelled) setPrefillLoaded(true);
       }
@@ -70,7 +78,7 @@ export const PurchaseFormFields: React.FC<PurchaseFormFieldsProps> = ({
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [prefillWallet, empty]);
+  }, [prefillWallet, empty, getAccessToken]);
 
   const setValue = (field: PurchaseFormField, raw: string | number | null) => {
     onChange({ ...values, [field.id]: raw });

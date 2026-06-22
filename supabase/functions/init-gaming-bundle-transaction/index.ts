@@ -4,6 +4,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.50.0";
 import { corsHeaders, buildPreflightHeaders } from "../_shared/cors.ts";
 import { normalizeEmail } from "../_shared/email-utils.ts";
 import { SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY } from "../_shared/constants.ts";
+import { resolveFiatPayoutRouting, SELLER_PAYOUT_UNAVAILABLE_MESSAGE } from "../_shared/payout-routing.ts";
 
 serve(async (req) => {
   if (req.method === "OPTIONS") {
@@ -53,7 +54,7 @@ serve(async (req) => {
     const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
     const { data: bundle, error: bundleError } = await supabase
       .from("gaming_bundles")
-      .select("id, vendor_id, vendor_address, bundle_address, chain_id, price_fiat, price_fiat_kobo, fiat_symbol, is_active")
+      .select("id, vendor_id, vendor_address, bundle_address, chain_id, price_fiat, price_fiat_kobo, fiat_symbol, is_active, payout_destination")
       .eq("id", bundleId)
       .maybeSingle();
 
@@ -71,19 +72,23 @@ serve(async (req) => {
       });
     }
 
+    // Resolve where this sale settles. 'seller' requires a verified subaccount (no silent platform
+    // fallback) — blocked if missing/suspended. 'platform' routes to the platform account by design.
     let subaccountCode: string | null = null;
-    if (bundle.vendor_id) {
-      const { data: vendorPayoutAccount } = await supabase
-        .from("vendor_payout_accounts")
-        .select("id, provider_account_code")
-        .eq("vendor_id", bundle.vendor_id)
-        .eq("provider", "paystack")
-        .eq("status", "verified")
-        .maybeSingle();
-
-      if (vendorPayoutAccount?.provider_account_code) {
-        subaccountCode = vendorPayoutAccount.provider_account_code;
+    try {
+      const routing = await resolveFiatPayoutRouting(supabase, {
+        sellerId: bundle.vendor_id,
+        destination: (bundle as any).payout_destination,
+      });
+      subaccountCode = routing.subaccountCode;
+    } catch (routingErr: any) {
+      if (routingErr?.message === "seller_payout_unavailable") {
+        return new Response(JSON.stringify({ ok: false, error: SELLER_PAYOUT_UNAVAILABLE_MESSAGE, code: "seller_payout_unavailable" }), {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+          status: 409,
+        });
       }
+      throw routingErr;
     }
 
     const expectedAmountKobo = typeof (bundle as any).price_fiat_kobo === "number"

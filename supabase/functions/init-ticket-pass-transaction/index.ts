@@ -5,7 +5,8 @@ import { corsHeaders, buildPreflightHeaders } from "../_shared/cors.ts";
 import { SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY } from "../_shared/constants.ts";
 import { normalizeEmail } from "../_shared/email-utils.ts";
 import { verifyPrivyToken, validateUserWallet } from "../_shared/privy.ts";
-import { orderRefFromReference } from "../_shared/ticket-pass-issuance.ts";
+import { getTicketPassKeyBalance, orderRefFromReference } from "../_shared/ticket-pass-issuance.ts";
+import { resolveFiatPayoutRouting, SELLER_PAYOUT_UNAVAILABLE_MESSAGE } from "../_shared/payout-routing.ts";
 
 function json(data: any, status = 200) {
   return new Response(JSON.stringify(data), {
@@ -43,7 +44,7 @@ serve(async (req) => {
     const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
     const { data: pass, error: passError } = await supabase
       .from("ticket_passes")
-      .select("id, creator_id, chain_id, lock_address, price_fiat, price_fiat_kobo, fiat_symbol, status, issuance_enabled")
+      .select("id, creator_id, chain_id, lock_address, price_fiat, price_fiat_kobo, fiat_symbol, status, issuance_enabled, payout_destination, max_per_buyer")
       .eq("id", passId)
       .maybeSingle();
 
@@ -61,17 +62,47 @@ serve(async (req) => {
       return json({ ok: false, error: "amount_mismatch" }, 400);
     }
 
-    // Route payment to the creator's verified payout subaccount when present (vendor split).
+    const maxPerBuyer = Number(pass.max_per_buyer ?? 1);
+    try {
+      const keyBalance = await getTicketPassKeyBalance({
+        supabase,
+        chainId: Number(pass.chain_id),
+        lockAddress: String(pass.lock_address),
+        buyerAddress,
+      });
+      if (keyBalance >= BigInt(maxPerBuyer)) {
+        return json({
+          ok: false,
+          error: `You already hold the maximum number of this pass (${maxPerBuyer}).`,
+          code: "purchase_limit_reached",
+          current_keys: Number(keyBalance),
+          max_per_buyer: maxPerBuyer,
+        }, 409);
+      }
+    } catch (limitErr: any) {
+      console.error("[init-ticket-pass-transaction] purchase limit check failed", limitErr);
+      return json({
+        ok: false,
+        error: "Could not verify your current pass balance. Please try again.",
+        code: "purchase_limit_check_failed",
+      }, 503);
+    }
+
+    // Resolve where this sale settles. 'seller' requires a verified subaccount (no silent platform
+    // fallback) — if it's missing/suspended the purchase is blocked. 'platform' routes to the
+    // platform account by design.
     let subaccountCode: string | null = null;
-    if (pass.creator_id) {
-      const { data: payoutAccount } = await supabase
-        .from("vendor_payout_accounts")
-        .select("provider_account_code")
-        .eq("vendor_id", pass.creator_id)
-        .eq("provider", "paystack")
-        .eq("status", "verified")
-        .maybeSingle();
-      if (payoutAccount?.provider_account_code) subaccountCode = payoutAccount.provider_account_code;
+    try {
+      const routing = await resolveFiatPayoutRouting(supabase, {
+        sellerId: pass.creator_id,
+        destination: pass.payout_destination,
+      });
+      subaccountCode = routing.subaccountCode;
+    } catch (routingErr: any) {
+      if (routingErr?.message === "seller_payout_unavailable") {
+        return json({ ok: false, error: SELLER_PAYOUT_UNAVAILABLE_MESSAGE, code: "seller_payout_unavailable" }, 409);
+      }
+      throw routingErr;
     }
 
     const { error: upsertError } = await supabase

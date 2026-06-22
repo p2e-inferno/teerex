@@ -29,8 +29,9 @@ serve(async (req) => {
       .from("ticket_pass_orders")
       .select(`
         id, pass_id, status, payment_provider, payment_reference, amount_fiat, fiat_symbol, chain_id, lock_address,
-        token_id, grant_dispense_txn_hash, created_at, dispensed_at,
-        ticket_passes ( id, title, image_url, payout_token_symbol, token_per_copy_wei, eth_per_copy_wei, token_decimals, target_event_address, controller_address )
+        token_id, grant_dispense_txn_hash, refund_status, refund_error, refund_requested_at,
+        refund_processed_at, refund_last_synced_at, created_at, dispensed_at,
+        ticket_passes ( id, title, image_url, payout_token_symbol, token_per_copy_wei, eth_per_copy_wei, token_decimals, key_expiration_duration_seconds, target_event_address, controller_address )
       `)
       .eq("buyer_id", privyUserId)
       .order("created_at", { ascending: false })

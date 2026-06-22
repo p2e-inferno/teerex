@@ -22,6 +22,18 @@ export function formatFiatPrice(pass: Pick<TicketPass, 'price_fiat' | 'fiat_symb
   return `${pass.fiat_symbol || 'NGN'} ${Number(pass.price_fiat || 0).toLocaleString()}`;
 }
 
+export function formatPassValidity(pass: Pick<TicketPass, 'key_expiration_duration_seconds'>): string {
+  const seconds = Number(pass.key_expiration_duration_seconds || 0);
+  if (!Number.isFinite(seconds) || seconds <= 0) return 'Validity unavailable';
+  if (seconds >= 999_999_999) return 'Does not expire';
+  const days = Math.max(1, Math.ceil(seconds / 86_400));
+  return `Valid for ${days.toLocaleString()} ${days === 1 ? 'day' : 'days'} after purchase`;
+}
+
+export function formatNetworkName(chainId: number, chainName?: string | null): string {
+  return chainName || `Chain ${chainId}`;
+}
+
 export const TICKET_PASS_STATUS_BADGE: Record<string, { label: string; variant: 'default' | 'secondary' | 'destructive' | 'outline' }> = {
   ACTIVE: { label: 'Active', variant: 'default' },
   SOLD_OUT: { label: 'Sold out', variant: 'secondary' },

@@ -3,6 +3,8 @@ pragma solidity ^0.8.21;
 
 import "https://github.com/OpenZeppelin/openzeppelin-contracts/blob/v5.6.1/contracts/utils/ReentrancyGuard.sol";
 import "https://github.com/OpenZeppelin/openzeppelin-contracts/blob/v5.6.1/contracts/access/Ownable.sol";
+import "https://github.com/OpenZeppelin/openzeppelin-contracts/blob/v5.6.1/contracts/token/ERC20/IERC20.sol";
+import "https://github.com/OpenZeppelin/openzeppelin-contracts/blob/v5.6.1/contracts/token/ERC20/utils/SafeERC20.sol";
 
 interface IUnlockFactory {
     function createUpgradeableLockAtVersion(
@@ -22,6 +24,11 @@ interface IPublicLockV14 {
         uint256 maxKeysPerAccount
     ) external;
     function updateKeyPricing(uint256 newKeyPrice, address tokenAddress_) external;
+    function setLockMetadata(
+        string calldata name,
+        string calldata symbol,
+        string calldata baseTokenURI
+    ) external;
 
     function grantKeys(
         address[] calldata recipients,
@@ -37,13 +44,6 @@ interface IPublicLockV14 {
     function expirationDuration() external view returns (uint256);
 }
 
-interface IERC20 {
-    function balanceOf(address account) external view returns (uint256);
-    function allowance(address owner, address spender) external view returns (uint256);
-    function transferFrom(address from, address to, uint256 amount) external returns (bool);
-    function transfer(address to, uint256 amount) external returns (bool);
-}
-
 /**
  * @title TeeRexTicketPassControllerV1
  * @notice Escrow + fulfillment controller for TeeRex "Ticket Pass" bundles.
@@ -56,8 +56,11 @@ interface IERC20 {
  *
  * Design notes:
  * - The controller is a PERMANENT lock manager (it grants keys and can hard-stop a closed pass).
- *   The platform's `granter` wallet is NOT a lock manager; it only authorizes controller calls,
- *   so a compromised platform key can never touch escrow — only mint passes up to the funded cap.
+ *   The platform's `granter` wallet is NOT a lock manager and cannot reconfigure the lock, but it
+ *   chooses each grant's recipient and every grant pays out one copy's escrow. A compromised
+ *   `granter` (or `owner`, which can rotate `granter`) can therefore drain a pass up to its funded
+ *   cap by granting to attacker-controlled addresses. Treat both as hot keys; the creator's
+ *   `setIssuanceEnabled(false)` is the on-chain circuit breaker.
  * - Per-copy payout amounts and the payout token are immutable after creation (no setter), so a
  *   creator cannot shrink what buyers receive after sales begin.
  * - There is intentionally NO owner drain of contract balance: escrow only leaves via
@@ -70,6 +73,8 @@ interface IERC20 {
  *   ownerOf(tokenId), so triggering it can never misdirect funds.
  */
 contract TeeRexTicketPassControllerV1 is ReentrancyGuard, Ownable {
+    using SafeERC20 for IERC20;
+
     uint256 internal constant IMPRACTICAL_PRICE = type(uint256).max / 4;
     uint256 internal constant UNLIMITED = type(uint256).max;
 
@@ -100,18 +105,26 @@ contract TeeRexTicketPassControllerV1 is ReentrancyGuard, Ownable {
     mapping(address => mapping(uint256 => bool)) public redeemed; // lock => tokenId => redeemed
     mapping(bytes32 => bool) public processedOrder;               // orderRef => processed
 
+    // ERC20 payout-token allowlist. Native (address(0)) is always allowed and never stored.
+    // Restricting escrowable ERC20s to vetted, standard tokens protects escrow accounting from
+    // fee-on-transfer / rebasing / non-standard-return tokens.
+    mapping(address => bool) public allowedPayoutToken;          // token => allowed (O(1) check)
+    address[] public allowedPayoutTokens;                        // enumerable list for getter
+    mapping(address => uint256) private allowedPayoutTokenIndex; // token => index+1 (0 = absent)
+
     error InvalidFactory();
     error InvalidLockVersion();
     error InvalidGranter();
     error InvalidConfig();
     error EmptyPass();
     error InvalidPayoutToken();
+    error TokenNotAllowed(address token);
+    error InvalidToken();
     error MathOverflow();
 
     error NativeEscrowMismatch(uint256 required, uint256 provided);
     error InsufficientTokenBalance(uint256 required, uint256 balance);
     error InsufficientTokenAllowance(uint256 required, uint256 allowance);
-    error TokenEscrowTransferFailed();
 
     error UnknownPass();
     error NotGranter();
@@ -128,12 +141,12 @@ contract TeeRexTicketPassControllerV1 is ReentrancyGuard, Ownable {
     error InvalidKey();
     error NothingToWithdraw();
 
-    error PayoutTokenTransferFailed();
     error PayoutNativeTransferFailed();
-    error ERC20WithdrawFailed();
     error NativeWithdrawFailed();
 
     event GranterUpdated(address indexed previousGranter, address indexed newGranter);
+
+    event AllowedPayoutTokenUpdated(address indexed token, bool allowed);
 
     event PassCreated(
         address indexed lock,
@@ -166,7 +179,7 @@ contract TeeRexTicketPassControllerV1 is ReentrancyGuard, Ownable {
 
     event IssuanceToggled(address indexed lock, bool enabled);
 
-    event PassClosed(
+    event PassClosure(
         address indexed lock,
         address indexed creator,
         uint256 tokenResidual,
@@ -184,7 +197,8 @@ contract TeeRexTicketPassControllerV1 is ReentrancyGuard, Ownable {
         address _unlockFactory,
         uint16 _lockVersion,
         address _granter,
-        address _initialOwner
+        address _initialOwner,
+        address[] memory _initialAllowedTokens
     ) Ownable(_initialOwner) {
         if (_unlockFactory == address(0)) revert InvalidFactory();
         if (_lockVersion == 0) revert InvalidLockVersion();
@@ -193,11 +207,11 @@ contract TeeRexTicketPassControllerV1 is ReentrancyGuard, Ownable {
         unlockFactory = _unlockFactory;
         lockVersion = _lockVersion;
         granter = _granter;
-    }
 
-    // ---------------------------------------------------------------------------------------------
-    // Admin
-    // ---------------------------------------------------------------------------------------------
+        for (uint256 i = 0; i < _initialAllowedTokens.length; i++) {
+            _setAllowedPayoutToken(_initialAllowedTokens[i], true);
+        }
+    }
 
     /// @notice Rotate the platform issuance wallet. Owner-only; never affects escrow.
     function setGranter(address _granter) external onlyOwner {
@@ -206,9 +220,57 @@ contract TeeRexTicketPassControllerV1 is ReentrancyGuard, Ownable {
         granter = _granter;
     }
 
-    // ---------------------------------------------------------------------------------------------
-    // Creation (atomic deploy + fund)
-    // ---------------------------------------------------------------------------------------------
+    /**
+     * @notice Add or remove an ERC20 from the payout-token allowlist. Owner-only.
+     * @dev Native (address(0)) is always allowed and cannot be listed. Existing passes are
+     *      unaffected by later removals; the allowlist is only checked at createPass time.
+     */
+    function setAllowedPayoutToken(address token, bool allowed) external onlyOwner {
+        _setAllowedPayoutToken(token, allowed);
+    }
+
+    /// @notice Whether a payout token may be used. Native (address(0)) is always allowed.
+    function isAllowedPayoutToken(address token) public view returns (bool) {
+        if (token == address(0)) return true;
+        return allowedPayoutToken[token];
+    }
+
+    /// @notice Enumerate the currently allowed ERC20 payout tokens.
+    function getAllowedPayoutTokens() external view returns (address[] memory) {
+        return allowedPayoutTokens;
+    }
+
+    function _setAllowedPayoutToken(address token, bool allowed) internal {
+        if (token == address(0)) revert InvalidToken(); // native is implicitly allowed
+        if (allowedPayoutToken[token] == allowed) return; // idempotent
+
+        allowedPayoutToken[token] = allowed;
+        if (allowed) {
+            allowedPayoutTokens.push(token);
+            allowedPayoutTokenIndex[token] = allowedPayoutTokens.length; // store index+1
+        } else {
+            _removeAllowedPayoutToken(token);
+        }
+
+        emit AllowedPayoutTokenUpdated(token, allowed);
+    }
+
+    function _removeAllowedPayoutToken(address token) private {
+        uint256 indexPlusOne = allowedPayoutTokenIndex[token];
+        if (indexPlusOne == 0) return;
+
+        uint256 index = indexPlusOne - 1;
+        uint256 lastIndex = allowedPayoutTokens.length - 1;
+        address lastToken = allowedPayoutTokens[lastIndex];
+
+        if (index != lastIndex) {
+            allowedPayoutTokens[index] = lastToken;
+            allowedPayoutTokenIndex[lastToken] = index + 1;
+        }
+
+        allowedPayoutTokens.pop();
+        delete allowedPayoutTokenIndex[token];
+    }
 
     /**
      * @notice Deploy a pass lock and escrow its full capacity in one transaction.
@@ -236,6 +298,8 @@ contract TeeRexTicketPassControllerV1 is ReentrancyGuard, Ownable {
         if (tokenPerCopy == 0 && ethPerCopy == 0) revert EmptyPass();
         // payoutToken present iff tokenPerCopy > 0
         if ((tokenPerCopy > 0) != (payoutToken != address(0))) revert InvalidPayoutToken();
+        // ERC20 payout must be whitelisted; native (address(0)) is always allowed.
+        if (payoutToken != address(0) && !allowedPayoutToken[payoutToken]) revert TokenNotAllowed(payoutToken);
 
         address creator = creator_ == address(0) ? msg.sender : creator_;
 
@@ -303,8 +367,7 @@ contract TeeRexTicketPassControllerV1 is ReentrancyGuard, Ownable {
 
         // Interaction: pull ERC20 escrow (native escrow already arrived via msg.value).
         if (tokenPerCopy > 0) {
-            bool ok = IERC20(payoutToken).transferFrom(msg.sender, address(this), tokenEscrow);
-            if (!ok) revert TokenEscrowTransferFailed();
+            IERC20(payoutToken).safeTransferFrom(msg.sender, address(this), tokenEscrow);
         }
 
         emit PassCreated(
@@ -319,10 +382,6 @@ contract TeeRexTicketPassControllerV1 is ReentrancyGuard, Ownable {
             ethEscrow
         );
     }
-
-    // ---------------------------------------------------------------------------------------------
-    // Fulfilment
-    // ---------------------------------------------------------------------------------------------
 
     /**
      * @notice Atomically mint a pass to `recipient` and deliver its value. Granter-only.
@@ -366,6 +425,8 @@ contract TeeRexTicketPassControllerV1 is ReentrancyGuard, Ownable {
 
         uint256[] memory ids = IPublicLockV14(lock).grantKeys(recipients, exps, mgrs);
         tokenId = ids[0];
+        // grantKeys must return a fresh token id; assert it before paying so a reused id can't double-pay.
+        if (redeemed[lock][tokenId]) revert AlreadyRedeemed();
         redeemed[lock][tokenId] = true;
 
         _payout(cfg, recipient);
@@ -412,10 +473,6 @@ contract TeeRexTicketPassControllerV1 is ReentrancyGuard, Ownable {
         dispense(lock, tokenId);
     }
 
-    // ---------------------------------------------------------------------------------------------
-    // Creator controls
-    // ---------------------------------------------------------------------------------------------
-
     /// @notice Creator kill-switch for platform issuance (the Ticket Pass analog of removing the
     ///         service manager). Stops new fiat fulfilment without touching escrow or sold passes.
     function setIssuanceEnabled(address lock, bool enabled) external {
@@ -426,11 +483,22 @@ contract TeeRexTicketPassControllerV1 is ReentrancyGuard, Ownable {
         emit IssuanceToggled(lock, enabled);
     }
 
+    /// @notice Creator-only metadata update routed through the controller lock manager.
+    function setPassMetadata(
+        address lock,
+        string calldata lockName,
+        string calldata lockSymbol,
+        string calldata baseTokenURI
+    ) external {
+        PassConfig storage cfg = _cfg(lock);
+        if (msg.sender != cfg.creator) revert NotCreator();
+        IPublicLockV14(lock).setLockMetadata(lockName, lockSymbol, baseTokenURI);
+    }
+
     /**
-     * @notice Close a pass: stop all sales and withdraw the unsold residual to the creator.
-     * @dev Escrow backing keys that exist but have not been dispensed yet is reserved so holders
-     *      can still redeem; the remainder is returned. In V1 (atomic grant+dispense) the reserved
-     *      amount is zero, so the creator recovers all undsold escrow.
+     * @notice Close a pass: stop all sales and return the unsold escrow to the creator.
+     * @dev V1 grants and dispenses in one call, so remaining escrow always equals exactly the value
+     *      backing unsold copies; closing returns all of it. There is no separately reserved amount.
      */
     function closePass(address lock) external nonReentrant {
         PassConfig storage cfg = _cfg(lock);
@@ -439,44 +507,39 @@ contract TeeRexTicketPassControllerV1 is ReentrancyGuard, Ownable {
 
         cfg.closed = true;
 
-        // Hard-stop further mints at the lock level (controller is a permanent manager).
+        // Hard-stop further mints at the lock level. This totalSupply read drives only the lock
+        // cap, never an escrow amount, so it cannot underflow against redeemedCount.
         uint256 supply = IPublicLockV14(lock).totalSupply();
         uint256 currentExpiration = IPublicLockV14(lock).expirationDuration();
         IPublicLockV14(lock).updateLockConfig(currentExpiration, supply, 1);
 
-        uint256 outstanding = supply - cfg.redeemedCount;
-        (uint256 tokenResidual, uint256 ethResidual) = _residual(cfg, outstanding);
-
-        cfg.tokenEscrow -= tokenResidual;
-        cfg.ethEscrow -= ethResidual;
+        uint256 tokenResidual = cfg.tokenEscrow;
+        uint256 ethResidual = cfg.ethEscrow;
+        cfg.tokenEscrow = 0;
+        cfg.ethEscrow = 0;
 
         _withdrawTo(cfg, cfg.creator, tokenResidual, ethResidual);
 
-        emit PassClosed(lock, cfg.creator, tokenResidual, ethResidual);
+        emit PassClosure(lock, cfg.creator, tokenResidual, ethResidual);
     }
 
-    /// @notice After close, sweep escrow freed up as previously-outstanding keys get dispensed/expire.
+    /// @notice After close, sweep any escrow still held for the pass. With V1 atomic grant+dispense
+    ///         closePass already returns everything, so this is a dormant safety net.
     function withdrawResidual(address lock) external nonReentrant {
         PassConfig storage cfg = _cfg(lock);
         if (msg.sender != cfg.creator) revert NotCreator();
         if (!cfg.closed) revert NotClosed();
 
-        uint256 supply = IPublicLockV14(lock).totalSupply();
-        uint256 outstanding = supply - cfg.redeemedCount;
-        (uint256 tokenResidual, uint256 ethResidual) = _residual(cfg, outstanding);
+        (uint256 tokenResidual, uint256 ethResidual) = _residual(cfg);
         if (tokenResidual == 0 && ethResidual == 0) revert NothingToWithdraw();
 
-        cfg.tokenEscrow -= tokenResidual;
-        cfg.ethEscrow -= ethResidual;
+        cfg.tokenEscrow = 0;
+        cfg.ethEscrow = 0;
 
         _withdrawTo(cfg, cfg.creator, tokenResidual, ethResidual);
 
         emit ResidualWithdrawn(lock, cfg.creator, tokenResidual, ethResidual);
     }
-
-    // ---------------------------------------------------------------------------------------------
-    // Views
-    // ---------------------------------------------------------------------------------------------
 
     function previewEscrowRequirement(
         uint256 maxCopies,
@@ -518,19 +581,12 @@ contract TeeRexTicketPassControllerV1 is ReentrancyGuard, Ownable {
         returns (uint256 tokenResidual, uint256 ethResidual)
     {
         PassConfig storage cfg = _cfgView(lock);
-        uint256 supply = IPublicLockV14(lock).totalSupply();
-        uint256 outstanding = supply - cfg.redeemedCount;
-        return _residual(cfg, outstanding);
+        return _residual(cfg);
     }
-
-    // ---------------------------------------------------------------------------------------------
-    // Internals
-    // ---------------------------------------------------------------------------------------------
 
     function _payout(PassConfig storage cfg, address recipient) internal {
         if (cfg.tokenPerCopy > 0) {
-            bool ok = IERC20(cfg.payoutToken).transfer(recipient, cfg.tokenPerCopy);
-            if (!ok) revert PayoutTokenTransferFailed();
+            IERC20(cfg.payoutToken).safeTransfer(recipient, cfg.tokenPerCopy);
         }
         if (cfg.ethPerCopy > 0) {
             (bool sent, ) = payable(recipient).call{value: cfg.ethPerCopy}("");
@@ -545,8 +601,7 @@ contract TeeRexTicketPassControllerV1 is ReentrancyGuard, Ownable {
         uint256 ethAmt
     ) internal {
         if (tokenAmt > 0) {
-            bool ok = IERC20(cfg.payoutToken).transfer(to, tokenAmt);
-            if (!ok) revert ERC20WithdrawFailed();
+            IERC20(cfg.payoutToken).safeTransfer(to, tokenAmt);
         }
         if (ethAmt > 0) {
             (bool sent, ) = payable(to).call{value: ethAmt}("");
@@ -554,15 +609,12 @@ contract TeeRexTicketPassControllerV1 is ReentrancyGuard, Ownable {
         }
     }
 
-    function _residual(PassConfig storage cfg, uint256 outstanding)
+    function _residual(PassConfig storage cfg)
         internal
         view
         returns (uint256 tokenResidual, uint256 ethResidual)
     {
-        uint256 reservedToken = outstanding * cfg.tokenPerCopy;
-        uint256 reservedEth = outstanding * cfg.ethPerCopy;
-        tokenResidual = cfg.tokenEscrow > reservedToken ? cfg.tokenEscrow - reservedToken : 0;
-        ethResidual = cfg.ethEscrow > reservedEth ? cfg.ethEscrow - reservedEth : 0;
+        return (cfg.tokenEscrow, cfg.ethEscrow);
     }
 
     function _mul(uint256 a, uint256 b) internal pure returns (uint256) {
@@ -580,6 +632,4 @@ contract TeeRexTicketPassControllerV1 is ReentrancyGuard, Ownable {
         cfg = passByLock[lock];
         if (!cfg.exists) revert UnknownPass();
     }
-
-    receive() external payable {}
 }

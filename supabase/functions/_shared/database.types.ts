@@ -357,6 +357,181 @@ export type Database = {
           },
         ]
       }
+      dg_redemption_events: {
+        Row: {
+          actor_user_id: string | null
+          actor_wallet_address: string | null
+          created_at: string
+          event_type: string
+          id: string
+          intent_id: string | null
+          metadata: Json
+        }
+        Insert: {
+          actor_user_id?: string | null
+          actor_wallet_address?: string | null
+          created_at?: string
+          event_type: string
+          id?: string
+          intent_id?: string | null
+          metadata?: Json
+        }
+        Update: {
+          actor_user_id?: string | null
+          actor_wallet_address?: string | null
+          created_at?: string
+          event_type?: string
+          id?: string
+          intent_id?: string | null
+          metadata?: Json
+        }
+        Relationships: [
+          {
+            foreignKeyName: "dg_redemption_events_intent_id_fkey"
+            columns: ["intent_id"]
+            isOneToOne: false
+            referencedRelation: "dg_redemption_intents"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      dg_redemption_intents: {
+        Row: {
+          amount_dg_raw: string
+          attempts: number
+          chain_id: number
+          completed_at: string | null
+          created_at: string
+          dg_token_address: string
+          estimated_up_out_raw: string
+          expires_at: string
+          fee_breakdown: Json
+          gross_ngn_kobo: number
+          id: string
+          last_error: string | null
+          limits_snapshot: Json
+          lock_id: string | null
+          locked_at: string | null
+          net_dg_raw: string
+          net_payout_kobo: number
+          payout_account_id: string
+          payout_snapshot: Json
+          paystack_reference: string
+          paystack_status: string | null
+          paystack_transfer_code: string | null
+          paystack_transfer_id: string | null
+          pricing_snapshot: Json
+          redemption_wallet_address: string
+          service_fee_kobo: number
+          status: string
+          total_fee_kobo: number
+          tx_hash: string | null
+          up_token_address: string
+          updated_at: string
+          user_id: string
+          vat_basis: string
+          vat_basis_kobo: number
+          vat_kobo: number
+          vat_rate_bps: number
+          vendor_address: string
+          vendor_fee_dg_raw: string
+          vendor_snapshot: Json
+          wallet_address: string
+        }
+        Insert: {
+          amount_dg_raw: string
+          attempts?: number
+          chain_id: number
+          completed_at?: string | null
+          created_at?: string
+          dg_token_address: string
+          estimated_up_out_raw: string
+          expires_at: string
+          fee_breakdown?: Json
+          gross_ngn_kobo: number
+          id?: string
+          last_error?: string | null
+          limits_snapshot?: Json
+          lock_id?: string | null
+          locked_at?: string | null
+          net_dg_raw: string
+          net_payout_kobo: number
+          payout_account_id: string
+          payout_snapshot?: Json
+          paystack_reference: string
+          paystack_status?: string | null
+          paystack_transfer_code?: string | null
+          paystack_transfer_id?: string | null
+          pricing_snapshot?: Json
+          redemption_wallet_address: string
+          service_fee_kobo: number
+          status?: string
+          total_fee_kobo: number
+          tx_hash?: string | null
+          up_token_address: string
+          updated_at?: string
+          user_id: string
+          vat_basis?: string
+          vat_basis_kobo?: number
+          vat_kobo?: number
+          vat_rate_bps?: number
+          vendor_address: string
+          vendor_fee_dg_raw: string
+          vendor_snapshot?: Json
+          wallet_address: string
+        }
+        Update: {
+          amount_dg_raw?: string
+          attempts?: number
+          chain_id?: number
+          completed_at?: string | null
+          created_at?: string
+          dg_token_address?: string
+          estimated_up_out_raw?: string
+          expires_at?: string
+          fee_breakdown?: Json
+          gross_ngn_kobo?: number
+          id?: string
+          last_error?: string | null
+          limits_snapshot?: Json
+          lock_id?: string | null
+          locked_at?: string | null
+          net_dg_raw?: string
+          net_payout_kobo?: number
+          payout_account_id?: string
+          payout_snapshot?: Json
+          paystack_reference?: string
+          paystack_status?: string | null
+          paystack_transfer_code?: string | null
+          paystack_transfer_id?: string | null
+          pricing_snapshot?: Json
+          redemption_wallet_address?: string
+          service_fee_kobo?: number
+          status?: string
+          total_fee_kobo?: number
+          tx_hash?: string | null
+          up_token_address?: string
+          updated_at?: string
+          user_id?: string
+          vat_basis?: string
+          vat_basis_kobo?: number
+          vat_kobo?: number
+          vat_rate_bps?: number
+          vendor_address?: string
+          vendor_fee_dg_raw?: string
+          vendor_snapshot?: Json
+          wallet_address?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "dg_redemption_intents_payout_account_id_fkey"
+            columns: ["payout_account_id"]
+            isOneToOne: false
+            referencedRelation: "user_payout_accounts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       event_allow_list: {
         Row: {
           added_by: string | null
@@ -460,6 +635,7 @@ export type Database = {
           paystack_public_key: string | null
           price: number
           purchase_confirmation_message: string | null
+          purchase_form_schema: Json | null
           refund_controller_address: string | null
           refund_event_end_at: string | null
           refund_last_synced_at: string | null
@@ -505,6 +681,7 @@ export type Database = {
           paystack_public_key?: string | null
           price?: number
           purchase_confirmation_message?: string | null
+          purchase_form_schema?: Json | null
           refund_controller_address?: string | null
           refund_event_end_at?: string | null
           refund_last_synced_at?: string | null
@@ -550,6 +727,7 @@ export type Database = {
           paystack_public_key?: string | null
           price?: number
           purchase_confirmation_message?: string | null
+          purchase_form_schema?: Json | null
           refund_controller_address?: string | null
           refund_event_end_at?: string | null
           refund_last_synced_at?: string | null
@@ -689,6 +867,38 @@ export type Database = {
           },
         ]
       }
+      event_purchase_form_schemas: {
+        Row: {
+          created_at: string
+          event_id: string
+          schema_json: Json
+          updated_at: string
+          updated_by: string
+        }
+        Insert: {
+          created_at?: string
+          event_id: string
+          schema_json: Json
+          updated_at?: string
+          updated_by: string
+        }
+        Update: {
+          created_at?: string
+          event_id?: string
+          schema_json?: Json
+          updated_at?: string
+          updated_by?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "event_purchase_form_schemas_event_id_fkey"
+            columns: ["event_id"]
+            isOneToOne: true
+            referencedRelation: "events"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       event_purchase_messages: {
         Row: {
           created_at: string
@@ -794,6 +1004,7 @@ export type Database = {
           ngn_price: number | null
           ngn_price_kobo: number
           payment_methods: string[] | null
+          payout_destination: string
           paystack_public_key: string | null
           price: number
           refund_controller_address: string | null
@@ -850,6 +1061,7 @@ export type Database = {
           ngn_price?: number | null
           ngn_price_kobo?: number
           payment_methods?: string[] | null
+          payout_destination?: string
           paystack_public_key?: string | null
           price?: number
           refund_controller_address?: string | null
@@ -906,6 +1118,7 @@ export type Database = {
           ngn_price?: number | null
           ngn_price_kobo?: number
           payment_methods?: string[] | null
+          payout_destination?: string
           paystack_public_key?: string | null
           price?: number
           refund_controller_address?: string | null
@@ -1154,6 +1367,7 @@ export type Database = {
           key_expiration_duration_seconds: number
           location: string
           metadata_set: boolean
+          payout_destination: string
           price_dg: number | null
           price_fiat: number
           price_fiat_kobo: number
@@ -1180,6 +1394,7 @@ export type Database = {
           key_expiration_duration_seconds?: number
           location: string
           metadata_set?: boolean
+          payout_destination?: string
           price_dg?: number | null
           price_fiat?: number
           price_fiat_kobo?: number
@@ -1206,6 +1421,7 @@ export type Database = {
           key_expiration_duration_seconds?: number
           location?: string
           metadata_set?: boolean
+          payout_destination?: string
           price_dg?: number | null
           price_fiat?: number
           price_fiat_kobo?: number
@@ -1545,6 +1761,7 @@ export type Database = {
           chain_name: string
           created_at: string
           dg_token_address: string | null
+          dg_vendor_address: string | null
           g_token_address: string | null
           id: string
           is_active: boolean
@@ -1554,6 +1771,12 @@ export type Database = {
           native_currency_symbol: string
           refundable_event_manager_address: string | null
           rpc_url: string | null
+          ticket_pass_controller_address: string | null
+          uniswap_v3_eth_usdc_pool_address: string | null
+          uniswap_v3_quoter_address: string | null
+          uniswap_v3_up_weth_fee: number | null
+          uniswap_v3_weth_address: string | null
+          uniswap_v3_weth_usdc_fee: number | null
           unlock_factory_address: string | null
           up_token_address: string | null
           updated_at: string
@@ -1565,6 +1788,7 @@ export type Database = {
           chain_name: string
           created_at?: string
           dg_token_address?: string | null
+          dg_vendor_address?: string | null
           g_token_address?: string | null
           id?: string
           is_active?: boolean
@@ -1574,6 +1798,12 @@ export type Database = {
           native_currency_symbol?: string
           refundable_event_manager_address?: string | null
           rpc_url?: string | null
+          ticket_pass_controller_address?: string | null
+          uniswap_v3_eth_usdc_pool_address?: string | null
+          uniswap_v3_quoter_address?: string | null
+          uniswap_v3_up_weth_fee?: number | null
+          uniswap_v3_weth_address?: string | null
+          uniswap_v3_weth_usdc_fee?: number | null
           unlock_factory_address?: string | null
           up_token_address?: string | null
           updated_at?: string
@@ -1585,6 +1815,7 @@ export type Database = {
           chain_name?: string
           created_at?: string
           dg_token_address?: string | null
+          dg_vendor_address?: string | null
           g_token_address?: string | null
           id?: string
           is_active?: boolean
@@ -1594,6 +1825,12 @@ export type Database = {
           native_currency_symbol?: string
           refundable_event_manager_address?: string | null
           rpc_url?: string | null
+          ticket_pass_controller_address?: string | null
+          uniswap_v3_eth_usdc_pool_address?: string | null
+          uniswap_v3_quoter_address?: string | null
+          uniswap_v3_up_weth_fee?: number | null
+          uniswap_v3_weth_address?: string | null
+          uniswap_v3_weth_usdc_fee?: number | null
           unlock_factory_address?: string | null
           up_token_address?: string | null
           updated_at?: string
@@ -1614,6 +1851,7 @@ export type Database = {
           issuance_lock_id: string | null
           issuance_locked_at: string | null
           payout_account_id: string | null
+          purchase_form_response: Json | null
           reference: string
           status: string
           updated_at: string
@@ -1632,6 +1870,7 @@ export type Database = {
           issuance_lock_id?: string | null
           issuance_locked_at?: string | null
           payout_account_id?: string | null
+          purchase_form_response?: Json | null
           reference: string
           status?: string
           updated_at?: string
@@ -1650,6 +1889,7 @@ export type Database = {
           issuance_lock_id?: string | null
           issuance_locked_at?: string | null
           payout_account_id?: string | null
+          purchase_form_response?: Json | null
           reference?: string
           status?: string
           updated_at?: string
@@ -1848,6 +2088,221 @@ export type Database = {
           },
         ]
       }
+      ticket_pass_orders: {
+        Row: {
+          amount_fiat: number | null
+          buyer_address: string | null
+          buyer_email: string | null
+          buyer_id: string | null
+          chain_id: number
+          created_at: string
+          creator_id: string
+          dispensed_at: string | null
+          fiat_symbol: string | null
+          gateway_response: Json | null
+          grant_dispense_txn_hash: string | null
+          id: string
+          issuance_attempts: number
+          issuance_lock_id: string | null
+          issuance_locked_at: string | null
+          last_error: string | null
+          lock_address: string
+          order_ref: string | null
+          pass_id: string
+          payment_provider: string
+          payment_reference: string | null
+          refund_amount_kobo: number | null
+          refund_error: string | null
+          refund_id: string | null
+          refund_last_synced_at: string | null
+          refund_processed_at: string | null
+          refund_reference: string | null
+          refund_requested_at: string | null
+          refund_status: string | null
+          status: string
+          token_id: string | null
+          updated_at: string
+          verified_at: string | null
+        }
+        Insert: {
+          amount_fiat?: number | null
+          buyer_address?: string | null
+          buyer_email?: string | null
+          buyer_id?: string | null
+          chain_id: number
+          created_at?: string
+          creator_id: string
+          dispensed_at?: string | null
+          fiat_symbol?: string | null
+          gateway_response?: Json | null
+          grant_dispense_txn_hash?: string | null
+          id?: string
+          issuance_attempts?: number
+          issuance_lock_id?: string | null
+          issuance_locked_at?: string | null
+          last_error?: string | null
+          lock_address: string
+          order_ref?: string | null
+          pass_id: string
+          payment_provider?: string
+          payment_reference?: string | null
+          refund_amount_kobo?: number | null
+          refund_error?: string | null
+          refund_id?: string | null
+          refund_last_synced_at?: string | null
+          refund_processed_at?: string | null
+          refund_reference?: string | null
+          refund_requested_at?: string | null
+          refund_status?: string | null
+          status?: string
+          token_id?: string | null
+          updated_at?: string
+          verified_at?: string | null
+        }
+        Update: {
+          amount_fiat?: number | null
+          buyer_address?: string | null
+          buyer_email?: string | null
+          buyer_id?: string | null
+          chain_id?: number
+          created_at?: string
+          creator_id?: string
+          dispensed_at?: string | null
+          fiat_symbol?: string | null
+          gateway_response?: Json | null
+          grant_dispense_txn_hash?: string | null
+          id?: string
+          issuance_attempts?: number
+          issuance_lock_id?: string | null
+          issuance_locked_at?: string | null
+          last_error?: string | null
+          lock_address?: string
+          order_ref?: string | null
+          pass_id?: string
+          payment_provider?: string
+          payment_reference?: string | null
+          refund_amount_kobo?: number | null
+          refund_error?: string | null
+          refund_id?: string | null
+          refund_last_synced_at?: string | null
+          refund_processed_at?: string | null
+          refund_reference?: string | null
+          refund_requested_at?: string | null
+          refund_status?: string | null
+          status?: string
+          token_id?: string | null
+          updated_at?: string
+          verified_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ticket_pass_orders_pass_id_fkey"
+            columns: ["pass_id"]
+            isOneToOne: false
+            referencedRelation: "ticket_passes"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      ticket_passes: {
+        Row: {
+          chain_id: number
+          controller_address: string
+          created_at: string
+          creator_address: string
+          creator_id: string
+          deploy_txn_hash: string | null
+          description: string
+          escrow_eth_total_wei: string
+          escrow_token_total_wei: string
+          eth_per_copy_wei: string
+          fiat_symbol: string
+          id: string
+          image_url: string | null
+          issuance_enabled: boolean
+          key_expiration_duration_seconds: number
+          lock_address: string
+          max_copies: number
+          max_per_buyer: number
+          metadata_set: boolean
+          payout_destination: string
+          payout_token_address: string | null
+          payout_token_symbol: string | null
+          price_fiat: number
+          price_fiat_kobo: number | null
+          status: string
+          target_event_address: string | null
+          title: string
+          token_decimals: number | null
+          token_per_copy_wei: string
+          updated_at: string
+        }
+        Insert: {
+          chain_id: number
+          controller_address: string
+          created_at?: string
+          creator_address: string
+          creator_id: string
+          deploy_txn_hash?: string | null
+          description: string
+          escrow_eth_total_wei?: string
+          escrow_token_total_wei?: string
+          eth_per_copy_wei?: string
+          fiat_symbol?: string
+          id?: string
+          image_url?: string | null
+          issuance_enabled?: boolean
+          key_expiration_duration_seconds: number
+          lock_address: string
+          max_copies: number
+          max_per_buyer?: number
+          metadata_set?: boolean
+          payout_destination?: string
+          payout_token_address?: string | null
+          payout_token_symbol?: string | null
+          price_fiat?: number
+          price_fiat_kobo?: number | null
+          status?: string
+          target_event_address?: string | null
+          title: string
+          token_decimals?: number | null
+          token_per_copy_wei?: string
+          updated_at?: string
+        }
+        Update: {
+          chain_id?: number
+          controller_address?: string
+          created_at?: string
+          creator_address?: string
+          creator_id?: string
+          deploy_txn_hash?: string | null
+          description?: string
+          escrow_eth_total_wei?: string
+          escrow_token_total_wei?: string
+          eth_per_copy_wei?: string
+          fiat_symbol?: string
+          id?: string
+          image_url?: string | null
+          issuance_enabled?: boolean
+          key_expiration_duration_seconds?: number
+          lock_address?: string
+          max_copies?: number
+          max_per_buyer?: number
+          metadata_set?: boolean
+          payout_destination?: string
+          payout_token_address?: string | null
+          payout_token_symbol?: string | null
+          price_fiat?: number
+          price_fiat_kobo?: number | null
+          status?: string
+          target_event_address?: string | null
+          title?: string
+          token_decimals?: number | null
+          token_per_copy_wei?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       tickets: {
         Row: {
           created_at: string | null
@@ -1860,6 +2315,8 @@ export type Database = {
           payment_transaction_id: string | null
           purchase_confirmation_message_snapshot: string | null
           purchase_confirmation_message_snapshot_at: string | null
+          purchase_form_response_snapshot: Json | null
+          purchase_form_schema_version_at: string | null
           status: string | null
           token_id: string | null
           updated_at: string | null
@@ -1876,6 +2333,8 @@ export type Database = {
           payment_transaction_id?: string | null
           purchase_confirmation_message_snapshot?: string | null
           purchase_confirmation_message_snapshot_at?: string | null
+          purchase_form_response_snapshot?: Json | null
+          purchase_form_schema_version_at?: string | null
           status?: string | null
           token_id?: string | null
           updated_at?: string | null
@@ -1892,6 +2351,8 @@ export type Database = {
           payment_transaction_id?: string | null
           purchase_confirmation_message_snapshot?: string | null
           purchase_confirmation_message_snapshot_at?: string | null
+          purchase_form_response_snapshot?: Json | null
+          purchase_form_schema_version_at?: string | null
           status?: string | null
           token_id?: string | null
           updated_at?: string | null
@@ -1913,6 +2374,75 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      user_payout_accounts: {
+        Row: {
+          account_holder_name: string
+          account_number_hash: string
+          account_number_last4: string
+          bank_code: string
+          bank_name: string
+          created_at: string
+          currency: string
+          encrypted_account_number: string
+          id: string
+          provider: string
+          provider_metadata: Json
+          provider_recipient_code: string | null
+          provider_recipient_id: string | null
+          revealed_at: string | null
+          status: string
+          suspended_at: string | null
+          updated_at: string
+          user_id: string
+          verification_error: string | null
+          verified_at: string | null
+        }
+        Insert: {
+          account_holder_name: string
+          account_number_hash: string
+          account_number_last4: string
+          bank_code: string
+          bank_name: string
+          created_at?: string
+          currency?: string
+          encrypted_account_number: string
+          id?: string
+          provider?: string
+          provider_metadata?: Json
+          provider_recipient_code?: string | null
+          provider_recipient_id?: string | null
+          revealed_at?: string | null
+          status?: string
+          suspended_at?: string | null
+          updated_at?: string
+          user_id: string
+          verification_error?: string | null
+          verified_at?: string | null
+        }
+        Update: {
+          account_holder_name?: string
+          account_number_hash?: string
+          account_number_last4?: string
+          bank_code?: string
+          bank_name?: string
+          created_at?: string
+          currency?: string
+          encrypted_account_number?: string
+          id?: string
+          provider?: string
+          provider_metadata?: Json
+          provider_recipient_code?: string | null
+          provider_recipient_id?: string | null
+          revealed_at?: string | null
+          status?: string
+          suspended_at?: string | null
+          updated_at?: string
+          user_id?: string
+          verification_error?: string | null
+          verified_at?: string | null
+        }
+        Relationships: []
       }
       user_reputation: {
         Row: {
@@ -2074,6 +2604,7 @@ export type Database = {
           account_holder_name: string | null
           account_number: string | null
           business_name: string
+          contact_email: string | null
           created_at: string | null
           currency: string
           id: string
@@ -2103,6 +2634,7 @@ export type Database = {
           account_holder_name?: string | null
           account_number?: string | null
           business_name: string
+          contact_email?: string | null
           created_at?: string | null
           currency?: string
           id?: string
@@ -2132,6 +2664,7 @@ export type Database = {
           account_holder_name?: string | null
           account_number?: string | null
           business_name?: string
+          contact_email?: string | null
           created_at?: string | null
           currency?: string
           id?: string
@@ -2220,6 +2753,119 @@ export type Database = {
       }
     }
     Functions: {
+      acquire_dg_redemption_intent_lock: {
+        Args: {
+          p_intent_id: string
+          p_lock_id: string
+          p_stale_before: string
+          p_tx_hash: string
+          p_user_id: string
+        }
+        Returns: {
+          amount_dg_raw: string
+          attempts: number
+          chain_id: number
+          completed_at: string | null
+          created_at: string
+          dg_token_address: string
+          estimated_up_out_raw: string
+          expires_at: string
+          fee_breakdown: Json
+          gross_ngn_kobo: number
+          id: string
+          last_error: string | null
+          limits_snapshot: Json
+          lock_id: string | null
+          locked_at: string | null
+          net_dg_raw: string
+          net_payout_kobo: number
+          payout_account_id: string
+          payout_snapshot: Json
+          paystack_reference: string
+          paystack_status: string | null
+          paystack_transfer_code: string | null
+          paystack_transfer_id: string | null
+          pricing_snapshot: Json
+          redemption_wallet_address: string
+          service_fee_kobo: number
+          status: string
+          total_fee_kobo: number
+          tx_hash: string | null
+          up_token_address: string
+          updated_at: string
+          user_id: string
+          vat_basis: string
+          vat_basis_kobo: number
+          vat_kobo: number
+          vat_rate_bps: number
+          vendor_address: string
+          vendor_fee_dg_raw: string
+          vendor_snapshot: Json
+          wallet_address: string
+        }
+        SetofOptions: {
+          from: "*"
+          to: "dg_redemption_intents"
+          isOneToOne: true
+          isSetofReturn: false
+        }
+      }
+      acquire_dg_redemption_retry_lock: {
+        Args: {
+          p_admin_user_id: string
+          p_intent_id: string
+          p_lock_id: string
+          p_stale_before: string
+        }
+        Returns: {
+          amount_dg_raw: string
+          attempts: number
+          chain_id: number
+          completed_at: string | null
+          created_at: string
+          dg_token_address: string
+          estimated_up_out_raw: string
+          expires_at: string
+          fee_breakdown: Json
+          gross_ngn_kobo: number
+          id: string
+          last_error: string | null
+          limits_snapshot: Json
+          lock_id: string | null
+          locked_at: string | null
+          net_dg_raw: string
+          net_payout_kobo: number
+          payout_account_id: string
+          payout_snapshot: Json
+          paystack_reference: string
+          paystack_status: string | null
+          paystack_transfer_code: string | null
+          paystack_transfer_id: string | null
+          pricing_snapshot: Json
+          redemption_wallet_address: string
+          service_fee_kobo: number
+          status: string
+          total_fee_kobo: number
+          tx_hash: string | null
+          up_token_address: string
+          updated_at: string
+          user_id: string
+          vat_basis: string
+          vat_basis_kobo: number
+          vat_kobo: number
+          vat_rate_bps: number
+          vendor_address: string
+          vendor_fee_dg_raw: string
+          vendor_snapshot: Json
+          wallet_address: string
+        }
+        SetofOptions: {
+          from: "*"
+          to: "dg_redemption_intents"
+          isOneToOne: true
+          isSetofReturn: false
+        }
+      }
       check_gasless_limit: {
         Args: { p_activity: string; p_daily_limit: number; p_user_id: string }
         Returns: {
@@ -2231,6 +2877,91 @@ export type Database = {
         Args: { p_schema_uid: string; p_user_id: string }
         Returns: Record<string, unknown>
       }
+      create_dg_redemption_intent: {
+        Args: {
+          p_amount_dg_raw: string
+          p_chain_id: number
+          p_dg_token_address: string
+          p_estimated_up_out_raw: string
+          p_expires_at: string
+          p_fee_breakdown: Json
+          p_gross_ngn_kobo: number
+          p_limits_snapshot: Json
+          p_net_dg_raw: string
+          p_net_payout_kobo: number
+          p_payout_account_id: string
+          p_payout_snapshot: Json
+          p_paystack_reference: string
+          p_platform_daily_limit_kobo: number
+          p_pricing_snapshot: Json
+          p_redemption_wallet_address: string
+          p_service_fee_kobo: number
+          p_total_fee_kobo: number
+          p_up_token_address: string
+          p_user_daily_limit_kobo: number
+          p_user_id: string
+          p_vat_basis: string
+          p_vat_basis_kobo: number
+          p_vat_kobo: number
+          p_vat_rate_bps: number
+          p_vendor_address: string
+          p_vendor_fee_dg_raw: string
+          p_vendor_snapshot: Json
+          p_wallet_address: string
+        }
+        Returns: {
+          amount_dg_raw: string
+          attempts: number
+          chain_id: number
+          completed_at: string | null
+          created_at: string
+          dg_token_address: string
+          estimated_up_out_raw: string
+          expires_at: string
+          fee_breakdown: Json
+          gross_ngn_kobo: number
+          id: string
+          last_error: string | null
+          limits_snapshot: Json
+          lock_id: string | null
+          locked_at: string | null
+          net_dg_raw: string
+          net_payout_kobo: number
+          payout_account_id: string
+          payout_snapshot: Json
+          paystack_reference: string
+          paystack_status: string | null
+          paystack_transfer_code: string | null
+          paystack_transfer_id: string | null
+          pricing_snapshot: Json
+          redemption_wallet_address: string
+          service_fee_kobo: number
+          status: string
+          total_fee_kobo: number
+          tx_hash: string | null
+          up_token_address: string
+          updated_at: string
+          user_id: string
+          vat_basis: string
+          vat_basis_kobo: number
+          vat_kobo: number
+          vat_rate_bps: number
+          vendor_address: string
+          vendor_fee_dg_raw: string
+          vendor_snapshot: Json
+          wallet_address: string
+        }
+        SetofOptions: {
+          from: "*"
+          to: "dg_redemption_intents"
+          isOneToOne: true
+          isSetofReturn: false
+        }
+      }
+      get_my_purchase_form_prefill: {
+        Args: { p_owner_wallet: string }
+        Returns: Json
+      }
       get_my_ticket_email: { Args: { p_owner_wallet: string }; Returns: string }
       get_user_daily_attestation_count: {
         Args: { p_user_id: string }
@@ -2241,6 +2972,48 @@ export type Database = {
         Returns: number
       }
       get_waitlist_count: { Args: { p_event_id: string }; Returns: number }
+      replace_user_payout_account: {
+        Args: {
+          p_account_holder_name: string
+          p_account_number_hash: string
+          p_account_number_last4: string
+          p_bank_code: string
+          p_bank_name: string
+          p_encrypted_account_number: string
+          p_provider_metadata: Json
+          p_provider_recipient_code: string
+          p_provider_recipient_id: string
+          p_user_id: string
+        }
+        Returns: {
+          account_holder_name: string
+          account_number_hash: string
+          account_number_last4: string
+          bank_code: string
+          bank_name: string
+          created_at: string
+          currency: string
+          encrypted_account_number: string
+          id: string
+          provider: string
+          provider_metadata: Json
+          provider_recipient_code: string | null
+          provider_recipient_id: string | null
+          revealed_at: string | null
+          status: string
+          suspended_at: string | null
+          updated_at: string
+          user_id: string
+          verification_error: string | null
+          verified_at: string | null
+        }
+        SetofOptions: {
+          from: "*"
+          to: "user_payout_accounts"
+          isOneToOne: true
+          isSetofReturn: false
+        }
+      }
       update_reputation_score: {
         Args: {
           attestation_type?: string
@@ -2384,3 +3157,4 @@ export const Constants = {
     Enums: {},
   },
 } as const
+

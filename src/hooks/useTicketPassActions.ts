@@ -1,6 +1,8 @@
-import { useCallback, useState } from 'react';
+import { createElement, useCallback, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { usePrivy } from '@privy-io/react-auth';
+import { PassDeliveryDetails } from '@/components/ticket-pass/PassDeliveryToast';
+import { getExplorerTxUrl } from '@/lib/config/network-config';
 import { useToast } from '@/hooks/use-toast';
 import { callEdgeFunction } from '@/lib/edgeFunctions';
 import {
@@ -9,7 +11,7 @@ import {
   setTicketPassIssuance,
   withdrawTicketPassResidual,
 } from '@/utils/ticketPassControllerUtils';
-import type { TicketPass } from '@/types/ticketPass';
+import type { TicketPass, TicketPassOrder } from '@/types/ticketPass';
 
 type PassRef = Pick<TicketPass, 'id' | 'lock_address' | 'controller_address' | 'chain_id'>;
 
@@ -87,11 +89,21 @@ export function useTicketPassActions(wallet: any) {
   const retryIssuance = useCallback(async (orderId: string, reference?: string | null): Promise<boolean> => {
     setIsBusy(true);
     const token = await getAccessToken?.();
+    let result: {
+      already_issued?: boolean;
+      needs_review?: boolean;
+      refunded?: boolean;
+      refund_pending?: boolean;
+      processing?: boolean;
+      review_reason?: string;
+      tokenId?: string | null;
+      txHash?: string | null;
+    } | null = null;
     try {
       if (reference) {
-        await callEdgeFunction('confirm-ticket-pass-paystack', { reference }, { privyToken: token });
+        result = await callEdgeFunction('confirm-ticket-pass-paystack', { reference }, { privyToken: token });
       } else {
-        await callEdgeFunction('retry-ticket-pass-issuance', { order_id: orderId }, { privyToken: token });
+        result = await callEdgeFunction('retry-ticket-pass-issuance', { order_id: orderId }, { privyToken: token });
       }
     } catch (err) {
       setIsBusy(false);
@@ -99,9 +111,71 @@ export function useTicketPassActions(wallet: any) {
       return false;
     }
     setIsBusy(false);
-    toast({ title: 'Delivery retried', description: 'If successful, the pass value will arrive shortly.' });
-    queryClient.invalidateQueries({ queryKey: ['my-ticket-pass-orders'] });
+    const currentOrders = queryClient.getQueryData<TicketPassOrder[]>(['my-ticket-pass-orders']);
+    const currentOrder = currentOrders?.find((order) => order.id === orderId);
+    const deliveredTxHash = result?.txHash ?? currentOrder?.grant_dispense_txn_hash ?? null;
+    const deliveredChainId = currentOrder?.chain_id ?? null;
+    let explorerUrl: string | null = null;
+
+    if (deliveredTxHash && deliveredChainId) {
+      try {
+        explorerUrl = await getExplorerTxUrl(deliveredChainId, deliveredTxHash);
+      } catch (err) {
+        console.warn('[useTicketPassActions] explorer URL resolution failed', err);
+      }
+    }
+
+    queryClient.setQueryData<TicketPassOrder[]>(['my-ticket-pass-orders'], (current) => {
+      if (!current) return current;
+      return current.map((order) => {
+        if (order.id !== orderId) return order;
+        if (result?.refunded) {
+          return { ...order, status: 'REFUNDED', refund_status: 'processed' };
+        }
+        if (result?.refund_pending) {
+          return { ...order, status: 'REFUND_PENDING', refund_status: order.refund_status || 'pending' };
+        }
+        if (result?.needs_review) {
+          return { ...order, status: 'NEEDS_REVIEW' };
+        }
+        if (result?.tokenId || result?.already_issued || result?.txHash) {
+          return {
+            ...order,
+            status: 'DISPENSED',
+            token_id: result.tokenId ?? order.token_id,
+            grant_dispense_txn_hash: deliveredTxHash ?? order.grant_dispense_txn_hash,
+            dispensed_at: order.dispensed_at || new Date().toISOString(),
+          };
+        }
+        return order;
+      });
+    });
+
+    if (result?.refunded) {
+      toast({ title: 'Refunded', description: "We couldn't deliver this pass, so your payment has been refunded in full." });
+    } else if (result?.refund_pending) {
+      toast({ title: 'Refund started', description: "We couldn't deliver this pass, so we've started your refund." });
+    } else if (result?.needs_review) {
+      toast({ title: 'Order under review', description: "We're reviewing this order. Your payment is safe — you'll be delivered or refunded." });
+    } else if (result?.tokenId || result?.already_issued || result?.txHash) {
+      toast({
+        title: 'Pass delivered',
+        description: createElement(PassDeliveryDetails, {
+          txHash: deliveredTxHash,
+          explorerUrl,
+          profileHref: deliveredChainId ? `/profile?chainId=${deliveredChainId}` : '/profile',
+        }),
+        duration: 6000,
+      });
+    } else if (result?.processing) {
+      toast({ title: 'Delivery already running', description: 'This order is still being processed. Refresh the page in a moment.' });
+    } else {
+      toast({ title: 'Delivery retry started', description: 'We rechecked the payment and started another delivery attempt.' });
+    }
+    queryClient.invalidateQueries({ queryKey: ['my-ticket-pass-orders'], refetchType: 'active' });
     queryClient.invalidateQueries({ queryKey: ['ticket-pass-onchain'] });
+    queryClient.invalidateQueries({ queryKey: ['native-balance'] });
+    queryClient.invalidateQueries({ queryKey: ['erc20-balance'] });
     return true;
   }, [getAccessToken, queryClient, toast]);
 

@@ -25,6 +25,12 @@ enabled = true
 [functions.paystack-webhook]
   verify_jwt = false
 
+[functions.paystack-transfer-webhook]
+  verify_jwt = false
+
+[functions.expire-dg-redemption-intents]
+  verify_jwt = false
+
 # Keep verify_jwt enabled for remove-service-manager; it will receive
 # Supabase JWT in Authorization and Privy JWT in X-Privy-Authorization.
 
@@ -58,6 +64,38 @@ enabled = true
 [functions.get-price-conversion]
   verify_jwt = false
 
+[functions.search-linkable-events]
+  # Public lookup for minimal event fields used by Ticket Pass linking.
+  verify_jwt = false
+
 [functions.ticket-pass-metadata]
   # Public endpoint - NFT marketplaces and wallets need unauthenticated access
+  verify_jwt = false
+
+[functions.list-nigerian-banks]
+  # Public bank list used before a user has a Supabase JWT.
+  verify_jwt = false
+
+[functions.resolve-bank-account]
+  # Public account-name lookup; Paystack secret remains server-side.
+  verify_jwt = false
+
+[functions.get-user-payout-account]
+  # Browser sends Privy JWT; the function performs identity checks itself.
+  verify_jwt = false
+
+[functions.save-user-payout-account]
+  # Browser sends Privy JWT; the function performs identity checks itself.
+  verify_jwt = false
+
+[functions.reveal-user-payout-account]
+  # Browser sends Privy JWT; the function performs identity checks itself.
+  verify_jwt = false
+
+[functions.cancel-dg-redemption]
+  # Browser sends Privy JWT; the function performs identity checks itself.
+  verify_jwt = false
+
+[functions.get-purchase-form-prefill]
+  # Browser sends Privy JWT; the function validates wallet ownership itself.
   verify_jwt = false

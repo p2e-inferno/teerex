@@ -15,14 +15,50 @@ export const TICKET_PASS_CONTROLLER_ABI = [
   'function closePass(address lock)',
   'function withdrawResidual(address lock)',
   'function setIssuanceEnabled(address lock, bool enabled)',
+  'function setPassMetadata(address lock, string lockName, string lockSymbol, string baseTokenURI)',
   'function dispense(address lock, uint256 tokenId)',
   'function dispenseNext(address lock)',
+  'function isAllowedPayoutToken(address token) view returns (bool)',
+  'function getAllowedPayoutTokens() view returns (address[])',
   'function remainingCopies(address lock) view returns (uint256)',
   'function nextUnredeemedToken(address lock, address owner) view returns (uint256 tokenId, bool found)',
   'function previewEscrowRequirement(uint256 maxCopies, uint256 tokenPerCopy, uint256 ethPerCopy) view returns (uint256 tokenEscrow, uint256 ethEscrow)',
   'function withdrawablePreview(address lock) view returns (uint256 tokenResidual, uint256 ethResidual)',
-  'function passByLock(address) view returns (bool exists, bool closed, bool issuanceEnabled, address creator, address payoutToken, uint256 tokenPerCopy, uint256 ethPerCopy, uint256 maxCopies, uint256 keyExpiration, uint256 tokenEscrow, uint256 ethEscrow, uint256 redeemedCount)',
+  'function passByLock(address) view returns (bool exists, bool closed, bool issuanceEnabled, address creator, address payoutToken, uint256 tokenPerCopy, uint256 ethPerCopy, uint256 maxCopies, uint256 keyExpiration, uint256 tokenEscrow, uint256 ethEscrow, uint256 redeemedCount, uint256 keyMaxPerAccount)',
   'event PassCreated(address indexed lock, address indexed creator, address indexed payoutToken, uint256 tokenPerCopy, uint256 ethPerCopy, uint256 maxCopies, uint256 keyExpiration, uint256 tokenEscrow, uint256 ethEscrow)',
+  // Error fragments so client-side reverts decode to a named reason (err.revert.name) for friendly toasts.
+  'error AlreadyClosed()',
+  'error AlreadyRedeemed()',
+  'error EmptyPass()',
+  'error InsufficientTokenAllowance(uint256 required, uint256 allowance)',
+  'error InsufficientTokenBalance(uint256 required, uint256 balance)',
+  'error InvalidConfig()',
+  'error InvalidFactory()',
+  'error InvalidGranter()',
+  'error InvalidKey()',
+  'error InvalidLockVersion()',
+  'error InvalidPayoutToken()',
+  'error InvalidRecipient()',
+  'error InvalidToken()',
+  'error IssuanceDisabled()',
+  'error MathOverflow()',
+  'error NativeEscrowMismatch(uint256 required, uint256 provided)',
+  'error NativeWithdrawFailed()',
+  'error NotClosed()',
+  'error NotCreator()',
+  'error NotGranter()',
+  'error NothingToWithdraw()',
+  'error OrderAlreadyProcessed()',
+  'error OwnableInvalidOwner(address owner)',
+  'error OwnableUnauthorizedAccount(address account)',
+  'error PassClosed()',
+  'error PayoutNativeTransferFailed()',
+  'error PerBuyerLimitReached()',
+  'error ReentrancyGuardReentrantCall()',
+  'error SafeERC20FailedOperation(address token)',
+  'error SoldOut()',
+  'error TokenNotAllowed(address token)',
+  'error UnknownPass()',
 ];
 
 const ERC20_ABI = [
@@ -31,6 +67,75 @@ const ERC20_ABI = [
   'function allowance(address owner, address spender) view returns (uint256)',
   'function approve(address spender, uint256 value) returns (bool)',
 ];
+
+const PUBLIC_LOCK_BALANCE_ABI = [
+  'function balanceOf(address owner) view returns (uint256)',
+];
+
+const TICKET_PASS_ERROR_MESSAGES: Record<string, string> = {
+  EmptyPass: 'A pass must deliver a token or native amount.',
+  InvalidConfig: 'Invalid pass configuration.',
+  InvalidPayoutToken: 'Invalid payout token for this pass.',
+  TokenNotAllowed: 'That payout token is not on the allowlist.',
+  NativeEscrowMismatch: 'The funded native amount does not match the pass total.',
+  InsufficientTokenBalance: 'Insufficient token balance to fund the pass.',
+  InsufficientTokenAllowance: 'Token allowance too low — approve the controller and try again.',
+  MathOverflow: 'The escrow amount is too large.',
+  NotCreator: 'Only the pass creator can perform this action.',
+  AlreadyClosed: 'This pass is already closed.',
+  NotClosed: 'Close the pass before withdrawing residual escrow.',
+  NothingToWithdraw: 'There is nothing to withdraw.',
+  UnknownPass: 'This pass is not recognised by the controller.',
+  SoldOut: 'This pass has sold out.',
+  PerBuyerLimitReached: 'You already hold the maximum number of this pass.',
+  IssuanceDisabled: 'Issuance is currently paused for this pass.',
+  PassClosed: 'This pass is closed.',
+  AlreadyRedeemed: 'This pass has already been redeemed.',
+  InvalidKey: 'No valid, unredeemed pass was found for your wallet.',
+  InvalidRecipient: 'Invalid recipient address.',
+  PayoutNativeTransferFailed: 'The native payout transfer failed.',
+};
+
+/** Turn a caught controller or wallet error into a friendly message. */
+function decodeTicketPassError(err: any, fallback: string): string {
+  const code = err?.code ?? err?.error?.code;
+  const name: string | undefined = err?.revert?.name;
+  if (name) return TICKET_PASS_ERROR_MESSAGES[name] ?? name;
+  const msg = String(err?.shortMessage || err?.reason || (err instanceof Error ? err.message : '') || '');
+  const lowerMessage = msg.toLowerCase();
+  if (
+    code === 4001 ||
+    code === 'ACTION_REJECTED' ||
+    lowerMessage.includes('user rejected') ||
+    lowerMessage.includes('user denied')
+  ) {
+    return 'Transaction was cancelled. Please try again when ready.';
+  }
+
+  if (lowerMessage.includes('unsupported or inactive chainid')) {
+    return 'The selected network is not active in TeeRex configuration.';
+  }
+
+  if (lowerMessage.includes('insufficient funds')) {
+    return 'Insufficient funds for the pass escrow and network fees.';
+  }
+
+  if (lowerMessage.includes('notcreator') || lowerMessage.includes('not creator')) {
+    return TICKET_PASS_ERROR_MESSAGES.NotCreator;
+  }
+
+  if (
+    code === -32603 ||
+    lowerMessage.includes('could not coalesce error') ||
+    lowerMessage.includes('missing revert data') ||
+    lowerMessage.includes('execution reverted') ||
+    lowerMessage.includes('unknown custom error')
+  ) {
+    return 'The wallet could not complete this transaction. Check that your wallet is on the selected network, has enough gas, and has permission for this pass.';
+  }
+
+  return msg || fallback;
+}
 
 export type TicketPassPayoutSymbol = 'USDC' | 'DG' | 'G' | 'UP';
 
@@ -182,6 +287,15 @@ export const deployTicketPass = async (
     }
 
     const controller = new ethers.Contract(controllerAddress, TICKET_PASS_CONTROLLER_ABI, signer);
+
+    // Preflight the payout-token allowlist for a friendly error (createPass reverts otherwise).
+    if (config.tokenSymbol && payoutTokenAddress !== ZERO_ADDRESS) {
+      const allowed: boolean = await controller.isAllowedPayoutToken(payoutTokenAddress);
+      if (!allowed) {
+        throw new Error(`${config.tokenSymbol} is not an allowed payout token on this network yet.`);
+      }
+    }
+
     const tx = await controller.createPass(
       config.expirationSeconds,
       config.maxCopies,
@@ -226,12 +340,10 @@ export const deployTicketPass = async (
     };
   } catch (error) {
     console.error('Error deploying Ticket Pass:', error);
-    let message = 'Failed to deploy Ticket Pass';
-    if (error instanceof Error) {
-      if (error.message.toLowerCase().includes('user rejected')) message = 'Transaction was cancelled. Please try again when ready.';
-      else if (error.message.toLowerCase().includes('insufficient funds')) message = 'Insufficient funds for the pass escrow + gas.';
-      else message = error.message;
-    }
+    const lower = error instanceof Error ? error.message.toLowerCase() : '';
+    const message = lower.includes('insufficient funds')
+      ? 'Insufficient funds for the pass escrow + gas.'
+      : decodeTicketPassError(error, 'Failed to deploy Ticket Pass');
     return { success: false, error: message };
   }
 };
@@ -249,7 +361,7 @@ export const closeTicketPass = async (
     if (receipt.status !== 1) throw new Error('Close transaction failed.');
     return { success: true, transactionHash: tx.hash };
   } catch (error) {
-    return { success: false, error: error instanceof Error ? error.message : 'Failed to close pass' };
+    return { success: false, error: decodeTicketPassError(error, 'Failed to close pass') };
   }
 };
 
@@ -266,7 +378,7 @@ export const withdrawTicketPassResidual = async (
     if (receipt.status !== 1) throw new Error('Withdraw transaction failed.');
     return { success: true, transactionHash: tx.hash };
   } catch (error) {
-    return { success: false, error: error instanceof Error ? error.message : 'Failed to withdraw residual' };
+    return { success: false, error: decodeTicketPassError(error, 'Failed to withdraw residual') };
   }
 };
 
@@ -285,7 +397,27 @@ export const setTicketPassIssuance = async (
     if (receipt.status !== 1) throw new Error('Issuance toggle transaction failed.');
     return { success: true, transactionHash: tx.hash };
   } catch (error) {
-    return { success: false, error: error instanceof Error ? error.message : 'Failed to update issuance' };
+    return { success: false, error: decodeTicketPassError(error, 'Failed to update issuance') };
+  }
+};
+
+export const setTicketPassMetadata = async (
+  lockAddress: string,
+  controllerAddress: string,
+  lockName: string,
+  lockSymbol: string,
+  baseTokenURI: string,
+  wallet: any,
+  chainId: number,
+): Promise<TicketPassActionResult> => {
+  try {
+    const controller = await getControllerWithSigner(controllerAddress, wallet, chainId);
+    const tx = await controller.setPassMetadata(lockAddress, lockName, lockSymbol, baseTokenURI);
+    const receipt = await tx.wait();
+    if (receipt.status !== 1) throw new Error('Metadata transaction failed.');
+    return { success: true, transactionHash: tx.hash };
+  } catch (error) {
+    return { success: false, error: decodeTicketPassError(error, 'Failed to set pass metadata') };
   }
 };
 
@@ -303,7 +435,7 @@ export const selfDispenseTicketPass = async (
     if (receipt.status !== 1) throw new Error('Dispense transaction failed.');
     return { success: true, transactionHash: tx.hash };
   } catch (error) {
-    return { success: false, error: error instanceof Error ? error.message : 'Failed to claim pass' };
+    return { success: false, error: decodeTicketPassError(error, 'Failed to claim pass') };
   }
 };
 
@@ -334,4 +466,16 @@ export const getTicketPassOnchainState = async (
     console.error('Error reading Ticket Pass on-chain state:', error);
     return null;
   }
+};
+
+export const getTicketPassBuyerKeyBalance = async (
+  lockAddress: string,
+  buyerAddress: string,
+  chainId: number,
+): Promise<number> => {
+  if (!ethers.isAddress(lockAddress) || !ethers.isAddress(buyerAddress)) return 0;
+  const provider = await getReadProvider(chainId);
+  const lock = new ethers.Contract(lockAddress, PUBLIC_LOCK_BALANCE_ABI, provider);
+  const balance: bigint = await lock.balanceOf(buyerAddress);
+  return Number(balance);
 };

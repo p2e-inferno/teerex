@@ -4,7 +4,17 @@
 // compiles before `src/integrations/supabase/types.ts` is regenerated.
 
 export type TicketPassStatus = 'ACTIVE' | 'CLOSED' | 'SOLD_OUT';
-export type TicketPassOrderStatus = 'PENDING' | 'PAID' | 'DISPENSED' | 'FAILED' | 'REFUNDED';
+export type TicketPassOrderStatus =
+  | 'PENDING'
+  | 'PAID'
+  | 'DISPENSED'
+  | 'FAILED'
+  | 'NEEDS_REVIEW'
+  | 'REFUND_PENDING'
+  | 'REFUND_NEEDS_ATTENTION'
+  | 'REFUND_FAILED'
+  | 'REFUNDED';
+export type TicketPassRefundStatus = 'pending' | 'processing' | 'needs_attention' | 'failed' | 'processed';
 export type TicketPassPaymentProvider = 'paystack' | 'crypto' | 'paycrest';
 
 export interface TicketPass {
@@ -54,6 +64,11 @@ export interface TicketPassOrder {
   chain_id: number;
   lock_address: string;
   status: TicketPassOrderStatus;
+  refund_status: TicketPassRefundStatus | null;
+  refund_error: string | null;
+  refund_requested_at: string | null;
+  refund_processed_at: string | null;
+  refund_last_synced_at: string | null;
   token_id: string | null;
   grant_dispense_txn_hash: string | null;
   dispensed_at: string | null;
@@ -62,7 +77,7 @@ export interface TicketPassOrder {
   // Joined pass summary (from list-my-ticket-pass-orders).
   ticket_passes?: Pick<
     TicketPass,
-    'id' | 'title' | 'image_url' | 'payout_token_symbol' | 'token_per_copy_wei' | 'eth_per_copy_wei' | 'token_decimals' | 'target_event_address' | 'controller_address'
+    'id' | 'title' | 'image_url' | 'payout_token_symbol' | 'token_per_copy_wei' | 'eth_per_copy_wei' | 'token_decimals' | 'key_expiration_duration_seconds' | 'target_event_address' | 'controller_address'
   > | null;
 }
 

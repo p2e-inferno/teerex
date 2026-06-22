@@ -4,6 +4,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.50.0";
 import { corsHeaders, buildPreflightHeaders } from "../_shared/cors.ts";
 import { SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY } from "../_shared/constants.ts";
 import { verifyPrivyToken } from "../_shared/privy.ts";
+import { resolveLinkableEventByAddress } from "../_shared/linkable-events.ts";
 
 function json(data: any, status = 200) {
   return new Response(JSON.stringify(data), {
@@ -30,7 +31,7 @@ serve(async (req) => {
     const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
     const { data: pass } = await supabase
       .from("ticket_passes")
-      .select("id, creator_id")
+      .select("id, creator_id, chain_id")
       .eq("id", passId)
       .maybeSingle();
 
@@ -46,6 +47,10 @@ serve(async (req) => {
     if (body.target_event_address !== undefined) {
       const t = body.target_event_address ? String(body.target_event_address).trim().toLowerCase() : null;
       if (t && !isAddr(t)) return json({ ok: false, error: "invalid_target_event_address" }, 400);
+      if (t) {
+        const targetEvent = await resolveLinkableEventByAddress(supabase, t, { chainId: Number(pass.chain_id) });
+        if (!targetEvent.ok) return json({ ok: false, error: targetEvent.error }, 400);
+      }
       updates.target_event_address = t;
     }
 

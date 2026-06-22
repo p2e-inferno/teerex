@@ -35,6 +35,7 @@ import {
 } from "@/utils/lockUtils";
 import { isEventRegistrationClosed } from "@/lib/events/registration";
 import { EventPurchaseDialog } from "@/components/events/EventPurchaseDialog";
+import { EventPassOnramp } from "@/components/ticket-pass/EventPassOnramp";
 import { PaystackPaymentDialog } from "@/components/events/PaystackPaymentDialog";
 import { TicketProcessingDialog } from "@/components/events/TicketProcessingDialog";
 import { PaymentMethodDialog } from "@/components/events/PaymentMethodDialog";
@@ -1484,6 +1485,9 @@ const EventDetailsContent = () => {
                       )}
                     </>
                   )}
+
+                  {/* Fiat→crypto onramp: shown only when an active Ticket Pass is linked to this event. */}
+                  <EventPassOnramp event={event} />
 
                   <div className="text-xs text-gray-500 text-center">
                     Powered by blockchain technology

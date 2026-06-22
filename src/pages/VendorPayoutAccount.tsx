@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { usePrivy } from '@privy-io/react-auth';
 import { callEdgeFunction } from '@/lib/edgeFunctions';
 import { supabase } from '@/integrations/supabase/client';
@@ -31,6 +32,7 @@ import {
   Hash,
   ChevronsUpDown,
   Check,
+  ArrowLeft,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
@@ -63,6 +65,9 @@ interface PayoutAccount {
 
 const VendorPayoutAccount: React.FC = () => {
   const { authenticated, ready, getAccessToken, login } = usePrivy();
+  const navigate = useNavigate();
+  const location = useLocation();
+  const returnTo = (location.state as { returnTo?: string } | null)?.returnTo;
 
   // React Query hooks
   const { data: banks = [], isLoading: banksLoading, error: banksError } = useBanks();
@@ -83,6 +88,14 @@ const VendorPayoutAccount: React.FC = () => {
   const selectedBankName = useMemo(() => {
     return banks.find((b) => b.code === selectedBankCode)?.name || '';
   }, [banks, selectedBankCode]);
+
+  const selectBank = useCallback((bankCode: string) => {
+    const bank = banks.find((item) => item.code === bankCode);
+    setSelectedBankCode(bankCode);
+    if (bank?.defaultAccountNumber) {
+      setAccountNumber(bank.defaultAccountNumber);
+    }
+  }, [banks]);
 
   // Debounce account number for real-time resolution
   const debouncedAccountNumber = useDebounce(accountNumber, 500);
@@ -269,6 +282,22 @@ const VendorPayoutAccount: React.FC = () => {
     }
   };
 
+  const handleBack = () => {
+    const currentPath = `${location.pathname}${location.search}${location.hash}`;
+    if (returnTo?.startsWith('/') && returnTo !== currentPath) {
+      navigate(returnTo);
+      return;
+    }
+
+    const historyIndex = window.history.state?.idx;
+    if (typeof historyIndex === 'number' && historyIndex > 0) {
+      navigate(-1);
+      return;
+    }
+
+    navigate('/create');
+  };
+
   // Loading state
   if (!ready || isLoading) {
     return (
@@ -317,16 +346,25 @@ const VendorPayoutAccount: React.FC = () => {
       <div className="container mx-auto px-4 sm:px-6 py-8 sm:py-12 max-w-3xl">
         {/* Page Header */}
         <div className="mb-8 sm:mb-12">
+          <Button
+            type="button"
+            variant="ghost"
+            onClick={handleBack}
+            className="-ml-2 mb-5 gap-2 text-slate-600 hover:text-slate-900 dark:text-slate-300 dark:hover:text-white"
+          >
+            <ArrowLeft className="h-4 w-4" />
+            Back
+          </Button>
           <div className="flex items-center gap-4">
             <div className="p-3 rounded-2xl bg-gradient-to-br from-violet-500 to-purple-600 shadow-xl shadow-violet-500/20">
               <Building2 className="h-7 w-7 text-white" />
             </div>
             <div>
               <h1 className="text-2xl sm:text-3xl font-bold text-slate-900 dark:text-white">
-                Payout Account
+                Sales Payout Account
               </h1>
               <p className="text-slate-500 mt-1">
-                Manage your bank account for receiving fiat payments
+                Where buyers' Naira lands when they purchase your passes and tickets
               </p>
             </div>
           </div>
@@ -456,7 +494,7 @@ const VendorPayoutAccount: React.FC = () => {
                                 key={`${bank.code}-${index}`}
                                 value={bank.name}
                                 onSelect={() => {
-                                  setSelectedBankCode(bank.code);
+                                  selectBank(bank.code);
                                   setBankPopoverOpen(false);
                                 }}
                               >
@@ -604,7 +642,7 @@ const VendorPayoutAccount: React.FC = () => {
                                     key={`${bank.code}-${index}`}
                                     value={bank.name}
                                     onSelect={() => {
-                                      setSelectedBankCode(bank.code);
+                                      selectBank(bank.code);
                                       setBankPopoverOpen(false);
                                     }}
                                   >
@@ -752,7 +790,7 @@ const VendorPayoutAccount: React.FC = () => {
                                     key={`${bank.code}-${index}`}
                                     value={bank.name}
                                     onSelect={() => {
-                                      setSelectedBankCode(bank.code);
+                                      selectBank(bank.code);
                                       setBankPopoverOpen(false);
                                     }}
                                   >

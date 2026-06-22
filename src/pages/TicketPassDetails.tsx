@@ -1,16 +1,26 @@
 import { useMemo, useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { useParams } from 'react-router-dom';
 import { usePrivy, useWallets } from '@privy-io/react-auth';
-import { Loader2, Coins, Ticket, ExternalLink } from 'lucide-react';
+import { Loader2, Coins, Ticket, Clock, Globe2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { RichTextDisplay } from '@/components/ui/rich-text/RichTextDisplay';
+import { useNetworkConfigs } from '@/hooks/useNetworkConfigs';
 import { useTicketPass } from '@/hooks/useTicketPasses';
 import { useTicketPassOnchainState } from '@/hooks/useTicketPassOnchainState';
 import { useTicketPassActions } from '@/hooks/useTicketPassActions';
+import { useTicketPassBuyerKeyBalance } from '@/hooks/useTicketPassBuyerKeyBalance';
 import { TicketPassPaystackDialog, type TicketPassPaymentData } from '@/components/ticket-pass/TicketPassPaystackDialog';
 import { TicketPassProcessingDialog } from '@/components/ticket-pass/TicketPassProcessingDialog';
-import { formatFiatPrice, formatPayoutSummary, TICKET_PASS_STATUS_BADGE } from '@/lib/ticketPass/display';
+import { LinkedEventCard } from '@/components/ticket-pass/LinkedEventCard';
+import {
+  formatFiatPrice,
+  formatNetworkName,
+  formatPassValidity,
+  formatPayoutSummary,
+  TICKET_PASS_STATUS_BADGE,
+} from '@/lib/ticketPass/display';
 
 const TicketPassDetails = () => {
   const { id } = useParams<{ id: string }>();
@@ -21,6 +31,13 @@ const TicketPassDetails = () => {
   const { data: pass, isLoading } = useTicketPass(id);
   const { data: onchain } = useTicketPassOnchainState(pass?.lock_address, pass?.controller_address, pass?.chain_id);
   const { isBusy, close, setIssuance, withdrawResidual } = useTicketPassActions(wallet);
+  const { networks } = useNetworkConfigs();
+  const { data: buyerKeyBalance, isLoading: isCheckingBuyerLimit } = useTicketPassBuyerKeyBalance(
+    pass?.lock_address,
+    wallet?.address,
+    pass?.chain_id,
+    { enabled: authenticated && !!pass?.lock_address && !!wallet?.address },
+  );
 
   const [payOpen, setPayOpen] = useState(false);
   const [processingRef, setProcessingRef] = useState<string | null>(null);
@@ -38,9 +55,11 @@ const TicketPassDetails = () => {
   }
 
   const statusBadge = TICKET_PASS_STATUS_BADGE[pass.status] ?? TICKET_PASS_STATUS_BADGE.ACTIVE;
+  const network = networks.find((n) => n.chain_id === pass.chain_id);
   const remaining = onchain ? Number(onchain.remaining) : null;
   const soldOut = remaining !== null && remaining <= 0;
-  const purchasable = authenticated && pass.status === 'ACTIVE' && pass.issuance_enabled && !soldOut;
+  const buyerLimitReached = typeof buyerKeyBalance === 'number' && buyerKeyBalance >= pass.max_per_buyer;
+  const purchasable = authenticated && pass.status === 'ACTIVE' && pass.issuance_enabled && !soldOut && !buyerLimitReached && !isCheckingBuyerLimit;
 
   const onPaid = (data: TicketPassPaymentData) => {
     setPayOpen(false);
@@ -64,9 +83,17 @@ const TicketPassDetails = () => {
             <CardTitle className="text-2xl">{pass.title}</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
-            <p className="text-gray-700 whitespace-pre-wrap">{pass.description}</p>
+            <RichTextDisplay content={pass.description} className="text-gray-700" />
 
             <div className="rounded-md border p-4 space-y-2 text-sm">
+              <div className="flex items-center justify-between gap-3">
+                <span className="text-muted-foreground flex items-center gap-1"><Globe2 className="w-4 h-4" /> Network</span>
+                <span className="font-medium text-right">{formatNetworkName(pass.chain_id, network?.chain_name)}</span>
+              </div>
+              <div className="flex items-center justify-between gap-3">
+                <span className="text-muted-foreground flex items-center gap-1"><Clock className="w-4 h-4" /> Pass validity</span>
+                <span className="font-medium text-right">{formatPassValidity(pass)}</span>
+              </div>
               <div className="flex items-center justify-between">
                 <span className="text-muted-foreground flex items-center gap-1"><Coins className="w-4 h-4" /> You receive</span>
                 <span className="font-semibold">{formatPayoutSummary(pass)}</span>
@@ -85,23 +112,27 @@ const TicketPassDetails = () => {
               </div>
             </div>
 
-            {pass.target_event_address && (
-              <Button asChild variant="outline" className="w-full">
-                <Link to={`/event/${pass.target_event_address}`}>
-                  Go to the linked event <ExternalLink className="w-4 h-4 ml-1" />
-                </Link>
-              </Button>
-            )}
-
             {purchasable ? (
               <Button className="w-full" onClick={() => setPayOpen(true)}>Buy with Paystack</Button>
             ) : (
               <Button className="w-full" disabled>
-                {!authenticated ? 'Sign in to buy' : soldOut ? 'Sold out' : pass.status !== 'ACTIVE' ? 'Not available' : 'Issuance paused'}
+                {!authenticated
+                  ? 'Sign in to buy'
+                  : isCheckingBuyerLimit
+                    ? 'Checking eligibility...'
+                    : buyerLimitReached
+                      ? 'Limit reached'
+                      : soldOut
+                        ? 'Sold out'
+                        : pass.status !== 'ACTIVE'
+                          ? 'Not available'
+                          : 'Issuance paused'}
               </Button>
             )}
           </CardContent>
         </Card>
+
+        {pass.target_event_address && <LinkedEventCard address={pass.target_event_address} />}
 
         {isCreator && (
           <Card>
@@ -130,7 +161,12 @@ const TicketPassDetails = () => {
       </div>
 
       <TicketPassPaystackDialog pass={pass} isOpen={payOpen} onClose={() => setPayOpen(false)} onSuccess={onPaid} />
-      <TicketPassProcessingDialog reference={processingRef} isOpen={!!processingRef} onClose={() => setProcessingRef(null)} />
+      <TicketPassProcessingDialog
+        reference={processingRef}
+        isOpen={!!processingRef}
+        onClose={() => setProcessingRef(null)}
+        chainId={pass.chain_id}
+      />
     </div>
   );
 };

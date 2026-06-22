@@ -27,7 +27,7 @@ serve(async (req) => {
     const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
     const { data: order } = await supabase
       .from("ticket_pass_orders")
-      .select("id, pass_id, buyer_id, status, token_id, grant_dispense_txn_hash, last_error, chain_id, lock_address, dispensed_at")
+      .select("id, pass_id, buyer_id, status, token_id, grant_dispense_txn_hash, last_error, chain_id, lock_address, dispensed_at, refund_status, refund_error, refund_requested_at, refund_processed_at, refund_last_synced_at")
       .eq("payment_reference", reference)
       .maybeSingle();
 
@@ -48,6 +48,11 @@ serve(async (req) => {
       token_id: order.token_id,
       txn_hash: order.grant_dispense_txn_hash,
       last_error: order.last_error,
+      refund_status: order.refund_status,
+      refund_error: order.refund_error,
+      refund_requested_at: order.refund_requested_at,
+      refund_processed_at: order.refund_processed_at,
+      refund_last_synced_at: order.refund_last_synced_at,
       chain_id: order.chain_id,
       lock_address: order.lock_address,
       dispensed_at: order.dispensed_at,
