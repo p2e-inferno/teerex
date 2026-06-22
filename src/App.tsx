@@ -26,6 +26,8 @@ import AdminNetworks from "./pages/AdminNetworks";
 import AdminServiceAccount from "./pages/AdminServiceAccount";
 import AdminAnalytics from "./pages/AdminAnalytics";
 import AdminPayoutAccounts from "./pages/AdminPayoutAccounts";
+import AdminDgRedemption from "./pages/AdminDgRedemption";
+import AdminTicketPassOrders from "./pages/AdminTicketPassOrders";
 import AdminRoute from "./components/routes/AdminRoute";
 import VendorRoute from "./components/routes/VendorRoute";
 import VendorPayoutAccount from "./pages/VendorPayoutAccount";
@@ -78,9 +80,13 @@ const App = () => {
                 <Route path="/admin/service-account" element={<AdminRoute><AdminServiceAccount /></AdminRoute>} />
                 <Route path="/admin/analytics" element={<AdminRoute><AdminAnalytics /></AdminRoute>} />
                 <Route path="/admin/payout-accounts" element={<AdminRoute><AdminPayoutAccounts /></AdminRoute>} />
+                <Route path="/admin/dg-redemption" element={<AdminRoute><AdminDgRedemption /></AdminRoute>} />
+                <Route path="/admin/ticket-pass-orders" element={<AdminRoute><AdminTicketPassOrders /></AdminRoute>} />
                 <Route path="/admin/vendor-lock" element={<AdminRoute><AdminVendorLock /></AdminRoute>} />
                 <Route path="/become-vendor" element={<BecomeVendor />} />
-                <Route path="/vendor/payout-account" element={<VendorRoute><VendorPayoutAccount /></VendorRoute>} />
+                {/* Payout setup is open to any authenticated seller (ticket-pass creators need it too,
+                    and the page + endpoints are Privy-only). Vendor membership is not required. */}
+                <Route path="/vendor/payout-account" element={<VendorPayoutAccount />} />
                 <Route path="/vendor/gaming-bundles" element={<VendorRoute><VendorGamingBundles /></VendorRoute>} />
                 <Route path="/vendor/bundles-pos" element={<VendorRoute><GamingBundlePOS /></VendorRoute>} />
                 <Route path="/vendor/bundles-redeem" element={<VendorRoute><GamingBundleRedemption /></VendorRoute>} />

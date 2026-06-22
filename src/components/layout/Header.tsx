@@ -1,6 +1,6 @@
 
 import React from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import { usePrivy } from '@privy-io/react-auth';
 import { Button } from '@/components/ui/button';
 import {
@@ -12,7 +12,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { Ticket, Plus, ChevronDown, FileText, Calendar, LogOut, User, Settings, Building2, Gamepad2, ScanLine, ClipboardList, Lock, Shield, UserCircle } from 'lucide-react';
+import { Ticket, Plus, ChevronDown, FileText, Calendar, LogOut, User, Settings, Building2, Gamepad2, ScanLine, ClipboardList, Lock, Shield, UserCircle, Coins } from 'lucide-react';
 import { useIsAdmin } from '@/hooks/useIsAdmin';
 import { useIsVendor } from '@/hooks/useIsVendor';
 
@@ -20,6 +20,8 @@ export const Header: React.FC = () => {
   const { authenticated, logout, login } = usePrivy();
   const { isAdmin } = useIsAdmin();
   const { isVendor, loading: vendorLoading } = useIsVendor();
+  const location = useLocation();
+  const returnTo = `${location.pathname}${location.search}${location.hash}`;
 
   return (
     <header className="border-b border-gray-200 bg-white/80 backdrop-blur-xl supports-[backdrop-filter]:bg-white/60 sticky top-0 z-50">
@@ -36,19 +38,22 @@ export const Header: React.FC = () => {
             <Link to="/explore" className="text-gray-700 hover:text-gray-900 transition-colors font-medium">
               Explore
             </Link>
-            <Link to="/gaming-bundles" className="text-gray-700 hover:text-gray-900 transition-colors font-medium">
-              Bundles
-            </Link>
             {authenticated && (
               <>
                 <Link to="/create" className="text-gray-700 hover:text-gray-900 transition-colors font-medium">
                   Create
                 </Link>
-                <Link to="/attestations" className="text-gray-700 hover:text-gray-900 transition-colors font-medium">
+                {/* <Link to="/attestations" className="text-gray-700 hover:text-gray-900 transition-colors font-medium">
                   Attestations
-                </Link>
+                </Link> */}
               </>
             )}
+            <Link to="/ticket-passes" className="text-gray-700 hover:text-gray-900 transition-colors font-medium">
+             Ticket Passes
+            </Link>
+            {/* <Link to="/gaming-bundles" className="text-gray-700 hover:text-gray-900 transition-colors font-medium">
+              Bundles
+            </Link> */}
           </nav>
 
           <div className="flex items-center gap-3">
@@ -66,7 +71,7 @@ export const Header: React.FC = () => {
                       <ChevronDown className="h-4 w-4 ml-2" />
                     </Button>
                   </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end" className="w-56 bg-white border border-gray-200 shadow-xl p-2 rounded-xl">
+                  <DropdownMenuContent align="end" className="w-56 max-h-[min(364px,calc(100vh-5rem))] overflow-y-auto overscroll-contain bg-white border border-gray-200 shadow-xl p-2 rounded-xl">
                     <DropdownMenuGroup>
                       <DropdownMenuLabel className="text-xs font-semibold text-gray-400 uppercase tracking-wider px-2 py-1.5">
                         Personal
@@ -117,6 +122,32 @@ export const Header: React.FC = () => {
                       </DropdownMenuItem>
                     </DropdownMenuGroup>
 
+                    <DropdownMenuSeparator className="my-1 mx-1 bg-gray-100" />
+
+                    <DropdownMenuGroup>
+                      <DropdownMenuLabel className="text-xs font-semibold text-gray-400 uppercase tracking-wider px-2 py-1.5">
+                        Ticket Passes
+                      </DropdownMenuLabel>
+                      <DropdownMenuItem asChild>
+                        <Link to="/ticket-passes" className="flex items-center cursor-pointer py-2 px-2 hover:bg-gray-50 rounded-md transition-colors">
+                          <Ticket className="h-4 w-4 mr-2 text-gray-500" />
+                          Browse Passes
+                        </Link>
+                      </DropdownMenuItem>
+                      <DropdownMenuItem asChild>
+                        <Link to="/my-pass-orders" className="flex items-center cursor-pointer py-2 px-2 hover:bg-gray-50 rounded-md transition-colors">
+                          <Coins className="h-4 w-4 mr-2 text-gray-500" />
+                          My Passes
+                        </Link>
+                      </DropdownMenuItem>
+                      <DropdownMenuItem asChild>
+                        <Link to="/my-ticket-passes" className="flex items-center cursor-pointer py-2 px-2 hover:bg-gray-50 rounded-md transition-colors">
+                          <Plus className="h-4 w-4 mr-2 text-gray-500" />
+                          Create &amp; Manage
+                        </Link>
+                      </DropdownMenuItem>
+                    </DropdownMenuGroup>
+
                     {isVendor && (
                       <>
                         <DropdownMenuSeparator className="my-1 mx-1 bg-gray-100" />
@@ -125,7 +156,7 @@ export const Header: React.FC = () => {
                             Vendor Tools
                           </DropdownMenuLabel>
                           <DropdownMenuItem asChild>
-                            <Link to="/vendor/payout-account" className="flex items-center cursor-pointer py-2 px-2 hover:bg-gray-50 rounded-md transition-colors">
+                            <Link to="/vendor/payout-account" state={{ returnTo }} className="flex items-center cursor-pointer py-2 px-2 hover:bg-gray-50 rounded-md transition-colors">
                               <Building2 className="h-4 w-4 mr-2 text-gray-500" />
                               Payout Account
                             </Link>

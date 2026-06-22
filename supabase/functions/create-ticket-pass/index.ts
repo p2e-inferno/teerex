@@ -5,7 +5,10 @@ import { ethers } from "https://esm.sh/ethers@6.14.4";
 import { corsHeaders, buildPreflightHeaders } from "../_shared/cors.ts";
 import { SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY } from "../_shared/constants.ts";
 import { verifyPrivyToken, validateUserWallet } from "../_shared/privy.ts";
+import { requireVerifiedPayoutAccount } from "../_shared/payout.ts";
+import { normalizePayoutDestination } from "../_shared/payout-routing.ts";
 import { validateChain } from "../_shared/network-helpers.ts";
+import { resolveLinkableEventByAddress } from "../_shared/linkable-events.ts";
 import TicketPassControllerAbi from "../_shared/abi/TeeRexTicketPassControllerV1.json" assert { type: "json" };
 
 const ZERO = "0x0000000000000000000000000000000000000000";
@@ -54,6 +57,7 @@ serve(async (req) => {
     const targetEventAddress = body.target_event_address
       ? String(body.target_event_address).trim().toLowerCase()
       : null;
+    const payoutDestination = normalizePayoutDestination(body.payout_destination);
     const deployTxnHash = body.deploy_txn_hash ? String(body.deploy_txn_hash).trim() : null;
     const metadataSet = Boolean(body.metadata_set);
 
@@ -75,13 +79,25 @@ serve(async (req) => {
     // The creator wallet must belong to the authenticated user.
     await validateUserWallet(privyUserId, creatorAddress, "creator_address_not_authorized_for_user");
 
+    const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+
+    if (targetEventAddress) {
+      const targetEvent = await resolveLinkableEventByAddress(supabase, targetEventAddress, { chainId });
+      if (!targetEvent.ok) return json({ ok: false, error: targetEvent.error }, 400);
+    }
+
+    // Hard gate (backstop): a verified payout account is required to list for fiat sale — but only
+    // when proceeds settle to the seller. Passes that route proceeds to the platform (e.g. a
+    // platform-run pass) don't need a seller bank account, so the gate is waived in that case.
+    // The client also blocks this before the on-chain deploy; this guards direct API calls.
+    if (payoutDestination === "seller") {
+      await requireVerifiedPayoutAccount(supabase, privyUserId);
+    }
+
     // ---- on-chain integrity verification ----------------------------------
     // Confirm the lock was actually created by this controller with these exact terms,
     // so the DB row faithfully mirrors chain and cannot be spoofed by a malicious client.
-    const networkConfig = await validateChain(
-      createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY),
-      chainId,
-    );
+    const networkConfig = await validateChain(supabase, chainId);
     if (!networkConfig?.rpc_url) return json({ ok: false, error: "rpc_not_configured" }, 400);
     if (
       networkConfig.ticket_pass_controller_address &&
@@ -107,7 +123,6 @@ serve(async (req) => {
     const escrowTokenTotalWei = (BigInt(tokenPerCopyWei) * BigInt(maxCopies)).toString();
     const escrowEthTotalWei = (BigInt(ethPerCopyWei) * BigInt(maxCopies)).toString();
 
-    const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
     const { data, error } = await supabase
       .from("ticket_passes")
       .insert({
@@ -133,6 +148,7 @@ serve(async (req) => {
         price_fiat_kobo: priceFiatKobo,
         fiat_symbol: fiatSymbol,
         target_event_address: targetEventAddress,
+        payout_destination: payoutDestination,
         deploy_txn_hash: deployTxnHash,
         metadata_set: metadataSet,
         status: "ACTIVE",
@@ -149,6 +165,9 @@ serve(async (req) => {
     return json({ ok: true, pass: data }, 200);
   } catch (err: any) {
     console.error("[create-ticket-pass]", err);
+    if (err?.message === "payout_account_required") {
+      return json({ ok: false, error: "Set up a verified payout account before creating a pass.", code: "payout_account_required" }, 403);
+    }
     return json({ ok: false, error: err?.message || "Internal error" }, 400);
   }
 });

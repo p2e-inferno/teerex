@@ -49,6 +49,9 @@ serve(async (req) => {
     if (upperStatus === "DISPENSED" && order.token_id) {
       return json({ ok: true, already_issued: true, tokenId: order.token_id, txHash: order.grant_dispense_txn_hash }, 200);
     }
+    if (upperStatus === "REFUNDED" || upperStatus.startsWith("REFUND_")) {
+      return json({ ok: false, error: "refund_already_started" }, 400);
+    }
     // Only fulfil orders that were already paid/verified — never bypass payment.
     if (upperStatus !== "PAID" && upperStatus !== "FAILED") {
       return json({ ok: false, error: "order_not_payable" }, 400);

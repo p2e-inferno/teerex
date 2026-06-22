@@ -4,6 +4,12 @@ import PublicLockV15 from "./abi/PublicLockV15.json" assert { type: "json" };
 import TicketPassControllerAbi from "./abi/TeeRexTicketPassControllerV1.json" assert { type: "json" };
 import { validateChain } from "./network-helpers.ts";
 import { appendDivviTagToCalldataAsync, submitDivviReferralBestEffort } from "./divvi.ts";
+import {
+  AUTO_REFUND_REASONS,
+  autoRefundTicketPassOrder,
+  classifyGrantFailure,
+  notifyTicketPassNeedsReview,
+} from "./ticket-pass-refund.ts";
 
 /**
  * Deterministic on-chain idempotency key for an order. keccak256 of the payment reference,
@@ -11,6 +17,27 @@ import { appendDivviTagToCalldataAsync, submitDivviReferralBestEffort } from "./
  */
 export function orderRefFromReference(reference: string): string {
   return ethers.id(String(reference));
+}
+
+export async function getTicketPassKeyBalance(params: {
+  supabase: any;
+  chainId: number;
+  lockAddress: string;
+  buyerAddress: string;
+}): Promise<bigint> {
+  const { supabase, chainId, lockAddress, buyerAddress } = params;
+  if (!ethers.isAddress(lockAddress) || !ethers.isAddress(buyerAddress)) {
+    throw new Error("invalid_lock_or_buyer_address");
+  }
+
+  const networkConfig = await validateChain(supabase, chainId);
+  if (!networkConfig?.rpc_url) {
+    throw new Error("rpc_not_configured");
+  }
+
+  const provider = new ethers.JsonRpcProvider(networkConfig.rpc_url);
+  const lock = new ethers.Contract(lockAddress, PublicLockV15 as any, provider);
+  return await lock.balanceOf(buyerAddress);
 }
 
 /**
@@ -26,9 +53,32 @@ export async function acquireTicketPassIssuanceLock(params: {
   const { supabase, orderId, currentAttempts, lockTtlMinutes = 5 } = params;
   const lockId = crypto.randomUUID();
   const nowIso = new Date().toISOString();
-  const staleBefore = new Date(Date.now() - lockTtlMinutes * 60 * 1000).toISOString();
+  const staleBeforeDate = new Date(Date.now() - lockTtlMinutes * 60 * 1000);
 
-  const { data: locked, error } = await supabase
+  const { data: lockState, error: lockStateError } = await supabase
+    .from("ticket_pass_orders")
+    .select("id,issuance_lock_id,issuance_locked_at")
+    .eq("id", orderId)
+    .maybeSingle();
+
+  if (lockStateError) {
+    console.error(`[ticket-pass-lock] [${orderId}] lock state read error:`, {
+      code: lockStateError.code,
+      message: lockStateError.message,
+      details: lockStateError.details,
+      hint: lockStateError.hint,
+    });
+    throw new Error(`issuance_lock_failed:${lockStateError.message}`);
+  }
+
+  const lockedAt = lockState?.issuance_locked_at ? new Date(lockState.issuance_locked_at) : null;
+  const currentLockId = lockState?.issuance_lock_id ? String(lockState.issuance_lock_id) : null;
+  const lockIsStale = !lockedAt || lockedAt.getTime() < staleBeforeDate.getTime();
+  if (currentLockId && !lockIsStale) {
+    return { lockId: null, lockedAt: lockState.issuance_locked_at };
+  }
+
+  let lockQuery = supabase
     .from("ticket_pass_orders")
     .update({
       issuance_lock_id: lockId,
@@ -36,14 +86,24 @@ export async function acquireTicketPassIssuanceLock(params: {
       issuance_attempts: currentAttempts,
       last_error: null,
     })
-    .eq("id", orderId)
-    .or(`issuance_lock_id.is.null,issuance_locked_at.lt.${staleBefore}`)
+    .eq("id", orderId);
+
+  lockQuery = currentLockId
+    ? lockQuery.eq("issuance_lock_id", currentLockId)
+    : lockQuery.is("issuance_lock_id", null);
+
+  const { data: locked, error } = await lockQuery
     .select("id,issuance_lock_id")
     .maybeSingle();
 
   if (error) {
-    console.error(`[ticket-pass-lock] [${orderId}] lock acquisition error:`, error.message);
-    return { lockId: null };
+    console.error(`[ticket-pass-lock] [${orderId}] lock acquisition error:`, {
+      code: error.code,
+      message: error.message,
+      details: error.details,
+      hint: error.hint,
+    });
+    throw new Error(`issuance_lock_failed:${error.message}`);
   }
   if (!locked || String(locked.issuance_lock_id) !== lockId) {
     return { lockId: null, lockedAt: locked?.issuance_locked_at };
@@ -56,7 +116,7 @@ export async function releaseTicketPassIssuanceLock(params: {
   orderId: string;
   lockId: string;
   lastError?: string | null;
-  markStatus?: "FAILED" | null;
+  markStatus?: "FAILED" | "NEEDS_REVIEW" | null;
 }): Promise<void> {
   const { supabase, orderId, lockId, lastError = null, markStatus = null } = params;
   await supabase
@@ -143,7 +203,7 @@ export async function issueTicketPassFromVerifiedOrder(params: {
   order: any;
   pass: any;
   lockId: string;
-}): Promise<{ ok: true; already_issued?: boolean; txHash?: string; tokenId?: string | null }> {
+}): Promise<{ ok: true; already_issued?: boolean; needs_review?: boolean; review_reason?: string; refunded?: boolean; txHash?: string; tokenId?: string | null }> {
   const { supabase, order, pass, lockId } = params;
   const orderId = order.id;
   const nowIso = new Date().toISOString();
@@ -243,8 +303,43 @@ export async function issueTicketPassFromVerifiedOrder(params: {
       }
     } catch (err: any) {
       await appendTrail(supabase, orderId, "blockchain_error", { error: err?.message });
-      await releaseTicketPassIssuanceLock({ supabase, orderId, lockId, lastError: `blockchain_error:${err?.message}` });
-      throw err;
+
+      const { outcome, reason } = await classifyGrantFailure({
+        controller,
+        lockAddress,
+        recipient,
+        orderRef,
+        originalError: err,
+      });
+
+      if (outcome === "refundable") {
+        // Unambiguous no-delivery reasons auto-refund; everything else goes to manual review.
+        if (AUTO_REFUND_REASONS.has(reason)) {
+          await appendTrail(supabase, orderId, "auto_refund", { reason });
+          return await autoRefundTicketPassOrder({ supabase, order, pass, reason, lockId });
+        }
+        await appendTrail(supabase, orderId, "flagged_needs_review", { reason });
+        await releaseTicketPassIssuanceLock({
+          supabase,
+          orderId,
+          lockId,
+          lastError: `needs_review:${reason}`,
+          markStatus: "NEEDS_REVIEW",
+        });
+        await notifyTicketPassNeedsReview({ supabase, order, pass, reason }).catch((e: any) =>
+          console.warn(`[ticket-pass-issuance] [${orderId}] review notification failed:`, e?.message)
+        );
+        return { ok: true, needs_review: true, review_reason: reason };
+      }
+
+      if (outcome === "fulfilled") {
+        // A concurrent/earlier attempt already processed this order on-chain; reconcile to DISPENSED.
+        await appendTrail(supabase, orderId, "order_already_processed_onchain_late", { reason });
+        if (!tokenId) tokenId = await recoverLatestTokenId(lockAddress, recipient, signer);
+      } else {
+        await releaseTicketPassIssuanceLock({ supabase, orderId, lockId, lastError: `blockchain_error:${err?.message}` });
+        throw err;
+      }
     }
   }
 

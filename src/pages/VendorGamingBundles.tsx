@@ -23,6 +23,9 @@ import { GamingBundleCard } from '@/components/gaming/GamingBundleCard';
 import { ImageUploadField } from '@/components/ui/ImageUploadField';
 import { ImageCropper } from '@/components/ui/ImageCropper';
 import { GamingBundleCreationDialog } from '@/components/gaming/GamingBundleCreationDialog';
+import { useVendorPayoutAccount } from '@/hooks/useVendorPayoutAccount';
+import { PayoutAccountRequiredCard } from '@/components/vendor/PayoutAccountGate';
+import { PayoutDestinationField, type PayoutDestination } from '@/components/vendor/PayoutDestinationField';
 import { useTransactionStepper, type TxStep } from '@/hooks/useTransactionStepper';
 import type { GamingBundle } from '@/types/gaming';
 
@@ -86,6 +89,8 @@ const VendorGamingBundles = () => {
   const queryClient = useQueryClient();
   const formRef = useRef<HTMLDivElement>(null);
   const { networks } = useNetworkConfigs();
+  const { data: payout } = useVendorPayoutAccount();
+  const canSell = !!payout?.can_receive_fiat_payments;
   const fiatEnabled = useMemo(() => {
     const raw = (import.meta as any).env?.VITE_ENABLE_FIAT;
     if (raw === undefined || raw === null || raw === '') return false;
@@ -93,6 +98,9 @@ const VendorGamingBundles = () => {
   }, []);
 
   const [form, setForm] = useState<BundleFormState>(() => buildDefaultForm(DEFAULT_CHAIN_ID));
+  const [payoutDestination, setPayoutDestination] = useState<PayoutDestination>('seller');
+  // Only seller-routed bundles need a verified payout account; platform-routed ones don't.
+  const blockedByPayout = payoutDestination === 'seller' && !canSell;
 
   const [isCreating, setIsCreating] = useState(false);
   const [isUpdating, setIsUpdating] = useState(false);
@@ -255,6 +263,11 @@ const VendorGamingBundles = () => {
       return;
     }
 
+    if (blockedByPayout) {
+      toast({ title: 'Payout account required', description: 'Set up a verified payout account, or route proceeds to the platform.', variant: 'destructive' });
+      return;
+    }
+
     if (!form.title.trim()) {
       toast({ title: 'Title required', description: 'Provide a bundle title.', variant: 'destructive' });
       return;
@@ -392,6 +405,7 @@ const VendorGamingBundles = () => {
           chain_id: form.chainId,
           bundle_address: finalLockAddr,
           key_expiration_duration_seconds: expirationDuration,
+          payout_destination: payoutDestination,
           service_manager_added: form.enableFiat && pendingDataRef.current.serviceManagerAdded,
           metadata_set: pendingDataRef.current.metadataSet,
           is_active: form.isActive
@@ -548,6 +562,22 @@ const VendorGamingBundles = () => {
           <h1 className="text-3xl font-bold text-gray-900">Gaming Bundles</h1>
           <p className="text-gray-600 mt-1">Create and manage bundle NFTs for your gaming center.</p>
         </div>
+
+        {!isEditMode && (
+          <Card className="border border-gray-200 shadow-sm">
+            <CardContent className="space-y-3 pt-6">
+              <PayoutDestinationField
+                value={payoutDestination}
+                onChange={setPayoutDestination}
+                noun="bundle"
+                commissionPercent={payout?.payout_account?.percentage_charge}
+              />
+              {blockedByPayout && (
+                <PayoutAccountRequiredCard context="creating a bundle" percentage={payout?.payout_account?.percentage_charge} />
+              )}
+            </CardContent>
+          </Card>
+        )}
 
         <Card ref={formRef} className="border border-gray-200 shadow-sm overflow-hidden">
           <CardHeader className="pb-4 border-b bg-gray-50/30">
@@ -905,7 +935,7 @@ const VendorGamingBundles = () => {
                   )}
                   <Button
                     onClick={isEditMode ? handleUpdateBundle : handleCreateBundle}
-                    disabled={isSaving || !form.title.trim() || !form.location.trim()}
+                    disabled={isSaving || !form.title.trim() || !form.location.trim() || (!isEditMode && blockedByPayout)}
                     className={`w-full md:min-w-[180px] h-12 shadow-xl shadow-blue-500/10 font-bold transition-all ${!isEditMode && form.title && form.location ? 'bg-blue-600 hover:bg-blue-700 hover:shadow-blue-500/20 active:scale-[0.98]' : ''
                       }`}
                     size="lg"

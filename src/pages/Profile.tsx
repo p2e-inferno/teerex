@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useUserProfile } from '@/hooks/useUserProfile';
 import { useNetworkConfigs } from '@/hooks/useNetworkConfigs';
 import { getDefaultChainId } from '@/lib/config/network-config';
@@ -7,6 +7,8 @@ import { WalletIdentityCard } from '@/components/profile/WalletIdentityCard';
 import { TokenBalancesCard } from '@/components/profile/TokenBalancesCard';
 import { TransferTokenCard } from '@/components/profile/TransferTokenCard';
 import { TransactionHistoryCard } from '@/components/profile/TransactionHistoryCard';
+import { UserPayoutAccountCard } from '@/components/profile/UserPayoutAccountCard';
+import { DgRedemptionCard } from '@/components/profile/DgRedemptionCard';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Loader2, User } from 'lucide-react';
@@ -26,6 +28,7 @@ import { NetworkSelector } from '@/components/profile/NetworkSelector';
  */
 const Profile: React.FC = () => {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const { login } = usePrivy();
   const {
     primaryAddress,
@@ -43,16 +46,20 @@ const Profile: React.FC = () => {
     ?? activeNetworks?.[0]?.chain_id
     ?? defaultChainId;
 
-  // Shared state for network selection across TokenBalancesCard and TransactionHistoryCard
-  // Initialize with default chain from environment (VITE_PRIMARY_CHAIN_ID or Base Sepolia 84532)
-  const [selectedChainId, setSelectedChainId] = useState<number>(getDefaultChainId());
+  const chainIdParam = Number(searchParams.get('chainId'));
+  const requestedChainId = Number.isFinite(chainIdParam) && chainIdParam > 0 ? chainIdParam : null;
+  const [selectedChainId, setSelectedChainId] = useState<number>(requestedChainId ?? getDefaultChainId());
 
-  // Update selectedChainId when activeNetworks loads, if current selection is not available
   useEffect(() => {
-    if (activeNetworks.length > 0 && !activeNetworks.some(n => n.chain_id === selectedChainId)) {
+    if (activeNetworks.length === 0) return;
+    if (requestedChainId && activeNetworks.some(n => n.chain_id === requestedChainId)) {
+      setSelectedChainId(requestedChainId);
+      return;
+    }
+    if (!activeNetworks.some(n => n.chain_id === selectedChainId)) {
       setSelectedChainId(activeNetworks[0].chain_id);
     }
-  }, [activeNetworks, selectedChainId]);
+  }, [activeNetworks, requestedChainId, selectedChainId]);
 
   // Redirect to home if not authenticated
   useEffect(() => {
@@ -133,7 +140,7 @@ const Profile: React.FC = () => {
                   My Profile
                 </h1>
                 <p className="text-slate-500 mt-1">
-                  Manage your wallet, view balances, and send tokens
+                  Manage your wallet, view balances, send tokens, and redeem DG
                 </p>
               </div>
             </div>
@@ -175,6 +182,15 @@ const Profile: React.FC = () => {
                 address={primaryAddress}
                 chainId={selectedChainId}
               />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 lg:gap-8 lg:items-start">
+            <div id="bank-details" className="flex flex-col h-full scroll-mt-24">
+              <UserPayoutAccountCard />
+            </div>
+            <div className="flex flex-col h-full">
+              <DgRedemptionCard address={primaryAddress} chainId={selectedChainId} />
             </div>
           </div>
 

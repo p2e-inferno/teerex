@@ -2,9 +2,17 @@ import { Card, CardContent, CardFooter, CardHeader, CardTitle } from '@/componen
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Link } from 'react-router-dom';
-import { Ticket, Coins } from 'lucide-react';
+import { Ticket, Coins, Clock, Globe2 } from 'lucide-react';
 import type { TicketPass } from '@/types/ticketPass';
-import { formatFiatPrice, formatPayoutSummary, TICKET_PASS_STATUS_BADGE } from '@/lib/ticketPass/display';
+import {
+  formatFiatPrice,
+  formatNetworkName,
+  formatPassValidity,
+  formatPayoutSummary,
+  TICKET_PASS_STATUS_BADGE,
+} from '@/lib/ticketPass/display';
+import { RichTextDisplay } from '@/components/ui/rich-text/RichTextDisplay';
+import { useNetworkConfigs } from '@/hooks/useNetworkConfigs';
 
 type TicketPassCardProps = {
   pass: TicketPass;
@@ -14,6 +22,8 @@ type TicketPassCardProps = {
 
 export const TicketPassCard = ({ pass, manage = false, onManage }: TicketPassCardProps) => {
   const statusBadge = TICKET_PASS_STATUS_BADGE[pass.status] ?? TICKET_PASS_STATUS_BADGE.ACTIVE;
+  const { networks } = useNetworkConfigs();
+  const network = networks.find((n) => n.chain_id === pass.chain_id);
 
   return (
     <Card className="border border-gray-200 shadow-sm overflow-hidden">
@@ -32,12 +42,30 @@ export const TicketPassCard = ({ pass, manage = false, onManage }: TicketPassCar
         <CardTitle className="text-lg">{pass.title}</CardTitle>
       </CardHeader>
       <CardContent className="space-y-2 text-sm text-muted-foreground">
-        <p className="line-clamp-2">{pass.description}</p>
+        <RichTextDisplay
+          content={pass.description}
+          className="prose-sm prose-gray max-w-none line-clamp-2 prose-card"
+        />
         <div className="flex items-center gap-1 text-xs text-gray-700">
           <Coins className="w-3 h-3" />
           <span className="font-medium">{formatPayoutSummary(pass)}</span>
           <span>per pass</span>
         </div>
+        <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-gray-700">
+          <span className="inline-flex items-center gap-1">
+            <Globe2 className="w-3 h-3" />
+            {formatNetworkName(pass.chain_id, network?.chain_name)}
+          </span>
+          <span className="inline-flex items-center gap-1">
+            <Clock className="w-3 h-3" />
+            {formatPassValidity(pass)}
+          </span>
+        </div>
+        {pass.target_event_address && (
+          <div className="flex items-center gap-1 text-xs text-purple-700">
+            <Ticket className="w-3 h-3" /> Unlocks an event
+          </div>
+        )}
         <div className="flex items-center justify-between text-sm pt-1">
           <span className="font-semibold text-gray-900">{formatFiatPrice(pass)}</span>
           <span className="text-xs">{pass.max_copies} max · {pass.max_per_buyer}/buyer</span>

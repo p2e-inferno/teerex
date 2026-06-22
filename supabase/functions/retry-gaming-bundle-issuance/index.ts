@@ -143,9 +143,9 @@ serve(async (req) => {
       const verificationIssues: string[] = [];
       if (verifyStatus !== "success") verificationIssues.push("status_not_success");
       verificationIssues.push(...verifyPaystackAmountAndCurrency({
-        paystackAmountMinor: verifyData?.amount,
+        paystackAmountKobo: verifyData?.amount,
         paystackCurrency: verifyData?.currency,
-        expectedAmountMinor: expectedAmount,
+        expectedAmountKobo: expectedAmount,
         expectedCurrency,
       }));
 

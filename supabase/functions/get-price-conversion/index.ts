@@ -1,7 +1,7 @@
 /* deno-lint-ignore-file no-explicit-any */
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.50.0";
-import { Contract, JsonRpcProvider, ethers } from "https://esm.sh/ethers@6.14.4";
+import { Contract, ethers } from "https://esm.sh/ethers@6.14.4";
 import { corsHeaders, buildPreflightHeaders } from "../_shared/cors.ts";
 import { SUPABASE_SERVICE_ROLE_KEY, SUPABASE_URL } from "../_shared/constants.ts";
 import { SUPPORTED_SYMBOLS } from "../_shared/pricing/constants.ts";
@@ -19,6 +19,7 @@ import type { RateEdge, SupportedSymbol } from "../_shared/pricing/types.ts";
 import { fetchFiatEdges } from "../_shared/pricing/sources/fiat.ts";
 import { normalizeUniswapQuotesToEdges } from "../_shared/pricing/sources/uniswap.ts";
 import { normalizeVendorRateToEdges } from "../_shared/pricing/sources/vendor.ts";
+import { withPricingProviderFallback } from "../_shared/pricing/rpc.ts";
 
 const DEFAULT_CHAIN_ID = BASE_MAINNET_CHAIN_ID;
 
@@ -34,7 +35,7 @@ const UNISWAP_V3_POOL_ABI = [
 
 const UNISWAP_QUOTER_V2_ABI = [
   "function quoteExactInput(bytes path,uint256 amountIn) returns (uint256 amountOut,uint160[] sqrtPriceX96AfterList,uint32[] initializedTicksCrossedList,uint256 gasEstimate)",
-  "function quoteExactInputSingle((address tokenIn,address tokenOut,uint24 fee,uint256 amountIn,uint160 sqrtPriceLimitX96) params) returns (uint256 amountOut,uint160 sqrtPriceX96After,uint32 initializedTicksCrossed,uint256 gasEstimate)",
+  "function quoteExactInputSingle((address tokenIn,address tokenOut,uint256 amountIn,uint24 fee,uint160 sqrtPriceLimitX96) params) returns (uint256 amountOut,uint160 sqrtPriceX96After,uint32 initializedTicksCrossed,uint256 gasEstimate)",
 ];
 
 function parseAmount(value: unknown): number {
@@ -70,13 +71,6 @@ function requireFee(value: number | null | undefined, label: string): number {
   return Number(value);
 }
 
-function requireRpcUrl(value: string | null | undefined): string {
-  if (!value) {
-    throw new Error("RPC URL is not configured");
-  }
-  return value;
-}
-
 function lower(value: string): string {
   return value.toLowerCase();
 }
@@ -90,17 +84,21 @@ function getResultAmountOut(result: any): bigint {
 }
 
 async function fetchVendorEdges(network: PricingNetworkConfig): Promise<RateEdge[]> {
-  const rpcUrl = requireRpcUrl(network.rpc_url);
   const vendorAddress = requireAddress(network.dg_vendor_address, "DG vendor address");
-  const provider = new JsonRpcProvider(rpcUrl);
-  const vendor = new Contract(vendorAddress, DG_VENDOR_ABI, provider);
-  const exchangeRate = await vendor.getExchangeRate();
+  return await withPricingProviderFallback({
+    chainId: network.chain_id,
+    rpcUrl: network.rpc_url,
+    label: "DG vendor rate",
+    action: async (provider) => {
+      const vendor = new Contract(vendorAddress, DG_VENDOR_ABI, provider);
+      const exchangeRate = await vendor.getExchangeRate();
 
-  return normalizeVendorRateToEdges(BigInt(exchangeRate.toString()));
+      return normalizeVendorRateToEdges(BigInt(exchangeRate.toString()));
+    },
+  });
 }
 
 async function fetchUniswapEdges(network: PricingNetworkConfig): Promise<RateEdge[]> {
-  const rpcUrl = requireRpcUrl(network.rpc_url);
   const quoterAddress = requireAddress(
     network.uniswap_v3_quoter_address,
     "Uniswap V3 quoter address",
@@ -115,49 +113,55 @@ async function fetchUniswapEdges(network: PricingNetworkConfig): Promise<RateEdg
   const upWethFee = requireFee(network.uniswap_v3_up_weth_fee, "UP/WETH fee tier");
   const wethUsdcFee = requireFee(network.uniswap_v3_weth_usdc_fee, "WETH/USDC fee tier");
 
-  const provider = new JsonRpcProvider(rpcUrl);
-  const pool = new Contract(ethUsdcPoolAddress, UNISWAP_V3_POOL_ABI, provider);
-  const [token0, token1, poolFee] = await Promise.all([
-    pool.token0(),
-    pool.token1(),
-    pool.fee(),
-  ]);
+  return await withPricingProviderFallback({
+    chainId: network.chain_id,
+    rpcUrl: network.rpc_url,
+    label: "Uniswap quote",
+    action: async (provider) => {
+      const pool = new Contract(ethUsdcPoolAddress, UNISWAP_V3_POOL_ABI, provider);
+      const [token0, token1, poolFee] = await Promise.all([
+        pool.token0(),
+        pool.token1(),
+        pool.fee(),
+      ]);
 
-  const token0Lower = lower(String(token0));
-  const token1Lower = lower(String(token1));
-  const wethLower = lower(wethAddress);
-  const usdcLower = lower(usdcAddress);
-  const poolHasWeth = token0Lower === wethLower || token1Lower === wethLower;
-  const poolHasUsdc = token0Lower === usdcLower || token1Lower === usdcLower;
+      const token0Lower = lower(String(token0));
+      const token1Lower = lower(String(token1));
+      const wethLower = lower(wethAddress);
+      const usdcLower = lower(usdcAddress);
+      const poolHasWeth = token0Lower === wethLower || token1Lower === wethLower;
+      const poolHasUsdc = token0Lower === usdcLower || token1Lower === usdcLower;
 
-  if (!poolHasWeth || !poolHasUsdc) {
-    throw new Error("Uniswap V3 ETH/USDC pool does not match configured tokens");
-  }
+      if (!poolHasWeth || !poolHasUsdc) {
+        throw new Error("Uniswap V3 ETH/USDC pool does not match configured tokens");
+      }
 
-  const quoter = new Contract(quoterAddress, UNISWAP_QUOTER_V2_ABI, provider);
-  const ethIn = 10n ** 18n;
-  const upIn = 10n ** 18n;
-  const upUsdcPath = ethers.solidityPacked(
-    ["address", "uint24", "address", "uint24", "address"],
-    [upAddress, upWethFee, wethAddress, wethUsdcFee, usdcAddress],
-  );
+      const quoter = new Contract(quoterAddress, UNISWAP_QUOTER_V2_ABI, provider);
+      const ethIn = 10n ** 18n;
+      const upIn = 10n ** 18n;
+      const upUsdcPath = ethers.solidityPacked(
+        ["address", "uint24", "address", "uint24", "address"],
+        [upAddress, upWethFee, wethAddress, wethUsdcFee, usdcAddress],
+      );
 
-  const [ethQuote, upQuote] = await Promise.all([
-    quoter.quoteExactInputSingle.staticCall({
-      tokenIn: wethAddress,
-      tokenOut: usdcAddress,
-      fee: Number(poolFee),
-      amountIn: ethIn,
-      sqrtPriceLimitX96: 0,
-    }),
-    quoter.quoteExactInput.staticCall(upUsdcPath, upIn),
-  ]);
+      const [ethQuote, upQuote] = await Promise.all([
+        quoter.quoteExactInputSingle.staticCall({
+          tokenIn: wethAddress,
+          tokenOut: usdcAddress,
+          fee: Number(poolFee),
+          amountIn: ethIn,
+          sqrtPriceLimitX96: 0,
+        }),
+        quoter.quoteExactInput.staticCall(upUsdcPath, upIn),
+      ]);
 
-  return normalizeUniswapQuotesToEdges({
-    ethIn,
-    ethToUsdcOut: getResultAmountOut(ethQuote),
-    upIn,
-    upToUsdcOut: getResultAmountOut(upQuote),
+      return normalizeUniswapQuotesToEdges({
+        ethIn,
+        ethToUsdcOut: getResultAmountOut(ethQuote),
+        upIn,
+        upToUsdcOut: getResultAmountOut(upQuote),
+      });
+    },
   });
 }
 

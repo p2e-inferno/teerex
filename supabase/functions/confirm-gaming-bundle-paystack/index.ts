@@ -143,9 +143,9 @@ serve(async (req) => {
       priceFiat: expectedFiat,
     });
     const issues = verifyPaystackAmountAndCurrency({
-      paystackAmountMinor: verifyData?.amount,
+      paystackAmountKobo: verifyData?.amount,
       paystackCurrency: verifyData?.currency,
-      expectedAmountMinor: expectedAmount,
+      expectedAmountKobo: expectedAmount,
       expectedCurrency,
     });
 

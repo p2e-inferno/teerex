@@ -71,6 +71,15 @@ serve(async (req) => {
       .eq("payment_reference", reference)
       .maybeSingle();
 
+    // Refunding/refunded orders must never be reset to PAID and re-delivered.
+    const existingStatus = String(existingOrder?.status || "").toUpperCase();
+    if (existingOrder && existingStatus === "REFUNDED") {
+      return json({ ok: true, refunded: true }, 200);
+    }
+    if (existingOrder && existingStatus.startsWith("REFUND_")) {
+      return json({ ok: true, refund_pending: true, status: existingStatus }, 200);
+    }
+
     if (!passId && existingOrder?.pass_id) passId = String(existingOrder.pass_id);
     if (!buyerWallet && existingOrder?.buyer_address) buyerWallet = String(existingOrder.buyer_address);
 
@@ -105,9 +114,9 @@ serve(async (req) => {
     if (!Number.isFinite(expectedFiat) || expectedFiat <= 0) return json({ ok: false, error: "pass_price_invalid" }, 400);
 
     const issues = verifyPaystackAmountAndCurrency({
-      paystackAmountMinor: verifyData?.amount,
+      paystackAmountKobo: verifyData?.amount,
       paystackCurrency: verifyData?.currency,
-      expectedAmountMinor: expectedAmount,
+      expectedAmountKobo: expectedAmount,
       expectedCurrency,
     });
     if (issues.includes("currency_mismatch")) return json({ ok: false, error: "currency_mismatch" }, 400);

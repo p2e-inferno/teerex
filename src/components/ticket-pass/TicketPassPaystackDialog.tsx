@@ -16,7 +16,8 @@ import { useToast } from '@/hooks/use-toast';
 import { callEdgeFunction } from '@/lib/edgeFunctions';
 import { Loader2, CreditCard } from 'lucide-react';
 import type { TicketPass } from '@/types/ticketPass';
-import { formatFiatPrice, formatPayoutSummary } from '@/lib/ticketPass/display';
+import { formatFiatPrice, formatNetworkName, formatPassValidity, formatPayoutSummary } from '@/lib/ticketPass/display';
+import { useNetworkConfigs } from '@/hooks/useNetworkConfigs';
 
 export interface TicketPassPaymentData {
   reference: string;
@@ -41,6 +42,7 @@ export const TicketPassPaystackDialog: React.FC<TicketPassPaystackDialogProps> =
   const { user, getAccessToken } = usePrivy();
   const { wallets } = useWallets();
   const { toast } = useToast();
+  const { networks } = useNetworkConfigs();
   const [isLoading, setIsLoading] = useState(false);
   const [paymentHandled, setPaymentHandled] = useState(false);
   const [userEmail, setUserEmail] = useState(user?.email?.address || '');
@@ -171,6 +173,7 @@ export const TicketPassPaystackDialog: React.FC<TicketPassPaystackDialogProps> =
   };
 
   if (!pass) return null;
+  const network = networks.find((n) => n.chain_id === pass.chain_id);
 
   return (
     <Dialog open={isOpen} onOpenChange={(open) => { if (!open) onClose(); }}>
@@ -194,6 +197,14 @@ export const TicketPassPaystackDialog: React.FC<TicketPassPaystackDialogProps> =
           <div className="flex justify-between text-sm">
             <span className="text-muted-foreground">Amount</span>
             <span className="font-medium">{formatFiatPrice(pass)}</span>
+          </div>
+          <div className="flex justify-between gap-3 text-sm">
+            <span className="text-muted-foreground">Network</span>
+            <span className="font-medium text-right">{formatNetworkName(pass.chain_id, network?.chain_name)}</span>
+          </div>
+          <div className="flex justify-between gap-3 text-sm">
+            <span className="text-muted-foreground">Pass validity</span>
+            <span className="font-medium text-right">{formatPassValidity(pass)}</span>
           </div>
 
           <div className="space-y-2 pt-2">

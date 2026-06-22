@@ -29,6 +29,7 @@ interface NetworkConfig {
   uniswap_v3_weth_usdc_fee: number | null;
   unlock_factory_address: string | null;
   refundable_event_manager_address: string | null;
+  ticket_pass_controller_address: string | null;
   native_currency_symbol: string;
   native_currency_name: string | null;
   native_currency_decimals: number | null;
@@ -55,6 +56,7 @@ interface NetworkFormData {
   uniswap_v3_weth_usdc_fee: number | '';
   unlock_factory_address: string;
   refundable_event_manager_address: string;
+  ticket_pass_controller_address: string;
   native_currency_symbol: string;
   native_currency_name: string;
   native_currency_decimals: number;
@@ -87,6 +89,7 @@ const AdminNetworks: React.FC = () => {
     uniswap_v3_weth_usdc_fee: '',
     unlock_factory_address: '',
     refundable_event_manager_address: '',
+    ticket_pass_controller_address: '',
     native_currency_symbol: 'ETH',
     native_currency_name: 'Ethereum',
     native_currency_decimals: 18,
@@ -146,6 +149,7 @@ const AdminNetworks: React.FC = () => {
         uniswap_v3_weth_usdc_fee: formData.uniswap_v3_weth_usdc_fee === '' ? null : formData.uniswap_v3_weth_usdc_fee,
         unlock_factory_address: formData.unlock_factory_address || null,
         refundable_event_manager_address: formData.refundable_event_manager_address || null,
+        ticket_pass_controller_address: formData.ticket_pass_controller_address || null,
         native_currency_symbol: formData.native_currency_symbol,
         native_currency_name: formData.native_currency_name,
         native_currency_decimals: formData.native_currency_decimals,
@@ -210,6 +214,7 @@ const AdminNetworks: React.FC = () => {
       uniswap_v3_weth_usdc_fee: network.uniswap_v3_weth_usdc_fee ?? '',
       unlock_factory_address: network.unlock_factory_address || '',
       refundable_event_manager_address: network.refundable_event_manager_address || '',
+      ticket_pass_controller_address: network.ticket_pass_controller_address || '',
       native_currency_symbol: network.native_currency_symbol,
       native_currency_name: network.native_currency_name || '',
       native_currency_decimals: network.native_currency_decimals || 18,
@@ -283,6 +288,7 @@ const AdminNetworks: React.FC = () => {
         uniswap_v3_weth_usdc_fee: network.uniswap_v3_weth_usdc_fee,
         unlock_factory_address: network.unlock_factory_address,
         refundable_event_manager_address: network.refundable_event_manager_address,
+        ticket_pass_controller_address: network.ticket_pass_controller_address,
         native_currency_symbol: network.native_currency_symbol,
         native_currency_name: network.native_currency_name,
         native_currency_decimals: network.native_currency_decimals,
@@ -336,6 +342,7 @@ const AdminNetworks: React.FC = () => {
       uniswap_v3_weth_usdc_fee: '',
       unlock_factory_address: '',
       refundable_event_manager_address: '',
+      ticket_pass_controller_address: '',
       native_currency_symbol: 'ETH',
       native_currency_name: 'Ethereum',
       native_currency_decimals: 18,
@@ -596,6 +603,19 @@ const AdminNetworks: React.FC = () => {
                 </div>
 
                 <div className="space-y-2">
+                  <Label htmlFor="ticket_pass_controller_address">Ticket Pass Controller Address (Optional)</Label>
+                  <Input
+                    id="ticket_pass_controller_address"
+                    value={formData.ticket_pass_controller_address}
+                    onChange={(e) => setFormData(prev => ({ ...prev, ticket_pass_controller_address: e.target.value }))}
+                    placeholder="0x..."
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Required for Ticket Pass creation. Paste the deployed TeeRexTicketPassControllerV1 address for this network.
+                  </p>
+                </div>
+
+                <div className="space-y-2">
                   <Label htmlFor="rpc_url">RPC URL</Label>
                   <Input
                     id="rpc_url"
@@ -718,6 +738,9 @@ const AdminNetworks: React.FC = () => {
                     )}
                     {network.refundable_event_manager_address && (
                       <div><strong>Refund Manager:</strong> {network.refundable_event_manager_address.slice(0, 6)}...{network.refundable_event_manager_address.slice(-4)}</div>
+                    )}
+                    {network.ticket_pass_controller_address && (
+                      <div><strong>Ticket Pass Controller:</strong> {network.ticket_pass_controller_address.slice(0, 6)}...{network.ticket_pass_controller_address.slice(-4)}</div>
                     )}
                     {network.rpc_url && (
                       <div><strong>RPC:</strong> {network.rpc_url.replace('https://', '')}</div>
