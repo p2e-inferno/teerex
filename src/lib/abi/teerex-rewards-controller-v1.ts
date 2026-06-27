@@ -549,6 +549,30 @@ export const REWARDS_CONTROLLER_V1_ABI = [
   },
   {
     "type": "function",
+    "name": "positionClaimEnd",
+    "inputs": [
+      {
+        "name": "poolId",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "placement",
+        "type": "uint16",
+        "internalType": "uint16"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "positions",
     "inputs": [
       {
@@ -590,6 +614,11 @@ export const REWARDS_CONTROLLER_V1_ABI = [
       },
       {
         "name": "claimed",
+        "type": "bool",
+        "internalType": "bool"
+      },
+      {
+        "name": "reclaimed",
         "type": "bool",
         "internalType": "bool"
       },
@@ -1364,6 +1393,11 @@ export const REWARDS_CONTROLLER_V1_ABI = [
   {
     "type": "error",
     "name": "AlreadyClaimed",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "AssignmentWindowClosed",
     "inputs": []
   },
   {

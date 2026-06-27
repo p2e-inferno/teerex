@@ -72,13 +72,23 @@ contract RewardsHandler is Test {
         vm.warp(block.timestamp + bound(secs, 1 hours, 10 days));
     }
 
+    function dispute(uint256 poolSeed, uint256 pSeed, uint256 wSeed) external {
+        if (pools.length == 0) return;
+        uint256 poolId = pools[poolSeed % pools.length];
+        uint16 pc = controller.getPool(poolId).positionCount;
+        if (pc == 0) return;
+        address holder = winners[wSeed % 3]; // winners all hold a key
+        vm.prank(holder);
+        try controller.raiseDispute(poolId, uint16(pSeed % pc) + 1, bytes32(0)) {} catch {}
+    }
+
     function claim(uint256 poolSeed, uint256 pSeed) external {
         if (pools.length == 0) return;
         uint256 poolId = pools[poolSeed % pools.length];
         uint16 pc = controller.getPool(poolId).positionCount;
         if (pc == 0) return;
         uint16 placement = uint16(pSeed % pc) + 1;
-        (uint256 amount, address winner,,,, bool claimed,) = controller.positions(poolId, placement);
+        (uint256 amount, address winner,,,, bool claimed,,) = controller.positions(poolId, placement);
         if (winner == address(0) || claimed) return;
         vm.prank(winner);
         try controller.claim(poolId, placement) {
@@ -89,9 +99,10 @@ contract RewardsHandler is Test {
     function reclaim(uint256 poolSeed) external {
         if (pools.length == 0) return;
         uint256 poolId = pools[poolSeed % pools.length];
-        uint256 rem = controller.remaining(poolId);
+        uint256 remBefore = controller.remaining(poolId);
         try controller.reclaim(poolId) {
-            ghostPaidOut += rem;
+            // reclaim may now be partial; credit only what actually left the escrow.
+            ghostPaidOut += remBefore - controller.remaining(poolId);
         } catch {}
     }
 }
@@ -120,12 +131,13 @@ contract RewardsInvariantTest is Test {
         lock.setManager(address(handler), true); // handler is the pool creator
         vm.deal(address(handler), 1_000_000 ether);
 
-        bytes4[] memory selectors = new bytes4[](5);
+        bytes4[] memory selectors = new bytes4[](6);
         selectors[0] = handler.createPool.selector;
         selectors[1] = handler.assignWinner.selector;
         selectors[2] = handler.warp.selector;
         selectors[3] = handler.claim.selector;
         selectors[4] = handler.reclaim.selector;
+        selectors[5] = handler.dispute.selector;
         targetSelector(FuzzSelector({addr: address(handler), selectors: selectors}));
         targetContract(address(handler));
     }
@@ -158,6 +170,28 @@ contract RewardsInvariantTest is Test {
         for (uint256 i = 0; i < count; i++) {
             R.Pool memory p = controller.getPool(handler.pools(i));
             assertLe(p.claimedAmount, p.totalFunded);
+        }
+    }
+
+    /// A placement is settled by exactly one path: a winner claim or a creator reclaim, never both.
+    function invariant_NoPositionClaimedAndReclaimed() public view {
+        uint256 count = handler.poolCount();
+        for (uint256 i = 0; i < count; i++) {
+            uint256 poolId = handler.pools(i);
+            R.Pool memory p = controller.getPool(poolId);
+            for (uint16 pl = 1; pl <= p.positionCount; pl++) {
+                (,,,,, bool claimed, bool reclaimed,) = controller.positions(poolId, pl);
+                assertFalse(claimed && reclaimed);
+            }
+        }
+    }
+
+    /// A pool is only marked closed once every share has been settled.
+    function invariant_ClosedImpliesFullySettled() public view {
+        uint256 count = handler.poolCount();
+        for (uint256 i = 0; i < count; i++) {
+            R.Pool memory p = controller.getPool(handler.pools(i));
+            if (p.closed) assertEq(p.claimedAmount, p.totalFunded);
         }
     }
 }

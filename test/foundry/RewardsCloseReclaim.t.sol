@@ -58,6 +58,32 @@ contract RewardsCloseReclaimTest is RewardsBase {
         controller.closePool(poolId);
     }
 
+    /// The no-tickets early-close is a pre-event convenience only. Once the claim phase is live,
+    /// `totalSupply() == 0` no longer authorizes a full reclaim — the creator must use the
+    /// time-locked, freezable reclaim() path. Guards against a lock manager zeroing supply
+    /// (e.g. by burning keys) to bypass the claim-window lockout and dispute/freeze recourse.
+    function test_RevertWhen_CloseNoTicketsAfterClaimStart() public {
+        (uint256 poolId,) = _createDefaultEthPool(); // claimStart = START + 7 days
+        lock.setTotalSupply(0);
+        vm.warp(START + 7 days); // claim phase is now live
+        vm.prank(creator);
+        vm.expectRevert(R.EarlyExitNotAllowed.selector);
+        controller.closePool(poolId);
+    }
+
+    /// The attendance-proven cancel+refund early-exit stays available after the claim phase opens,
+    /// since it is gated by on-chain protection state the creator cannot spoof, not by totalSupply.
+    function test_ClosePool_AttendanceEarlyExit_AfterClaimStart() public {
+        (uint256 poolId, uint256 total) = _createPoolWithAttendance();
+        attendance.setConfig(address(lock), true, true, true, true);
+        vm.warp(START + 8 days); // past this pool's claimStart (START + 7 days)
+        uint256 balBefore = creator.balance;
+        vm.prank(creator);
+        controller.closePool(poolId);
+        assertEq(creator.balance, balBefore + total);
+        assertTrue(_poolClosed(poolId));
+    }
+
     function test_RevertWhen_CloseWithAssignedWinner() public {
         (uint256 poolId,) = _createDefaultEthPool();
         lock.setTotalSupply(0);
@@ -198,5 +224,140 @@ contract RewardsCloseReclaimTest is RewardsBase {
         vm.prank(creator);
         vm.expectRevert(R.UnknownPool.selector);
         controller.reclaim(7);
+    }
+
+    // ---- per-position partial reclaim ----
+
+    function test_Reclaim_AllNeverAssigned_FullAtPoolEnd() public {
+        (uint256 poolId, uint256 total) = _createDefaultEthPool();
+        vm.warp(START + 12 days + 1);
+        uint256 balBefore = creator.balance;
+        vm.prank(creator);
+        controller.reclaim(poolId);
+        assertEq(creator.balance, balBefore + total);
+        assertTrue(_poolClosed(poolId));
+    }
+
+    /// A late-assigned, single-position pool is not reclaimable until that placement's own end.
+    function test_RevertWhen_ReclaimLateAssignedNotYetEnded() public {
+        uint256[] memory a = new uint256[](1);
+        a[0] = 1 ether;
+        uint64 cs = START + 7 days;
+        uint64 ce = START + 12 days;
+        vm.prank(creator);
+        uint256 poolId = controller.createRewardPool{value: 1 ether}(
+            _params(address(0), address(0), a, cs, ce, MIN_WINDOW, _noManagers())
+        );
+        vm.warp(ce - 1 hours);
+        _assign(poolId, alice, 1); // late
+
+        vm.warp(ce + 1); // past pool end, before the placement's guaranteed end
+        vm.prank(creator);
+        vm.expectRevert(R.NotYetReclaimable.selector);
+        controller.reclaim(poolId);
+
+        vm.warp(controller.positionClaimEnd(poolId, 1) + 1);
+        uint256 balBefore = creator.balance;
+        vm.prank(creator);
+        controller.reclaim(poolId);
+        assertEq(creator.balance, balBefore + 1 ether);
+        assertTrue(_poolClosed(poolId));
+    }
+
+    /// Never-assigned + early funds reclaim at pool end; a late placement keeps the pool open until its end.
+    function test_Reclaim_PartialThenFull() public {
+        (uint256 poolId, uint256 total) = _createDefaultEthPool();
+        _assign(poolId, alice, 1); // early → ends at pool end
+        uint64 ce = START + 12 days;
+        vm.warp(ce - 1 hours);
+        _assign(poolId, bob, 2); // late → ends past pool end; pos 3 never assigned
+
+        vm.warp(ce + 1);
+        vm.expectEmit(true, true, false, true, address(controller));
+        emit R.ResidualReclaimed(poolId, creator, 4 ether); // pos1 (3) + pos3 (1)
+        vm.prank(creator);
+        controller.reclaim(poolId);
+        assertFalse(_poolClosed(poolId), "late pos keeps pool open");
+        assertEq(controller.remaining(poolId), 2 ether);
+        assertTrue(_posReclaimed(poolId, 1));
+        assertTrue(_posReclaimed(poolId, 3));
+        assertFalse(_posReclaimed(poolId, 2));
+
+        vm.warp(controller.positionClaimEnd(poolId, 2) + 1);
+        uint256 balBefore = creator.balance;
+        vm.expectEmit(true, true, false, true, address(controller));
+        emit R.ResidualReclaimed(poolId, creator, 2 ether);
+        vm.prank(creator);
+        controller.reclaim(poolId);
+        assertEq(creator.balance, balBefore + 2 ether);
+        assertTrue(_poolClosed(poolId));
+        assertEq(controller.remaining(poolId), 0);
+        assertEq(_poolClaimedAmount(poolId), total);
+    }
+
+    /// A second reclaim in the same state does not double-pay the already-swept placements.
+    function test_Reclaim_Idempotent() public {
+        (uint256 poolId,) = _createDefaultEthPool();
+        _assign(poolId, alice, 1); // early
+        uint64 ce = START + 12 days;
+        vm.warp(ce - 1 hours);
+        _assign(poolId, bob, 2); // late keeps pool open after the first sweep
+
+        vm.warp(ce + 1);
+        vm.prank(creator);
+        controller.reclaim(poolId); // sweeps pos1 + pos3
+        uint256 balAfterFirst = creator.balance;
+
+        vm.prank(creator);
+        vm.expectRevert(R.NotYetReclaimable.selector); // nothing newly eligible; pos2 still locked
+        controller.reclaim(poolId);
+        assertEq(creator.balance, balAfterFirst, "no double pay");
+    }
+
+    function test_Reclaim_WinnerClaimsLateBeforeEnd_ThenCreatorReclaimsRest() public {
+        (uint256 poolId,) = _createDefaultEthPool();
+        uint64 ce = START + 12 days;
+        vm.warp(ce - 1 hours);
+        _assign(poolId, alice, 1); // late; pos 2 + 3 never assigned
+
+        (, uint256 opensAt) = controller.claimable(poolId, 1);
+        vm.warp(opensAt); // past pool end already
+        uint256 aliceBefore = alice.balance;
+        vm.prank(alice);
+        controller.claim(poolId, 1);
+        assertEq(alice.balance, aliceBefore + 3 ether);
+
+        uint256 creatorBefore = creator.balance;
+        vm.prank(creator);
+        controller.reclaim(poolId); // pos1 claimed (skipped); pos2 + pos3 reclaimed
+        assertEq(creator.balance, creatorBefore + 3 ether);
+        assertTrue(_poolClosed(poolId));
+        assertEq(controller.remaining(poolId), 0);
+    }
+
+    /// Regression: a share swept during a partial reclaim is terminal. Even after the arbitrator
+    /// extends the window (so the assignment cutoff would otherwise pass), the creator cannot
+    /// re-assign a reclaimed placement into an unclaimable state — its escrow is already returned.
+    function test_RevertWhen_AssignReclaimedPosition() public {
+        (uint256 poolId,) = _createDefaultEthPool();
+        _assign(poolId, alice, 1); // early
+        uint64 ce = START + 12 days;
+        vm.warp(ce - 1 hours);
+        _assign(poolId, bob, 2); // late keeps pool open; pos3 never assigned
+
+        vm.warp(ce + 1);
+        vm.prank(creator);
+        controller.reclaim(poolId); // sweeps pos1 + pos3; pos2 locked → pool stays open
+        assertTrue(_posReclaimed(poolId, 3));
+        assertFalse(_poolClosed(poolId));
+
+        vm.prank(arbitrator);
+        controller.extendClaimEnd(poolId, ce + 60 days);
+
+        R.WinnerAssignment[] memory batch = new R.WinnerAssignment[](1);
+        batch[0] = R.WinnerAssignment({account: carol, placement: 3});
+        vm.prank(creator);
+        vm.expectRevert(R.AlreadyClaimed.selector);
+        controller.assignWinners(poolId, batch);
     }
 }

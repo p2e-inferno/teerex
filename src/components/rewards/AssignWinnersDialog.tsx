@@ -29,6 +29,7 @@ export function AssignWinnersDialog({ open, onOpenChange, positions, busy, onSub
   const batch = useMemo<WinnerAssignmentInput[]>(() => {
     const out: WinnerAssignmentInput[] = [];
     for (const pos of positions) {
+      if (pos.claimed || pos.reclaimed) continue; // settled placements are immutable on-chain
       const raw = values[pos.placement];
       if (raw == null) continue;
       const account = raw.trim();
@@ -51,21 +52,27 @@ export function AssignWinnersDialog({ open, onOpenChange, positions, busy, onSub
         </DialogHeader>
 
         <div className="-mx-1 max-h-[50vh] space-y-3 overflow-y-auto px-1">
-          {positions.map((pos) => (
-            <div key={pos.placement} className="space-y-1">
-              <Label htmlFor={`winner-${pos.placement}`}>
-                Placement #{pos.placement}
-                {pos.claimed && <span className="ml-2 text-xs text-muted-foreground">(claimed — locked)</span>}
-              </Label>
-              <Input
-                id={`winner-${pos.placement}`}
-                placeholder="0x…"
-                defaultValue={pos.winner ?? ''}
-                disabled={pos.claimed}
-                onChange={(e) => handleChange(pos.placement, e.target.value)}
-              />
-            </div>
-          ))}
+          {positions.map((pos) => {
+            const locked = pos.claimed || pos.reclaimed;
+            return (
+              <div key={pos.placement} className="space-y-1">
+                <Label htmlFor={`winner-${pos.placement}`}>
+                  Placement #{pos.placement}
+                  {pos.claimed && <span className="ml-2 text-xs text-muted-foreground">(claimed — locked)</span>}
+                  {!pos.claimed && pos.reclaimed && (
+                    <span className="ml-2 text-xs text-muted-foreground">(reclaimed — locked)</span>
+                  )}
+                </Label>
+                <Input
+                  id={`winner-${pos.placement}`}
+                  placeholder="0x…"
+                  defaultValue={pos.winner ?? ''}
+                  disabled={locked}
+                  onChange={(e) => handleChange(pos.placement, e.target.value)}
+                />
+              </div>
+            );
+          })}
         </div>
 
         <DialogFooter>

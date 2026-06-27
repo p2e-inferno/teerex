@@ -14,6 +14,7 @@ export type RewardPoolStatus =
   | "claiming"
   | "frozen"
   | "expired"
+  | "claim_complete"
   | "closed";
 
 export interface OnchainRewardPool {
@@ -42,6 +43,7 @@ export interface OnchainPosition {
   assignedAt: number; // epoch seconds (0 = unassigned)
   holdUntil: number;
   claimed: boolean;
+  reclaimed: boolean;
   claimedAt: number;
 }
 
@@ -92,6 +94,7 @@ export async function readRewardPositions(
       assignedAt: Number(pos.assignedAt),
       holdUntil: Number(pos.holdUntil),
       claimed: Boolean(pos.claimed),
+      reclaimed: Boolean(pos.reclaimed),
       claimedAt: Number(pos.claimedAt),
     });
   }
@@ -99,7 +102,11 @@ export async function readRewardPositions(
 }
 
 export function deriveRewardPoolStatus(pool: OnchainRewardPool, nowSecs: number): RewardPoolStatus {
+  // `closed` is creator-driven (closePool or a reclaim that settled the last share). A pool whose
+  // escrow is fully drained while still open got there only via winner claims — a reclaim that
+  // fully settles a pool always sets `closed` — so this is the distinct "all winners paid" terminal.
   if (pool.closed) return "closed";
+  if (BigInt(pool.claimedAmountWei) >= BigInt(pool.totalFundedWei)) return "claim_complete";
   if (pool.frozen) return "frozen";
   if (nowSecs > pool.claimEnd + pool.frozenAccrued) return "expired";
   if (pool.assignedCount === 0) return "funded";

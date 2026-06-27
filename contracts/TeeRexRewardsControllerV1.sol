@@ -77,6 +77,7 @@ contract TeeRexRewardsControllerV1 is ReentrancyGuard, Ownable {
         uint64 holdUntil; // free dispute hold expiry (0 = none)
         bool freeHoldUsed; // a free dispute hold may be applied once per placement
         bool claimed;
+        bool reclaimed;   // creator reclaimed this placement's share (mutually exclusive with claimed)
         uint64 claimedAt;
     }
 
@@ -135,6 +136,7 @@ contract TeeRexRewardsControllerV1 is ReentrancyGuard, Ownable {
     error AlreadyAssigned();
     error AlreadyClaimed();
     error CannotReplaceAfterClaimStart();
+    error AssignmentWindowClosed();
     error NotAssigned();
     error WindowNotOpen();
     error WindowClosed();
@@ -364,12 +366,18 @@ contract TeeRexRewardsControllerV1 is ReentrancyGuard, Ownable {
             Position storage pos = positions[poolId][placement];
             address current = pos.winner;
 
+            // A reclaimed share is terminal: its escrow was returned to the creator, so a winner
+            // recorded here could never claim. claimed is unreachable pre-claimStart (gate below).
+            if (pos.reclaimed) revert AlreadyClaimed();
+
             if (current != address(0)) {
-                // Replacement: only while still pre-claim, only for an unclaimed placement.
+                // Replacement is allowed only pre-claim; the gate below also guarantees the placement is unclaimed.
                 if (block.timestamp >= pool.claimStart) revert CannotReplaceAfterClaimStart();
-                if (pos.claimed) revert AlreadyClaimed();
                 isAssigned[poolId][current] = false;
             } else {
+                // Bound initial assignment so a late winner's guaranteed window cannot start past
+                // the claim window; genuinely-late results must route through arbitrator extendClaimEnd.
+                if (block.timestamp > uint256(pool.claimEnd) + pool.frozenAccrued) revert AssignmentWindowClosed();
                 pool.assignedCount += 1;
             }
 
@@ -397,10 +405,11 @@ contract TeeRexRewardsControllerV1 is ReentrancyGuard, Ownable {
         Position storage pos = positions[poolId][placement];
         if (pos.winner != msg.sender) revert NotWinner();
         if (pos.claimed) revert AlreadyClaimed();
+        if (pos.reclaimed) revert AlreadyClaimed();
 
         uint256 opensAt = _effectiveClaimStart(pool, pos);
         if (block.timestamp < opensAt) revert WindowNotOpen();
-        if (block.timestamp > _effectiveClaimEnd(pool)) revert WindowClosed();
+        if (block.timestamp > _effectiveClaimEnd(pool, pos)) revert WindowClosed();
 
         // Effects before interaction.
         pos.claimed = true;
@@ -458,10 +467,11 @@ contract TeeRexRewardsControllerV1 is ReentrancyGuard, Ownable {
 
     function voidAssignment(uint256 poolId, uint16 placement) external onlyArbitrator {
         Pool storage pool = _pool(poolId);
+        if (pool.closed) revert PoolIsClosed();
         if (placement == 0 || placement > pool.positionCount) revert BadPlacement();
         Position storage pos = positions[poolId][placement];
         if (pos.winner == address(0)) revert NotAssigned();
-        if (pos.claimed) revert AlreadyClaimed();
+        if (pos.claimed || pos.reclaimed) revert AlreadyClaimed();
 
         address account = pos.winner;
         isAssigned[poolId][account] = false;
@@ -476,12 +486,13 @@ contract TeeRexRewardsControllerV1 is ReentrancyGuard, Ownable {
 
     function reassign(uint256 poolId, uint16 placement, address newWinner) external onlyArbitrator {
         Pool storage pool = _pool(poolId);
+        if (pool.closed) revert PoolIsClosed();
         if (placement == 0 || placement > pool.positionCount) revert BadPlacement();
         if (newWinner == address(0)) revert InvalidRecipient();
         if (IPublicLock(pool.eventLock).balanceOf(newWinner) == 0) revert NotTicketHolder();
 
         Position storage pos = positions[poolId][placement];
-        if (pos.claimed) revert AlreadyClaimed();
+        if (pos.claimed || pos.reclaimed) revert AlreadyClaimed();
 
         address current = pos.winner;
         if (current != address(0)) {
@@ -502,6 +513,7 @@ contract TeeRexRewardsControllerV1 is ReentrancyGuard, Ownable {
 
     function extendClaimEnd(uint256 poolId, uint64 newClaimEnd) external onlyArbitrator {
         Pool storage pool = _pool(poolId);
+        if (pool.closed) revert PoolIsClosed();
         if (newClaimEnd <= pool.claimEnd) revert BadWindow();
         pool.claimEnd = newClaimEnd;
         emit ClaimEndExtended(poolId, newClaimEnd);
@@ -527,10 +539,12 @@ contract TeeRexRewardsControllerV1 is ReentrancyGuard, Ownable {
         if (pool.closed) revert PoolIsClosed();
         if (pool.frozen) revert PoolIsFrozen();
 
-        // Early close requires that no winners are assigned AND either no tickets exist or the
-        // protected event was cancelled with refunds complete. The assignedCount guard makes
-        // "winners assigned + event cancelled" impossible by construction.
-        bool noTickets = IPublicLock(pool.eventLock).totalSupply() == 0;
+        // Early full reclaim requires no winners assigned AND either an empty lock before the claim
+        // phase opens, or the attendance-proven cancel+refund state. Restricting the no-tickets path
+        // to pre-claimStart keeps every post-claim reclaim on the time-locked, freezable reclaim()
+        // path. assignedCount == 0 makes "winners assigned + early reclaim" impossible by construction.
+        bool noTickets =
+            block.timestamp < pool.claimStart && IPublicLock(pool.eventLock).totalSupply() == 0;
         bool allowed = pool.assignedCount == 0 && (noTickets || _attendanceEarlyExit(pool));
         if (!allowed) revert EarlyExitNotAllowed();
 
@@ -549,16 +563,35 @@ contract TeeRexRewardsControllerV1 is ReentrancyGuard, Ownable {
         if (msg.sender != pool.creator) revert NotCreator();
         if (pool.closed) revert PoolIsClosed();
 
-        uint256 effEnd = _effectiveClaimEnd(pool);
-        if (block.timestamp <= effEnd) revert NotYetReclaimable();
+        uint256 poolEnd = _effectiveClaimEnd(pool);
         // A freeze blocks reclaim only until the backstop; past it, escrow is released regardless.
-        if (pool.frozen && block.timestamp <= effEnd + MAX_FREEZE_BACKSTOP) revert PoolIsFrozen();
+        if (pool.frozen && block.timestamp <= poolEnd + MAX_FREEZE_BACKSTOP) revert PoolIsFrozen();
 
-        uint256 amount = pool.totalFunded - pool.claimedAmount;
-        if (amount == 0) revert NothingToPay();
+        // Per-position sweep: never-assigned shares are reclaimable at the pool end; an assigned-
+        // unclaimed share only after that placement's guaranteed window. A late/held winner is thus
+        // never timed out by the creator, while never-assigned funds are not perpetually locked.
+        uint256 amount = 0;
+        bool lockedRemain = false;
+        uint16 n = pool.positionCount;
+        for (uint16 p = 1; p <= n; p++) {
+            Position storage pos = positions[poolId][p];
+            if (pos.claimed || pos.reclaimed) continue;
+            uint256 posEnd = pos.winner == address(0) ? poolEnd : _effectiveClaimEnd(pool, pos);
+            if (block.timestamp > posEnd) {
+                pos.reclaimed = true; // effect before the single aggregated transfer below
+                amount += pos.amount;
+            } else {
+                lockedRemain = true;
+            }
+        }
 
-        pool.closed = true;
-        pool.claimedAmount = pool.totalFunded;
+        if (amount == 0) {
+            if (lockedRemain) revert NotYetReclaimable();
+            revert NothingToPay();
+        }
+
+        pool.claimedAmount += amount;
+        if (!lockedRemain) pool.closed = true;
         _pay(pool.payoutToken, pool.creator, amount);
 
         emit ResidualReclaimed(poolId, pool.creator, amount);
@@ -576,14 +609,21 @@ contract TeeRexRewardsControllerV1 is ReentrancyGuard, Ownable {
         canClaim =
             pos.winner != address(0) &&
             !pos.claimed &&
+            !pos.reclaimed &&
             !pool.frozen &&
             !pool.closed &&
             block.timestamp >= opensAt &&
-            block.timestamp <= _effectiveClaimEnd(pool);
+            block.timestamp <= _effectiveClaimEnd(pool, pos);
     }
 
     function effectiveClaimEnd(uint256 poolId) external view returns (uint256) {
         return _effectiveClaimEnd(_poolView(poolId));
+    }
+
+    /// @notice The guaranteed claim end for a single placement (>= the pool-level end).
+    function positionClaimEnd(uint256 poolId, uint16 placement) external view returns (uint256) {
+        Pool storage pool = _poolView(poolId);
+        return _effectiveClaimEnd(pool, positions[poolId][placement]);
     }
 
     function remaining(uint256 poolId) external view returns (uint256) {
@@ -609,6 +649,18 @@ contract TeeRexRewardsControllerV1 is ReentrancyGuard, Ownable {
 
     function _effectiveClaimEnd(Pool storage pool) internal view returns (uint256) {
         return uint256(pool.claimEnd) + pool.frozenAccrued;
+    }
+
+    // Guarantees an assigned winner MIN_CLAIM_DURATION of claim time after their effective start,
+    // even when a late assignment or dispute hold pushes that start to/past the pool-level end.
+    function _effectiveClaimEnd(Pool storage pool, Position storage pos)
+        internal
+        view
+        returns (uint256)
+    {
+        uint256 poolEnd = uint256(pool.claimEnd) + pool.frozenAccrued;
+        uint256 byPosition = _effectiveClaimStart(pool, pos) + MIN_CLAIM_DURATION;
+        return byPosition > poolEnd ? byPosition : poolEnd;
     }
 
     function _attendanceEarlyExit(Pool storage pool) internal view returns (bool) {

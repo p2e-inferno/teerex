@@ -129,4 +129,61 @@ contract RewardsAssignTest is RewardsBase {
         vm.expectRevert(R.PoolIsFrozen.selector);
         controller.assignWinners(poolId, _batch(alice, 1));
     }
+
+    // --- Initial-assignment cutoff (bounds the per-position window) ---
+
+    function test_Assign_AtExactPoolEnd_Succeeds() public {
+        vm.warp(START + 12 days); // exact pool end (cutoff reverts only when strictly past)
+        _assign(poolId, alice, 1);
+        assertEq(_posWinner(poolId, 1), alice);
+    }
+
+    function test_RevertWhen_AssignOneSecAfterPoolEnd() public {
+        vm.warp(START + 12 days + 1);
+        vm.prank(creator);
+        vm.expectRevert(R.AssignmentWindowClosed.selector);
+        controller.assignWinners(poolId, _batch(alice, 1));
+    }
+
+    function test_Assign_AfterExtendClaimEnd_Succeeds() public {
+        vm.warp(START + 12 days + 1);
+        vm.prank(creator);
+        vm.expectRevert(R.AssignmentWindowClosed.selector);
+        controller.assignWinners(poolId, _batch(alice, 1));
+
+        vm.prank(arbitrator);
+        controller.extendClaimEnd(poolId, START + 22 days);
+        _assign(poolId, alice, 1);
+        assertEq(_posWinner(poolId, 1), alice);
+    }
+
+    function test_Assign_AfterUnfreezeAccrued_Succeeds() public {
+        vm.warp(START + 11 days);
+        vm.prank(arbitrator);
+        controller.freeze(poolId);
+        vm.warp(START + 13 days); // 2 days frozen; past the base pool end
+        vm.prank(arbitrator);
+        controller.unfreeze(poolId); // frozenAccrued = 2 days → pool end = START + 14 days
+
+        _assign(poolId, alice, 1); // now (START+13d) <= extended pool end
+        assertEq(_posWinner(poolId, 1), alice);
+    }
+
+    function test_RevertOrder_FrozenTakesPrecedenceOverCutoff() public {
+        vm.prank(arbitrator);
+        controller.freeze(poolId);
+        vm.warp(START + 12 days + 1); // both frozen and past cutoff
+        vm.prank(creator);
+        vm.expectRevert(R.PoolIsFrozen.selector);
+        controller.assignWinners(poolId, _batch(alice, 1));
+    }
+
+    /// Replacement is gated by claimStart, not the cutoff — proven by replacing well past pool end.
+    function test_RevertWhen_ReplaceAfterPoolEnd_StillReplacementError() public {
+        _assign(poolId, alice, 1); // early initial assignment
+        vm.warp(START + 12 days + 1); // past both claimStart and the cutoff
+        vm.prank(creator);
+        vm.expectRevert(R.CannotReplaceAfterClaimStart.selector);
+        controller.assignWinners(poolId, _batch(bob, 1));
+    }
 }
