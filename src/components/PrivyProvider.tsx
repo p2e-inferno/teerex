@@ -22,8 +22,8 @@ export const PrivyProvider: React.FC<PrivyProviderProps> = ({ children }) => {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // Get Privy App ID from environment variables or fallback to default
-  const appId = import.meta.env.VITE_PRIVY_APP_ID;
+  const appId = import.meta.env.VITE_PRIVY_APP_ID?.trim();
+  const clientId = import.meta.env.VITE_PUBLIC_PRIVY_CLIENT_ID?.trim() || "";
 
   useEffect(() => {
     async function loadPrivyConfig({ silent = false }: { silent?: boolean } = {}) {
@@ -133,13 +133,18 @@ export const PrivyProvider: React.FC<PrivyProviderProps> = ({ children }) => {
     );
   }
 
-  // If no valid App ID is provided, show setup instructions
-  if (!appId || appId === 'your_privy_app_id_here') {
+  // If no valid Privy IDs are provided, show setup instructions
+  if (
+    !appId ||
+    appId === 'your_privy_app_id_here' ||
+    !clientId ||
+    clientId === 'your_privy_client_id_here'
+  ) {
     return <PrivySetupInstructions />;
   }
 
   return (
-    <Privy appId={appId} config={privyConfig}>
+    <Privy appId={appId} clientId={clientId} config={privyConfig}>
       <QueryClientProvider client={queryClient}>
         <WagmiProvider config={wagmiConfig}>
           <SupabaseAuthSync>

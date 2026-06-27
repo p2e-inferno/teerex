@@ -36,6 +36,7 @@ import {
 import { isEventRegistrationClosed } from "@/lib/events/registration";
 import { EventPurchaseDialog } from "@/components/events/EventPurchaseDialog";
 import { EventPassOnramp } from "@/components/ticket-pass/EventPassOnramp";
+import { EventRewardPools } from "@/components/rewards/EventRewardPools";
 import { PaystackPaymentDialog } from "@/components/events/PaystackPaymentDialog";
 import { TicketProcessingDialog } from "@/components/events/TicketProcessingDialog";
 import { PaymentMethodDialog } from "@/components/events/PaymentMethodDialog";
@@ -77,6 +78,7 @@ import { EventDetailsRefreshProvider, useEventDetailsRefresh } from "@/pages/eve
 import {
   getRefundProtectionBadges,
   getRefundProtectionPurchaseStateLabel,
+  getRewardPoolCreationGate,
 } from "@/lib/events/refundStatus";
 
 function formatCountdownLabel(targetIso: string | null | undefined, nowMs: number): string | null {
@@ -294,6 +296,33 @@ const EventDetailsContent = () => {
     isProtectedRefundEvent &&
     protectionTriggered
   );
+  const spotsLeft = event ? event.capacity - keysSold : 0;
+  const isSoldOut = spotsLeft <= 0;
+  const primaryTicketCtaDisabled =
+    isSoldOut ||
+    isRegistrationClosed ||
+    isProtectedPurchaseClosed ||
+    (authenticated && userTicketCount >= maxTicketsPerUser);
+  const primaryTicketCtaLabel = isSoldOut
+    ? "Sold Out"
+    : isRegistrationClosed
+      ? "Registration Closed"
+      : isProtectedPurchaseClosed
+        ? getRefundProtectionPurchaseStateLabel(refundableStatus.status || event?.refund_status)
+        : !authenticated
+          ? "Connect Wallet to Get Ticket"
+          : userTicketCount >= maxTicketsPerUser
+            ? "Ticket Limit Reached"
+            : authenticated && userTicketCount > 0
+              ? "Get Additional Ticket"
+              : "Get Ticket";
+  const showWaitlistButton = Boolean(event?.allow_waitlist && isSoldOut);
+  const showMobileHeaderTicketCta =
+    !authenticated ||
+    userTicketCount < maxTicketsPerUser ||
+    isSoldOut ||
+    isRegistrationClosed ||
+    isProtectedPurchaseClosed;
   const managerReleased = Boolean(
     refundableStatus.managerReleased ||
     event?.refund_manager_released ||
@@ -321,6 +350,22 @@ const EventDetailsContent = () => {
     !refundableStatus.managerReleased &&
     (refundableStatus.refundComplete || refundableStatus.status === 'threshold_met')
   );
+  const rewardPoolCreationGate = getRewardPoolCreationGate({
+    isProtectedEvent: isProtectedRefundEvent,
+    status: refundableStatus.status || event?.refund_status,
+    refundComplete: refundableStatus.refundComplete,
+    managerReleased,
+    signerIsCreator: signerMatchesCreator,
+    authorizedRefundCaller: refundableStatus.authorizedRefundCaller,
+    signerMatchesAuthorizedRefundCaller,
+  });
+  const protectedEventSucceeded = Boolean(
+    managerReleased ||
+    refundableStatus.status === 'threshold_met' ||
+    event?.refund_status === 'threshold_met'
+  );
+  const refundTriggerLabel = protectedEventSucceeded ? 'Protection Release Opens' : 'Refund Window Opens';
+  const refundWindowEndLabel = protectedEventSucceeded ? 'Event Ends' : 'Public Refund Window Closes';
   const refundWindowCountdown = formatCountdownLabel(event?.refund_trigger_at, nowMs);
   const refundWindowClosesCountdown = formatCountdownLabel(event?.refund_event_end_at || event?.ends_at, nowMs);
   const eventDisplayTime = formatEventLocalTime(event?.starts_at, event?.time || '');
@@ -886,13 +931,10 @@ const EventDetailsContent = () => {
     setActiveModal("none");
   };
 
-  const spotsLeft = event ? event.capacity - keysSold : 0;
-  const isSoldOut = spotsLeft <= 0;
-
   if (isLoading) {
     return (
       <div className="min-h-screen bg-gray-50 py-8">
-        <div className="container mx-auto px-6 max-w-4xl">
+        <div className="container mx-auto px-4 sm:px-6 lg:px-8 max-w-6xl">
           <div className="animate-pulse">
             <div className="h-8 bg-gray-200 rounded w-1/4 mb-6"></div>
             <div className="h-64 bg-gray-200 rounded-lg mb-6"></div>
@@ -921,7 +963,7 @@ const EventDetailsContent = () => {
       <div className="min-h-screen bg-gray-50">
         {/* Header */}
         <div className="bg-white border-b">
-          <div className="container mx-auto px-6 max-w-4xl py-4">
+          <div className="container mx-auto px-4 sm:px-6 lg:px-8 max-w-6xl py-4">
             <Button
               variant="ghost"
               onClick={() => navigate("/explore")}
@@ -933,10 +975,10 @@ const EventDetailsContent = () => {
           </div>
         </div>
 
-        <div className="container mx-auto px-6 max-w-4xl py-8">
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+        <div className="container mx-auto px-4 sm:px-6 lg:px-8 max-w-6xl py-8">
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 lg:items-start">
             {/* Main Content */}
-            <div className="lg:col-span-2 space-y-6">
+            <div className="lg:col-start-1 lg:col-span-2 space-y-6">
               {/* Event Image */}
               {event.image_url && (
                 <div className="aspect-square rounded-lg overflow-hidden bg-gray-100">
@@ -961,24 +1003,98 @@ const EventDetailsContent = () => {
 
               {/* Event Info */}
               <div>
-                <div className="flex items-start justify-between mb-4">
-                  <div className="flex-1">
-                    <Badge variant="secondary" className="mb-3">
-                      {event.category}
-                    </Badge>
-                    {isProtectedRefundEvent && (
-                      refundBadges.map((badge) => (
-                        <Badge key={badge.label} variant="outline" className={`mb-3 ml-2 text-xs ${badge.className}`}>
-                          {badge.label}
-                        </Badge>
-                      ))
-                    )}
+                <div className="mb-4">
+                  <div className="mb-3 flex items-start justify-between gap-3">
+                    <div className="flex min-w-0 flex-wrap items-center gap-2">
+                      <Badge variant="secondary">
+                        {event.category}
+                      </Badge>
+                      {isProtectedRefundEvent && (
+                        refundBadges.map((badge) => (
+                          <Badge key={badge.label} variant="outline" className={`text-xs ${badge.className}`}>
+                            {badge.label}
+                          </Badge>
+                        ))
+                      )}
+                    </div>
+                    <div className="flex shrink-0 items-center space-x-2">
+                      <TooltipProvider>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <span>
+                              <Button variant="outline" size="sm" onClick={handleToggleLike} disabled={isLikeLoading || (!likeSchemaUid) || (Boolean(userLikeUid) && state.like.flags && !state.like.flags.canRevoke)}>
+                                <div className="flex items-center gap-1">
+                                  <Heart className={`w-4 h-4 ${userLikeUid ? 'fill-red-500 text-red-500' : ''}`} />
+                                  <span className="text-xs">{likeCount}</span>
+                                </div>
+                              </Button>
+                            </span>
+                          </TooltipTrigger>
+                          {((!likeSchemaUid) || (Boolean(userLikeUid) && state.like.flags && !state.like.flags.canRevoke)) && (
+                            <TooltipContent>
+                              {!likeSchemaUid
+                                ? 'Likes unavailable: schema not configured or invalid.'
+                                : (getDisableMessage('like', state.like.flags?.reason) || "Removing your like isn't available for this event.")}
+                            </TooltipContent>
+                          )}
+                        </Tooltip>
+                      </TooltipProvider>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={handleAddToCalendar}
+                      >
+                        <CalendarPlus className="w-4 h-4" />
+                      </Button>
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button variant="outline" size="sm">
+                            <Share2 className="w-4 h-4" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          <DropdownMenuItem onClick={() => handleShare("facebook")}>
+                            <Facebook className="w-4 h-4 mr-2" />
+                            Facebook
+                          </DropdownMenuItem>
+                          <DropdownMenuItem onClick={() => handleShare("twitter")}>
+                            <Twitter className="w-4 h-4 mr-2" />
+                            Twitter
+                          </DropdownMenuItem>
+                          <DropdownMenuItem onClick={() => handleShare("linkedin")}>
+                            <Linkedin className="w-4 h-4 mr-2" />
+                            LinkedIn
+                          </DropdownMenuItem>
+                          <DropdownMenuItem onClick={() => handleShare("copy")}>
+                            <Copy className="w-4 h-4 mr-2" />
+                            Copy Link
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    </div>
+                  </div>
+                  <div className="w-full">
                     <h1 className="text-3xl font-bold text-gray-900 mb-2">
                       {event.title}
                     </h1>
-                    {networkLabel && (
-                      <Badge variant="outline" className="text-xs mb-2">{networkLabel}</Badge>
-                    )}
+                    <div className="mb-3 flex flex-wrap items-center gap-2">
+                      {networkLabel && (
+                        <Badge variant="outline" className="text-xs">{networkLabel}</Badge>
+                      )}
+                      {isTransferableOnChain !== null && (
+                        isTransferableOnChain ? (
+                          <Badge variant="outline" className="text-xs text-green-700 border-green-200">
+                            {transferFeeBps && transferFeeBps > 0
+                              ? `Transferable (fee ${transferFeeBps / 100}% )`
+                              : 'Transferable'}
+                          </Badge>
+                        ) : (
+                          <Badge variant="outline" className="text-xs text-purple-700 border-purple-200">
+                            Soul-bound (non-transferable)
+                          </Badge>
+                        )
+                      )}
+                    </div>
                     <div className="flex flex-col gap-2 text-gray-600">
                       {event.date && isMultiDayEvent && eventStartDateTimeLabel ? (
                         <>
@@ -992,7 +1108,7 @@ const EventDetailsContent = () => {
                           </div>
                         </>
                       ) : (
-                        <div className="flex items-center space-x-4">
+                        <div className="flex flex-col gap-1">
                           {event.date && (
                             <div className="flex items-center space-x-1">
                               <Calendar className="w-4 h-4" />
@@ -1006,102 +1122,85 @@ const EventDetailsContent = () => {
                         </div>
                       )}
                     </div>
-                    {isTransferableOnChain !== null && (
-                      <div className="mt-2">
-                        {isTransferableOnChain ? (
-                          <Badge variant="outline" className="text-xs text-green-700 border-green-200">
-                            {transferFeeBps && transferFeeBps > 0
-                              ? `Transferable (fee ${transferFeeBps / 100}% )`
-                              : 'Transferable'}
-                          </Badge>
-                        ) : (
-                          <Badge variant="outline" className="text-xs text-purple-700 border-purple-200">
-                            Soul-bound (non-transferable)
-                          </Badge>
+                    <div className="mt-4 space-y-3 text-sm text-gray-600">
+                      {event.location && (
+                        <div className="flex items-start gap-2">
+                          {event.event_type === 'virtual' ? (
+                            <>
+                              <Globe className="mt-0.5 h-4 w-4 shrink-0" />
+                              <div className="min-w-0">
+                                <div className="font-medium text-gray-900">Location</div>
+                                <a
+                                  href={event.location}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="inline-flex max-w-full items-center gap-1 text-blue-600 underline-offset-2 hover:text-blue-800 hover:underline"
+                                >
+                                  <span className="truncate">Virtual Event Link</span>
+                                  <ExternalLink className="h-3 w-3 shrink-0" />
+                                </a>
+                              </div>
+                            </>
+                          ) : (
+                            <>
+                              <MapPin className="mt-0.5 h-4 w-4 shrink-0" />
+                              <div className="min-w-0">
+                                <div className="font-medium text-gray-900">Location</div>
+                                <div className="truncate">{event.location}</div>
+                              </div>
+                            </>
+                          )}
+                        </div>
+                      )}
+                      <div className="grid grid-cols-[max-content_max-content] gap-x-8 gap-y-3">
+                        <div className="flex items-start gap-2">
+                          <Users className="mt-0.5 h-4 w-4 shrink-0" />
+                          <div>
+                            <div className="font-medium text-gray-900">Capacity</div>
+                            <div>{event.capacity} attendees</div>
+                          </div>
+                        </div>
+                        <div className="flex min-w-0 items-start gap-2">
+                          <div className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-blue-500 shadow-[0_0_8px_rgba(59,130,246,0.45)]" />
+                          <div className="min-w-0">
+                            <div className="font-medium text-gray-900">Contract</div>
+                            <a
+                              href={explorerUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="inline-flex max-w-full items-center gap-1.5 text-blue-600 hover:text-blue-700"
+                            >
+                              <span className="rounded border border-blue-100/60 bg-blue-50 px-2 py-0.5 font-mono text-xs">
+                                {event.lock_address.slice(0, 6)}...{event.lock_address.slice(-4)}
+                              </span>
+                              <ExternalLink className="h-3 w-3 shrink-0 opacity-70" />
+                            </a>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                    {showMobileHeaderTicketCta && (
+                      <div className="mt-4 space-y-2 lg:hidden">
+                        <Button
+                          className="w-full"
+                          onClick={handleGetTicket}
+                          disabled={primaryTicketCtaDisabled}
+                        >
+                          {primaryTicketCtaLabel}
+                        </Button>
+                        {showWaitlistButton && (
+                          <Button
+                            variant="outline"
+                            className="w-full"
+                            onClick={() => setActiveModal("waitlist")}
+                          >
+                            Join Waitlist
+                          </Button>
                         )}
                       </div>
                     )}
                   </div>
-                  <div className="flex items-center space-x-2">
-                    <TooltipProvider>
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <span>
-                            <Button variant="outline" size="sm" onClick={handleToggleLike} disabled={isLikeLoading || (!likeSchemaUid) || (Boolean(userLikeUid) && state.like.flags && !state.like.flags.canRevoke)}>
-                              <div className="flex items-center gap-1">
-                                <Heart className={`w-4 h-4 ${userLikeUid ? 'fill-red-500 text-red-500' : ''}`} />
-                                <span className="text-xs">{likeCount}</span>
-                              </div>
-                            </Button>
-                          </span>
-                        </TooltipTrigger>
-                        {((!likeSchemaUid) || (Boolean(userLikeUid) && state.like.flags && !state.like.flags.canRevoke)) && (
-                          <TooltipContent>
-                            {!likeSchemaUid
-                              ? 'Likes unavailable: schema not configured or invalid.'
-                              : (getDisableMessage('like', state.like.flags?.reason) || "Removing your like isn't available for this event.")}
-                          </TooltipContent>
-                        )}
-                      </Tooltip>
-                    </TooltipProvider>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={handleAddToCalendar}
-                    >
-                      <CalendarPlus className="w-4 h-4" />
-                    </Button>
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button variant="outline" size="sm">
-                          <Share2 className="w-4 h-4" />
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end">
-                        <DropdownMenuItem onClick={() => handleShare("facebook")}>
-                          <Facebook className="w-4 h-4 mr-2" />
-                          Facebook
-                        </DropdownMenuItem>
-                        <DropdownMenuItem onClick={() => handleShare("twitter")}>
-                          <Twitter className="w-4 h-4 mr-2" />
-                          Twitter
-                        </DropdownMenuItem>
-                        <DropdownMenuItem onClick={() => handleShare("linkedin")}>
-                          <Linkedin className="w-4 h-4 mr-2" />
-                          LinkedIn
-                        </DropdownMenuItem>
-                        <DropdownMenuItem onClick={() => handleShare("copy")}>
-                          <Copy className="w-4 h-4 mr-2" />
-                          Copy Link
-                        </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  </div>
                 </div>
-
-                {event.location && (
-                  <div className="flex items-center space-x-1 text-gray-600 mb-6">
-                    {event.event_type === 'virtual' ? (
-                      <>
-                        <Globe className="w-4 h-4" />
-                        <a
-                          href={event.location}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="text-blue-600 hover:text-blue-800 underline flex items-center gap-1"
-                        >
-                          Virtual Event Link
-                          <ExternalLink className="w-3 h-3" />
-                        </a>
-                      </>
-                    ) : (
-                      <>
-                        <MapPin className="w-4 h-4" />
-                        <span>{event.location}</span>
-                      </>
-                    )}
-                  </div>
-                )}
 
                 <Separator className="my-6" />
 
@@ -1113,96 +1212,45 @@ const EventDetailsContent = () => {
                   <RichTextDisplay content={event.description} />
                 </div>
               </div>
+
+              <EventRewardPools
+                event={event}
+                creationGate={rewardPoolCreationGate}
+                protectedActionBusy={refundActions.isReleasing || refundActions.isRefunding}
+                onReleaseProtectedEvent={refundActions.releaseEvent}
+                onRefundProtectedEvent={() => refundActions.cancelAndRefundThenMaybeRelease(50)}
+              />
+
+              {/* Attendees List */}
+              <AttendeesList
+                eventId={event.id}
+                eventTitle={event.title}
+                attendanceSchemaUid={attendanceSchemaUid || undefined}
+                refreshToken={refreshToken}
+              />
+
+              {/* Enhanced Attestation Card */}
+              <EventAttestationCard
+                eventId={event.id}
+                eventTitle={event.title}
+                eventDate={(event.date ? event.date : new Date()).toISOString()}
+                eventTime={event.time}
+                startsAt={event.starts_at}
+                endsAt={event.ends_at}
+                lockAddress={event.lock_address}
+                userHasTicket={userTicketCount > 0}
+                attendanceSchemaUid={attendanceSchemaUid || undefined}
+                chainId={event.chain_id}
+                canRevokeAttendanceOverride={myAttendanceUidTop ? !((attendanceSchemaRevocable === false)) : undefined}
+                attendanceDisableReason={myAttendanceUidTop && attendanceSchemaRevocable === false ? 'Attendance records for this event are permanent.' : undefined}
+                canRevokeGoingOverride={myGoingUid ? !((goingSchemaRevocable === false || goingInstanceRevocable === false)) : undefined}
+                goingDisableReason={myGoingUid && (goingSchemaRevocable === false || goingInstanceRevocable === false) ? "This going status cannot be revoked." : undefined}
+                refreshToken={refreshToken}
+              />
             </div>
 
-            {/* Sidebar */}
-            <div className="space-y-6">
-              {/* Event Details Card */}
-              <Card className="border-0 shadow-sm">
-                <CardHeader className="pb-4">
-                  <h3 className="font-semibold text-gray-900">Event details</h3>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div className="space-y-3">
-                    {event.date && (
-                      <div className="flex items-start space-x-3">
-                        <Calendar className="w-5 h-5 text-gray-400 mt-0.5" />
-                        <div>
-                          {isMultiDayEvent && eventStartDateTimeLabel ? (
-                            <>
-                              <div className="font-medium text-gray-900">
-                                Starts: {eventStartDateTimeLabel}
-                              </div>
-                              <div className="text-sm text-gray-600">
-                                Ends: {eventEndDateTimeLabel || formatEventDateRange({ startDate: event.date, endDate: event.end_date, formatStyle: 'long' })}
-                              </div>
-                            </>
-                          ) : (
-                            <>
-                              <div className="font-medium text-gray-900">
-                                {formatEventDateRange({ startDate: event.date, endDate: event.end_date, formatStyle: 'long' })}
-                              </div>
-                              <div className="text-sm text-gray-600">
-                                {eventDisplayTime}
-                              </div>
-                            </>
-                          )}
-                        </div>
-                      </div>
-                    )}
-
-                    {event.location && (
-                      <div className="flex items-start space-x-3">
-                        <MapPin className="w-5 h-5 text-gray-400 mt-0.5" />
-                        <div>
-                          <div className="font-medium text-gray-900">Location</div>
-                          <div className="text-sm text-gray-600">
-                            {event.location}
-                          </div>
-                        </div>
-                      </div>
-                    )}
-
-                    <div className="flex items-start space-x-3">
-                      <Users className="w-5 h-5 text-gray-400 mt-0.5" />
-                      <div>
-                        <div className="font-medium text-gray-900">Capacity</div>
-                        <div className="text-sm text-gray-600">
-                          {event.capacity} attendees
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-
-                  <Separator />
-
-                  <div className="space-y-3">
-                    <div className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">
-                      Blockchain Details
-                    </div>
-                    <div className="flex items-center justify-between group">
-                      <div className="flex items-center gap-2">
-                        <div className="w-1.5 h-1.5 rounded-full bg-blue-500 shadow-[0_0_8px_rgba(59,130,246,0.5)]"></div>
-                        <span className="text-xs font-medium text-gray-500">Contract</span>
-                      </div>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="h-auto p-0 text-blue-600 hover:text-blue-700 hover:bg-transparent"
-                        asChild
-                      >
-                        <a href={explorerUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1.5">
-                          <span className="font-mono text-xs bg-blue-50 px-2 py-0.5 rounded border border-blue-100/50">
-                            {event.lock_address.slice(0, 6)}...{event.lock_address.slice(-4)}
-                          </span>
-                          <ExternalLink className="w-3 h-3 opacity-70 group-hover:opacity-100 transition-opacity" />
-                        </a>
-                      </Button>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-
+            {/* Sidebar: sticky action column (tickets and discussions) */}
+            <div className="lg:col-start-3 lg:self-start lg:sticky lg:top-24 space-y-6">
               {/* Ticket Card */}
               <Card className="border-0 shadow-sm">
                 <CardHeader className="pb-4">
@@ -1272,6 +1320,14 @@ const EventDetailsContent = () => {
                         <span>{maxTicketsPerUser} tickets</span>
                       </div>
                     )}
+                    <div className="w-full bg-gray-200 rounded-full h-2">
+                      <div
+                        className="bg-blue-600 h-2 rounded-full transition-all duration-300"
+                        style={{
+                          width: `${Math.min((keysSold / event.capacity) * 100, 100)}%`,
+                        }}
+                      />
+                    </div>
                   </div>
 
                   {isProtectedRefundEvent && (
@@ -1313,7 +1369,7 @@ const EventDetailsContent = () => {
                         <div className="grid grid-cols-1 gap-3 pt-2">
                           {event.refund_trigger_at && (
                             <div className="flex flex-col gap-0.5 border-l-2 border-purple-200 pl-3">
-                              <span className="text-[11px] uppercase tracking-tight text-purple-500 font-bold">Refund Window Opens</span>
+                              <span className="text-[11px] uppercase tracking-tight text-purple-500 font-bold">{refundTriggerLabel}</span>
                               <span className="text-purple-900 font-medium leading-tight">
                                 {refundWindowCountdown}
                               </span>
@@ -1326,7 +1382,7 @@ const EventDetailsContent = () => {
                           )}
                           {(event.refund_event_end_at || event.ends_at) && (
                             <div className="flex flex-col gap-0.5 border-l-2 border-purple-200 pl-3">
-                              <span className="text-[11px] uppercase tracking-tight text-purple-500 font-bold">Public Refund Window Closes</span>
+                              <span className="text-[11px] uppercase tracking-tight text-purple-500 font-bold">{refundWindowEndLabel}</span>
                               <span className="text-purple-900 font-medium leading-tight">
                                 {refundWindowClosesCountdown}
                               </span>
@@ -1374,36 +1430,23 @@ const EventDetailsContent = () => {
                           ) : (
                             <Zap className="w-4 h-4 mr-2" />
                           )}
-                          {refundableStatus.refundComplete
-                            ? 'Release event to your wallet'
-                            : 'Release your event'}
+                          {refundActions.isReleasing ? 'Collecting…' : 'Collect ticket funds'}
                         </Button>
                       )}
 
                       {isProtectedRefundEvent && refundableStatus.managerReleased && (
                         <div className="flex items-center gap-2 text-sm font-medium text-purple-800">
                           <CheckCircle2 className="w-4 h-4 text-purple-600" />
-                          Released to your wallet
+                          Ticket funds collected
                         </div>
                       )}
                     </div>
                   )}
 
-                  <div className="w-full bg-gray-200 rounded-full h-2">
-                    <div
-                      className="bg-blue-600 h-2 rounded-full transition-all duration-300"
-                      style={{
-                        width: `${Math.min(
-                          (keysSold / event.capacity) * 100,
-                          100
-                        )}%`,
-                      }}
-                    />
-                  </div>
-
                   {authenticated && userTicketCount > 0 ? (
                     <div className="space-y-2">
-                      {/* Attendance toggle for ticket holders */}
+                      {/* Attendance toggle for ticket holders — only when an attendance schema is configured */}
+                      {attendanceSchemaUid && isValidSchemaUid(attendanceSchemaUid) && (
                       <TooltipProvider>
                         <Tooltip>
                           <TooltipTrigger asChild>
@@ -1437,6 +1480,7 @@ const EventDetailsContent = () => {
                           )}
                         </Tooltip>
                       </TooltipProvider>
+                      )}
 
                       {/* Additional ticket purchase if allowed */}
                       {userTicketCount < maxTicketsPerUser && !isSoldOut && !isRegistrationClosed && !isProtectedPurchaseClosed && (
@@ -1454,27 +1498,12 @@ const EventDetailsContent = () => {
                       <Button
                         className="w-full"
                         onClick={handleGetTicket}
-                        disabled={
-                          isSoldOut ||
-                          isRegistrationClosed ||
-                          isProtectedPurchaseClosed ||
-                          (authenticated && userTicketCount >= maxTicketsPerUser)
-                        }
+                        disabled={primaryTicketCtaDisabled}
                       >
-                        {isSoldOut
-                          ? "Sold Out"
-                          : isRegistrationClosed
-                            ? "Registration Closed"
-                          : isProtectedPurchaseClosed
-                              ? getRefundProtectionPurchaseStateLabel(refundableStatus.status || event?.refund_status)
-                              : !authenticated
-                              ? "Connect Wallet to Get Ticket"
-                              : userTicketCount >= maxTicketsPerUser
-                                ? "Ticket Limit Reached"
-                                : "Get Ticket"}
+                        {primaryTicketCtaLabel}
                       </Button>
                       {/* Waitlist button when event is sold out */}
-                      {isSoldOut && event.allow_waitlist && (
+                      {showWaitlistButton && (
                         <Button
                           variant="outline"
                           className="w-full"
@@ -1504,34 +1533,8 @@ const EventDetailsContent = () => {
                 chainId={event.chain_id}
                 refreshToken={refreshToken}
               />
-
-              {/* Attendees List */}
-              <AttendeesList
-                eventId={event.id}
-                eventTitle={event.title}
-                attendanceSchemaUid={attendanceSchemaUid || undefined}
-                refreshToken={refreshToken}
-              />
-
-              {/* Enhanced Attestation Card */}
-              <EventAttestationCard
-                eventId={event.id}
-                eventTitle={event.title}
-                eventDate={(event.date ? event.date : new Date()).toISOString()}
-                eventTime={event.time}
-                startsAt={event.starts_at}
-                endsAt={event.ends_at}
-                lockAddress={event.lock_address}
-                userHasTicket={userTicketCount > 0}
-                attendanceSchemaUid={attendanceSchemaUid || undefined}
-                chainId={event.chain_id}
-                canRevokeAttendanceOverride={myAttendanceUidTop ? !((attendanceSchemaRevocable === false)) : undefined}
-                attendanceDisableReason={myAttendanceUidTop && attendanceSchemaRevocable === false ? 'Attendance records for this event are permanent.' : undefined}
-                canRevokeGoingOverride={myGoingUid ? !((goingSchemaRevocable === false || goingInstanceRevocable === false)) : undefined}
-                goingDisableReason={myGoingUid && (goingSchemaRevocable === false || goingInstanceRevocable === false) ? "This going status cannot be revoked." : undefined}
-                refreshToken={refreshToken}
-              />
             </div>
+
           </div>
         </div>
 

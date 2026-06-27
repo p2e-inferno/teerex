@@ -64,7 +64,7 @@ serve(async (req) => {
 
     const { data: updated, error } = await supabase
       .from("dg_redemption_intents")
-      .update(paystackTransferUpdateValues({ transfer: data, event }))
+      .update(paystackTransferUpdateValues({ transfer: data, event, failedStatus: "manual_review" }))
       .eq("id", intent.id)
       .eq("status", intent.status)
       .select("id,user_id,wallet_address,status")

@@ -48,6 +48,105 @@ async function markIntent(
   return data;
 }
 
+function assertTransferWasAfterQuoteCreated(transferProof: Record<string, unknown>, createdAt: unknown) {
+  const blockTimestampMs = Date.parse(String(transferProof.block_timestamp || ""));
+  const createdAtMs = Date.parse(String(createdAt || ""));
+  if (!Number.isFinite(blockTimestampMs) || !Number.isFinite(createdAtMs)) {
+    throw new Error("Could not confirm when the DG transfer was made");
+  }
+  if (blockTimestampMs + 1000 < createdAtMs) {
+    throw new Error("Transaction was made before this Redeem DG quote was created");
+  }
+}
+
+async function requestExpiredTransferReview(params: {
+  supabase: any;
+  userId: string;
+  intentId: string;
+  txHash: string;
+}) {
+  const { data: intent, error: intentError } = await params.supabase
+    .from("dg_redemption_intents")
+    .select("*")
+    .eq("id", params.intentId)
+    .eq("user_id", params.userId)
+    .maybeSingle();
+
+  if (intentError) throw new Error(intentError.message);
+  if (!intent) return json({ ok: false, error: "Redeem DG request was not found" }, 404);
+  if (String(intent.status) === "manual_review" && String(intent.tx_hash || "").toLowerCase() === params.txHash) {
+    return json({ ok: true, status: intent.status, message: "Redeem DG transfer is already under admin review" });
+  }
+  if (!["awaiting_transfer", "expired"].includes(String(intent.status))) {
+    return json({ ok: false, error: "Redeem DG request cannot be submitted for expired quote review" }, 400);
+  }
+  if (new Date(intent.expires_at).getTime() > Date.now()) {
+    return json({ ok: false, error: "Redeem DG quote has not expired yet" }, 400);
+  }
+  if (intent.tx_hash && String(intent.tx_hash).toLowerCase() !== params.txHash) {
+    return json({ ok: false, error: "Redeem DG request already has a different transaction hash" }, 409);
+  }
+
+  const [config, network] = await Promise.all([
+    loadDgRedemptionConfig(params.supabase),
+    validateChain(params.supabase, intent.chain_id),
+  ]);
+  if (!network) return json({ ok: false, error: "Network not found or inactive" }, 404);
+
+  const transferProof = await validateDgTransfer({
+    network: withRedemptionPricingDefaults(network),
+    txHash: params.txHash,
+    fromAddress: intent.wallet_address,
+    toAddress: intent.redemption_wallet_address,
+    dgTokenAddress: intent.dg_token_address,
+    amountDgRaw: intent.amount_dg_raw,
+    requiredConfirmations: config.required_confirmations,
+  });
+  assertTransferWasAfterQuoteCreated(transferProof, intent.created_at);
+
+  const now = new Date().toISOString();
+  const { data: updated, error: updateError } = await params.supabase
+    .from("dg_redemption_intents")
+    .update({
+      status: "manual_review",
+      tx_hash: params.txHash,
+      lock_id: null,
+      locked_at: null,
+      last_error: "expired_quote_transfer_submitted",
+      updated_at: now,
+    })
+    .eq("id", intent.id)
+    .eq("user_id", params.userId)
+    .lte("expires_at", now)
+    .in("status", ["awaiting_transfer", "expired"])
+    .or(`tx_hash.is.null,tx_hash.eq.${params.txHash}`)
+    .select("*")
+    .maybeSingle();
+
+  if (updateError) throw new Error(updateError.message);
+  if (!updated) {
+    return json({ ok: false, error: "Redeem DG request changed. Refresh and try again." }, 409);
+  }
+
+  await params.supabase.from("dg_redemption_events").insert({
+    intent_id: updated.id,
+    event_type: "expired_quote_transfer_submitted_for_review",
+    actor_user_id: updated.user_id,
+    actor_wallet_address: updated.wallet_address,
+    metadata: {
+      transfer_proof: transferProof,
+      quote_created_at: intent.created_at,
+      quote_expires_at: intent.expires_at,
+    },
+  });
+
+  return json({
+    ok: true,
+    status: updated.status,
+    message: "Redeem DG transfer received and sent for admin review",
+  });
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: buildPreflightHeaders(req) });
@@ -62,6 +161,7 @@ serve(async (req) => {
     const body = await req.json().catch(() => ({}));
     const intentId = String(body.intent_id || body.intentId || "").trim();
     const txHash = String(body.tx_hash || body.txHash || "").trim().toLowerCase();
+    const requestExpiredReview = Boolean(body.request_expired_review || body.requestExpiredReview);
 
     if (!intentId) return json({ ok: false, error: "Redeem DG request is required" }, 400);
     if (!/^0x([A-Fa-f0-9]{64})$/.test(txHash)) {
@@ -69,6 +169,10 @@ serve(async (req) => {
     }
 
     const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+    if (requestExpiredReview) {
+      return await requestExpiredTransferReview({ supabase, userId, intentId, txHash });
+    }
+
     const lockId = crypto.randomUUID();
     const staleBefore = new Date(Date.now() - 10 * 60 * 1000).toISOString();
     const { data: lockedIntent, error: lockError } = await supabase.rpc("acquire_dg_redemption_intent_lock", {
@@ -100,7 +204,23 @@ serve(async (req) => {
       loadDgRedemptionConfig(supabase),
       validateChain(supabase, lockedIntent.chain_id),
     ]);
-    if (!network) return json({ ok: false, error: "Network not found or inactive" }, 404);
+    if (!network) {
+      const message = "Network not found or inactive";
+      await markIntent(
+        supabase,
+        lockedIntent.id,
+        lockId,
+        {
+          status: "awaiting_transfer",
+          lock_id: null,
+          locked_at: null,
+          last_error: message,
+        },
+        "network_validation_failed",
+        { chain_id: lockedIntent.chain_id, error: message },
+      );
+      return json({ ok: false, error: message }, 404);
+    }
 
     let transferProof: Record<string, unknown>;
     try {
@@ -185,7 +305,7 @@ serve(async (req) => {
         reason: "Redeem DG reward",
         currency: "NGN",
       });
-      const transferValues = paystackTransferUpdateValues({ transfer: transfer.data });
+      const transferValues = paystackTransferUpdateValues({ transfer: transfer.data, failedStatus: "manual_review" });
       const updated = await markIntent(
         supabase,
         lockedIntent.id,
@@ -214,12 +334,12 @@ serve(async (req) => {
         lockedIntent.id,
         lockId,
         {
-          status: "failed",
+          status: "manual_review",
           lock_id: null,
           locked_at: null,
           last_error: message,
         },
-        "paystack_transfer_failed",
+        "paystack_transfer_admin_review_required",
         { error: message },
       );
       return json({ ok: false, error: message }, 502);
@@ -231,7 +351,9 @@ serve(async (req) => {
       ? 401
       : lower.includes("not found")
       ? 404
-      : lower.includes("valid") || lower.includes("required")
+      : lower.includes("waiting")
+      ? 409
+      : lower.includes("valid") || lower.includes("required") || lower.includes("before") || lower.includes("confirm") || lower.includes("match")
       ? 400
       : 500;
     return json({ ok: false, error: message }, status);

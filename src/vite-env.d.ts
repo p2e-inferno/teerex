@@ -3,6 +3,7 @@
 
 interface ImportMetaEnv {
   readonly VITE_PRIVY_APP_ID?: string;
+  readonly VITE_PUBLIC_PRIVY_CLIENT_ID?: string;
   readonly VITE_PRIMARY_CHAIN_ID?: string;
   readonly VITE_USDC_ADDRESS_BASE_MAINNET?: string;
   readonly VITE_USDC_ADDRESS_BASE_SEPOLIA?: string;

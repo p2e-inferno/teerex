@@ -23,6 +23,7 @@ interface NetworkConfigInput {
   unlock_factory_address?: string | null;
   refundable_event_manager_address?: string | null;
   ticket_pass_controller_address?: string | null;
+  rewards_controller_address?: string | null;
   native_currency_symbol: string;
   native_currency_name?: string | null;
   native_currency_decimals?: number | null;
@@ -124,6 +125,7 @@ function validateNetworkConfig(input: any): NetworkConfigInput {
   validateAddress(input.unlock_factory_address, 'unlock_factory_address');
   validateAddress(input.refundable_event_manager_address, 'refundable_event_manager_address');
   validateAddress(input.ticket_pass_controller_address, 'ticket_pass_controller_address');
+  validateAddress(input.rewards_controller_address, 'rewards_controller_address');
 
   const validateFee = (fee: any, fieldName: string) => {
     if (fee !== null && fee !== undefined && fee !== '') {
@@ -152,6 +154,7 @@ function validateNetworkConfig(input: any): NetworkConfigInput {
     unlock_factory_address: input.unlock_factory_address || null,
     refundable_event_manager_address: input.refundable_event_manager_address || null,
     ticket_pass_controller_address: input.ticket_pass_controller_address || null,
+    rewards_controller_address: input.rewards_controller_address || null,
     native_currency_symbol: input.native_currency_symbol.trim(),
     native_currency_name: input.native_currency_name?.trim() || null,
     native_currency_decimals: input.native_currency_decimals || null,

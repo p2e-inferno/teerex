@@ -26,6 +26,7 @@ export interface NetworkConfig {
   unlock_factory_address: string | null;
   refundable_event_manager_address: string | null;
   ticket_pass_controller_address: string | null;
+  rewards_controller_address: string | null;
   native_currency_symbol: string;
   native_currency_name: string | null;
   native_currency_decimals: number | null;
@@ -71,6 +72,7 @@ function isValidNetworkConfig(data: any): data is NetworkConfig {
     isNullableString(data.unlock_factory_address) &&
     isOptionalNullableString(data.refundable_event_manager_address) &&
     isOptionalNullableString(data.ticket_pass_controller_address) &&
+    isOptionalNullableString(data.rewards_controller_address) &&
     isNullableString(data.native_currency_name) &&
     (data.native_currency_decimals === null || typeof data.native_currency_decimals === 'number') &&
     isNullableString(data.rpc_url) &&

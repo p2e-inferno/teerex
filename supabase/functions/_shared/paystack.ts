@@ -131,6 +131,16 @@ export interface PaystackTransferInitiateParams {
   currency?: "NGN";
 }
 
+export interface PaystackTransferFinalizeParams {
+  transfer_code: string;
+  otp: string;
+}
+
+export interface PaystackTransferOtpResendParams {
+  transfer_code: string;
+  reason: "transfer" | "resend_otp" | "disable_otp";
+}
+
 export interface PaystackTransferData {
   id: number;
   amount: number;
@@ -152,6 +162,11 @@ export interface PaystackTransferResponse {
   status: boolean;
   message: string;
   data: PaystackTransferData;
+}
+
+export interface PaystackTransferOtpResponse {
+  status: boolean;
+  message: string;
 }
 
 export interface PaystackBalance {
@@ -508,9 +523,53 @@ export async function verifyPaystackTransfer(
   return data as PaystackTransferResponse;
 }
 
+/**
+ * Finalize a Paystack transfer that is waiting for merchant OTP approval.
+ * @see https://paystack.com/docs/api/transfer/#finalize
+ */
+export async function finalizePaystackTransfer(
+  params: PaystackTransferFinalizeParams
+): Promise<PaystackTransferResponse> {
+  const response = await fetch(`${PAYSTACK_BASE_URL}/transfer/finalize_transfer`, {
+    method: "POST",
+    headers: getPaystackHeaders(),
+    body: JSON.stringify(params),
+  });
+
+  const data = await response.json();
+
+  if (!response.ok || !data.status) {
+    throw new Error(data.message || "Failed to finalize Paystack transfer");
+  }
+
+  return data as PaystackTransferResponse;
+}
+
 // ============================================================================
 // Transfer Control API
 // ============================================================================
+
+/**
+ * Ask Paystack to resend the OTP for a transfer waiting on merchant approval.
+ * @see https://paystack.com/docs/api/transfer-control/#resend-otp
+ */
+export async function resendPaystackTransferOtp(
+  params: PaystackTransferOtpResendParams
+): Promise<PaystackTransferOtpResponse> {
+  const response = await fetch(`${PAYSTACK_BASE_URL}/transfer/resend_otp`, {
+    method: "POST",
+    headers: getPaystackHeaders(),
+    body: JSON.stringify(params),
+  });
+
+  const data = await response.json();
+
+  if (!response.ok || !data.status) {
+    throw new Error(data.message || "Failed to resend Paystack transfer OTP");
+  }
+
+  return data as PaystackTransferOtpResponse;
+}
 
 /**
  * Fetch available Paystack integration balances.

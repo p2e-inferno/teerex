@@ -1,25 +1,64 @@
-import { createPublicClient, http } from 'viem';
+import { createPublicClient, fallback, http } from 'viem';
 import { mainnet } from 'viem/chains';
 import { normalize } from 'viem/ens';
+import { getNetworkConfigByChainId } from '@/lib/config/network-config';
 
 /**
  * Singleton ENS client for Ethereum mainnet
- * Uses public RPC endpoint for ENS resolution
+ * Uses explicit browser-compatible RPC endpoints for ENS resolution
  */
-let ensClient: ReturnType<typeof createPublicClient> | null = null;
+let ensClient: { key: string; client: ReturnType<typeof createPublicClient> } | null = null;
+
+const ETHEREUM_MAINNET_CHAIN_ID = 1;
+
+export const ENS_PUBLIC_RPC_FALLBACK_URLS = [
+  'https://ethereum-rpc.publicnode.com',
+  'https://rpc.flashbots.net',
+] as const;
+
+function appendRpcUrl(urls: string[], value: string | null | undefined): void {
+  const url = typeof value === 'string' ? value.trim() : '';
+  if (url && !urls.includes(url)) urls.push(url);
+}
+
+export async function resolveENSRpcUrls(): Promise<string[]> {
+  const urls: string[] = [];
+
+  try {
+    const networkConfig = await getNetworkConfigByChainId(ETHEREUM_MAINNET_CHAIN_ID);
+    appendRpcUrl(urls, networkConfig?.rpc_url);
+  } catch (error) {
+    console.warn('[ens] Failed to load configured Ethereum RPC URL:', error);
+  }
+
+  for (const url of ENS_PUBLIC_RPC_FALLBACK_URLS) {
+    appendRpcUrl(urls, url);
+  }
+
+  return urls;
+}
 
 /**
  * Creates or returns the cached ENS public client
  * ENS resolution only works on Ethereum mainnet
  */
-export function createENSClient() {
-  if (!ensClient) {
-    ensClient = createPublicClient({
-      chain: mainnet,
-      transport: http(), // Uses public RPC
-    });
+export function createENSClient(rpcUrls: readonly string[] = ENS_PUBLIC_RPC_FALLBACK_URLS) {
+  const urls = rpcUrls.length > 0 ? rpcUrls : ENS_PUBLIC_RPC_FALLBACK_URLS;
+  const key = urls.join('|');
+
+  if (!ensClient || ensClient.key !== key) {
+    ensClient = {
+      key,
+      client: createPublicClient({
+        chain: mainnet,
+        transport: fallback(
+          urls.map((url) => http(url)),
+          { rank: false }
+        ),
+      }),
+    };
   }
-  return ensClient;
+  return ensClient.client;
 }
 
 /**
@@ -69,7 +108,7 @@ export async function resolveENS(name: string): Promise<string | null> {
   }
 
   try {
-    const client = createENSClient();
+    const client = createENSClient(await resolveENSRpcUrls());
 
     // Normalize the name (handles special characters, etc.)
     const normalizedName = normalize(name);
@@ -102,7 +141,7 @@ export async function resolveENS(name: string): Promise<string | null> {
  */
 export async function reverseENS(address: string): Promise<string | null> {
   try {
-    const client = createENSClient();
+    const client = createENSClient(await resolveENSRpcUrls());
 
     // Get the primary ENS name for this address
     const name = await client.getEnsName({
