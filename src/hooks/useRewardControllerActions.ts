@@ -2,16 +2,21 @@ import { useCallback, useState } from 'react';
 import { ethers } from 'ethers';
 import { useQueryClient } from '@tanstack/react-query';
 import { usePrivy } from '@privy-io/react-auth';
+import { useNavigate } from 'react-router-dom';
 import { useToast } from '@/hooks/use-toast';
 import { callEdgeFunction } from '@/lib/edgeFunctions';
+import { createToastAction, TOAST_DURATIONS } from '@/lib/toastActions';
 import {
   addRewardManager,
   assignWinners,
   claimReward,
   closeRewardPool,
   preflightCloseRewardPool,
+  preflightClaimReward,
+  preflightRaiseRewardDispute,
   raiseRewardDispute,
   reclaimRewardPool,
+  RewardActionGasError,
   removeRewardManager,
   renounceRewardManager,
 } from '@/utils/rewardControllerUtils';
@@ -38,6 +43,7 @@ interface DisputeInput {
 export function useRewardControllerActions(wallet: any) {
   const { getAccessToken } = usePrivy();
   const { toast } = useToast();
+  const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [isBusy, setIsBusy] = useState(false);
 
@@ -47,6 +53,21 @@ export function useRewardControllerActions(wallet: any) {
       description: 'The on-chain update succeeded, but the database mirror did not refresh. Refresh the page if the event still looks stale.',
     });
   }, [toast]);
+
+  const showGasHelpToast = useCallback((error: RewardActionGasError, title: string) => {
+    const passPath = `/ticket-passes?chain_id=${error.chainId}&has_native_gas=true`;
+    toast({
+      title,
+      description: `Your wallet needs a small amount of ${error.nativeToken} on ${error.chainName} for the transaction fee. You can buy some with a ticket pass using card or bank transfer.`,
+      variant: 'destructive',
+      action: createToastAction({
+        label: 'Browse passes',
+        altText: 'Browse ticket passes',
+        onClick: () => navigate(passPath),
+      }),
+      duration: TOAST_DURATIONS.cta,
+    });
+  }, [navigate, toast]);
 
   const refresh = useCallback(async (pool: PoolRef): Promise<boolean> => {
     const token = await getAccessToken?.();
@@ -62,11 +83,48 @@ export function useRewardControllerActions(wallet: any) {
     return synced;
   }, [getAccessToken, queryClient]);
 
+  const notifyArbitratorExtension = useCallback(async (pool: PoolRef): Promise<boolean> => {
+    const token = await getAccessToken?.();
+    try {
+      await callEdgeFunction('request-claim-end-extension', {
+        reward_pool_id: pool.id,
+        requester_address: wallet?.address ?? null,
+      }, { privyToken: token });
+    } catch (err) {
+      toast({
+        title: 'Could not notify the arbitrator',
+        description: err instanceof Error ? err.message : 'Please try again.',
+        variant: 'destructive',
+      });
+      return false;
+    }
+    toast({
+      title: 'Arbitrator notified',
+      description: 'We have asked the arbitrator to extend the claim window. Try assigning again once it is extended.',
+    });
+    return true;
+  }, [getAccessToken, toast, wallet]);
+
   const assign = useCallback(async (pool: PoolRef, batch: WinnerAssignmentInput[]): Promise<boolean> => {
     setIsBusy(true);
     const result = await assignWinners(pool.controller_address, pool.pool_id, batch, wallet, pool.chain_id);
     setIsBusy(false);
     if (!result.success) {
+      // A late assignment past the claim window is recoverable: route the organizer to the arbitrator.
+      if (result.errorName === 'AssignmentWindowClosed') {
+        toast({
+          title: 'Claim window has ended',
+          description: 'New winners can no longer be assigned. Notify the arbitrator to extend the claim window, then assign again.',
+          variant: 'destructive',
+          action: createToastAction({
+            label: 'Notify arbitrator',
+            altText: 'Notify arbitrator to extend the claim window',
+            onClick: () => { void notifyArbitratorExtension(pool); },
+          }),
+          duration: TOAST_DURATIONS.cta,
+        });
+        return false;
+      }
       toast({ title: 'Assignment failed', description: result.error, variant: 'destructive' });
       return false;
     }
@@ -74,10 +132,25 @@ export function useRewardControllerActions(wallet: any) {
     const synced = await refresh(pool);
     if (!synced) showSyncWarning();
     return true;
-  }, [refresh, showSyncWarning, toast, wallet]);
+  }, [notifyArbitratorExtension, refresh, showSyncWarning, toast, wallet]);
 
   const claim = useCallback(async (pool: PoolRef, placement: number): Promise<boolean> => {
     setIsBusy(true);
+    try {
+      await preflightClaimReward(pool.controller_address, pool.pool_id, placement, wallet, pool.chain_id);
+    } catch (error) {
+      setIsBusy(false);
+      if (error instanceof RewardActionGasError) {
+        showGasHelpToast(error, `Add ${error.nativeToken} to claim`);
+        return false;
+      }
+      toast({
+        title: 'Claim unavailable',
+        description: error instanceof Error ? error.message : 'This prize cannot be claimed yet.',
+        variant: 'destructive',
+      });
+      return false;
+    }
     const result = await claimReward(pool.controller_address, pool.pool_id, placement, wallet, pool.chain_id);
     setIsBusy(false);
     if (!result.success) {
@@ -88,7 +161,7 @@ export function useRewardControllerActions(wallet: any) {
     const synced = await refresh(pool);
     if (!synced) showSyncWarning();
     return true;
-  }, [refresh, showSyncWarning, toast, wallet]);
+  }, [refresh, showGasHelpToast, showSyncWarning, toast, wallet]);
 
   const raiseDispute = useCallback(async (pool: PoolRef, input: DisputeInput): Promise<boolean> => {
     setIsBusy(true);
@@ -101,7 +174,22 @@ export function useRewardControllerActions(wallet: any) {
       })),
     );
 
-    // On-chain signal first: it applies the per-placement hold and is censorship-resistant.
+    // Preflight before the wallet prompt; the on-chain signal still lands before server details.
+    try {
+      await preflightRaiseRewardDispute(pool.controller_address, pool.pool_id, placement, reasonHash, wallet, pool.chain_id);
+    } catch (error) {
+      setIsBusy(false);
+      if (error instanceof RewardActionGasError) {
+        showGasHelpToast(error, `Add ${error.nativeToken} to raise dispute`);
+        return false;
+      }
+      toast({
+        title: 'Dispute unavailable',
+        description: error instanceof Error ? error.message : 'This dispute cannot be raised yet.',
+        variant: 'destructive',
+      });
+      return false;
+    }
     const onchain = await raiseRewardDispute(pool.controller_address, pool.pool_id, placement, reasonHash, wallet, pool.chain_id);
     if (!onchain.success) {
       setIsBusy(false);
@@ -142,7 +230,7 @@ export function useRewardControllerActions(wallet: any) {
     if (!synced) showSyncWarning();
     queryClient.invalidateQueries({ queryKey: ['reward-disputes', pool.id] });
     return true;
-  }, [getAccessToken, queryClient, refresh, showSyncWarning, toast, wallet]);
+  }, [getAccessToken, queryClient, refresh, showGasHelpToast, showSyncWarning, toast, wallet]);
 
   const mirrorManager = useCallback(async (pool: PoolRef, manager: string, action: 'add' | 'remove', txHash?: string) => {
     const token = await getAccessToken?.();
@@ -237,5 +325,5 @@ export function useRewardControllerActions(wallet: any) {
     return true;
   }, [refresh, showSyncWarning, toast, wallet]);
 
-  return { isBusy, assign, claim, raiseDispute, addManager, removeManager, renounceManager, close, reclaim };
+  return { isBusy, assign, claim, raiseDispute, addManager, removeManager, renounceManager, close, reclaim, notifyArbitratorExtension };
 }

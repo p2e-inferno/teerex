@@ -37,9 +37,9 @@ export function EventRewardPools({
   onReleaseProtectedEvent?: () => Promise<boolean>;
   onRefundProtectedEvent?: () => Promise<void>;
 }) {
-  const { user } = usePrivy();
+  const { authenticated, user } = usePrivy();
   const { wallets } = useWallets();
-  const viewerAddress = wallets?.[0]?.address ?? null;
+  const viewerAddress = authenticated ? wallets?.[0]?.address ?? null : null;
   const chainId = event.chain_id;
 
   const { data: pools = [] } = useRewardPools(event.lock_address, chainId);
@@ -48,10 +48,10 @@ export function EventRewardPools({
     chainId,
     userAddress: viewerAddress ?? undefined,
   });
-  const isTicketHolder = (balance ?? 0) > 0;
+  const isTicketHolder = authenticated && (balance ?? 0) > 0;
   // Creator identity is the Privy DID (creator_id), not a wallet address — a user may have several
   // linked wallets and wallets[0] need not be the deploying wallet.
-  const isCreator = !!user?.id && !!event.creator_id && user.id === event.creator_id;
+  const isCreator = authenticated && !!user?.id && !!event.creator_id && user.id === event.creator_id;
 
   const [createOpen, setCreateOpen] = useState(false);
 

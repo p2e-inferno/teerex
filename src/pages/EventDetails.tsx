@@ -61,6 +61,7 @@ import { formatEventDateRange } from "@/utils/dateUtils";
 import { formatEventLocalDateTime, formatEventLocalTime } from "@/utils/eventTime";
 import { useEventTicketRealtime } from "@/hooks/useEventTicketRealtime";
 import { useNetworkConfigs } from "@/hooks/useNetworkConfigs";
+import { useRewardPools } from "@/hooks/useRewardPools";
 import { useTicketBalance } from "@/hooks/useTicketBalance";
 import { useUserAddresses } from "@/hooks/useUserAddresses";
 import { useRefundableEventStatus } from "@/hooks/useRefundableEventStatus";
@@ -80,6 +81,7 @@ import {
   getRefundProtectionPurchaseStateLabel,
   getRewardPoolCreationGate,
 } from "@/lib/events/refundStatus";
+import { getEventRewardPoolBadgeMeta } from "@/lib/rewards/rewardPoolStatus";
 
 function formatCountdownLabel(targetIso: string | null | undefined, nowMs: number): string | null {
   if (!targetIso) return null;
@@ -109,7 +111,7 @@ const EventDetailsContent = () => {
   const { toast } = useToast();
   const { authenticated, getAccessToken, login } = usePrivy();
   const { wallets } = useWallets();
-  const wallet = wallets[0];
+  const wallet = authenticated ? wallets[0] : undefined;
   const userAddresses = useUserAddresses();
   const { revokeEventAttestation } = useAttestations();
   const { signTeeRexAttestation } = useTeeRexDelegatedAttestation();
@@ -571,6 +573,8 @@ const EventDetailsContent = () => {
     userAddresses,
     chainId: event?.chain_id || 0,
   });
+  const { data: rewardPools = [] } = useRewardPools(event?.lock_address, event?.chain_id);
+  const eventRewardPoolBadge = getEventRewardPoolBadgeMeta(rewardPools);
 
   useEffect(() => {
     setUserTicketCount(ticketBalance);
@@ -1016,6 +1020,11 @@ const EventDetailsContent = () => {
                           </Badge>
                         ))
                       )}
+                      {eventRewardPoolBadge && (
+                        <Badge variant="outline" className={`text-xs ${eventRewardPoolBadge.className}`}>
+                          {eventRewardPoolBadge.label}
+                        </Badge>
+                      )}
                     </div>
                     <div className="flex shrink-0 items-center space-x-2">
                       <TooltipProvider>
@@ -1238,7 +1247,7 @@ const EventDetailsContent = () => {
                 startsAt={event.starts_at}
                 endsAt={event.ends_at}
                 lockAddress={event.lock_address}
-                userHasTicket={userTicketCount > 0}
+                userHasTicket={authenticated && userTicketCount > 0}
                 attendanceSchemaUid={attendanceSchemaUid || undefined}
                 chainId={event.chain_id}
                 canRevokeAttendanceOverride={myAttendanceUidTop ? !((attendanceSchemaRevocable === false)) : undefined}
@@ -1517,10 +1526,6 @@ const EventDetailsContent = () => {
 
                   {/* Fiat→crypto onramp: shown only when an active Ticket Pass is linked to this event. */}
                   <EventPassOnramp event={event} />
-
-                  <div className="text-xs text-gray-500 text-center">
-                    Powered by blockchain technology
-                  </div>
                 </CardContent>
               </Card>
 

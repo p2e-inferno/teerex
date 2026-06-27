@@ -22,6 +22,7 @@ export interface RewardPoolPosition {
   assigned_at: string | null;
   hold_until: string | null;
   claimed: boolean;
+  reclaimed?: boolean;
   claimed_at: string | null;
   claim_tx_hash?: string | null;
 }
@@ -100,9 +101,12 @@ export interface RewardPoolOnchainPosition {
   assignedAt: number;
   holdUntil: number;
   claimed: boolean;
+  reclaimed: boolean;
   claimedAt: number;
   /** Effective time this placement becomes claimable (max of claimStart, window, hold). */
   opensAt: number;
+  /** Guaranteed claim end for this placement (>= pool end; extended for a late/held assignment). */
+  closesAt: number;
   canClaim: boolean;
 }
 

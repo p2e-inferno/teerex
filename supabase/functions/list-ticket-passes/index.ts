@@ -26,6 +26,7 @@ serve(async (req) => {
 
     const mine = toBool(body.mine ?? url.searchParams.get("mine"));
     const chainId = body.chain_id ?? url.searchParams.get("chain_id");
+    const hasNativeGas = toBool(body.has_native_gas ?? url.searchParams.get("has_native_gas"));
     const status = body.status ?? url.searchParams.get("status");
     const targetEvent = (body.target_event_address ?? url.searchParams.get("target_event_address")) as string | null;
     const search = (body.q ?? url.searchParams.get("q")) as string | null;
@@ -49,6 +50,7 @@ serve(async (req) => {
     }
 
     if (chainId) query = query.eq("chain_id", Number(chainId));
+    if (hasNativeGas) query = query.neq("eth_per_copy_wei", "0");
     if (targetEvent) query = query.eq("target_event_address", String(targetEvent).toLowerCase());
     if (search) query = query.ilike("title", `%${search}%`);
 

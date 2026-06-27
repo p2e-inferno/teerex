@@ -11,8 +11,15 @@ const TicketPasses = () => {
   const { authenticated } = usePrivy();
   const [searchParams] = useSearchParams();
   const eventAddress = searchParams.get('event');
+  const chainIdParam = Number(searchParams.get('chain_id'));
+  const chainId = Number.isFinite(chainIdParam) && chainIdParam > 0 ? chainIdParam : null;
+  const hasNativeGas = searchParams.get('has_native_gas') === 'true';
   const { data: passes = [], isLoading, refetch } = useTicketPasses(
-    eventAddress ? { target_event_address: eventAddress } : {},
+    {
+      ...(eventAddress ? { target_event_address: eventAddress } : {}),
+      ...(chainId ? { chain_id: chainId } : {}),
+      ...(hasNativeGas ? { has_native_gas: true } : {}),
+    },
   );
   const [createOpen, setCreateOpen] = useState(false);
 

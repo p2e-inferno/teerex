@@ -186,4 +186,112 @@ contract RewardsFuzzTest is RewardsBase {
             assertEq(address(controller).balance, 0);
         }
     }
+
+    // --- per-position window / cutoff / partial reclaim ---
+
+    /// positionClaimEnd == max(poolEnd, opensAt + MIN_CLAIM) for any assignment time and window, and
+    /// the placement is always claimable at its own opensAt — the guarantee holds regardless of inputs.
+    function testFuzz_PerPositionWindow(uint64 csOff, uint64 winRaw, uint64 ceExtra, uint64 assignOff) public {
+        uint64 cs = START + uint64(bound(csOff, 1 hours, 365 days));
+        uint64 win = uint64(bound(winRaw, MIN_WINDOW, 365 days));
+        uint64 ce = cs + MIN_CLAIM + uint64(bound(ceExtra, 0, 365 days));
+        uint64 t = uint64(bound(assignOff, START, ce)); // within the initial-assignment cutoff
+
+        uint256[] memory a = new uint256[](1);
+        a[0] = 1 ether;
+        vm.prank(creator);
+        uint256 poolId = controller.createRewardPool{value: 1 ether}(
+            _params(address(0), address(0), a, cs, ce, win, _noManagers())
+        );
+
+        vm.warp(t);
+        _assign(poolId, alice, 1);
+
+        uint256 opensExpected = cs > uint256(t) + win ? cs : uint256(t) + win;
+        uint256 endExpected = uint256(ce) > opensExpected + MIN_CLAIM ? uint256(ce) : opensExpected + MIN_CLAIM;
+
+        (, uint256 opensAt) = controller.claimable(poolId, 1);
+        assertEq(opensAt, opensExpected);
+        assertEq(controller.positionClaimEnd(poolId, 1), endExpected);
+        assertGe(endExpected, opensExpected + MIN_CLAIM); // guaranteed minimum window
+        assertGe(endExpected, uint256(ce));               // never shorter than the pool end
+
+        vm.warp(opensExpected);
+        vm.prank(alice);
+        controller.claim(poolId, 1); // claimable at the exact start regardless of how late
+        assertTrue(_posClaimed(poolId, 1));
+    }
+
+    /// Initial assignment succeeds iff at/under the cutoff (pool end), else reverts AssignmentWindowClosed.
+    function testFuzz_AssignmentCutoff(uint64 assignOff) public {
+        (uint256 poolId,) = _createDefaultEthPool();
+        uint64 ce = START + 12 days;
+        uint64 t = uint64(bound(assignOff, START + 1, START + 90 days));
+
+        vm.warp(t);
+        if (t <= ce) {
+            _assign(poolId, alice, 1);
+            assertEq(_posWinner(poolId, 1), alice);
+        } else {
+            R.WinnerAssignment[] memory b = new R.WinnerAssignment[](1);
+            b[0] = R.WinnerAssignment({account: alice, placement: 1});
+            vm.prank(creator);
+            vm.expectRevert(R.AssignmentWindowClosed.selector);
+            controller.assignWinners(poolId, b);
+        }
+    }
+
+    /// A late winner can claim at ANY instant inside their guaranteed [opensAt, positionClaimEnd] window.
+    function testFuzz_LateWinnerClaimsWithinWindow(uint64 assignOff, uint64 claimOff) public {
+        (uint256 poolId,) = _createDefaultEthPool();
+        uint64 ce = START + 12 days;
+        uint64 t = uint64(bound(assignOff, ce - 2 days, ce)); // late, still within the cutoff
+
+        vm.warp(t);
+        _assign(poolId, alice, 1);
+
+        (, uint256 opensAt) = controller.claimable(poolId, 1);
+        uint256 end = controller.positionClaimEnd(poolId, 1);
+        uint256 claimTime = bound(claimOff, opensAt, end);
+
+        vm.warp(claimTime);
+        vm.prank(alice);
+        controller.claim(poolId, 1);
+        assertTrue(_posClaimed(poolId, 1));
+    }
+
+    /// With winners assigned at arbitrary (sorted) times and never claimed, a single reclaim once past
+    /// every per-position end returns the whole escrow and closes the pool — partial reclaim collapses
+    /// to a full, conservation-preserving sweep.
+    function testFuzz_PartialReclaimEventuallyFull(uint64 r1, uint64 r2, uint64 r3) public {
+        (uint256 poolId, uint256 total) = _createDefaultEthPool();
+        uint64 ce = START + 12 days;
+
+        uint64[3] memory ts = [
+            uint64(bound(r1, START, ce)),
+            uint64(bound(r2, START, ce)),
+            uint64(bound(r3, START, ce))
+        ];
+        // Non-decreasing so the warps only move forward.
+        if (ts[0] > ts[1]) (ts[0], ts[1]) = (ts[1], ts[0]);
+        if (ts[1] > ts[2]) (ts[1], ts[2]) = (ts[2], ts[1]);
+        if (ts[0] > ts[1]) (ts[0], ts[1]) = (ts[1], ts[0]);
+
+        address[3] memory winners = [alice, bob, carol];
+        for (uint16 i = 0; i < 3; i++) {
+            vm.warp(ts[i]);
+            _assign(poolId, winners[i], i + 1);
+        }
+
+        // Past the maximum possible per-position end (latest assign <= ce; +window +MIN_CLAIM).
+        vm.warp(uint256(ce) + MIN_WINDOW + MIN_CLAIM + 1);
+        uint256 before = creator.balance;
+        vm.prank(creator);
+        controller.reclaim(poolId);
+
+        assertEq(creator.balance - before, total);
+        assertEq(address(controller).balance, 0);
+        assertEq(controller.remaining(poolId), 0);
+        assertTrue(_poolClosed(poolId));
+    }
 }

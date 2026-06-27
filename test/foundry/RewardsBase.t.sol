@@ -159,18 +159,26 @@ abstract contract RewardsBase is Test {
     // -----------------------------------------------------------------
 
     function _posAmount(uint256 poolId, uint16 placement) internal view returns (uint256 amount) {
-        (amount,,,,,,) = controller.positions(poolId, placement);
+        (amount,,,,,,,) = controller.positions(poolId, placement);
     }
 
     function _posWinner(uint256 poolId, uint16 placement) internal view returns (address winner) {
-        (,winner,,,,,) = controller.positions(poolId, placement);
+        (,winner,,,,,,) = controller.positions(poolId, placement);
+    }
+
+    function _posAssignedAt(uint256 poolId, uint16 placement) internal view returns (uint64 assignedAt) {
+        (,,assignedAt,,,,,) = controller.positions(poolId, placement);
     }
 
     function _posHoldUntil(uint256 poolId, uint16 placement) internal view returns (uint64 holdUntil) {
-        (,,,holdUntil,,,) = controller.positions(poolId, placement);
+        (,,,holdUntil,,,,) = controller.positions(poolId, placement);
     }
 
     function _posClaimed(uint256 poolId, uint16 placement) internal view returns (bool claimed) {
-        (,,,,,claimed,) = controller.positions(poolId, placement);
+        (,,,,,claimed,,) = controller.positions(poolId, placement);
+    }
+
+    function _posReclaimed(uint256 poolId, uint16 placement) internal view returns (bool reclaimed) {
+        (,,,,,,reclaimed,) = controller.positions(poolId, placement);
     }
 }

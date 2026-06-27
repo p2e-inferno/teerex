@@ -6,6 +6,7 @@ import type { TicketPass } from '@/types/ticketPass';
 type TicketPassQuery = {
   mine?: boolean;
   chain_id?: number;
+  has_native_gas?: boolean;
   status?: string;
   target_event_address?: string;
   q?: string;

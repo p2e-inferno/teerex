@@ -28,6 +28,10 @@ const PUBLIC_LOCK_ABI = [
   'function totalSupply() view returns (uint256)',
 ];
 
+const LEGACY_REWARD_POSITION_ABI = [
+  'function positions(uint256,uint16) view returns (uint256 amount,address winner,uint64 assignedAt,uint64 holdUntil,bool freeHoldUsed,bool claimed,uint64 claimedAt)',
+];
+
 const ATTENDANCE_CONTROLLER_ABI = [
   'function eventConfigByLock(address lock) view returns (bool exists, bool managerReleased, bool cancelInitiated, bool refundComplete)',
 ];
@@ -51,6 +55,7 @@ const REWARD_ERROR_MESSAGES: Record<string, string> = {
   AlreadyAssigned: 'That address is already assigned to a placement.',
   AlreadyClaimed: 'This placement has already been claimed.',
   CannotReplaceAfterClaimStart: 'Winners can no longer be replaced once the claim window has opened.',
+  AssignmentWindowClosed: 'The claim window has ended, so new winners can no longer be assigned. Ask the arbitrator to extend the claim window, then assign again.',
   WindowNotOpen: 'The claim window is not open yet.',
   WindowClosed: 'The claim window has closed.',
   NotWinner: 'This prize is not assigned to your wallet.',
@@ -123,6 +128,28 @@ export interface RewardActionResult {
   success: boolean;
   transactionHash?: string;
   error?: string;
+  /** Decoded custom-error name (e.g. 'AssignmentWindowClosed') so callers can branch on the cause. */
+  errorName?: string;
+}
+
+/** The contract custom-error name behind a revert, when ethers could decode one. */
+export function rewardErrorName(err: any): string | undefined {
+  const name: string | undefined = err?.revert?.name;
+  return name && name !== 'Error' ? name : undefined;
+}
+
+export class RewardActionGasError extends Error {
+  chainId: number;
+  chainName: string;
+  nativeToken: string;
+
+  constructor(input: { chainId: number; chainName: string; nativeToken: string }) {
+    super(`You need a little ${input.nativeToken} on ${input.chainName} for this transaction.`);
+    this.name = 'RewardActionGasError';
+    this.chainId = input.chainId;
+    this.chainName = input.chainName;
+    this.nativeToken = input.nativeToken;
+  }
 }
 
 export interface CreateRewardPoolConfig {
@@ -202,6 +229,15 @@ function debugRewardPoolError(label: string, err: unknown, details?: Record<stri
     ...details,
     errorSummary: summarizeRewardError(err),
   }, err);
+}
+
+function looksLikeInsufficientFunds(error: unknown): boolean {
+  const summary = summarizeRewardError(error);
+  return Object.values(summary)
+    .map((value) => typeof value === 'string' ? value : '')
+    .join(' ')
+    .toLowerCase()
+    .includes('insufficient funds');
 }
 
 // A broadcast tx hash is not success: the tx can mine with a status-0 (reverted) receipt. Every
@@ -470,7 +506,7 @@ async function runPoolTx(
     await confirmTx(tx, failMessage);
     return { success: true, transactionHash: tx.hash };
   } catch (error) {
-    return { success: false, error: decodeRewardError(error, failMessage) };
+    return { success: false, error: decodeRewardError(error, failMessage), errorName: rewardErrorName(error) };
   }
 }
 
@@ -484,9 +520,88 @@ export const claimReward = (
   controllerAddress: string, poolId: number, placement: number, wallet: any, chainId: number,
 ) => runPoolTx(controllerAddress, wallet, chainId, (c) => c.claim(poolId, placement), 'Failed to claim prize');
 
+async function preflightRewardAction(input: {
+  controllerAddress: string;
+  wallet: any;
+  chainId: number;
+  debugLabel: string;
+  failMessage: string;
+  staticCall: (controller: ethers.Contract) => Promise<unknown>;
+  estimateGas: (controller: ethers.Contract) => Promise<bigint>;
+}): Promise<void> {
+  const { controllerAddress, wallet, chainId, debugLabel, failMessage, staticCall, estimateGas } = input;
+  const networkConfig = await getNetworkConfigByChainId(chainId).catch(() => null);
+  const chainName = networkConfig?.chain_name || `chain ${chainId}`;
+  const nativeToken = networkConfig?.native_currency_symbol || 'native token';
+
+  try {
+    if (!wallet?.address) throw new Error('No wallet provided. Please connect your wallet first.');
+    const provider = await getRawEip1193Provider(wallet);
+    await ensureCorrectNetwork(provider, chainId);
+    const signer = await new ethers.BrowserProvider(provider).getSigner();
+    const controller = new ethers.Contract(controllerAddress, REWARDS_CONTROLLER_ABI, signer);
+    await staticCall(controller);
+
+    const signerAddress = await signer.getAddress();
+    const [gasEstimate, balance, feeData] = await Promise.all([
+      estimateGas(controller),
+      signer.provider.getBalance(signerAddress),
+      signer.provider.getFeeData(),
+    ]);
+    const gasPrice = feeData.maxFeePerGas ?? feeData.gasPrice;
+    if (balance === 0n || (gasPrice && balance < gasEstimate * gasPrice)) {
+      throw new RewardActionGasError({ chainId, chainName, nativeToken });
+    }
+  } catch (error) {
+    if (error instanceof RewardActionGasError) throw error;
+    if (looksLikeInsufficientFunds(error)) {
+      throw new RewardActionGasError({ chainId, chainName, nativeToken });
+    }
+    debugRewardPoolError(`${debugLabel}:failed`, error, {
+      controllerAddress,
+      walletAddress: wallet?.address,
+      decodedMessage: decodeRewardError(error, failMessage),
+    });
+    throw new Error(decodeRewardError(error, failMessage));
+  }
+}
+
+export const preflightClaimReward = (
+  controllerAddress: string,
+  poolId: number,
+  placement: number,
+  wallet: any,
+  chainId: number,
+) => preflightRewardAction({
+  controllerAddress,
+  wallet,
+  chainId,
+  debugLabel: 'claim-preflight',
+  failMessage: 'This prize cannot be claimed yet.',
+  staticCall: (c) => c.claim.staticCall(poolId, placement),
+  estimateGas: (c) => c.claim.estimateGas(poolId, placement),
+});
+
 export const raiseRewardDispute = (
   controllerAddress: string, poolId: number, placement: number, reasonHash: string, wallet: any, chainId: number,
 ) => runPoolTx(controllerAddress, wallet, chainId, (c) => c.raiseDispute(poolId, placement, reasonHash), 'Failed to raise dispute');
+
+export const preflightRaiseRewardDispute = (
+  controllerAddress: string,
+  poolId: number,
+  placement: number,
+  reasonHash: string,
+  wallet: any,
+  chainId: number,
+) => preflightRewardAction({
+  controllerAddress,
+  wallet,
+  chainId,
+  debugLabel: 'dispute-preflight',
+  failMessage: 'This dispute cannot be raised yet.',
+  staticCall: (c) => c.raiseDispute.staticCall(poolId, placement, reasonHash),
+  estimateGas: (c) => c.raiseDispute.estimateGas(poolId, placement, reasonHash),
+});
 
 export const addRewardManager = (
   controllerAddress: string, poolId: number, manager: string, wallet: any, chainId: number,
@@ -564,17 +679,39 @@ export const getRewardPoolOnchainState = async (
   poolId: number,
   chainId: number,
 ): Promise<RewardPoolOnchainState | null> => {
-  try {
-    const provider = await getReadProvider(chainId);
-    const controller = new ethers.Contract(controllerAddress, REWARDS_CONTROLLER_ABI, provider);
-    const p = await controller.getPool(poolId);
-    if (!p.exists) return null;
+  const provider = await getReadProvider(chainId);
+  const controller = new ethers.Contract(controllerAddress, REWARDS_CONTROLLER_ABI, provider);
+  const legacyController = new ethers.Contract(controllerAddress, LEGACY_REWARD_POSITION_ABI, provider);
+  const p = await controller.getPool(poolId);
+  if (!p.exists) return null;
 
-    const positionCount = Number(p.positionCount);
-    const positions: RewardPoolOnchainPosition[] = [];
-    for (let placement = 1; placement <= positionCount; placement++) {
-      const [pos, claim] = await Promise.all([
+  const positionCount = Number(p.positionCount);
+  const poolEnd = Number(p.claimEnd) + Number(p.frozenAccrued);
+  const positions: RewardPoolOnchainPosition[] = [];
+  for (let placement = 1; placement <= positionCount; placement++) {
+    try {
+      const [pos, claim, closesAt] = await Promise.all([
         controller.positions(poolId, placement),
+        controller.claimable(poolId, placement),
+        controller.positionClaimEnd(poolId, placement),
+      ]);
+      const winner = String(pos.winner);
+      positions.push({
+        placement,
+        amountWei: pos.amount,
+        winner: winner === ZERO_ADDRESS ? null : winner,
+        assignedAt: Number(pos.assignedAt),
+        holdUntil: Number(pos.holdUntil),
+        claimed: Boolean(pos.claimed),
+        reclaimed: Boolean(pos.reclaimed),
+        claimedAt: Number(pos.claimedAt),
+        opensAt: Number(claim.opensAt),
+        closesAt: Number(closesAt),
+        canClaim: Boolean(claim.canClaim),
+      });
+    } catch {
+      const [pos, claim] = await Promise.all([
+        legacyController.positions(poolId, placement),
         controller.claimable(poolId, placement),
       ]);
       const winner = String(pos.winner);
@@ -585,59 +722,58 @@ export const getRewardPoolOnchainState = async (
         assignedAt: Number(pos.assignedAt),
         holdUntil: Number(pos.holdUntil),
         claimed: Boolean(pos.claimed),
+        reclaimed: false,
         claimedAt: Number(pos.claimedAt),
         opensAt: Number(claim.opensAt),
+        closesAt: poolEnd,
         canClaim: Boolean(claim.canClaim),
       });
     }
-
-    const attendance = String(p.attendanceController);
-    const token = String(p.payoutToken);
-    let ticketSupply: bigint | null = null;
-    try {
-      ticketSupply = await new ethers.Contract(String(p.eventLock), PUBLIC_LOCK_ABI, provider).totalSupply();
-    } catch (error) {
-      console.warn('[reward-pool] unable to read event ticket supply', error);
-    }
-
-    let attendanceCancelInitiated = false;
-    let attendanceRefundComplete = false;
-    if (attendance !== ZERO_ADDRESS) {
-      try {
-        const cfg = await new ethers.Contract(attendance, ATTENDANCE_CONTROLLER_ABI, provider)
-          .eventConfigByLock(String(p.eventLock));
-        attendanceCancelInitiated = Boolean(cfg.cancelInitiated);
-        attendanceRefundComplete = Boolean(cfg.refundComplete);
-      } catch (error) {
-        console.warn('[reward-pool] unable to read attendance early-exit state', error);
-      }
-    }
-
-    return {
-      exists: Boolean(p.exists),
-      frozen: Boolean(p.frozen),
-      closed: Boolean(p.closed),
-      creator: String(p.creator),
-      eventLock: String(p.eventLock),
-      attendanceController: attendance === ZERO_ADDRESS ? null : attendance,
-      payoutToken: token === ZERO_ADDRESS ? null : token,
-      totalFundedWei: p.totalFunded,
-      claimedAmountWei: p.claimedAmount,
-      claimStart: Number(p.claimStart),
-      claimEnd: Number(p.claimEnd),
-      challengeWindow: Number(p.challengeWindow),
-      frozenAccrued: Number(p.frozenAccrued),
-      positionCount,
-      assignedCount: Number(p.assignedCount),
-      ticketSupply,
-      attendanceCancelInitiated,
-      attendanceRefundComplete,
-      attendanceEarlyExitReady: attendanceCancelInitiated && attendanceRefundComplete,
-      rulesHash: String(p.rulesHash),
-      positions,
-    };
-  } catch (error) {
-    console.error('Error reading reward pool on-chain state:', error);
-    return null;
   }
+
+  const attendance = String(p.attendanceController);
+  const token = String(p.payoutToken);
+  let ticketSupply: bigint | null = null;
+  try {
+    ticketSupply = await new ethers.Contract(String(p.eventLock), PUBLIC_LOCK_ABI, provider).totalSupply();
+  } catch (error) {
+    console.warn('[reward-pool] unable to read event ticket supply', error);
+  }
+
+  let attendanceCancelInitiated = false;
+  let attendanceRefundComplete = false;
+  if (attendance !== ZERO_ADDRESS) {
+    try {
+      const cfg = await new ethers.Contract(attendance, ATTENDANCE_CONTROLLER_ABI, provider)
+        .eventConfigByLock(String(p.eventLock));
+      attendanceCancelInitiated = Boolean(cfg.cancelInitiated);
+      attendanceRefundComplete = Boolean(cfg.refundComplete);
+    } catch (error) {
+      console.warn('[reward-pool] unable to read attendance early-exit state', error);
+    }
+  }
+
+  return {
+    exists: Boolean(p.exists),
+    frozen: Boolean(p.frozen),
+    closed: Boolean(p.closed),
+    creator: String(p.creator),
+    eventLock: String(p.eventLock),
+    attendanceController: attendance === ZERO_ADDRESS ? null : attendance,
+    payoutToken: token === ZERO_ADDRESS ? null : token,
+    totalFundedWei: p.totalFunded,
+    claimedAmountWei: p.claimedAmount,
+    claimStart: Number(p.claimStart),
+    claimEnd: Number(p.claimEnd),
+    challengeWindow: Number(p.challengeWindow),
+    frozenAccrued: Number(p.frozenAccrued),
+    positionCount,
+    assignedCount: Number(p.assignedCount),
+    ticketSupply,
+    attendanceCancelInitiated,
+    attendanceRefundComplete,
+    attendanceEarlyExitReady: attendanceCancelInitiated && attendanceRefundComplete,
+    rulesHash: String(p.rulesHash),
+    positions,
+  };
 };

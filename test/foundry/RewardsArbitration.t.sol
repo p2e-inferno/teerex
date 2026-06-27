@@ -245,4 +245,75 @@ contract RewardsArbitrationTest is RewardsBase {
         vm.expectRevert(R.NotArbitrator.selector);
         controller.resolveDispute(poolId, 1, true, keccak256("r"));
     }
+
+    // ---- settled-position / closed-pool guards ----
+
+    /// Builds a partially-reclaimed pool that stays OPEN: pos1 (early, alice) and pos3 (never
+    /// assigned) are swept and marked reclaimed; pos2 (late, bob) is still within its guaranteed
+    /// window so it stays locked. Reclaimed shares retain their winner field and their escrow is gone.
+    function _partialReclaimOpenPool() internal returns (uint256 pid) {
+        (pid,) = _createDefaultEthPool();
+        _assign(pid, alice, 1); // early → ends at pool end
+        uint64 ce = START + 12 days;
+        vm.warp(ce - 1 hours);
+        _assign(pid, bob, 2); // late → keeps the pool open after the sweep
+        vm.warp(ce + 1);
+        vm.prank(creator);
+        controller.reclaim(pid); // sweeps pos1 + pos3; pos2 locked
+        assertFalse(_poolClosed(pid));
+        assertTrue(_posReclaimed(pid, 1));
+        assertTrue(_posReclaimed(pid, 3));
+    }
+
+    function test_RevertWhen_ReassignReclaimedAssignedPosition() public {
+        uint256 pid = _partialReclaimOpenPool();
+        vm.prank(arbitrator);
+        vm.expectRevert(R.AlreadyClaimed.selector);
+        controller.reassign(pid, 1, carol); // pos1 reclaimed (winner still set)
+    }
+
+    function test_RevertWhen_ReassignReclaimedNeverAssignedPosition() public {
+        uint256 pid = _partialReclaimOpenPool();
+        vm.prank(arbitrator);
+        vm.expectRevert(R.AlreadyClaimed.selector);
+        controller.reassign(pid, 3, carol); // pos3 reclaimed (winner == 0)
+    }
+
+    function test_RevertWhen_VoidReclaimedPosition() public {
+        uint256 pid = _partialReclaimOpenPool();
+        vm.prank(arbitrator);
+        vm.expectRevert(R.AlreadyClaimed.selector);
+        controller.voidAssignment(pid, 1); // pos1 reclaimed (winner still set)
+    }
+
+    /// closePool refunds escrow and leaves positions pristine (winner == 0); arbitration must not
+    /// resurrect a winner on a closed, settled pool.
+    function _closedRefundedPool() internal returns (uint256 pid) {
+        lock.setTotalSupply(0); // no tickets → early-exit close is allowed
+        (pid,) = _createDefaultEthPool();
+        vm.prank(creator);
+        controller.closePool(pid);
+        assertTrue(_poolClosed(pid));
+    }
+
+    function test_RevertWhen_ReassignOnClosedPool() public {
+        uint256 pid = _closedRefundedPool();
+        vm.prank(arbitrator);
+        vm.expectRevert(R.PoolIsClosed.selector);
+        controller.reassign(pid, 1, bob);
+    }
+
+    function test_RevertWhen_VoidOnClosedPool() public {
+        uint256 pid = _closedRefundedPool();
+        vm.prank(arbitrator);
+        vm.expectRevert(R.PoolIsClosed.selector);
+        controller.voidAssignment(pid, 1);
+    }
+
+    function test_RevertWhen_ExtendClaimEndOnClosedPool() public {
+        uint256 pid = _closedRefundedPool();
+        vm.prank(arbitrator);
+        vm.expectRevert(R.PoolIsClosed.selector);
+        controller.extendClaimEnd(pid, START + 100 days);
+    }
 }

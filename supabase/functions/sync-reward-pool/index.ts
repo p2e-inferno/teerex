@@ -92,6 +92,7 @@ serve(async (req) => {
             assigned_at: epochToIso(p.assignedAt),
             hold_until: epochToIso(p.holdUntil),
             claimed: p.claimed,
+            reclaimed: p.reclaimed,
             claimed_at: epochToIso(p.claimedAt),
           })),
           { onConflict: "reward_pool_id,placement" },

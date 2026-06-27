@@ -116,4 +116,33 @@ contract RewardsDisputeTest is RewardsBase {
         vm.expectRevert(R.PoolIsClosed.selector);
         controller.raiseDispute(poolId, 1, REASON);
     }
+
+    /// Even when a dispute hold pushes a late winner's start past the pool end, the per-position end
+    /// still grants the full MIN_CLAIM_DURATION — the hold cannot erode the guaranteed window.
+    function test_DisputeHold_StillGuaranteesMinClaimDuration() public {
+        uint256[] memory a = new uint256[](1);
+        a[0] = 1 ether;
+        uint64 cs = START + 7 days;
+        uint64 ce = START + 12 days;
+        vm.prank(creator);
+        uint256 latePool = controller.createRewardPool{value: 1 ether}(
+            _params(address(0), address(0), a, cs, ce, MIN_WINDOW, _noManagers())
+        );
+        vm.warp(ce - 1 hours);
+        _assign(latePool, alice, 1); // natural open = ce + 29h
+
+        vm.warp(ce + 6 hours); // within MAX_HOLD before the natural open
+        vm.prank(ticketHolder);
+        controller.raiseDispute(latePool, 1, REASON);
+
+        (, uint256 opensAt) = controller.claimable(latePool, 1);
+        uint256 end = controller.positionClaimEnd(latePool, 1);
+        assertEq(end, opensAt + MIN_CLAIM); // full window after the (held) start
+        assertGt(opensAt + MIN_CLAIM, uint256(ce)); // guarantee is binding past the pool end
+
+        vm.warp(opensAt);
+        vm.prank(alice);
+        controller.claim(latePool, 1); // claimable within the guaranteed window
+        assertTrue(_posClaimed(latePool, 1));
+    }
 }

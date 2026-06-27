@@ -56,6 +56,8 @@ const formatDateFromSecs = (secs: number | null | undefined): string => (
   secs ? new Date(secs * 1000).toLocaleString() : '-'
 );
 
+const MIN_CLAIM_DURATION_SECS = 3 * 24 * 60 * 60;
+
 type DisplayPosition = RewardPoolOnchainPosition;
 
 interface TimelineItemProps {
@@ -113,6 +115,8 @@ export function RewardPoolCard({ pool, viewerAddress, isTicketHolder, eventEndsA
   const onchain = useRewardPoolOnchainState(pool.controller_address, pool.pool_id, pool.chain_id);
   const actions = useRewardControllerActions(wallet);
   const onchainData = onchain.data;
+  const onchainPending = !onchainData && (onchain.isLoading || onchain.isFetching);
+  const onchainVerificationError = !onchainData && onchain.isError;
   const refetchOnchain = onchain.refetch;
 
   const [assignOpen, setAssignOpen] = useState(false);
@@ -132,22 +136,35 @@ export function RewardPoolCard({ pool, viewerAddress, isTicketHolder, eventEndsA
   const eventEndSecs = useMemo(() => isoToSecs(eventEndsAt), [eventEndsAt]);
   const claimStartSecs = onchainData?.claimStart ?? isoToSecs(pool.claim_start);
   const claimEndSecs = onchainData?.claimEnd ?? isoToSecs(pool.claim_end);
+  const poolEndSecs = claimEndSecs != null ? claimEndSecs + (onchainData?.frozenAccrued ?? 0) : null;
   const eventEnded = eventEndSecs == null || nowSecs >= eventEndSecs;
 
   const positions = useMemo<DisplayPosition[]>(() => {
     if (onchainData?.positions?.length) return onchainData.positions;
-    return pool.positions.map((p) => ({
-      placement: p.placement,
-      amountWei: BigInt(p.amount_wei),
-      winner: p.winner_address,
-      claimed: p.claimed,
-      canClaim: false,
-      opensAt: 0,
-      assignedAt: p.assigned_at ? Math.floor(new Date(p.assigned_at).getTime() / 1000) : 0,
-      holdUntil: p.hold_until ? Math.floor(new Date(p.hold_until).getTime() / 1000) : 0,
-      claimedAt: p.claimed_at ? Math.floor(new Date(p.claimed_at).getTime() / 1000) : 0,
-    }));
-  }, [onchainData, pool.positions]);
+    return pool.positions.map((p) => {
+      const assignedAt = p.assigned_at ? Math.floor(new Date(p.assigned_at).getTime() / 1000) : 0;
+      const holdUntil = p.hold_until ? Math.floor(new Date(p.hold_until).getTime() / 1000) : 0;
+      const opensAt = Math.max(
+        claimStartSecs ?? 0,
+        assignedAt + pool.challenge_window_secs,
+        holdUntil,
+      );
+
+      return {
+        placement: p.placement,
+        amountWei: BigInt(p.amount_wei),
+        winner: p.winner_address,
+        claimed: p.claimed,
+        reclaimed: p.reclaimed ?? false,
+        canClaim: false,
+        opensAt,
+        closesAt: Math.max(poolEndSecs ?? 0, opensAt + MIN_CLAIM_DURATION_SECS),
+        assignedAt,
+        holdUntil,
+        claimedAt: p.claimed_at ? Math.floor(new Date(p.claimed_at).getTime() / 1000) : 0,
+      };
+    });
+  }, [claimStartSecs, onchainData, pool.challenge_window_secs, pool.positions, poolEndSecs]);
 
   const myPositions = useMemo(
     () => positions.filter((p) => p.winner && p.winner.toLowerCase() === viewer),
@@ -156,7 +173,7 @@ export function RewardPoolCard({ pool, viewerAddress, isTicketHolder, eventEndsA
 
   useEffect(() => {
     const nextClaimOpen = positions
-      .filter((p) => p.winner && !p.claimed && !p.canClaim && p.opensAt > nowSecs)
+      .filter((p) => p.winner && !p.claimed && !p.reclaimed && !p.canClaim && p.opensAt > nowSecs)
       .reduce((min, p) => Math.min(min, p.opensAt), Number.POSITIVE_INFINITY);
     const nextReclaimOpen = isCreator && onchainData && !onchainData.closed && !onchainData.frozen
       ? onchainData.claimEnd + onchainData.frozenAccrued
@@ -177,16 +194,25 @@ export function RewardPoolCard({ pool, viewerAddress, isTicketHolder, eventEndsA
     return () => window.clearTimeout(timer);
   }, [claimEndSecs, claimStartSecs, eventEndSecs, isCreator, nowSecs, onchainData, positions, refetchOnchain]);
 
-  const canClaimPosition = (position: { claimed: boolean; canClaim?: boolean; opensAt?: number }) => (
+  const canClaimPosition = (position: DisplayPosition) => (
     !position.claimed &&
+    !position.reclaimed &&
     !onchainData?.closed &&
     !onchainData?.frozen &&
-    (Boolean(position.canClaim) || Boolean(position.opensAt && nowSecs >= position.opensAt))
+    (Boolean(position.canClaim) ||
+      Boolean(
+        position.opensAt &&
+        position.closesAt &&
+        nowSecs >= position.opensAt &&
+        nowSecs <= position.closesAt,
+      ))
   );
 
   const closeBlockedReason = useMemo(() => {
     if (!isCreator) return 'Only the prize pool creator can cancel it.';
-    if (!onchainData) return 'Checking on-chain cancellation status...';
+    if (onchainVerificationError) return 'Unable to verify this prize pool on-chain. If this event still points to an older rewards controller, refresh after the controller and network config are updated.';
+    if (onchainPending) return 'Checking on-chain cancellation status...';
+    if (!onchainData) return 'This prize pool could not be found on-chain.';
     if (onchainData.closed) return 'This prize pool is already closed.';
     if (onchainData.frozen) return 'This prize pool is frozen while a dispute is reviewed.';
     if (onchainData.assignedCount > 0) {
@@ -199,16 +225,18 @@ export function RewardPoolCard({ pool, viewerAddress, isTicketHolder, eventEndsA
       return 'Event cancellation refunds are still in progress. The prize pool can be cancelled after those refunds complete.';
     }
     return 'This prize pool is locked for winner claims. You can reclaim any unclaimed prize funds after the claim window closes.';
-  }, [isCreator, onchainData]);
+  }, [isCreator, onchainData, onchainPending, onchainVerificationError]);
 
   const assignBlockedReason = useMemo(() => {
     if (!canManageWinners) return null;
-    if (!onchainData) return 'Checking on-chain prize pool status...';
+    if (onchainVerificationError) return 'Unable to verify this prize pool on-chain. If this event still points to an older rewards controller, refresh after the controller and network config are updated.';
+    if (onchainPending) return 'Checking on-chain prize pool status...';
+    if (!onchainData) return 'This prize pool could not be found on-chain.';
     if (onchainData.closed) return 'This prize pool is closed.';
     if (onchainData.frozen) return 'This prize pool is frozen while a dispute is reviewed.';
     if (!eventEnded) return 'Winners can be declared after the event ends.';
     return null;
-  }, [canManageWinners, eventEnded, onchainData]);
+  }, [canManageWinners, eventEnded, onchainData, onchainPending, onchainVerificationError]);
 
   const canReclaim = isCreator && onchainData
     ? !onchainData.closed && !onchainData.frozen && nowSecs > onchainData.claimEnd + onchainData.frozenAccrued
@@ -256,6 +284,10 @@ export function RewardPoolCard({ pool, viewerAddress, isTicketHolder, eventEndsA
     Boolean(assignBlockedReason) ||
     (isCreator && Boolean(closeHelperText))
   );
+  const actionPanelMessages = Array.from(new Set([
+    assignBlockedReason,
+    isCreator ? closeHelperText : null,
+  ].filter((message): message is string => Boolean(message))));
 
   const copyWinnerAddress = async (address: string) => {
     try {
@@ -312,7 +344,7 @@ export function RewardPoolCard({ pool, viewerAddress, isTicketHolder, eventEndsA
           )}
           <TimelineItem
             icon={claimStartSecs && nowSecs >= claimStartSecs ? 'check' : 'calendar'}
-            label="Claim opens"
+            label="Claim window starts"
             value={formatCountdown(claimStartSecs, nowSecs) ?? fmtDate(pool.claim_start)}
             detail={formatDateFromSecs(claimStartSecs)}
             muted={Boolean(claimStartSecs && nowSecs >= claimStartSecs)}
@@ -363,10 +395,13 @@ export function RewardPoolCard({ pool, viewerAddress, isTicketHolder, eventEndsA
                           <Copy className="h-3.5 w-3.5" />
                         </button>
                         {p.claimed && <span className="text-xs font-medium text-emerald-600">claimed</span>}
+                        {!p.claimed && p.reclaimed && (
+                          <span className="text-xs font-medium text-slate-400">reclaimed</span>
+                        )}
                         {claimable && (
                           <span className="text-xs font-medium text-blue-600">claimable</span>
                         )}
-                        {isTicketHolder && !isCreator && !p.claimed && (
+                        {isTicketHolder && !isCreator && !p.claimed && !p.reclaimed && (
                           <button
                             onClick={() => { setDisputePlacement(p.placement); setDisputeOpen(true); }}
                             className="text-xs font-medium text-red-600 hover:underline"
@@ -389,24 +424,106 @@ export function RewardPoolCard({ pool, viewerAddress, isTicketHolder, eventEndsA
         </div>
 
         {myPositions.length > 0 && (
-          <div className="rounded-lg border border-blue-200 bg-blue-50 p-3 space-y-2">
-            <div className="font-medium text-blue-950">Your prizes</div>
-            {myPositions.map((p) => (
-              <div key={p.placement} className="flex items-center justify-between gap-3">
-                <span>#{p.placement} · {fmt(p.amountWei)}</span>
-                {p.claimed ? (
-                  <span className="text-xs font-medium text-emerald-600">Claimed</span>
-                ) : canClaimPosition(p) ? (
-                  <Button size="sm" disabled={actions.isBusy} onClick={() => actions.claim(pool, p.placement)}>
-                    {actions.isBusy ? 'Claiming...' : 'Claim'}
-                  </Button>
-                ) : (
-                  <span className="text-xs text-muted-foreground">
-                    {p.opensAt ? `Opens ${new Date(p.opensAt * 1000).toLocaleString()}` : 'Not open yet'}
-                  </span>
-                )}
+          <div className="space-y-3 rounded-lg border border-blue-100/80 bg-gradient-to-br from-white via-white to-blue-50/70 p-3 shadow-sm">
+            <div className="flex items-center gap-2">
+              <span className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-blue-50 text-blue-700 ring-1 ring-blue-100">
+                <Trophy className="h-4 w-4" />
+              </span>
+              <div>
+                <div className="font-semibold text-slate-950">Your prizes</div>
+                <div className="text-xs text-slate-500">Rewards assigned to your wallet</div>
               </div>
-            ))}
+            </div>
+
+            <div className="space-y-2">
+              {myPositions.map((p) => {
+                const claimable = canClaimPosition(p);
+                const opensCountdown = formatCountdown(p.opensAt, nowSecs);
+                const lateAssigned = !p.claimed && !p.reclaimed && p.opensAt > 0
+                  && poolEndSecs != null && p.opensAt > poolEndSecs;
+                return (
+                  <div
+                    key={p.placement}
+                    className="grid grid-cols-1 gap-3 rounded-lg border border-slate-200 bg-white/90 p-3 sm:grid-cols-[minmax(0,1fr)_minmax(180px,220px)]"
+                  >
+                    <div className="min-w-0 rounded-lg border border-blue-100 bg-blue-50/45 p-3">
+                      <div className="inline-flex rounded-full bg-white px-2.5 py-1 text-[11px] font-bold uppercase leading-tight text-blue-700 ring-1 ring-blue-100">
+                        Position #{p.placement}
+                      </div>
+                      <div className="mt-3 text-[11px] font-bold uppercase leading-tight text-slate-500">
+                        Reward amount
+                      </div>
+                      <div className="mt-1 break-words text-2xl font-bold leading-tight text-slate-950">
+                        {fmt(p.amountWei)}
+                      </div>
+                    </div>
+
+                    {p.claimed ? (
+                      <div className="rounded-lg border border-emerald-200 bg-emerald-50/80 px-3 py-2.5">
+                        <div className="flex items-start gap-2">
+                          <span className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-emerald-700">
+                            <CheckCircle2 className="h-3.5 w-3.5" />
+                          </span>
+                          <div className="min-w-0 pt-0.5 text-[11px] font-bold uppercase leading-tight text-emerald-700">
+                            Claimed
+                          </div>
+                        </div>
+                        <div className="mt-3 text-xl font-bold leading-tight text-emerald-950">Complete</div>
+                      </div>
+                    ) : p.reclaimed ? (
+                      <div className="rounded-lg border border-slate-200 bg-slate-50/80 px-3 py-2.5">
+                        <div className="flex items-start gap-2">
+                          <span className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-slate-200 text-slate-600">
+                            <RotateCcw className="h-3.5 w-3.5" />
+                          </span>
+                          <div className="min-w-0 pt-0.5 text-[11px] font-bold uppercase leading-tight text-slate-600">
+                            Claim window closed
+                          </div>
+                        </div>
+                        <div className="mt-3 text-sm font-semibold leading-tight text-slate-700">
+                          This prize was not claimed in time and the funds were returned to the organizer.
+                        </div>
+                      </div>
+                    ) : claimable ? (
+                      <div className="rounded-lg border border-blue-200 bg-blue-50/80 px-3 py-2.5">
+                        <div className="flex items-start gap-2">
+                          <span className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-blue-100 text-blue-700">
+                            <CheckCircle2 className="h-3.5 w-3.5" />
+                          </span>
+                          <div className="min-w-0 pt-0.5 text-[11px] font-bold uppercase leading-tight text-blue-700">
+                            Ready to claim
+                          </div>
+                        </div>
+                        <Button
+                          size="sm"
+                          disabled={actions.isBusy}
+                          onClick={() => actions.claim(pool, p.placement)}
+                          className="mt-3 w-full bg-slate-950 text-white hover:bg-slate-800"
+                        >
+                          {actions.isBusy ? 'Claiming...' : 'Claim prize'}
+                        </Button>
+                      </div>
+                    ) : (
+                      <TimelineItem
+                        icon="calendar"
+                        label="Your claim unlocks"
+                        value={opensCountdown ?? 'Not open yet'}
+                        detail={p.opensAt ? formatDateFromSecs(p.opensAt) : undefined}
+                      />
+                    )}
+
+                    {lateAssigned && (
+                      <div className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50/80 px-3 py-2 text-xs text-amber-900 sm:col-span-2">
+                        <Clock className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-600" />
+                        <span>
+                          Assigned late — your claim window runs {formatDateFromSecs(p.opensAt)} → {formatDateFromSecs(p.closesAt)}, extended past the pool window so you keep the full claim period.
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
           </div>
         )}
 
@@ -455,10 +572,11 @@ export function RewardPoolCard({ pool, viewerAddress, isTicketHolder, eventEndsA
               )}
             </div>
 
-            {(assignBlockedReason || closeHelperText) && (
+            {actionPanelMessages.length > 0 && (
               <div className="mt-3 space-y-1 text-xs leading-relaxed text-slate-500">
-                {assignBlockedReason && <p>{assignBlockedReason}</p>}
-                {isCreator && closeHelperText && <p>{closeHelperText}</p>}
+                {actionPanelMessages.map((message) => (
+                  <p key={message}>{message}</p>
+                ))}
               </div>
             )}
           </div>
