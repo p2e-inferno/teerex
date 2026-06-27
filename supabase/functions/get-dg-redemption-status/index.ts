@@ -8,8 +8,9 @@ import { verifyPaystackTransfer } from "../_shared/paystack.ts";
 import {
   canApplyPaystackTransferStatus,
   mapPaystackTransferStatus,
+  normalizeValidatedDgRedemptionFailure,
   paystackTransferUpdateValues,
-  publicDgRedemptionIntent,
+  publicDgRedemptionIntentWithAdminNotify,
 } from "../_shared/dg-redemption.ts";
 
 function json(payload: Record<string, unknown>, status = 200): Response {
@@ -28,7 +29,8 @@ const PAYSTACK_RECONCILABLE_STATUSES = new Set([
 async function reconcilePaystackTransfer(supabase: any, intent: any) {
   if (
     !PAYSTACK_RECONCILABLE_STATUSES.has(String(intent.status || "")) ||
-    !intent.paystack_reference
+    !intent.paystack_reference ||
+    !(intent.paystack_transfer_code || intent.paystack_transfer_id)
   ) {
     return intent;
   }
@@ -42,7 +44,7 @@ async function reconcilePaystackTransfer(supabase: any, intent: any) {
 
     const { data: updated, error } = await supabase
       .from("dg_redemption_intents")
-      .update(paystackTransferUpdateValues({ transfer: verified.data }))
+      .update(paystackTransferUpdateValues({ transfer: verified.data, failedStatus: "manual_review" }))
       .eq("id", intent.id)
       .eq("user_id", intent.user_id)
       .eq("status", intent.status)
@@ -96,9 +98,10 @@ serve(async (req) => {
     if (error) throw new Error(error.message);
     if (!data) return json({ ok: false, error: "Redeem DG request was not found" }, 404);
 
-    const redemption = await reconcilePaystackTransfer(supabase, data);
+    const normalized = await normalizeValidatedDgRedemptionFailure(supabase, data);
+    const redemption = await reconcilePaystackTransfer(supabase, normalized);
 
-    return json({ ok: true, redemption: publicDgRedemptionIntent(redemption) });
+    return json({ ok: true, redemption: await publicDgRedemptionIntentWithAdminNotify(supabase, redemption) });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Internal error";
     const lower = message.toLowerCase();

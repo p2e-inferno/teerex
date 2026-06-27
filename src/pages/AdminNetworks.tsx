@@ -30,6 +30,7 @@ interface NetworkConfig {
   unlock_factory_address: string | null;
   refundable_event_manager_address: string | null;
   ticket_pass_controller_address: string | null;
+  rewards_controller_address: string | null;
   native_currency_symbol: string;
   native_currency_name: string | null;
   native_currency_decimals: number | null;
@@ -57,6 +58,7 @@ interface NetworkFormData {
   unlock_factory_address: string;
   refundable_event_manager_address: string;
   ticket_pass_controller_address: string;
+  rewards_controller_address: string;
   native_currency_symbol: string;
   native_currency_name: string;
   native_currency_decimals: number;
@@ -90,6 +92,7 @@ const AdminNetworks: React.FC = () => {
     unlock_factory_address: '',
     refundable_event_manager_address: '',
     ticket_pass_controller_address: '',
+    rewards_controller_address: '',
     native_currency_symbol: 'ETH',
     native_currency_name: 'Ethereum',
     native_currency_decimals: 18,
@@ -150,6 +153,7 @@ const AdminNetworks: React.FC = () => {
         unlock_factory_address: formData.unlock_factory_address || null,
         refundable_event_manager_address: formData.refundable_event_manager_address || null,
         ticket_pass_controller_address: formData.ticket_pass_controller_address || null,
+        rewards_controller_address: formData.rewards_controller_address || null,
         native_currency_symbol: formData.native_currency_symbol,
         native_currency_name: formData.native_currency_name,
         native_currency_decimals: formData.native_currency_decimals,
@@ -215,6 +219,7 @@ const AdminNetworks: React.FC = () => {
       unlock_factory_address: network.unlock_factory_address || '',
       refundable_event_manager_address: network.refundable_event_manager_address || '',
       ticket_pass_controller_address: network.ticket_pass_controller_address || '',
+      rewards_controller_address: network.rewards_controller_address || '',
       native_currency_symbol: network.native_currency_symbol,
       native_currency_name: network.native_currency_name || '',
       native_currency_decimals: network.native_currency_decimals || 18,
@@ -289,6 +294,7 @@ const AdminNetworks: React.FC = () => {
         unlock_factory_address: network.unlock_factory_address,
         refundable_event_manager_address: network.refundable_event_manager_address,
         ticket_pass_controller_address: network.ticket_pass_controller_address,
+        rewards_controller_address: network.rewards_controller_address,
         native_currency_symbol: network.native_currency_symbol,
         native_currency_name: network.native_currency_name,
         native_currency_decimals: network.native_currency_decimals,
@@ -616,6 +622,19 @@ const AdminNetworks: React.FC = () => {
                 </div>
 
                 <div className="space-y-2">
+                  <Label htmlFor="rewards_controller_address">Rewards Controller Address (Optional)</Label>
+                  <Input
+                    id="rewards_controller_address"
+                    value={formData.rewards_controller_address}
+                    onChange={(e) => setFormData(prev => ({ ...prev, rewards_controller_address: e.target.value }))}
+                    placeholder="0x..."
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Required for reward pool creation. Paste the deployed TeeRexRewardsControllerV1 address for this network.
+                  </p>
+                </div>
+
+                <div className="space-y-2">
                   <Label htmlFor="rpc_url">RPC URL</Label>
                   <Input
                     id="rpc_url"
@@ -741,6 +760,9 @@ const AdminNetworks: React.FC = () => {
                     )}
                     {network.ticket_pass_controller_address && (
                       <div><strong>Ticket Pass Controller:</strong> {network.ticket_pass_controller_address.slice(0, 6)}...{network.ticket_pass_controller_address.slice(-4)}</div>
+                    )}
+                    {network.rewards_controller_address && (
+                      <div><strong>Rewards Controller:</strong> {network.rewards_controller_address.slice(0, 6)}...{network.rewards_controller_address.slice(-4)}</div>
                     )}
                     {network.rpc_url && (
                       <div><strong>RPC:</strong> {network.rpc_url.replace('https://', '')}</div>

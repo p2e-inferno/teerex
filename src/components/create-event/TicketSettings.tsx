@@ -238,7 +238,7 @@ export const TicketSettings: React.FC<TicketSettingsProps> = ({
     setPayoutAccountLoading(true);
     try {
       const token = await getAccessToken();
-      const data = await callEdgeFunction<any>('get-vendor-payout-account', {}, { privyToken: token, withAnonKey: true });
+      const data = await callEdgeFunction<any>('get-vendor-payout-account', {}, { privyToken: token, withAnonKey: true, method: 'GET' });
 
       setHasPayoutAccount(data?.can_receive_fiat_payments === true);
 

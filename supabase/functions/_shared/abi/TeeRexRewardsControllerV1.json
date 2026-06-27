@@ -1,0 +1,145 @@
+[
+  { "type": "function", "name": "VERSION", "stateMutability": "view", "inputs": [], "outputs": [{ "name": "", "type": "uint16" }] },
+  { "type": "function", "name": "owner", "stateMutability": "view", "inputs": [], "outputs": [{ "name": "", "type": "address" }] },
+  { "type": "function", "name": "arbitrator", "stateMutability": "view", "inputs": [], "outputs": [{ "name": "", "type": "address" }] },
+  { "type": "function", "name": "nextPoolId", "stateMutability": "view", "inputs": [], "outputs": [{ "name": "", "type": "uint256" }] },
+  {
+    "type": "function", "name": "getPool", "stateMutability": "view",
+    "inputs": [{ "name": "poolId", "type": "uint256" }],
+    "outputs": [
+      {
+        "name": "", "type": "tuple",
+        "components": [
+          { "name": "exists", "type": "bool" },
+          { "name": "frozen", "type": "bool" },
+          { "name": "closed", "type": "bool" },
+          { "name": "creator", "type": "address" },
+          { "name": "eventLock", "type": "address" },
+          { "name": "attendanceController", "type": "address" },
+          { "name": "payoutToken", "type": "address" },
+          { "name": "totalFunded", "type": "uint256" },
+          { "name": "claimedAmount", "type": "uint256" },
+          { "name": "claimStart", "type": "uint64" },
+          { "name": "claimEnd", "type": "uint64" },
+          { "name": "challengeWindow", "type": "uint64" },
+          { "name": "frozenAt", "type": "uint64" },
+          { "name": "frozenAccrued", "type": "uint64" },
+          { "name": "positionCount", "type": "uint16" },
+          { "name": "assignedCount", "type": "uint16" },
+          { "name": "rulesHash", "type": "bytes32" }
+        ]
+      }
+    ]
+  },
+  {
+    "type": "function", "name": "positions", "stateMutability": "view",
+    "inputs": [{ "name": "", "type": "uint256" }, { "name": "", "type": "uint16" }],
+    "outputs": [
+      { "name": "amount", "type": "uint256" },
+      { "name": "winner", "type": "address" },
+      { "name": "assignedAt", "type": "uint64" },
+      { "name": "holdUntil", "type": "uint64" },
+      { "name": "freeHoldUsed", "type": "bool" },
+      { "name": "claimed", "type": "bool" },
+      { "name": "claimedAt", "type": "uint64" }
+    ]
+  },
+  { "type": "function", "name": "isManager", "stateMutability": "view", "inputs": [{ "name": "", "type": "uint256" }, { "name": "", "type": "address" }], "outputs": [{ "name": "", "type": "bool" }] },
+  { "type": "function", "name": "isAssigned", "stateMutability": "view", "inputs": [{ "name": "", "type": "uint256" }, { "name": "", "type": "address" }], "outputs": [{ "name": "", "type": "bool" }] },
+  { "type": "function", "name": "allowedPayoutToken", "stateMutability": "view", "inputs": [{ "name": "", "type": "address" }], "outputs": [{ "name": "", "type": "bool" }] },
+  { "type": "function", "name": "allowedAttendanceController", "stateMutability": "view", "inputs": [{ "name": "", "type": "address" }], "outputs": [{ "name": "", "type": "bool" }] },
+  { "type": "function", "name": "isAllowedPayoutToken", "stateMutability": "view", "inputs": [{ "name": "token", "type": "address" }], "outputs": [{ "name": "", "type": "bool" }] },
+  { "type": "function", "name": "getAllowedPayoutTokens", "stateMutability": "view", "inputs": [], "outputs": [{ "name": "", "type": "address[]" }] },
+  {
+    "type": "function", "name": "claimable", "stateMutability": "view",
+    "inputs": [{ "name": "poolId", "type": "uint256" }, { "name": "placement", "type": "uint16" }],
+    "outputs": [{ "name": "canClaim", "type": "bool" }, { "name": "opensAt", "type": "uint256" }]
+  },
+  { "type": "function", "name": "effectiveClaimEnd", "stateMutability": "view", "inputs": [{ "name": "poolId", "type": "uint256" }], "outputs": [{ "name": "", "type": "uint256" }] },
+  { "type": "function", "name": "remaining", "stateMutability": "view", "inputs": [{ "name": "poolId", "type": "uint256" }], "outputs": [{ "name": "", "type": "uint256" }] },
+
+  { "type": "function", "name": "setArbitrator", "stateMutability": "nonpayable", "inputs": [{ "name": "_arbitrator", "type": "address" }], "outputs": [] },
+  { "type": "function", "name": "setAllowedPayoutToken", "stateMutability": "nonpayable", "inputs": [{ "name": "token", "type": "address" }, { "name": "allowed", "type": "bool" }], "outputs": [] },
+  { "type": "function", "name": "setAllowedAttendanceController", "stateMutability": "nonpayable", "inputs": [{ "name": "controller", "type": "address" }, { "name": "allowed", "type": "bool" }], "outputs": [] },
+
+  {
+    "type": "function", "name": "createRewardPool", "stateMutability": "payable",
+    "inputs": [{
+      "name": "p", "type": "tuple",
+      "components": [
+        { "name": "eventLock", "type": "address" },
+        { "name": "attendanceController", "type": "address" },
+        { "name": "payoutToken", "type": "address" },
+        { "name": "positionAmounts", "type": "uint256[]" },
+        { "name": "claimStart", "type": "uint64" },
+        { "name": "claimEnd", "type": "uint64" },
+        { "name": "challengeWindow", "type": "uint64" },
+        { "name": "rulesHash", "type": "bytes32" },
+        { "name": "initialManagers", "type": "address[]" }
+      ]
+    }],
+    "outputs": [{ "name": "poolId", "type": "uint256" }]
+  },
+  { "type": "function", "name": "addManager", "stateMutability": "nonpayable", "inputs": [{ "name": "poolId", "type": "uint256" }, { "name": "m", "type": "address" }], "outputs": [] },
+  { "type": "function", "name": "removeManager", "stateMutability": "nonpayable", "inputs": [{ "name": "poolId", "type": "uint256" }, { "name": "m", "type": "address" }], "outputs": [] },
+  { "type": "function", "name": "renounceManager", "stateMutability": "nonpayable", "inputs": [{ "name": "poolId", "type": "uint256" }], "outputs": [] },
+  {
+    "type": "function", "name": "assignWinners", "stateMutability": "nonpayable",
+    "inputs": [
+      { "name": "poolId", "type": "uint256" },
+      { "name": "batch", "type": "tuple[]", "components": [
+        { "name": "account", "type": "address" },
+        { "name": "placement", "type": "uint16" }
+      ] }
+    ],
+    "outputs": []
+  },
+  { "type": "function", "name": "claim", "stateMutability": "nonpayable", "inputs": [{ "name": "poolId", "type": "uint256" }, { "name": "placement", "type": "uint16" }], "outputs": [] },
+  { "type": "function", "name": "raiseDispute", "stateMutability": "nonpayable", "inputs": [{ "name": "poolId", "type": "uint256" }, { "name": "placement", "type": "uint16" }, { "name": "reasonHash", "type": "bytes32" }], "outputs": [] },
+  { "type": "function", "name": "freeze", "stateMutability": "nonpayable", "inputs": [{ "name": "poolId", "type": "uint256" }], "outputs": [] },
+  { "type": "function", "name": "unfreeze", "stateMutability": "nonpayable", "inputs": [{ "name": "poolId", "type": "uint256" }], "outputs": [] },
+  { "type": "function", "name": "voidAssignment", "stateMutability": "nonpayable", "inputs": [{ "name": "poolId", "type": "uint256" }, { "name": "placement", "type": "uint16" }], "outputs": [] },
+  { "type": "function", "name": "reassign", "stateMutability": "nonpayable", "inputs": [{ "name": "poolId", "type": "uint256" }, { "name": "placement", "type": "uint16" }, { "name": "newWinner", "type": "address" }], "outputs": [] },
+  { "type": "function", "name": "extendClaimEnd", "stateMutability": "nonpayable", "inputs": [{ "name": "poolId", "type": "uint256" }, { "name": "newClaimEnd", "type": "uint64" }], "outputs": [] },
+  { "type": "function", "name": "resolveDispute", "stateMutability": "nonpayable", "inputs": [{ "name": "poolId", "type": "uint256" }, { "name": "placement", "type": "uint16" }, { "name": "upheld", "type": "bool" }, { "name": "resolutionHash", "type": "bytes32" }], "outputs": [] },
+  { "type": "function", "name": "closePool", "stateMutability": "nonpayable", "inputs": [{ "name": "poolId", "type": "uint256" }], "outputs": [] },
+  { "type": "function", "name": "reclaim", "stateMutability": "nonpayable", "inputs": [{ "name": "poolId", "type": "uint256" }], "outputs": [] },
+  { "type": "function", "name": "transferOwnership", "stateMutability": "nonpayable", "inputs": [{ "name": "newOwner", "type": "address" }], "outputs": [] },
+  { "type": "function", "name": "renounceOwnership", "stateMutability": "nonpayable", "inputs": [], "outputs": [] },
+
+  {
+    "type": "event", "name": "PoolCreated", "anonymous": false,
+    "inputs": [
+      { "name": "poolId", "type": "uint256", "indexed": true },
+      { "name": "creator", "type": "address", "indexed": true },
+      { "name": "eventLock", "type": "address", "indexed": true },
+      { "name": "payoutToken", "type": "address", "indexed": false },
+      { "name": "attendanceController", "type": "address", "indexed": false },
+      { "name": "totalFunded", "type": "uint256", "indexed": false },
+      { "name": "claimStart", "type": "uint64", "indexed": false },
+      { "name": "claimEnd", "type": "uint64", "indexed": false },
+      { "name": "challengeWindow", "type": "uint64", "indexed": false },
+      { "name": "positionCount", "type": "uint16", "indexed": false },
+      { "name": "rulesHash", "type": "bytes32", "indexed": false }
+    ]
+  },
+  { "type": "event", "name": "ManagerAdded", "anonymous": false, "inputs": [{ "name": "poolId", "type": "uint256", "indexed": true }, { "name": "manager", "type": "address", "indexed": true }] },
+  { "type": "event", "name": "ManagerRemoved", "anonymous": false, "inputs": [{ "name": "poolId", "type": "uint256", "indexed": true }, { "name": "manager", "type": "address", "indexed": true }] },
+  { "type": "event", "name": "ManagerRenounced", "anonymous": false, "inputs": [{ "name": "poolId", "type": "uint256", "indexed": true }, { "name": "manager", "type": "address", "indexed": true }] },
+  { "type": "event", "name": "WinnerAssigned", "anonymous": false, "inputs": [{ "name": "poolId", "type": "uint256", "indexed": true }, { "name": "placement", "type": "uint16", "indexed": true }, { "name": "account", "type": "address", "indexed": true }, { "name": "assignedAt", "type": "uint64", "indexed": false }] },
+  { "type": "event", "name": "WinnerReplaced", "anonymous": false, "inputs": [{ "name": "poolId", "type": "uint256", "indexed": true }, { "name": "placement", "type": "uint16", "indexed": true }, { "name": "previousAccount", "type": "address", "indexed": false }, { "name": "newAccount", "type": "address", "indexed": false }] },
+  { "type": "event", "name": "PrizeClaimed", "anonymous": false, "inputs": [{ "name": "poolId", "type": "uint256", "indexed": true }, { "name": "placement", "type": "uint16", "indexed": true }, { "name": "winner", "type": "address", "indexed": true }, { "name": "amount", "type": "uint256", "indexed": false }] },
+  { "type": "event", "name": "DisputeRaised", "anonymous": false, "inputs": [{ "name": "poolId", "type": "uint256", "indexed": true }, { "name": "placement", "type": "uint16", "indexed": true }, { "name": "disputer", "type": "address", "indexed": true }, { "name": "reasonHash", "type": "bytes32", "indexed": false }] },
+  { "type": "event", "name": "DisputeResolved", "anonymous": false, "inputs": [{ "name": "poolId", "type": "uint256", "indexed": true }, { "name": "placement", "type": "uint16", "indexed": true }, { "name": "upheld", "type": "bool", "indexed": false }, { "name": "resolutionHash", "type": "bytes32", "indexed": false }] },
+  { "type": "event", "name": "AssignmentVoided", "anonymous": false, "inputs": [{ "name": "poolId", "type": "uint256", "indexed": true }, { "name": "placement", "type": "uint16", "indexed": true }, { "name": "account", "type": "address", "indexed": true }] },
+  { "type": "event", "name": "Reassigned", "anonymous": false, "inputs": [{ "name": "poolId", "type": "uint256", "indexed": true }, { "name": "placement", "type": "uint16", "indexed": true }, { "name": "previousAccount", "type": "address", "indexed": false }, { "name": "newAccount", "type": "address", "indexed": false }] },
+  { "type": "event", "name": "PoolFrozen", "anonymous": false, "inputs": [{ "name": "poolId", "type": "uint256", "indexed": true }] },
+  { "type": "event", "name": "PoolUnfrozen", "anonymous": false, "inputs": [{ "name": "poolId", "type": "uint256", "indexed": true }, { "name": "frozenAccrued", "type": "uint64", "indexed": false }] },
+  { "type": "event", "name": "ClaimEndExtended", "anonymous": false, "inputs": [{ "name": "poolId", "type": "uint256", "indexed": true }, { "name": "newClaimEnd", "type": "uint64", "indexed": false }] },
+  { "type": "event", "name": "PoolClosed", "anonymous": false, "inputs": [{ "name": "poolId", "type": "uint256", "indexed": true }, { "name": "creator", "type": "address", "indexed": true }, { "name": "amount", "type": "uint256", "indexed": false }] },
+  { "type": "event", "name": "ResidualReclaimed", "anonymous": false, "inputs": [{ "name": "poolId", "type": "uint256", "indexed": true }, { "name": "creator", "type": "address", "indexed": true }, { "name": "amount", "type": "uint256", "indexed": false }] },
+  { "type": "event", "name": "ArbitratorSet", "anonymous": false, "inputs": [{ "name": "previousArbitrator", "type": "address", "indexed": true }, { "name": "newArbitrator", "type": "address", "indexed": true }] },
+  { "type": "event", "name": "AllowedPayoutTokenUpdated", "anonymous": false, "inputs": [{ "name": "token", "type": "address", "indexed": true }, { "name": "allowed", "type": "bool", "indexed": false }] },
+  { "type": "event", "name": "AllowedAttendanceControllerUpdated", "anonymous": false, "inputs": [{ "name": "controller", "type": "address", "indexed": true }, { "name": "allowed", "type": "bool", "indexed": false }] },
+  { "type": "event", "name": "OwnershipTransferred", "anonymous": false, "inputs": [{ "name": "previousOwner", "type": "address", "indexed": true }, { "name": "newOwner", "type": "address", "indexed": true }] }
+]

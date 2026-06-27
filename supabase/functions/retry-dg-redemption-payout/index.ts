@@ -6,6 +6,7 @@ import { ensureAdmin } from "../_shared/admin-check.ts";
 import { SUPABASE_SERVICE_ROLE_KEY, SUPABASE_URL } from "../_shared/constants.ts";
 import { initiatePaystackTransfer, verifyPaystackTransfer } from "../_shared/paystack.ts";
 import {
+  isPaystackTransferTerminalFailureStatus,
   mapPaystackTransferStatus,
   parseReferenceId,
   paystackTransferUpdateValues,
@@ -49,6 +50,11 @@ async function updateLockedIntent(
 function isMissingPaystackTransfer(error: unknown): boolean {
   const message = error instanceof Error ? error.message : String(error || "");
   return /not found|does not exist|reference/i.test(message);
+}
+
+function needsFreshPaystackReference(intent: any): boolean {
+  if (["failed", "payout_processing", "payout_pending"].includes(String(intent.status))) return true;
+  return String(intent.status) === "manual_review" && isPaystackTransferTerminalFailureStatus(intent.paystack_status);
 }
 
 serve(async (req) => {
@@ -98,6 +104,8 @@ serve(async (req) => {
       return json({ ok: false, error: "Redeem DG request is not retryable" }, 400);
     }
 
+    let rotateReference = needsFreshPaystackReference(intent);
+
     try {
       const verified = await verifyPaystackTransfer(intent.paystack_reference);
       const paystackStatus = String(verified.data.status || "").toLowerCase();
@@ -117,15 +125,16 @@ serve(async (req) => {
           supabase,
           intent,
           lockId,
-          paystackTransferUpdateValues({ transfer: verified.data }),
+          paystackTransferUpdateValues({ transfer: verified.data, failedStatus: "manual_review" }),
         );
         await logEvent(supabase, intent, adminUserId, "admin_reconcile_paystack_failed", { paystack_transfer: verified.data });
         return json({ ok: true, status: updated.status, redemption: updated });
       }
+      rotateReference = true;
     } catch (error) {
       if (reconcileOnly && isMissingPaystackTransfer(error)) {
         const updated = await updateLockedIntent(supabase, intent, lockId, {
-          status: "failed",
+          status: "manual_review",
           lock_id: null,
           locked_at: null,
           last_error: "paystack_transfer_not_found",
@@ -162,7 +171,7 @@ serve(async (req) => {
       return json({ ok: false, error: "Saved bank account is no longer available" }, 400);
     }
 
-    const reference = ["failed", "payout_processing", "payout_pending"].includes(intent.status)
+    const reference = rotateReference
       ? parseReferenceId("dgr_retry")
       : intent.paystack_reference;
     if (reference !== intent.paystack_reference) {
@@ -192,7 +201,7 @@ serve(async (req) => {
         supabase,
         intent,
         lockId,
-        paystackTransferUpdateValues({ transfer: transfer.data }),
+        paystackTransferUpdateValues({ transfer: transfer.data, failedStatus: "manual_review" }),
       );
       await logEvent(supabase, intent, adminUserId, "admin_retry_paystack_transfer", { paystack_transfer: transfer.data });
 
@@ -200,7 +209,7 @@ serve(async (req) => {
     } catch (error) {
       const message = error instanceof Error ? error.message : "Paystack transfer failed";
       await updateLockedIntent(supabase, intent, lockId, {
-        status: "failed",
+        status: "manual_review",
         lock_id: null,
         locked_at: null,
         last_error: message,

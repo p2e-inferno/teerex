@@ -357,6 +357,69 @@ export type Database = {
           },
         ]
       }
+      csp_rate_limits: {
+        Row: {
+          count: number
+          ip: string
+          window_start: string
+        }
+        Insert: {
+          count: number
+          ip: string
+          window_start: string
+        }
+        Update: {
+          count?: number
+          ip?: string
+          window_start?: string
+        }
+        Relationships: []
+      }
+      csp_reports: {
+        Row: {
+          blocked_uri: string | null
+          column_number: number | null
+          document_uri: string
+          id: string
+          ip: string | null
+          line_number: number | null
+          raw_report: Json | null
+          received_at: string
+          source_file: string | null
+          status_code: number | null
+          user_agent: string | null
+          violated_directive: string
+        }
+        Insert: {
+          blocked_uri?: string | null
+          column_number?: number | null
+          document_uri: string
+          id?: string
+          ip?: string | null
+          line_number?: number | null
+          raw_report?: Json | null
+          received_at?: string
+          source_file?: string | null
+          status_code?: number | null
+          user_agent?: string | null
+          violated_directive: string
+        }
+        Update: {
+          blocked_uri?: string | null
+          column_number?: number | null
+          document_uri?: string
+          id?: string
+          ip?: string | null
+          line_number?: number | null
+          raw_report?: Json | null
+          received_at?: string
+          source_file?: string | null
+          status_code?: number | null
+          user_agent?: string | null
+          violated_directive?: string
+        }
+        Relationships: []
+      }
       dg_redemption_events: {
         Row: {
           actor_user_id: string | null
@@ -1770,6 +1833,7 @@ export type Database = {
           native_currency_name: string | null
           native_currency_symbol: string
           refundable_event_manager_address: string | null
+          rewards_controller_address: string | null
           rpc_url: string | null
           ticket_pass_controller_address: string | null
           uniswap_v3_eth_usdc_pool_address: string | null
@@ -1797,6 +1861,7 @@ export type Database = {
           native_currency_name?: string | null
           native_currency_symbol?: string
           refundable_event_manager_address?: string | null
+          rewards_controller_address?: string | null
           rpc_url?: string | null
           ticket_pass_controller_address?: string | null
           uniswap_v3_eth_usdc_pool_address?: string | null
@@ -1824,6 +1889,7 @@ export type Database = {
           native_currency_name?: string | null
           native_currency_symbol?: string
           refundable_event_manager_address?: string | null
+          rewards_controller_address?: string | null
           rpc_url?: string | null
           ticket_pass_controller_address?: string | null
           uniswap_v3_eth_usdc_pool_address?: string | null
@@ -2087,6 +2153,249 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      reward_pool_disputes: {
+        Row: {
+          category: string
+          created_at: string
+          disputer_address: string
+          disputer_id: string
+          evidence_urls: Json
+          id: string
+          onchain_tx_hash: string | null
+          placement: number | null
+          reason_hash: string
+          reason_text: string | null
+          resolution_hash: string | null
+          resolution_note: string | null
+          resolved_at: string | null
+          resolved_by: string | null
+          reward_pool_id: string
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          category?: string
+          created_at?: string
+          disputer_address: string
+          disputer_id: string
+          evidence_urls?: Json
+          id?: string
+          onchain_tx_hash?: string | null
+          placement?: number | null
+          reason_hash: string
+          reason_text?: string | null
+          resolution_hash?: string | null
+          resolution_note?: string | null
+          resolved_at?: string | null
+          resolved_by?: string | null
+          reward_pool_id: string
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          category?: string
+          created_at?: string
+          disputer_address?: string
+          disputer_id?: string
+          evidence_urls?: Json
+          id?: string
+          onchain_tx_hash?: string | null
+          placement?: number | null
+          reason_hash?: string
+          reason_text?: string | null
+          resolution_hash?: string | null
+          resolution_note?: string | null
+          resolved_at?: string | null
+          resolved_by?: string | null
+          reward_pool_id?: string
+          status?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "reward_pool_disputes_reward_pool_id_fkey"
+            columns: ["reward_pool_id"]
+            isOneToOne: false
+            referencedRelation: "reward_pools"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      reward_pool_managers: {
+        Row: {
+          active: boolean
+          created_at: string
+          id: string
+          manager_address: string
+          reward_pool_id: string
+          tx_hash: string | null
+          updated_at: string
+        }
+        Insert: {
+          active?: boolean
+          created_at?: string
+          id?: string
+          manager_address: string
+          reward_pool_id: string
+          tx_hash?: string | null
+          updated_at?: string
+        }
+        Update: {
+          active?: boolean
+          created_at?: string
+          id?: string
+          manager_address?: string
+          reward_pool_id?: string
+          tx_hash?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "reward_pool_managers_reward_pool_id_fkey"
+            columns: ["reward_pool_id"]
+            isOneToOne: false
+            referencedRelation: "reward_pools"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      reward_pool_positions: {
+        Row: {
+          amount_wei: string
+          assigned_at: string | null
+          claim_tx_hash: string | null
+          claimed: boolean
+          claimed_at: string | null
+          created_at: string
+          hold_until: string | null
+          id: string
+          placement: number
+          reward_pool_id: string
+          updated_at: string
+          winner_address: string | null
+        }
+        Insert: {
+          amount_wei: string
+          assigned_at?: string | null
+          claim_tx_hash?: string | null
+          claimed?: boolean
+          claimed_at?: string | null
+          created_at?: string
+          hold_until?: string | null
+          id?: string
+          placement: number
+          reward_pool_id: string
+          updated_at?: string
+          winner_address?: string | null
+        }
+        Update: {
+          amount_wei?: string
+          assigned_at?: string | null
+          claim_tx_hash?: string | null
+          claimed?: boolean
+          claimed_at?: string | null
+          created_at?: string
+          hold_until?: string | null
+          id?: string
+          placement?: number
+          reward_pool_id?: string
+          updated_at?: string
+          winner_address?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "reward_pool_positions_reward_pool_id_fkey"
+            columns: ["reward_pool_id"]
+            isOneToOne: false
+            referencedRelation: "reward_pools"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      reward_pools: {
+        Row: {
+          attendance_controller_address: string | null
+          chain_id: number
+          challenge_window_secs: number
+          claim_end: string
+          claim_start: string
+          claimed_amount_wei: string
+          controller_address: string
+          created_at: string
+          creator_address: string
+          creator_id: string
+          event_lock_address: string
+          frozen: boolean
+          frozen_accrued_secs: number
+          id: string
+          payout_token_address: string | null
+          payout_token_symbol: string | null
+          pool_id: number
+          position_count: number
+          rules_hash: string
+          rules_uri: string | null
+          status: string
+          token_decimals: number | null
+          total_funded_wei: string
+          tx_hash: string | null
+          updated_at: string
+        }
+        Insert: {
+          attendance_controller_address?: string | null
+          chain_id: number
+          challenge_window_secs: number
+          claim_end: string
+          claim_start: string
+          claimed_amount_wei?: string
+          controller_address: string
+          created_at?: string
+          creator_address: string
+          creator_id: string
+          event_lock_address: string
+          frozen?: boolean
+          frozen_accrued_secs?: number
+          id?: string
+          payout_token_address?: string | null
+          payout_token_symbol?: string | null
+          pool_id: number
+          position_count: number
+          rules_hash: string
+          rules_uri?: string | null
+          status?: string
+          token_decimals?: number | null
+          total_funded_wei: string
+          tx_hash?: string | null
+          updated_at?: string
+        }
+        Update: {
+          attendance_controller_address?: string | null
+          chain_id?: number
+          challenge_window_secs?: number
+          claim_end?: string
+          claim_start?: string
+          claimed_amount_wei?: string
+          controller_address?: string
+          created_at?: string
+          creator_address?: string
+          creator_id?: string
+          event_lock_address?: string
+          frozen?: boolean
+          frozen_accrued_secs?: number
+          id?: string
+          payout_token_address?: string | null
+          payout_token_symbol?: string | null
+          pool_id?: number
+          position_count?: number
+          rules_hash?: string
+          rules_uri?: string | null
+          status?: string
+          token_decimals?: number | null
+          total_funded_wei?: string
+          tx_hash?: string | null
+          updated_at?: string
+        }
+        Relationships: []
       }
       ticket_pass_orders: {
         Row: {
@@ -2866,6 +3175,10 @@ export type Database = {
           isSetofReturn: false
         }
       }
+      check_and_increment_csp_rate_limit: {
+        Args: { p_ip: string; p_max: number; p_window_seconds: number }
+        Returns: boolean
+      }
       check_gasless_limit: {
         Args: { p_activity: string; p_daily_limit: number; p_user_id: string }
         Returns: {
@@ -2954,6 +3267,42 @@ export type Database = {
         SetofOptions: {
           from: "*"
           to: "dg_redemption_intents"
+          isOneToOne: true
+          isSetofReturn: false
+        }
+      }
+      create_reward_pool_mirror: {
+        Args: { p_managers: Json; p_pool: Json; p_positions: Json }
+        Returns: {
+          attendance_controller_address: string | null
+          chain_id: number
+          challenge_window_secs: number
+          claim_end: string
+          claim_start: string
+          claimed_amount_wei: string
+          controller_address: string
+          created_at: string
+          creator_address: string
+          creator_id: string
+          event_lock_address: string
+          frozen: boolean
+          frozen_accrued_secs: number
+          id: string
+          payout_token_address: string | null
+          payout_token_symbol: string | null
+          pool_id: number
+          position_count: number
+          rules_hash: string
+          rules_uri: string | null
+          status: string
+          token_decimals: number | null
+          total_funded_wei: string
+          tx_hash: string | null
+          updated_at: string
+        }
+        SetofOptions: {
+          from: "*"
+          to: "reward_pools"
           isOneToOne: true
           isSetofReturn: false
         }

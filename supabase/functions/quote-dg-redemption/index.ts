@@ -38,8 +38,29 @@ function friendlyError(message: string): string {
   return message;
 }
 
-function sumGrossKobo(rows: Array<{ gross_ngn_kobo: number | string | null }> | null | undefined): number {
-  return (rows || []).reduce((total, row) => total + Number(row.gross_ngn_kobo || 0), 0);
+type DailyUsageRow = {
+  gross_ngn_kobo: number | string | null;
+  status: string | null;
+  expires_at: string | null;
+};
+
+function countsTowardDailyLimit(row: Pick<DailyUsageRow, "status" | "expires_at">, nowMs = Date.now()): boolean {
+  const status = String(row.status || "");
+  if (status === "expired" || status === "cancelled" || status === "failed") {
+    return false;
+  }
+  if (status === "awaiting_transfer" || status === "validating_transfer") {
+    const expiresAtMs = row.expires_at ? Date.parse(row.expires_at) : NaN;
+    return !Number.isFinite(expiresAtMs) || expiresAtMs > nowMs;
+  }
+  return true;
+}
+
+function sumActiveGrossKobo(rows: DailyUsageRow[] | null | undefined): number {
+  const nowMs = Date.now();
+  return (rows || [])
+    .filter((row) => countsTowardDailyLimit(row, nowMs))
+    .reduce((total, row) => total + Number(row.gross_ngn_kobo || 0), 0);
 }
 
 serve(async (req) => {
@@ -56,6 +77,7 @@ serve(async (req) => {
     const body = await req.json().catch(() => ({}));
     const chainId = Number(body.chain_id ?? body.chainId);
     const amountDg = String(body.amount_dg ?? body.amountDg ?? "").trim();
+    const previewOnly = Boolean(body.preview_only ?? body.previewOnly ?? false);
     const walletAddress = await validateUserWallet(userId, String(body.wallet_address || body.walletAddress || ""));
 
     if (!Number.isInteger(chainId) || chainId <= 0) {
@@ -96,6 +118,7 @@ serve(async (req) => {
       network: pricingNetwork,
       walletAddress,
       amountDg,
+      enforceWalletBalance: false,
     });
 
     const pricing = await priceDgRedemptionAmounts(
@@ -131,6 +154,17 @@ serve(async (req) => {
       },
     };
 
+    if (vendorQuote.amountDgRaw > vendorQuote.dgBalanceRaw) {
+      return json({
+        ...baseUnavailablePayload,
+        error: "Your DG balance is not enough for this redemption",
+        max_redeemable: {
+          amount_dg: ethers.formatUnits(vendorQuote.dgBalanceRaw, vendorQuote.dgDecimals),
+          reason: "wallet_balance",
+        },
+      });
+    }
+
     if (vendorQuote.liquidityExceeded) {
       const feeDenominator = BigInt(Math.max(10_000 - vendorQuote.sellFeeBps, 1));
       const maxDgRaw = (vendorQuote.upBalanceRaw * vendorQuote.exchangeRate * 10_000n) / feeDenominator;
@@ -158,7 +192,7 @@ serve(async (req) => {
       config.limits.per_user_daily_ngn_kobo > 0
         ? supabase
           .from("dg_redemption_intents")
-          .select("gross_ngn_kobo")
+          .select("gross_ngn_kobo,status,expires_at")
           .eq("user_id", userId)
           .gte("created_at", dayStart.toISOString())
           .not("status", "in", "(expired,cancelled,failed)")
@@ -166,7 +200,7 @@ serve(async (req) => {
       config.limits.platform_daily_ngn_kobo > 0
         ? supabase
           .from("dg_redemption_intents")
-          .select("gross_ngn_kobo")
+          .select("gross_ngn_kobo,status,expires_at")
           .gte("created_at", dayStart.toISOString())
           .not("status", "in", "(expired,cancelled,failed)")
         : Promise.resolve({ data: [], error: null }),
@@ -175,7 +209,7 @@ serve(async (req) => {
     if (platformDailyUsage.error) throw new Error(platformDailyUsage.error.message);
 
     const userDailyLeftKobo = config.limits.per_user_daily_ngn_kobo > 0
-      ? Math.max(config.limits.per_user_daily_ngn_kobo - sumGrossKobo(userDailyUsage.data), 0)
+      ? Math.max(config.limits.per_user_daily_ngn_kobo - sumActiveGrossKobo(userDailyUsage.data), 0)
       : null;
     if (userDailyLeftKobo !== null && grossValueKobo > userDailyLeftKobo) {
       return json({
@@ -188,7 +222,7 @@ serve(async (req) => {
       });
     }
     const platformDailyLeftKobo = config.limits.platform_daily_ngn_kobo > 0
-      ? Math.max(config.limits.platform_daily_ngn_kobo - sumGrossKobo(platformDailyUsage.data), 0)
+      ? Math.max(config.limits.platform_daily_ngn_kobo - sumActiveGrossKobo(platformDailyUsage.data), 0)
       : null;
     if (platformDailyLeftKobo !== null && grossValueKobo > platformDailyLeftKobo) {
       return json({
@@ -220,7 +254,6 @@ serve(async (req) => {
       return json({ ok: false, error: "Redeem DG amount is too small after fees" }, 400);
     }
 
-    const previewOnly = Boolean(body.preview_only ?? body.previewOnly ?? false);
     if (previewOnly) {
       return json({
         ok: true,

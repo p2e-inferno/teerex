@@ -43,7 +43,7 @@ serve(async (req) => {
       loadDgRedemptionConfig(supabase),
       supabase
         .from("dg_redemption_intents")
-        .select("id,user_id,wallet_address,chain_id,status,amount_dg_raw,gross_ngn_kobo,service_fee_kobo,vat_kobo,total_fee_kobo,net_payout_kobo,tx_hash,paystack_reference,paystack_status,last_error,expires_at,created_at,updated_at,completed_at,payout_account:user_payout_accounts(id,account_holder_name,bank_name,account_number_last4,status)")
+        .select("id,user_id,wallet_address,chain_id,status,amount_dg_raw,gross_ngn_kobo,service_fee_kobo,vat_kobo,total_fee_kobo,net_payout_kobo,tx_hash,paystack_reference,paystack_status,paystack_transfer_code,paystack_transfer_id,last_error,expires_at,created_at,updated_at,completed_at,payout_account:user_payout_accounts(id,account_holder_name,bank_name,account_number_last4,status)")
         .order("created_at", { ascending: false })
         .limit(50),
       supabase

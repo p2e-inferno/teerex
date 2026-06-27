@@ -28,9 +28,7 @@ export const Header: React.FC = () => {
       <div className="container mx-auto px-6">
         <div className="flex items-center justify-between h-16">
           <Link to="/" className="flex items-center gap-2 font-bold text-xl text-gray-900">
-            <div className="w-8 h-8 bg-purple-600 rounded-lg flex items-center justify-center">
-              <Ticket className="h-5 w-5 text-white" />
-            </div>
+            <img src="/logo.svg" alt="TeeRex" className="w-8 h-8" />
             <span>TeeRex</span>
           </Link>
 

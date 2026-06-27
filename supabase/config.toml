@@ -31,6 +31,10 @@ enabled = true
 [functions.expire-dg-redemption-intents]
   verify_jwt = false
 
+[functions.csp-report]
+  # Public browser endpoint for CSP violation reports.
+  verify_jwt = false
+
 # Keep verify_jwt enabled for remove-service-manager; it will receive
 # Supabase JWT in Authorization and Privy JWT in X-Privy-Authorization.
 

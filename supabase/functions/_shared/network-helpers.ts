@@ -8,6 +8,7 @@ export interface NetworkConfig {
   unlock_factory_address: string | null;
   refundable_event_manager_address: string | null;
   ticket_pass_controller_address: string | null;
+  rewards_controller_address: string | null;
   usdc_token_address: string | null;
   dg_token_address: string | null;
   g_token_address: string | null;
@@ -35,7 +36,7 @@ export async function validateChain(
 ): Promise<NetworkConfig | null> {
   const { data, error } = await supabase
     .from('network_configs')
-    .select('chain_id, chain_name, rpc_url, unlock_factory_address, refundable_event_manager_address, ticket_pass_controller_address, usdc_token_address, dg_token_address, g_token_address, up_token_address, dg_vendor_address, uniswap_v3_quoter_address, uniswap_v3_weth_address, uniswap_v3_eth_usdc_pool_address, uniswap_v3_up_weth_fee, uniswap_v3_weth_usdc_fee, is_active')
+    .select('chain_id, chain_name, rpc_url, unlock_factory_address, refundable_event_manager_address, ticket_pass_controller_address, rewards_controller_address, usdc_token_address, dg_token_address, g_token_address, up_token_address, dg_vendor_address, uniswap_v3_quoter_address, uniswap_v3_weth_address, uniswap_v3_eth_usdc_pool_address, uniswap_v3_up_weth_fee, uniswap_v3_weth_usdc_fee, is_active')
     .eq('chain_id', chainId)
     .eq('is_active', true)
     .maybeSingle();
@@ -58,7 +59,7 @@ export async function getActiveNetworks(
 ): Promise<NetworkConfig[]> {
   const { data, error } = await supabase
     .from('network_configs')
-    .select('chain_id, chain_name, rpc_url, unlock_factory_address, refundable_event_manager_address, ticket_pass_controller_address, usdc_token_address, dg_token_address, g_token_address, up_token_address, dg_vendor_address, uniswap_v3_quoter_address, uniswap_v3_weth_address, uniswap_v3_eth_usdc_pool_address, uniswap_v3_up_weth_fee, uniswap_v3_weth_usdc_fee, is_active')
+    .select('chain_id, chain_name, rpc_url, unlock_factory_address, refundable_event_manager_address, ticket_pass_controller_address, rewards_controller_address, usdc_token_address, dg_token_address, g_token_address, up_token_address, dg_vendor_address, uniswap_v3_quoter_address, uniswap_v3_weth_address, uniswap_v3_eth_usdc_pool_address, uniswap_v3_up_weth_fee, uniswap_v3_weth_usdc_fee, is_active')
     .eq('is_active', true)
     .order('chain_id');
 

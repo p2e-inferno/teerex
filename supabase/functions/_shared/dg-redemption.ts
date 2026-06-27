@@ -478,20 +478,55 @@ export function mapPaystackTransferStatus(params: {
   const event = String(params.event || "").toLowerCase();
   const status = String(params.status || "").toLowerCase();
   if (event === "transfer.success" || status === "success") return "completed";
-  if (event === "transfer.failed" || event === "transfer.reversed" || status === "failed" || status === "reversed") {
+  if (event === "transfer.failed" || event === "transfer.reversed" || isPaystackTransferTerminalFailureStatus(status)) {
     return "failed";
   }
   if (status === "otp") return "manual_review";
   return "payout_processing";
 }
 
+export function isPaystackTransferTerminalFailureStatus(status?: unknown): boolean {
+  return ["failed", "reversed", "abandoned", "rejected", "blocked"].includes(String(status || "").toLowerCase());
+}
+
+export function isPaystackTransferActiveStatus(status?: unknown): boolean {
+  return ["otp", "pending", "received", "queued", "processing"].includes(String(status || "").toLowerCase());
+}
+
+export function isDgRedemptionManuallyPayable(intent: any): boolean {
+  if (!intent?.tx_hash) return false;
+  const status = String(intent.status || "");
+  if (!["failed", "manual_review", "payout_pending", "payout_processing"].includes(status)) return false;
+
+  const paystackStatus = String(intent.paystack_status || "").toLowerCase();
+  const hasPaystackTransfer = Boolean(intent.paystack_transfer_code || intent.paystack_transfer_id);
+  if (!paystackStatus && !hasPaystackTransfer) return true;
+  if (isPaystackTransferActiveStatus(paystackStatus) || paystackStatus === "success") return false;
+  return isPaystackTransferTerminalFailureStatus(paystackStatus);
+}
+
+export function paystackTransferFailureReason(params: {
+  event?: unknown;
+  status?: unknown;
+}): string {
+  const event = String(params.event || "").toLowerCase();
+  const status = String(params.status || "").toLowerCase();
+  if (event === "transfer.reversed" || status === "reversed") return "paystack_transfer_reversed";
+  if (status === "abandoned") return "paystack_transfer_abandoned";
+  if (status === "rejected") return "paystack_transfer_rejected";
+  if (status === "blocked") return "paystack_transfer_blocked";
+  return "paystack_transfer_failed";
+}
+
 export function paystackTransferUpdateValues(params: {
   transfer: Partial<PaystackTransferData>;
   event?: unknown;
   now?: string;
+  failedStatus?: "failed" | "manual_review";
 }): Record<string, unknown> {
   const paystackStatus = String(params.transfer.status || "").toLowerCase();
-  const status = mapPaystackTransferStatus({ event: params.event, status: paystackStatus });
+  const mappedStatus = mapPaystackTransferStatus({ event: params.event, status: paystackStatus });
+  const status = mappedStatus === "failed" && params.failedStatus ? params.failedStatus : mappedStatus;
   const values: Record<string, unknown> = {
     status,
     paystack_status: paystackStatus || null,
@@ -504,12 +539,9 @@ export function paystackTransferUpdateValues(params: {
   if (status === "completed") {
     values.completed_at = params.now || new Date().toISOString();
   }
-  if (status === "failed") {
-    values.last_error = String(params.event || "").toLowerCase() === "transfer.reversed"
-      ? "paystack_transfer_reversed"
-      : "paystack_transfer_failed";
-  }
-  if (status === "manual_review") {
+  if (mappedStatus === "failed") {
+    values.last_error = paystackTransferFailureReason({ event: params.event, status: paystackStatus });
+  } else if (status === "manual_review") {
     values.last_error = "paystack_otp_required";
   }
   return values;
@@ -701,6 +733,7 @@ export async function getVendorRedemptionQuote(params: {
   network: NetworkConfig;
   walletAddress: string;
   amountDg: string;
+  enforceWalletBalance?: boolean;
 }): Promise<VendorRedemptionQuote> {
   const dgTokenAddress = requireAddress(params.network.dg_token_address, "DG token address");
   const upTokenAddress = requireAddress(params.network.up_token_address, "UP token address");
@@ -774,7 +807,7 @@ export async function getVendorRedemptionQuote(params: {
   const upBalanceRaw = BigInt(chainState.upBalanceRawValue.toString());
   const dgBalanceRaw = BigInt(chainState.dgBalanceRawValue.toString());
 
-  if (amountDgRaw > dgBalanceRaw) {
+  if (params.enforceWalletBalance !== false && amountDgRaw > dgBalanceRaw) {
     throw new Error("Your DG balance is not enough for this redemption");
   }
 
@@ -928,6 +961,9 @@ export async function validateDgTransfer(params: {
   if (confirmations < params.requiredConfirmations) {
     throw new Error(`Waiting for ${params.requiredConfirmations} confirmations`);
   }
+  const block = await provider.getBlock(receipt.blockNumber);
+  if (!block) throw new Error("Transaction block was not found on this network");
+  const blockTimestamp = new Date(block.timestamp * 1000).toISOString();
 
   const iface = new ethers.Interface(ERC20_ABI);
   const expectedFrom = params.fromAddress.toLowerCase();
@@ -951,6 +987,8 @@ export async function validateDgTransfer(params: {
       return {
         tx_hash: hash.toLowerCase(),
         block_number: receipt.blockNumber,
+        block_timestamp: blockTimestamp,
+        block_timestamp_unix: block.timestamp,
         confirmations,
         from,
         to,
@@ -1057,10 +1095,18 @@ export function publicDgRedemptionIntent(intent: any): Record<string, unknown> {
       amountDg = String(intent.amount_dg_raw);
     }
   }
+  const status = (() => {
+    const value = String(intent.status || "");
+    const expiresAtMs = intent.expires_at ? Date.parse(String(intent.expires_at)) : NaN;
+    if (value === "awaiting_transfer" && Number.isFinite(expiresAtMs) && expiresAtMs <= Date.now()) {
+      return "expired";
+    }
+    return value;
+  })();
 
   return {
     id: intent.id,
-    status: intent.status,
+    status,
     chain_id: intent.chain_id,
     wallet_address: intent.wallet_address,
     redemption_wallet_address: intent.redemption_wallet_address,
@@ -1082,6 +1128,85 @@ export function publicDgRedemptionIntent(intent: any): Record<string, unknown> {
     created_at: intent.created_at,
     updated_at: intent.updated_at,
   };
+}
+
+export function getDgRedemptionAdminNotifyCooldownSeconds(): number {
+  const configured = Number(Deno.env.get("DG_REDEMPTION_NOTIFY_ADMIN_COOLDOWN_SECONDS"));
+  return Number.isFinite(configured) && configured > 0 ? Math.trunc(configured) : 60 * 60;
+}
+
+export async function getNextDgRedemptionAdminNotifyAt(supabase: any, intent: any): Promise<string | null> {
+  if (!intent?.id || !intent?.user_id || String(intent.status) !== "manual_review") return null;
+
+  const cooldownSeconds = getDgRedemptionAdminNotifyCooldownSeconds();
+  const latestAllowedAt = new Date(Date.now() - cooldownSeconds * 1000).toISOString();
+  const { data, error } = await supabase
+    .from("dg_redemption_events")
+    .select("created_at")
+    .eq("intent_id", intent.id)
+    .eq("actor_user_id", intent.user_id)
+    .eq("event_type", "user_admin_notification_sent")
+    .gte("created_at", latestAllowedAt)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (error) throw new Error(error.message);
+  if (!data?.created_at) return null;
+
+  const nextNotifyAt = new Date(new Date(data.created_at).getTime() + cooldownSeconds * 1000).toISOString();
+  return new Date(nextNotifyAt).getTime() > Date.now() ? nextNotifyAt : null;
+}
+
+export async function publicDgRedemptionIntentWithAdminNotify(
+  supabase: any,
+  intent: any,
+): Promise<Record<string, unknown>> {
+  return {
+    ...publicDgRedemptionIntent(intent),
+    next_admin_notify_at: await getNextDgRedemptionAdminNotifyAt(supabase, intent),
+  };
+}
+
+export async function normalizeValidatedDgRedemptionFailure(supabase: any, intent: any): Promise<any> {
+  if (String(intent?.status) !== "failed" || !intent?.id || !intent?.tx_hash) return intent;
+
+  const { data: validatedEvent, error: validatedError } = await supabase
+    .from("dg_redemption_events")
+    .select("id")
+    .eq("intent_id", intent.id)
+    .eq("event_type", "transfer_validated")
+    .limit(1)
+    .maybeSingle();
+
+  if (validatedError) throw new Error(validatedError.message);
+  if (!validatedEvent) return intent;
+
+  const { data: updated, error: updateError } = await supabase
+    .from("dg_redemption_intents")
+    .update({
+      status: "manual_review",
+      lock_id: null,
+      locked_at: null,
+    })
+    .eq("id", intent.id)
+    .eq("status", "failed")
+    .not("tx_hash", "is", null)
+    .select("*")
+    .maybeSingle();
+
+  if (updateError) throw new Error(updateError.message);
+  if (!updated) return intent;
+
+  await supabase.from("dg_redemption_events").insert({
+    intent_id: updated.id,
+    event_type: "validated_failure_moved_to_manual_review",
+    actor_user_id: updated.user_id,
+    actor_wallet_address: updated.wallet_address,
+    metadata: { previous_status: "failed", last_error: updated.last_error || null },
+  });
+
+  return updated;
 }
 
 export function publicPayoutAccount(account: any, includeMasked = true): Record<string, unknown> | null {
