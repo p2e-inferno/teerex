@@ -583,14 +583,23 @@ export const preflightClaimReward = (
 });
 
 export const raiseRewardDispute = (
-  controllerAddress: string, poolId: number, placement: number, reasonHash: string, wallet: any, chainId: number,
-) => runPoolTx(controllerAddress, wallet, chainId, (c) => c.raiseDispute(poolId, placement, reasonHash), 'Failed to raise dispute');
+  controllerAddress: string,
+  poolId: number,
+  placement: number,
+  reasonHash: string,
+  holdDurationSecs: number,
+  wallet: any,
+  chainId: number,
+) => runPoolTx(controllerAddress, wallet, chainId,
+  (c) => c.raiseDispute(poolId, placement, reasonHash, holdDurationSecs),
+  'Failed to raise dispute');
 
 export const preflightRaiseRewardDispute = (
   controllerAddress: string,
   poolId: number,
   placement: number,
   reasonHash: string,
+  holdDurationSecs: number,
   wallet: any,
   chainId: number,
 ) => preflightRewardAction({
@@ -599,8 +608,8 @@ export const preflightRaiseRewardDispute = (
   chainId,
   debugLabel: 'dispute-preflight',
   failMessage: 'This dispute cannot be raised yet.',
-  staticCall: (c) => c.raiseDispute.staticCall(poolId, placement, reasonHash),
-  estimateGas: (c) => c.raiseDispute.estimateGas(poolId, placement, reasonHash),
+  staticCall: (c) => c.raiseDispute.staticCall(poolId, placement, reasonHash, holdDurationSecs),
+  estimateGas: (c) => c.raiseDispute.estimateGas(poolId, placement, reasonHash, holdDurationSecs),
 });
 
 export const addRewardManager = (

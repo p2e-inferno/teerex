@@ -53,6 +53,8 @@ contract RewardsForkTest is Test {
     // Circle-issued native USDC on Base mainnet.
     address internal constant USDC_BASE_MAINNET = 0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913;
     uint64 internal constant MIN_WINDOW = 30 hours;
+    uint64 internal constant MIN_CLAIM = 7 days;
+    uint64 internal constant MAX_BACKSTOP = 30 days;
 
     bool internal skipped;
     address internal unlockFactory;
@@ -158,6 +160,37 @@ contract RewardsForkTest is Test {
         vm.prank(winner);
         controller.claim(poolId, 1);
         assertEq(winner.balance - before, 2 ether);
+        assertEq(controller.remaining(poolId), 0);
+    }
+
+    function test_Fork_FrozenWinnerClaimsAfterBackstopGrace() public onFork {
+        address winner = address(new ForkRecipient());
+        _grantKey(lock, winner);
+        uint256 poolId = _createEthPool(address(lock), 1 ether);
+
+        R.WinnerAssignment[] memory batch = new R.WinnerAssignment[](1);
+        batch[0] = R.WinnerAssignment({account: winner, placement: 1});
+        vm.prank(creator);
+        controller.assignWinners(poolId, batch);
+
+        R.Pool memory p = controller.getPool(poolId);
+        vm.warp(p.claimStart);
+        vm.prank(arbitrator);
+        controller.freeze(poolId);
+
+        uint256 graceEnd = uint256(p.claimEnd) + MAX_BACKSTOP + MIN_CLAIM;
+        assertEq(controller.positionClaimEnd(poolId, 1), graceEnd);
+
+        vm.warp(uint256(p.claimEnd) + MAX_BACKSTOP);
+        vm.prank(winner);
+        vm.expectRevert(R.PoolIsFrozen.selector);
+        controller.claim(poolId, 1);
+
+        vm.warp(uint256(p.claimEnd) + MAX_BACKSTOP + 1);
+        uint256 before = winner.balance;
+        vm.prank(winner);
+        controller.claim(poolId, 1);
+        assertEq(winner.balance - before, 1 ether);
         assertEq(controller.remaining(poolId), 0);
     }
 

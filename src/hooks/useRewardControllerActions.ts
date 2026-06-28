@@ -23,16 +23,23 @@ import {
 import type {
   RewardDisputeCategory,
   RewardPool,
+  WinnerAliasUpdate,
   WinnerAssignmentInput,
 } from '@/types/rewardPool';
 
 type PoolRef = Pick<RewardPool, 'id' | 'controller_address' | 'pool_id' | 'chain_id'>;
+
+interface SyncWarningCopy {
+  title: string;
+  description: string;
+}
 
 interface DisputeInput {
   placement?: number | null;
   category: RewardDisputeCategory;
   reasonText?: string;
   evidenceUrls?: string[];
+  holdDurationSecs: number;
   disputerAddress: string;
 }
 
@@ -47,10 +54,10 @@ export function useRewardControllerActions(wallet: any) {
   const queryClient = useQueryClient();
   const [isBusy, setIsBusy] = useState(false);
 
-  const showSyncWarning = useCallback(() => {
+  const showSyncWarning = useCallback((copy?: SyncWarningCopy) => {
     toast({
-      title: 'Transaction confirmed',
-      description: 'The on-chain update succeeded, but the database mirror did not refresh. Refresh the page if the event still looks stale.',
+      title: copy?.title ?? 'Action complete',
+      description: copy?.description ?? 'Your transaction went through. If this page still looks unchanged, refresh in a moment.',
     });
   }, [toast]);
 
@@ -105,34 +112,69 @@ export function useRewardControllerActions(wallet: any) {
     return true;
   }, [getAccessToken, toast, wallet]);
 
-  const assign = useCallback(async (pool: PoolRef, batch: WinnerAssignmentInput[]): Promise<boolean> => {
-    setIsBusy(true);
-    const result = await assignWinners(pool.controller_address, pool.pool_id, batch, wallet, pool.chain_id);
-    setIsBusy(false);
-    if (!result.success) {
-      // A late assignment past the claim window is recoverable: route the organizer to the arbitrator.
-      if (result.errorName === 'AssignmentWindowClosed') {
-        toast({
-          title: 'Claim window has ended',
-          description: 'New winners can no longer be assigned. Notify the arbitrator to extend the claim window, then assign again.',
-          variant: 'destructive',
-          action: createToastAction({
-            label: 'Notify arbitrator',
-            altText: 'Notify arbitrator to extend the claim window',
-            onClick: () => { void notifyArbitratorExtension(pool); },
-          }),
-          duration: TOAST_DURATIONS.cta,
-        });
-        return false;
-      }
-      toast({ title: 'Assignment failed', description: result.error, variant: 'destructive' });
+  const setWinnerAliases = useCallback(async (pool: PoolRef, aliasUpdates: WinnerAliasUpdate[]): Promise<boolean> => {
+    const token = await getAccessToken?.();
+    try {
+      await callEdgeFunction('set-winner-aliases', {
+        reward_pool_id: pool.id,
+        caller_address: wallet?.address ?? null,
+        aliases: aliasUpdates,
+      }, { privyToken: token });
+    } catch (err) {
+      console.warn('[useRewardControllerActions] alias update failed', err);
       return false;
     }
-    toast({ title: 'Winners assigned', description: 'Declared winners are now visible on-chain.' });
-    const synced = await refresh(pool);
+    queryClient.invalidateQueries({ queryKey: ['reward-pools'] });
+    return true;
+  }, [getAccessToken, queryClient, wallet]);
+
+  const assign = useCallback(async (
+    pool: PoolRef,
+    batch: WinnerAssignmentInput[],
+    aliasUpdates: WinnerAliasUpdate[] = [],
+  ): Promise<boolean> => {
+    if (batch.length === 0 && aliasUpdates.length === 0) return false;
+    setIsBusy(true);
+
+    let synced = true;
+    if (batch.length > 0) {
+      const result = await assignWinners(pool.controller_address, pool.pool_id, batch, wallet, pool.chain_id);
+      if (!result.success) {
+        setIsBusy(false);
+        // A late assignment past the claim window is recoverable: route the organizer to the arbitrator.
+        if (result.errorName === 'AssignmentWindowClosed') {
+          toast({
+            title: 'Claim window has ended',
+            description: 'New winners can no longer be assigned. Notify the arbitrator to extend the claim window, then assign again.',
+            variant: 'destructive',
+            action: createToastAction({
+              label: 'Notify arbitrator',
+              altText: 'Notify arbitrator to extend the claim window',
+              onClick: () => { void notifyArbitratorExtension(pool); },
+            }),
+            duration: TOAST_DURATIONS.cta,
+          });
+          return false;
+        }
+        toast({ title: 'Assignment failed', description: result.error, variant: 'destructive' });
+        return false;
+      }
+      // Mirror the on-chain assignment so the position rows exist before naming them.
+      synced = await refresh(pool);
+    }
+
+    if (aliasUpdates.length > 0) {
+      const aliasSaved = await setWinnerAliases(pool, aliasUpdates);
+      if (!aliasSaved) synced = false;
+    }
+    setIsBusy(false);
+
+    toast(batch.length > 0
+      ? { title: 'Winners assigned', description: 'Declared winners are now visible on-chain.' }
+      : { title: 'Winner names updated' });
     if (!synced) showSyncWarning();
     return true;
-  }, [notifyArbitratorExtension, refresh, showSyncWarning, toast, wallet]);
+  }, [notifyArbitratorExtension, refresh, setWinnerAliases, showSyncWarning, toast, wallet]);
 
   const claim = useCallback(async (pool: PoolRef, placement: number): Promise<boolean> => {
     setIsBusy(true);
@@ -159,7 +201,12 @@ export function useRewardControllerActions(wallet: any) {
     }
     toast({ title: 'Prize claimed', description: 'Your share has been sent to your wallet.' });
     const synced = await refresh(pool);
-    if (!synced) showSyncWarning();
+    if (!synced) {
+      showSyncWarning({
+        title: 'Prize claimed',
+        description: 'Your prize was sent to your wallet. If this page still looks unchanged, refresh in a moment.',
+      });
+    }
     return true;
   }, [refresh, showGasHelpToast, showSyncWarning, toast, wallet]);
 
@@ -176,7 +223,15 @@ export function useRewardControllerActions(wallet: any) {
 
     // Preflight before the wallet prompt; the on-chain signal still lands before server details.
     try {
-      await preflightRaiseRewardDispute(pool.controller_address, pool.pool_id, placement, reasonHash, wallet, pool.chain_id);
+      await preflightRaiseRewardDispute(
+        pool.controller_address,
+        pool.pool_id,
+        placement,
+        reasonHash,
+        input.holdDurationSecs,
+        wallet,
+        pool.chain_id,
+      );
     } catch (error) {
       setIsBusy(false);
       if (error instanceof RewardActionGasError) {
@@ -190,7 +245,15 @@ export function useRewardControllerActions(wallet: any) {
       });
       return false;
     }
-    const onchain = await raiseRewardDispute(pool.controller_address, pool.pool_id, placement, reasonHash, wallet, pool.chain_id);
+    const onchain = await raiseRewardDispute(
+      pool.controller_address,
+      pool.pool_id,
+      placement,
+      reasonHash,
+      input.holdDurationSecs,
+      wallet,
+      pool.chain_id,
+    );
     if (!onchain.success) {
       setIsBusy(false);
       toast({ title: 'Dispute failed', description: onchain.error, variant: 'destructive' });

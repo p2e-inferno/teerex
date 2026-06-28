@@ -69,6 +69,15 @@ describe("PaystackPaymentDialog - Subaccount Integration", () => {
     vi.clearAllMocks();
     mockInitializePayment.mockClear();
     lastPaystackConfig = null;
+    server.use(
+      mockEdgeFunction("get-purchase-form-prefill", async () => ({
+        ok: true,
+        email: null,
+        prefill: {},
+        prefill_source: null,
+        purchase_form_schema: null,
+      }))
+    );
   });
 
   afterEach(() => {
@@ -85,6 +94,7 @@ describe("PaystackPaymentDialog - Subaccount Integration", () => {
           return {
             ok: true,
             subaccount_code: "ACCT_vendor123",
+            amount_kobo: 500000,
           };
         })
       );
@@ -146,6 +156,7 @@ describe("PaystackPaymentDialog - Subaccount Integration", () => {
           return {
             ok: true,
             subaccount_code: "ACCT_vendor123",
+            amount_kobo: 500000,
           };
         })
       );
@@ -179,6 +190,7 @@ describe("PaystackPaymentDialog - Subaccount Integration", () => {
         mockEdgeFunction("init-paystack-transaction", async () => ({
           ok: true,
           subaccount_code: "ACCT_vendor456",
+          amount_kobo: 500000,
         }))
       );
 
@@ -200,7 +212,7 @@ describe("PaystackPaymentDialog - Subaccount Integration", () => {
 
       await waitFor(() => {
         expect(consoleSpy).toHaveBeenCalledWith(
-          expect.stringMatching(/vendor has subaccount/i),
+          expect.stringMatching(/using vendor subaccount/i),
           "ACCT_vendor456"
         );
       });
@@ -215,6 +227,7 @@ describe("PaystackPaymentDialog - Subaccount Integration", () => {
         mockEdgeFunction("init-paystack-transaction", async () => ({
           ok: true,
           subaccount_code: null, // No subaccount
+          amount_kobo: 500000,
         }))
       );
 
@@ -248,6 +261,7 @@ describe("PaystackPaymentDialog - Subaccount Integration", () => {
         mockEdgeFunction("init-paystack-transaction", async () => ({
           ok: true,
           subaccount_code: null,
+          amount_kobo: 500000,
         }))
       );
 
@@ -290,6 +304,7 @@ describe("PaystackPaymentDialog - Subaccount Integration", () => {
           return {
             ok: true,
             subaccount_code: "ACCT_test",
+            amount_kobo: 500000,
           };
         })
       );
@@ -329,6 +344,7 @@ describe("PaystackPaymentDialog - Subaccount Integration", () => {
           return {
             ok: true,
             subaccount_code: "ACCT_test",
+            amount_kobo: 500000,
           };
         })
       );
@@ -357,9 +373,7 @@ describe("PaystackPaymentDialog - Subaccount Integration", () => {
       });
     });
 
-    it("handles error when fetching subaccount fails gracefully", async () => {
-      const consoleSpy = vi.spyOn(console, "warn");
-
+    it("blocks checkout and surfaces an error when transaction init fails", async () => {
       server.use(
         mockEdgeFunction("init-paystack-transaction", async () => ({
           ok: false,
@@ -380,23 +394,17 @@ describe("PaystackPaymentDialog - Subaccount Integration", () => {
         expect(screen.getByRole("button", { name: /pay/i })).toBeInTheDocument();
       });
 
-      const payButton = screen.getByRole("button", { name: /pay/i });
-      fireEvent.click(payButton);
+      fireEvent.click(screen.getByRole("button", { name: /pay/i }));
 
+      // The amount is server-authoritative, so a failed init must abort checkout rather than
+      // silently opening Paystack with a stale or zero amount.
       await waitFor(() => {
-        expect(mockInitializePayment).toHaveBeenCalled();
+        expect(mockToast).toHaveBeenCalledWith(
+          expect.objectContaining({ title: "Could not start checkout" })
+        );
       });
 
-      // Should proceed without subaccount (fail gracefully)
-      expect(consoleSpy).toHaveBeenCalledWith(
-        expect.stringMatching(/failed to create transaction/i),
-        expect.anything()
-      );
-
-      const paystackConfig = lastPaystackConfig;
-      expect(paystackConfig).not.toHaveProperty("subaccount");
-
-      consoleSpy.mockRestore();
+      expect(mockInitializePayment).not.toHaveBeenCalled();
     });
   });
 
@@ -408,6 +416,7 @@ describe("PaystackPaymentDialog - Subaccount Integration", () => {
         mockEdgeFunction("init-paystack-transaction", async () => ({
           ok: true,
           subaccount_code: "ACCT_test",
+          amount_kobo: 500000,
         }))
       );
 
@@ -446,6 +455,7 @@ describe("PaystackPaymentDialog - Subaccount Integration", () => {
         mockEdgeFunction("init-paystack-transaction", async () => ({
           ok: true,
           subaccount_code: "ACCT_test",
+          amount_kobo: 500000,
         }))
       );
 
@@ -492,6 +502,7 @@ describe("PaystackPaymentDialog - Subaccount Integration", () => {
         mockEdgeFunction("init-paystack-transaction", async () => ({
           ok: true,
           subaccount_code: null,
+          amount_kobo: 500000,
         }))
       );
 
@@ -558,6 +569,7 @@ describe("PaystackPaymentDialog - Subaccount Integration", () => {
         mockEdgeFunction("init-paystack-transaction", async () => ({
           ok: true,
           subaccount_code: null,
+          amount_kobo: 1000000,
         }))
       );
 
@@ -592,6 +604,7 @@ describe("PaystackPaymentDialog - Subaccount Integration", () => {
         mockEdgeFunction("init-paystack-transaction", async () => ({
           ok: true,
           subaccount_code: null,
+          amount_kobo: 5055,
         }))
       );
 

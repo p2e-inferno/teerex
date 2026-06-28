@@ -4,6 +4,7 @@ export type RewardPoolStatus =
   | 'claiming'
   | 'frozen'
   | 'expired'
+  | 'claim_complete'
   | 'closed';
 
 export type RewardDisputeStatus = 'open' | 'under_review' | 'upheld' | 'rejected';
@@ -19,6 +20,7 @@ export interface RewardPoolPosition {
   placement: number;
   amount_wei: string;
   winner_address: string | null;
+  winner_alias?: string | null;
   assigned_at: string | null;
   hold_until: string | null;
   claimed: boolean;
@@ -98,6 +100,7 @@ export interface RewardPoolOnchainPosition {
   placement: number;
   amountWei: bigint;
   winner: string | null;
+  winnerAlias?: string | null;
   assignedAt: number;
   holdUntil: number;
   claimed: boolean;
@@ -119,4 +122,9 @@ export interface RewardPositionInput {
 export interface WinnerAssignmentInput {
   account: string;
   placement: number;
+}
+
+export interface WinnerAliasUpdate {
+  placement: number;
+  alias: string | null;
 }

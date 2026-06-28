@@ -7,6 +7,7 @@ import { SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY } from "../_shared/constants.ts
 import { verifyPrivyToken, validateUserWallet } from "../_shared/privy.ts";
 import { validateChain } from "../_shared/network-helpers.ts";
 import {
+  getLegacyRewardsController,
   getRewardsController,
   readRewardPool,
   readRewardPositions,
@@ -84,12 +85,13 @@ serve(async (req) => {
     // ---- on-chain integrity verification (mirror exactly what the contract holds) ----
     const provider = new ethers.JsonRpcProvider(networkConfig.rpc_url);
     const controller = getRewardsController(controllerAddress, provider);
+    const legacyController = getLegacyRewardsController(controllerAddress, provider);
 
     const pool = await readRewardPool(controller, poolId);
     if (!pool.exists) return json({ ok: false, error: "pool_not_found_on_chain" }, 400);
     if (pool.creator !== creatorAddress) return json({ ok: false, error: "creator_mismatch_on_chain" }, 400);
 
-    const positions = await readRewardPositions(controller, poolId, pool.positionCount);
+    const positions = await readRewardPositions(controller, poolId, pool.positionCount, legacyController);
 
     // Derive display metadata from the on-chain payout token rather than trusting the client.
     // (The token address itself is already authoritative — read from the contract above.)
@@ -146,6 +148,7 @@ serve(async (req) => {
       assigned_at: epochToIso(p.assignedAt) ?? "",
       hold_until: epochToIso(p.holdUntil) ?? "",
       claimed: p.claimed,
+      reclaimed: p.reclaimed,
       claimed_at: epochToIso(p.claimedAt) ?? "",
     }));
 

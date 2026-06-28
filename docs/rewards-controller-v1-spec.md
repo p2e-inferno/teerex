@@ -102,9 +102,9 @@ Separation rationale: least privilege/blast radius (the dispute key signs often)
 ```solidity
 uint16  constant BASIS_POINTS_DEN     = 10_000;
 uint64  constant MIN_CHALLENGE_WINDOW = 30 hours;   // contract floor
-uint64  constant MAX_DISPUTE_HOLD     = 24 hours;    // free per-position hold cap
-uint64  constant MIN_CLAIM_DURATION   = 3 days;      // claimEnd - claimStart floor
-uint64  constant MAX_FREEZE_BACKSTOP  = 90 days;     // past claimEnd; bounds arbitrator hold
+uint64  constant MAX_DISPUTE_HOLD     = 5 days;      // free per-position hold cap
+uint64  constant MIN_CLAIM_DURATION   = 7 days;      // claimEnd - claimStart floor
+uint64  constant MAX_FREEZE_BACKSTOP  = 30 days;     // past claimEnd; bounds arbitrator hold
 uint16  constant MAX_POSITIONS        = 200;
 uint16  constant MAX_ASSIGN_BATCH     = 50;
 ```
@@ -216,20 +216,22 @@ No transfer-fee check at assignment (released protected events run at fee 0). No
 ### 6.7 Challenge window + claim
 Effective timing is **per-placement at both ends**:
 ```
+poolEnd                  = pool.claimEnd + pool.frozenAccrued
 effectiveClaimStart(pos) = max(pool.claimStart, pos.assignedAt + pool.challengeWindow, pos.holdUntil)
-effectiveClaimEnd(pos)   = max(pool.claimEnd + pool.frozenAccrued, effectiveClaimStart(pos) + MIN_CLAIM_DURATION)
+normalClaimEnd(pos)      = max(poolEnd, effectiveClaimStart(pos) + MIN_CLAIM_DURATION)
+effectiveClaimEnd(pos)   = normalClaimEnd(pos), plus a bounded post-backstop grace if an active freeze interrupted it
 ```
 ```solidity
 function claim(uint256 poolId, uint16 placement) external nonReentrant;
 function positionClaimEnd(uint256 poolId, uint16 placement) external view returns (uint256); // per-placement end
 ```
-Requires: `pos.winner == msg.sender`; `!pos.claimed`; `!pos.reclaimed`; `!pool.frozen`; `!pool.closed`; `block.timestamp >= effectiveClaimStart(pos)`; `block.timestamp <= effectiveClaimEnd(pos)`. Effects-before-interaction: set `pos.claimed = true`, `pos.claimedAt`, then pay via `safeTransfer` (ERC20) or `call{value:}` (ETH) and revert on failure. Winners may be contracts (team multisig); a recipient that reverts on receive simply stays unclaimed and returns to the creator after `effectiveClaimEnd(pos)`.
+Requires: `pos.winner == msg.sender`; `!pos.claimed`; `!pos.reclaimed`; freeze no longer blocks (`block.timestamp > poolEnd + MAX_FREEZE_BACKSTOP`) or pool not frozen; `!pool.closed`; `block.timestamp >= effectiveClaimStart(pos)`; `block.timestamp <= effectiveClaimEnd(pos)`. Effects-before-interaction: set `pos.claimed = true`, `pos.claimedAt`, then pay via `safeTransfer` (ERC20) or `call{value:}` (ETH) and revert on failure. Winners may be contracts (team multisig); a recipient that reverts on receive simply stays unclaimed and returns to the creator after `effectiveClaimEnd(pos)`.
 
-**Per-position guarantee.** Because the end is `max(pool end, start + MIN_CLAIM_DURATION)`, every validly-assigned winner is guaranteed at least `MIN_CLAIM_DURATION` of claimable time after their effective start — even when a late assignment or a dispute hold pushes that start to/past the pool-level end. The challenge window thus converts the dispute race into a deterministic review period **without ever timing out a legitimate winner**: in the happy path the organizer assigns before `claimStart`, so `effectiveClaimStart + MIN_CLAIM_DURATION <= claimEnd`, the per-position end equals the pool end, and behavior is unchanged (zero extra delay); a late/held assignment simply carries its own guaranteed window past the pool end, and reclaim of that placement is blocked until it lapses (§6.9). Winner safety no longer depends on the arbitrator extending `claimEnd` in time.
+**Per-position guarantee.** Because the end is `max(pool end, start + MIN_CLAIM_DURATION)`, every validly-assigned winner is guaranteed at least `MIN_CLAIM_DURATION` of claimable time after their effective start — even when a late assignment or a dispute hold pushes that start to/past the pool-level end. If an active freeze started before that normal end and the arbitrator never unfreezes, the winner gets one bounded post-backstop grace: until `poolEnd + MAX_FREEZE_BACKSTOP + MIN_CLAIM_DURATION`. A freeze that starts after the winner's normal claim window already expired does not reopen it. The challenge window thus converts the dispute race into a deterministic review period **without ever timing out a legitimate winner**: in the happy path the organizer assigns before `claimStart`, so `effectiveClaimStart + MIN_CLAIM_DURATION <= claimEnd`, the per-position end equals the pool end, and behavior is unchanged (zero extra delay); a late/held/interrupted assignment carries its own guaranteed window, and reclaim of that placement is blocked until it lapses (§6.9). Winner safety no longer depends on the arbitrator extending `claimEnd` in time.
 
 ### 6.8 Disputes & arbitration
 ```solidity
-function raiseDispute(uint256 poolId, uint16 placement, bytes32 reasonHash) external; // ticket holder
+function raiseDispute(uint256 poolId, uint16 placement, bytes32 reasonHash, uint64 holdDuration) external; // ticket holder
 function freeze(uint256 poolId) external;        // arbitrator
 function unfreeze(uint256 poolId) external;      // arbitrator
 function voidAssignment(uint256 poolId, uint16 placement) external;             // arbitrator, open pool, unsettled only
@@ -238,8 +240,8 @@ function extendClaimEnd(uint256 poolId, uint64 newEnd) external;                
 function resolveDispute(uint256 poolId, uint16 placement, bool upheld, bytes32 resolutionHash) external; // arbitrator
 ```
 
-- **`raiseDispute`** — caller must hold a ticket (`balanceOf(caller) > 0`). It is a **free signal**; it does not freeze the pool. If `placement != 0`, the position is unclaimed, and it is still pre-claim (`block.timestamp < effectiveClaimStart` ignoring holdUntil) and `!freeHoldUsed`, it sets a **one-time per-position hold**: `holdUntil = min(block.timestamp + MAX_DISPUTE_HOLD, pos.assignedAt + pool.challengeWindow + MAX_DISPUTE_HOLD)` and `freeHoldUsed = true`. This gives a dispute immediate teeth over the **specific contested payout** during the window where value has not left, without enabling a pool-wide DoS. After the hold lapses the placement opens regardless; further holds require the arbitrator. Emits `DisputeRaised`.
-- **`freeze`/`unfreeze`** — pause all claims and reclaims. `freeze` records `frozenAt`; `unfreeze` adds `block.timestamp - frozenAt` to `frozenAccrued` so winners do not lose claim time. Freeze cannot hold past `effectiveClaimEnd + MAX_FREEZE_BACKSTOP`; after that, funds flow normally (bounds a negligent/compromised arbitrator).
+- **`raiseDispute`** — caller must hold a ticket (`balanceOf(caller) > 0`). It is a **free signal**; it does not freeze the pool. If `placement != 0`, the position is unclaimed, and it is still pre-claim (`block.timestamp < effectiveClaimStart` ignoring holdUntil) and `!freeHoldUsed`, it applies the requested one-time per-position hold, capped to `MAX_DISPUTE_HOLD`: `holdUntil = block.timestamp + min(holdDuration, MAX_DISPUTE_HOLD)`. A too-short hold that cannot reach the natural claim open is inert and does not consume `freeHoldUsed`. This gives a dispute immediate teeth over the **specific contested payout** during the window where value has not left, without enabling a pool-wide DoS. After the hold lapses the placement opens regardless; further holds require the arbitrator. Emits `DisputeRaised`.
+- **`freeze`/`unfreeze`** — pause all claims and reclaims until the backstop. `freeze` records `frozenAt`; `unfreeze` adds `block.timestamp - frozenAt` to `frozenAccrued` so winners do not lose claim time. Freeze cannot hold past `poolEnd + MAX_FREEZE_BACKSTOP`; after that, never-assigned funds flow normally and assigned winners whose open window was interrupted get the bounded post-backstop grace in §6.7.
 - **`voidAssignment` / `reassign`** — correct a wrong/contested placement; `reassign` still requires `balanceOf(newWinner) > 0`. Maintains `isAssigned`/`assignedCount`. Both reject a **settled** placement (`claimed` or `reclaimed` → `AlreadyClaimed`) and any operation on a **closed** pool (`PoolIsClosed`) — a placement whose escrow was already paid out (to a winner or back to the creator) is terminal and must not be re-targeted into an unclaimable state.
 - **Settled/closed are terminal for all arbitration & assignment.** `assignWinners`, `reassign`, and `voidAssignment` reject a `reclaimed` placement (`AlreadyClaimed`); `reassign`, `voidAssignment`, and `extendClaimEnd` reject a closed pool (`PoolIsClosed`). This mirrors `claim`/`reclaim`, which already skip settled placements, so no path can record a winner against returned escrow.
 - **Hard limits:** the arbitrator can never move escrow to itself or an arbitrary address, change `positionAmounts`, or touch a claimed/reclaimed (settled) placement.
@@ -258,13 +260,14 @@ function reclaim(uint256 poolId) external nonReentrant;     // creator only; aft
 
 | State | Creator action |
 |---|---|
-| `totalSupply(eventLock) == 0 && assignedCount == 0` | `closePool` → full reclaim (mistake / flopped event; any event type) |
-| Protected: `attendanceController != 0 && cfg.cancelInitiated && cfg.refundComplete && assignedCount == 0` | `closePool` → **early exit before claimEnd** |
+| `block.timestamp < claimStart && totalSupply(eventLock) == 0 && assignedCount == 0` | `closePool` → full reclaim (mistake / flopped event; any event type) |
+| Protected: `attendanceController != 0 && cfg.cancelInitiated && cfg.refundComplete && assignedCount == 0` | `closePool` → **early exit before claimEnd** (no time gate; protection state is creator-unspoofable) |
 | Any ticket exists OR any winner assigned, before that share's end, not an early-exit state | locked |
 | `frozen` (within backstop, measured against pool end) | locked |
+| `frozen` past backstop | `reclaim` can sweep never-assigned shares; assigned-unclaimed shares remain locked until their post-backstop grace ends |
 | After pool end, not frozen | `reclaim` → never-assigned + assigned-unclaimed placements **whose own `effectiveClaimEnd(pos)` has passed** (partial; callable again as later placements lapse) |
 | Nothing currently reclaimable but locked placements remain | `reclaim` reverts `NotYetReclaimable` |
-| Every share claimed or reclaimed | `reclaim` reverts `NothingToPay`; pool is `closed` |
+| Every share settled | `reclaim` reverts `NothingToPay`. On-chain `closed` is set only when a creator action (closePool / a fully-settling reclaim) drained the escrow; a pool drained entirely by **winner claims** stays `closed == false` and the mirror derives the distinct terminal status `claim_complete` (§8) — "closed" means the creator closed it, not "all winners paid" |
 
 There is no perpetual lock of unassigned funds: the anti-rug guarantee is the escrow + immutable terms + full window lockout, not punishing the creator's own money forever. A creator who funds and never assigns winners is committing a public, auditable rug — a dispute/reputation matter, not a contract-stuck-funds matter. Partial reclaim also isolates a late/held placement: the creator can recover their on-time funds without waiting on, and without being able to strand, the late winner.
 
@@ -305,7 +308,8 @@ Funded ──assignWinners──▶ ResultsPending ──(challenge window/holds
 - `Claiming` — at least one placement claimable.
 - `Frozen` — arbitrator hold (bounded by backstop); blocks claims and reclaims.
 - `Expired` — `effectiveClaimEnd` passed; creator may `reclaim` residual.
-- `Closed` — pool reclaimed (early or residual); terminal.
+- `ClaimComplete` — every share paid out to winners (no creator reclaim needed); terminal. Mirror-derived (`!closed && claimedAmount >= totalFunded`); distinct from `Closed`, which is creator-driven.
+- `Closed` — pool reclaimed/closed by the creator (early or residual); terminal.
 
 ---
 
@@ -314,7 +318,7 @@ Funded ──assignWinners──▶ ResultsPending ──(challenge window/holds
 Naming `YYYYMMDDHHMMSS_*.sql`. All tables are **server-only** (edge functions via `service_role`); no `anon`/`authenticated` grants. Identity columns are `text` Privy DIDs (no `auth.users` FK). Exact wei stored as `text`. Every FK indexed; nullable FKs use partial indexes. RLS enabled with `service_role` full-access policy.
 
 Tables (mirrors of on-chain-verified state):
-- `reward_pools` — `pool_id` (on-chain), `chain_id`, `controller_address`, `event_lock_address`, `attendance_controller_address` (nullable), `creator_id` (Privy DID), `creator_address`, `payout_token_address` (nullable = ETH), `total_funded` (text wei), `claim_start`, `claim_end`, `challenge_window_secs`, `position_count`, `rules_hash`, `rules_uri`, `status` (enum: funded/results_pending/claiming/frozen/expired/closed), `tx_hash`, timestamps.
+- `reward_pools` — `pool_id` (on-chain), `chain_id`, `controller_address`, `event_lock_address`, `attendance_controller_address` (nullable), `creator_id` (Privy DID), `creator_address`, `payout_token_address` (nullable = ETH), `total_funded` (text wei), `claim_start`, `claim_end`, `challenge_window_secs`, `position_count`, `rules_hash`, `rules_uri`, `status` (enum: funded/results_pending/claiming/frozen/expired/claim_complete/closed), `tx_hash`, timestamps.
 - `reward_pool_positions` — `pool_id` FK, `placement`, `amount` (text wei), `winner_address` (nullable), `assigned_at`, `hold_until`, `claimed` bool, `claimed_at`, `claim_tx_hash`.
 - `reward_pool_managers` — `pool_id` FK, `manager_address`, `active` bool, `added_tx_hash`.
 - `reward_pool_disputes` — `id` uuid, `pool_id` FK, `placement` (nullable), `disputer_id` (Privy DID), `disputer_address`, `category`, `reason_text`, `evidence_urls` (jsonb), `reason_hash`, `status` (enum: open/under_review/upheld/rejected), `resolution_note`, `resolution_hash`, `onchain_tx_hash` (nullable), timestamps.
@@ -365,7 +369,7 @@ Acceptable raw `supabase.functions.invoke` exceptions per CLAUDE.md do not apply
   3. **My Prize** — only for an assigned winner; claim CTA when claimable. When a placement was assigned late (its `opensAt > pool.claimEnd + frozenAccrued`, read from `positionClaimEnd`), show an **informational** note only ("Assigned late — your claim window runs X→Y, extended past the pool window") — the contract guarantees the window, so there is **no winner-facing arbitrator-notify action**.
   4. **Disputes** — pool dispute status, "Raise a dispute" (ticket-holder-gated), list (category/status/timestamp), resolution note when closed. The dispute path is a free signal and does **not** block the creator's reclaim (only an arbitrator `freeze` does).
 - Organizer assignment: when an `assignWinners` tx reverts `AssignmentWindowClosed`, the UI surfaces a "Claim window has ended — notify arbitrator to extend it" CTA wired to `request-claim-end-extension` (the only arbitrator-notify affordance, and it lives on the organizer, not the winner).
-- Event cards (compact badge): `Funded` · `Results pending` · `Claim open` · `Disputed` · `Expired` · `Closed`.
+- Event cards (compact badge): `Funded` · `Results pending` · `Claim open` · `Disputed` · `Expired` · `Paid out` (claim_complete) · `Closed`.
 - Trust line (marketing-clean): "🔒 Prize locked on-chain — pays out to the organizer's declared winners. Ticket holders can raise a dispute if results look wrong."
 
 UX defaults follow the repo's optimistic/localized interaction rules: scope loading to the acted element, optimistic update + background `sync-reward-pool`, toast on error, revert only on confirmed failure.
@@ -388,13 +392,13 @@ The only place the attendance controller is consulted, and only via `view` reads
 - ERC20 funding measured by balance delta; allowlist excludes fee-on-transfer/rebasing.
 - `sum(positionAmounts) == totalFunded` exactly (absolute amounts ⇒ no dust at claim).
 - Each `amount > 0`; `positionCount <= MAX_POSITIONS`; batch `<= MAX_ASSIGN_BATCH`.
-- `claimStart > now`; `claimEnd >= claimStart + MIN_CLAIM_DURATION`; `challengeWindow >= MIN_CHALLENGE_WINDOW`.
+- `claimStart > now`; `claimEnd >= claimStart + MIN_CLAIM_DURATION`; `challengeWindow >= MIN_CHALLENGE_WINDOW`; UI dispute holds default to 1 day and expose 1-3 days while the contract caps any request at 5 days.
 - One placement per address; one winner per placement; replacement only pre-`claimStart` on unclaimed placements.
 - Settled placements (claimed or reclaimed) never voidable/reassignable/replaceable/assignable; closed pools reject `reassign`/`voidAssignment`/`extendClaimEnd`.
 - Reentrancy guard on `claim`/`closePool`/`reclaim`; effects before transfer; ETH via `call` with revert-on-failure.
 - Double-close / double-reclaim guarded by `closed`.
 - Contract winners (team multisig) supported; reverting receiver just stays unclaimed → reclaimable.
-- Freeze bounded by `MAX_FREEZE_BACKSTOP`; `unfreeze` extends `claimEnd` by frozen duration.
+- Freeze bounded by `MAX_FREEZE_BACKSTOP`; `unfreeze` extends `claimEnd` by frozen duration; an abandoned freeze gives interrupted assigned winners one bounded post-backstop grace.
 - Free dispute hold is one-time per placement, capped, pre-claim only.
 - Self-dealing (creator assigns self) is allowed by the contract — surface a UI warning only.
 
@@ -404,6 +408,7 @@ The only place the attendance controller is consulted, and only via `view` reads
 
 - **No owner/arbitrator drain.** Escrow leaves only via `claim` (to the assigned winner) or `closePool`/`reclaim` (to the creator under the §6.9 rules). Mirror the ticket-pass invariant and assert it in tests.
 - **Creator event-lock powers are neutralized for claims** by snapshot-at-assignment; verify with a test that revokes/expires a winner's key after assignment and confirms the claim still succeeds.
+- **`totalSupply()` is not a trusted "no tickets sold" oracle.** A lock manager (the creator, by the auth anchor) can drive `totalSupply()` to 0 by burning keys (Unlock `burn` is authorized for lock managers and decrements `_totalSupply`). The `closePool` no-tickets full-reclaim is therefore gated to `block.timestamp < claimStart`, so it cannot be used to bypass the claim-window lockout or the dispute/freeze/reassign recourse after the claim phase opens; post-claim reclaim is forced onto the time-locked, freezable `reclaim` path. The attendance early-exit relies on protection state the creator cannot spoof, so it needs no such gate. Verify with a test: burn keys after `claimStart`, `closePool` reverts `EarlyExitNotAllowed`.
 - **Oracle spoofing** closed by the attendance-controller allowlist + `exists` binding.
 - **Griefing** bounded: disputes never pool-freeze for free; the free hold is per-placement, capped, one-time.
 - **Arbitrator over-reach** bounded by the freeze backstop and the no-drain/no-amount-change/no-claimed-touch limits.
@@ -421,8 +426,8 @@ Foundry/contract tests:
 - **Per-position window**: late-assigned winner claims past pool end; early-assigned closes at pool end; exact start/end boundaries; tie (`start + MIN_CLAIM_DURATION == pool end`); dispute hold still grants ≥ `MIN_CLAIM_DURATION`; `positionClaimEnd` matches the formula.
 - **Assignment cutoff**: assign at exact pool end succeeds, one second past reverts `AssignmentWindowClosed`; succeeds again after `extendClaimEnd` / `unfreeze` accrual; frozen/closed precede the cutoff; replacement stays gated by `claimStart`, not the cutoff.
 - **Partial reclaim**: never-assigned + early funds reclaim at pool end while a late placement stays locked (pool not `closed`); full reclaim after the late placement's end; idempotency via `reclaimed`; `NotYetReclaimable` vs `NothingToPay`; a winner claiming late before its end leaves the rest reclaimable; a reclaimed placement cannot be claimed.
-- Claim: window bounds, frozen blocks, claimed finality, contract-winner receive, **post-assignment key revocation does not block claim**.
-- Disputes/arbitration: free signal no-freeze, freeze extends `claimEnd`, void/reassign unclaimed-only, backstop, no-drain.
+- Claim: window bounds, frozen blocks until the backstop, post-backstop grace for interrupted assigned winners, claimed finality, contract-winner receive, **post-assignment key revocation does not block claim**.
+- Disputes/arbitration: free signal no-freeze, freeze extends `claimEnd` when resolved, void/reassign unclaimed-only, backstop, no-drain.
 - Settled/closed terminal guards: after a partial reclaim keeps a pool open, `assignWinners` (even post-`extendClaimEnd`), `reassign`, and `voidAssignment` on a reclaimed placement revert `AlreadyClaimed`; `reassign`/`voidAssignment`/`extendClaimEnd` on a `closePool`-refunded (closed) pool revert `PoolIsClosed`.
 - Close/reclaim truth table incl. protected early-exit and the `assignedCount==0` guard.
 - Invariants/fuzz: solvency under partial reclaim (`sum(claims) + sum(reclaims) == totalFunded` once settled); no placement both `claimed` and `reclaimed`; `closed ⇒ fully settled`.

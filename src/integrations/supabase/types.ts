@@ -2271,9 +2271,11 @@ export type Database = {
           hold_until: string | null
           id: string
           placement: number
+          reclaimed: boolean
           reward_pool_id: string
           updated_at: string
           winner_address: string | null
+          winner_alias: string | null
         }
         Insert: {
           amount_wei: string
@@ -2285,9 +2287,11 @@ export type Database = {
           hold_until?: string | null
           id?: string
           placement: number
+          reclaimed?: boolean
           reward_pool_id: string
           updated_at?: string
           winner_address?: string | null
+          winner_alias?: string | null
         }
         Update: {
           amount_wei?: string
@@ -2299,9 +2303,11 @@ export type Database = {
           hold_until?: string | null
           id?: string
           placement?: number
+          reclaimed?: boolean
           reward_pool_id?: string
           updated_at?: string
           winner_address?: string | null
+          winner_alias?: string | null
         }
         Relationships: [
           {

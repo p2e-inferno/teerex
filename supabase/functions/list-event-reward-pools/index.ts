@@ -47,7 +47,7 @@ serve(async (req) => {
     const [{ data: positions }, { data: managers }] = await Promise.all([
       supabase
         .from("reward_pool_positions")
-        .select("reward_pool_id, placement, amount_wei, winner_address, assigned_at, hold_until, claimed, reclaimed, claimed_at")
+        .select("reward_pool_id, placement, amount_wei, winner_address, winner_alias, assigned_at, hold_until, claimed, reclaimed, claimed_at")
         .in("reward_pool_id", poolIds)
         .order("placement", { ascending: true }),
       supabase

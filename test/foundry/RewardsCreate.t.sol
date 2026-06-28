@@ -9,8 +9,8 @@ contract RewardsCreateTest is RewardsBase {
     function test_CreateEthPool_StoresTermsAndHoldsEscrow() public {
         uint256[] memory a = _amounts3();
         uint256 total = a[0] + a[1] + a[2];
-        uint64 cs = START + 7 days;
-        uint64 ce = cs + 5 days;
+        uint64 cs = DEFAULT_CLAIM_START;
+        uint64 ce = DEFAULT_CLAIM_END;
 
         vm.prank(creator);
         uint256 poolId = controller.createRewardPool{value: total}(
@@ -53,7 +53,7 @@ contract RewardsCreateTest is RewardsBase {
         mgrs[1] = manager; // duplicate is deduped by the guard
         vm.prank(creator);
         uint256 poolId = controller.createRewardPool{value: total}(
-            _params(address(0), address(0), a, START + 7 days, START + 12 days, MIN_WINDOW, mgrs)
+            _params(address(0), address(0), a, DEFAULT_CLAIM_START, DEFAULT_CLAIM_END, MIN_WINDOW, mgrs)
         );
         assertTrue(controller.isManager(poolId, manager));
     }
@@ -66,7 +66,7 @@ contract RewardsCreateTest is RewardsBase {
         mgrs[1] = manager;
         vm.prank(creator);
         uint256 poolId = controller.createRewardPool{value: total}(
-            _params(address(0), address(0), a, START + 7 days, START + 12 days, MIN_WINDOW, mgrs)
+            _params(address(0), address(0), a, DEFAULT_CLAIM_START, DEFAULT_CLAIM_END, MIN_WINDOW, mgrs)
         );
         assertTrue(controller.isManager(poolId, manager));
         assertFalse(controller.isManager(poolId, address(0)));
@@ -78,7 +78,7 @@ contract RewardsCreateTest is RewardsBase {
         uint256 total = a[0] + a[1] + a[2];
         vm.prank(creator);
         uint256 poolId = controller.createRewardPool{value: total}(
-            _params(address(0), address(attendance), a, START + 7 days, START + 12 days, MIN_WINDOW, _noManagers())
+            _params(address(0), address(attendance), a, DEFAULT_CLAIM_START, DEFAULT_CLAIM_END, MIN_WINDOW, _noManagers())
         );
         assertEq(controller.getPool(poolId).attendanceController, address(attendance));
     }
@@ -89,14 +89,14 @@ contract RewardsCreateTest is RewardsBase {
         vm.prank(stranger);
         vm.expectRevert(R.NotLockManager.selector);
         controller.createRewardPool{value: 6 ether}(
-            _params(address(0), address(0), a, START + 7 days, START + 12 days, MIN_WINDOW, _noManagers())
+            _params(address(0), address(0), a, DEFAULT_CLAIM_START, DEFAULT_CLAIM_END, MIN_WINDOW, _noManagers())
         );
     }
 
     function test_RevertWhen_EventLockHasNoCode() public {
         uint256[] memory a = _amounts3();
         R.CreateRewardPoolParams memory p =
-            _params(address(0), address(0), a, START + 7 days, START + 12 days, MIN_WINDOW, _noManagers());
+            _params(address(0), address(0), a, DEFAULT_CLAIM_START, DEFAULT_CLAIM_END, MIN_WINDOW, _noManagers());
         p.eventLock = stranger; // EOA, no code
         vm.prank(creator);
         vm.expectRevert(R.InvalidEventLock.selector);
@@ -108,7 +108,7 @@ contract RewardsCreateTest is RewardsBase {
         vm.prank(creator);
         vm.expectRevert(abi.encodeWithSelector(R.AttendanceNotAllowed.selector, stranger));
         controller.createRewardPool{value: 6 ether}(
-            _params(address(0), stranger, a, START + 7 days, START + 12 days, MIN_WINDOW, _noManagers())
+            _params(address(0), stranger, a, DEFAULT_CLAIM_START, DEFAULT_CLAIM_END, MIN_WINDOW, _noManagers())
         );
     }
 
@@ -118,7 +118,7 @@ contract RewardsCreateTest is RewardsBase {
         vm.prank(creator);
         vm.expectRevert(R.EventNotProtected.selector);
         controller.createRewardPool{value: 6 ether}(
-            _params(address(0), address(attendance), a, START + 7 days, START + 12 days, MIN_WINDOW, _noManagers())
+            _params(address(0), address(attendance), a, DEFAULT_CLAIM_START, DEFAULT_CLAIM_END, MIN_WINDOW, _noManagers())
         );
     }
 
@@ -128,7 +128,7 @@ contract RewardsCreateTest is RewardsBase {
         vm.prank(creator);
         vm.expectRevert(abi.encodeWithSelector(R.TokenNotAllowed.selector, address(bad)));
         controller.createRewardPool(
-            _params(address(bad), address(0), a, START + 7 days, START + 12 days, MIN_WINDOW, _noManagers())
+            _params(address(bad), address(0), a, DEFAULT_CLAIM_START, DEFAULT_CLAIM_END, MIN_WINDOW, _noManagers())
         );
     }
 
@@ -145,7 +145,7 @@ contract RewardsCreateTest is RewardsBase {
         bad.approve(address(controller), total);
         vm.expectRevert(abi.encodeWithSelector(R.BadFunding.selector, total, total - (total * 100) / 10_000));
         controller.createRewardPool(
-            _params(address(bad), address(0), a, START + 7 days, START + 12 days, MIN_WINDOW, _noManagers())
+            _params(address(bad), address(0), a, DEFAULT_CLAIM_START, DEFAULT_CLAIM_END, MIN_WINDOW, _noManagers())
         );
         vm.stopPrank();
     }
@@ -155,7 +155,7 @@ contract RewardsCreateTest is RewardsBase {
         vm.prank(creator);
         vm.expectRevert(R.BadPositions.selector);
         controller.createRewardPool(
-            _params(address(0), address(0), a, START + 7 days, START + 12 days, MIN_WINDOW, _noManagers())
+            _params(address(0), address(0), a, DEFAULT_CLAIM_START, DEFAULT_CLAIM_END, MIN_WINDOW, _noManagers())
         );
     }
 
@@ -166,7 +166,7 @@ contract RewardsCreateTest is RewardsBase {
         vm.prank(creator);
         vm.expectRevert(R.BadPositions.selector);
         controller.createRewardPool{value: 1 ether}(
-            _params(address(0), address(0), a, START + 7 days, START + 12 days, MIN_WINDOW, _noManagers())
+            _params(address(0), address(0), a, DEFAULT_CLAIM_START, DEFAULT_CLAIM_END, MIN_WINDOW, _noManagers())
         );
     }
 
@@ -176,7 +176,7 @@ contract RewardsCreateTest is RewardsBase {
         vm.prank(creator);
         vm.expectRevert(R.TooManyPositions.selector);
         controller.createRewardPool{value: 201 wei}(
-            _params(address(0), address(0), a, START + 7 days, START + 12 days, MIN_WINDOW, _noManagers())
+            _params(address(0), address(0), a, DEFAULT_CLAIM_START, DEFAULT_CLAIM_END, MIN_WINDOW, _noManagers())
         );
     }
 
@@ -185,13 +185,13 @@ contract RewardsCreateTest is RewardsBase {
         vm.prank(creator);
         vm.expectRevert(R.BadWindow.selector);
         controller.createRewardPool{value: 6 ether}(
-            _params(address(0), address(0), a, START, START + 12 days, MIN_WINDOW, _noManagers())
+            _params(address(0), address(0), a, START, DEFAULT_CLAIM_END, MIN_WINDOW, _noManagers())
         );
     }
 
     function test_RevertWhen_ClaimDurationTooShort() public {
         uint256[] memory a = _amounts3();
-        uint64 cs = START + 7 days;
+        uint64 cs = DEFAULT_CLAIM_START;
         vm.prank(creator);
         vm.expectRevert(R.BadWindow.selector);
         controller.createRewardPool{value: 6 ether}(
@@ -201,11 +201,11 @@ contract RewardsCreateTest is RewardsBase {
 
     function test_RevertWhen_ChallengeWindowTooShort() public {
         uint256[] memory a = _amounts3();
-        uint64 cs = START + 7 days;
+        uint64 cs = DEFAULT_CLAIM_START;
         vm.prank(creator);
         vm.expectRevert(R.BadWindow.selector);
         controller.createRewardPool{value: 6 ether}(
-            _params(address(0), address(0), a, cs, cs + 5 days, MIN_WINDOW - 1, _noManagers())
+            _params(address(0), address(0), a, cs, cs + MIN_CLAIM, MIN_WINDOW - 1, _noManagers())
         );
     }
 
@@ -215,7 +215,7 @@ contract RewardsCreateTest is RewardsBase {
         vm.prank(creator);
         vm.expectRevert(abi.encodeWithSelector(R.BadFunding.selector, total, total - 1));
         controller.createRewardPool{value: total - 1}(
-            _params(address(0), address(0), a, START + 7 days, START + 12 days, MIN_WINDOW, _noManagers())
+            _params(address(0), address(0), a, DEFAULT_CLAIM_START, DEFAULT_CLAIM_END, MIN_WINDOW, _noManagers())
         );
     }
 
@@ -226,7 +226,7 @@ contract RewardsCreateTest is RewardsBase {
         token.approve(address(controller), 100e6);
         vm.expectRevert(R.UnexpectedNativeValue.selector);
         controller.createRewardPool{value: 1}(
-            _params(address(token), address(0), a, START + 7 days, START + 12 days, MIN_WINDOW, _noManagers())
+            _params(address(token), address(0), a, DEFAULT_CLAIM_START, DEFAULT_CLAIM_END, MIN_WINDOW, _noManagers())
         );
         vm.stopPrank();
     }

@@ -7,6 +7,7 @@ import { SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY } from "../_shared/constants.ts
 import { verifyPrivyToken } from "../_shared/privy.ts";
 import { validateChain } from "../_shared/network-helpers.ts";
 import {
+  getLegacyRewardsController,
   getRewardsController,
   readRewardPool,
   readRewardPositions,
@@ -61,11 +62,12 @@ serve(async (req) => {
 
     const provider = new ethers.JsonRpcProvider(networkConfig.rpc_url);
     const controller = getRewardsController(row.controller_address, provider);
+    const legacyController = getLegacyRewardsController(row.controller_address, provider);
 
     const pool = await readRewardPool(controller, Number(row.pool_id));
     if (!pool.exists) return json({ ok: false, error: "pool_not_found_on_chain" }, 400);
 
-    const positions = await readRewardPositions(controller, Number(row.pool_id), pool.positionCount);
+    const positions = await readRewardPositions(controller, Number(row.pool_id), pool.positionCount, legacyController);
     const nowSecs = Math.floor(Date.now() / 1000);
 
     const { error: poolErr } = await supabase

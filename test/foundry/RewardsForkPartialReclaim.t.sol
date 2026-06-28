@@ -17,7 +17,7 @@ contract RewardsForkPartialReclaimTest is Test {
     address internal constant UNLOCK_BASE_MAINNET = 0xd0b14797b9D08493392865647384974470202A78;
     address internal constant UNLOCK_BASE_SEPOLIA = 0x259813B665C8f6074391028ef782e27B65840d89;
     uint64 internal constant MIN_WINDOW = 30 hours;
-    uint64 internal constant MIN_CLAIM = 3 days;
+    uint64 internal constant MIN_CLAIM = 7 days;
 
     bool internal skipped;
     address internal unlockFactory;

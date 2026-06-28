@@ -12,15 +12,17 @@ contract RewardsHandler is Test {
     R public controller;
     MockPublicLock public lock;
     address[3] public winners;
+    address public arbitrator;
     uint256[] public pools;
 
     uint256 public ghostFunded;
     uint256 public ghostPaidOut;
 
-    constructor(R _controller, MockPublicLock _lock, address[3] memory _winners) {
+    constructor(R _controller, MockPublicLock _lock, address[3] memory _winners, address _arbitrator) {
         controller = _controller;
         lock = _lock;
         winners = _winners;
+        arbitrator = _arbitrator;
     }
 
     receive() external payable {}
@@ -79,7 +81,21 @@ contract RewardsHandler is Test {
         if (pc == 0) return;
         address holder = winners[wSeed % 3]; // winners all hold a key
         vm.prank(holder);
-        try controller.raiseDispute(poolId, uint16(pSeed % pc) + 1, bytes32(0)) {} catch {}
+        try controller.raiseDispute(poolId, uint16(pSeed % pc) + 1, bytes32(0), 5 days) {} catch {}
+    }
+
+    function freeze(uint256 poolSeed) external {
+        if (pools.length == 0) return;
+        uint256 poolId = pools[poolSeed % pools.length];
+        vm.prank(arbitrator);
+        try controller.freeze(poolId) {} catch {}
+    }
+
+    function unfreeze(uint256 poolSeed) external {
+        if (pools.length == 0) return;
+        uint256 poolId = pools[poolSeed % pools.length];
+        vm.prank(arbitrator);
+        try controller.unfreeze(poolId) {} catch {}
     }
 
     function claim(uint256 poolSeed, uint256 pSeed) external {
@@ -108,6 +124,8 @@ contract RewardsHandler is Test {
 }
 
 contract RewardsInvariantTest is Test {
+    uint64 internal constant MAX_BACKSTOP = 30 days; // mirrors the contract's MAX_FREEZE_BACKSTOP
+
     R internal controller;
     MockPublicLock internal lock;
     RewardsHandler internal handler;
@@ -127,17 +145,19 @@ contract RewardsInvariantTest is Test {
             [makeAddr("w0"), makeAddr("w1"), makeAddr("w2")];
         for (uint256 i = 0; i < 3; i++) lock.setBalance(winners[i], 1);
 
-        handler = new RewardsHandler(controller, lock, winners);
+        handler = new RewardsHandler(controller, lock, winners, arbitrator);
         lock.setManager(address(handler), true); // handler is the pool creator
         vm.deal(address(handler), 1_000_000 ether);
 
-        bytes4[] memory selectors = new bytes4[](6);
+        bytes4[] memory selectors = new bytes4[](8);
         selectors[0] = handler.createPool.selector;
         selectors[1] = handler.assignWinner.selector;
         selectors[2] = handler.warp.selector;
         selectors[3] = handler.claim.selector;
         selectors[4] = handler.reclaim.selector;
         selectors[5] = handler.dispute.selector;
+        selectors[6] = handler.freeze.selector;
+        selectors[7] = handler.unfreeze.selector;
         targetSelector(FuzzSelector({addr: address(handler), selectors: selectors}));
         targetContract(address(handler));
     }
@@ -155,6 +175,33 @@ contract RewardsInvariantTest is Test {
         handler.reclaim(0);
 
         assertGt(handler.ghostPaidOut(), 0);
+        assertEq(address(controller).balance, handler.ghostFunded() - handler.ghostPaidOut());
+    }
+
+    /// Non-vacuous exercise for the abandoned-freeze path: after the backstop, never-assigned funds
+    /// can be swept while the interrupted assigned winner remains claimable during the bounded grace.
+    function test_HandlerExercisesFrozenBackstopSettlement() public {
+        handler.createPool(123, 2);
+        uint256 poolId = handler.pools(0);
+        handler.assignWinner(0, 0, 0);
+
+        R.Pool memory p = controller.getPool(poolId);
+        vm.warp(p.claimStart);
+        handler.freeze(0);
+
+        vm.warp(uint256(p.claimEnd) + MAX_BACKSTOP + 1); // past backstop, within the winner's grace
+        handler.reclaim(0);
+
+        (uint256 assignedAmount,,,,, bool assignedClaimed, bool assignedReclaimed,) =
+            controller.positions(poolId, 1);
+        (,,,,,, bool unassignedReclaimed,) = controller.positions(poolId, 2);
+        assertFalse(assignedClaimed);
+        assertFalse(assignedReclaimed);
+        assertTrue(unassignedReclaimed);
+        assertEq(controller.remaining(poolId), assignedAmount);
+
+        handler.claim(0, 0);
+        assertEq(controller.remaining(poolId), 0);
         assertEq(address(controller).balance, handler.ghostFunded() - handler.ghostPaidOut());
     }
 
@@ -183,6 +230,22 @@ contract RewardsInvariantTest is Test {
                 (,,,,, bool claimed, bool reclaimed,) = controller.positions(poolId, pl);
                 assertFalse(claimed && reclaimed);
             }
+        }
+    }
+
+    /// `remaining()` must always equal the sum of every unsettled placement, even after partial
+    /// reclaims, post-backstop winner claims, freezes, unfreezes, and random interleavings.
+    function invariant_RemainingEqualsUnsettledPositions() public view {
+        uint256 count = handler.poolCount();
+        for (uint256 i = 0; i < count; i++) {
+            uint256 poolId = handler.pools(i);
+            R.Pool memory p = controller.getPool(poolId);
+            uint256 unsettled;
+            for (uint16 pl = 1; pl <= p.positionCount; pl++) {
+                (uint256 amount,,,,, bool claimed, bool reclaimed,) = controller.positions(poolId, pl);
+                if (!claimed && !reclaimed) unsettled += amount;
+            }
+            assertEq(controller.remaining(poolId), unsettled);
         }
     }
 

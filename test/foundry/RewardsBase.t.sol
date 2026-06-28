@@ -12,9 +12,11 @@ import {MockAttendanceController} from "./mocks/MockAttendanceController.sol";
 abstract contract RewardsBase is Test {
     uint64 internal constant START = 1_700_000_000;
     uint64 internal constant MIN_WINDOW = 30 hours;
-    uint64 internal constant MAX_HOLD = 24 hours;
-    uint64 internal constant MIN_CLAIM = 3 days;
-    uint64 internal constant MAX_BACKSTOP = 90 days;
+    uint64 internal constant MAX_HOLD = 5 days;
+    uint64 internal constant MIN_CLAIM = 7 days;
+    uint64 internal constant MAX_BACKSTOP = 30 days;
+    uint64 internal constant DEFAULT_CLAIM_START = START + 7 days;
+    uint64 internal constant DEFAULT_CLAIM_END = DEFAULT_CLAIM_START + 10 days;
 
     TeeRexRewardsControllerV1 internal controller;
     MockPublicLock internal lock;
@@ -94,15 +96,13 @@ abstract contract RewardsBase is Test {
         });
     }
 
-    /// @dev 3-placement ETH pool, claim opens in 7 days for 5 days, default 30h challenge window.
+    /// @dev 3-placement ETH pool with the suite default claim window and 30h challenge window.
     function _createDefaultEthPool() internal returns (uint256 poolId, uint256 total) {
         uint256[] memory a = _amounts3();
         total = a[0] + a[1] + a[2];
-        uint64 cs = START + 7 days;
-        uint64 ce = cs + 5 days;
         vm.prank(creator);
         poolId = controller.createRewardPool{value: total}(
-            _params(address(0), address(0), a, cs, ce, MIN_WINDOW, _noManagers())
+            _params(address(0), address(0), a, DEFAULT_CLAIM_START, DEFAULT_CLAIM_END, MIN_WINDOW, _noManagers())
         );
     }
 
@@ -112,12 +112,10 @@ abstract contract RewardsBase is Test {
         a[1] = 200e6;
         a[2] = 100e6;
         total = a[0] + a[1] + a[2];
-        uint64 cs = START + 7 days;
-        uint64 ce = cs + 5 days;
         vm.startPrank(creator);
         token.approve(address(controller), total);
         poolId = controller.createRewardPool(
-            _params(address(token), address(0), a, cs, ce, MIN_WINDOW, _noManagers())
+            _params(address(token), address(0), a, DEFAULT_CLAIM_START, DEFAULT_CLAIM_END, MIN_WINDOW, _noManagers())
         );
         vm.stopPrank();
     }

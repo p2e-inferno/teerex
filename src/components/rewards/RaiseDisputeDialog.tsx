@@ -16,17 +16,24 @@ const CATEGORIES: { value: RewardDisputeCategory; label: string }[] = [
   { value: 'other', label: 'Other' },
 ];
 
+const HOLD_OPTIONS = [
+  { value: String(24 * 60 * 60), label: '1 day' },
+  { value: String(2 * 24 * 60 * 60), label: '2 days' },
+  { value: String(3 * 24 * 60 * 60), label: '3 days' },
+];
+
 interface Props {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   placement?: number | null;
   busy?: boolean;
-  onSubmit: (input: { category: RewardDisputeCategory; reasonText: string }) => void;
+  onSubmit: (input: { category: RewardDisputeCategory; reasonText: string; holdDurationSecs: number }) => void;
 }
 
 export function RaiseDisputeDialog({ open, onOpenChange, placement, busy, onSubmit }: Props) {
   const [category, setCategory] = useState<RewardDisputeCategory>('wrong_winner');
   const [reasonText, setReasonText] = useState('');
+  const [holdDurationSecs, setHoldDurationSecs] = useState(HOLD_OPTIONS[0].value);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -53,6 +60,17 @@ export function RaiseDisputeDialog({ open, onOpenChange, placement, busy, onSubm
             </Select>
           </div>
           <div className="space-y-2">
+            <Label>Hold duration</Label>
+            <Select value={holdDurationSecs} onValueChange={setHoldDurationSecs}>
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>
+                {HOLD_OPTIONS.map((option) => (
+                  <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-2">
             <Label htmlFor="dispute-reason">Details</Label>
             <Textarea
               id="dispute-reason"
@@ -66,7 +84,7 @@ export function RaiseDisputeDialog({ open, onOpenChange, placement, busy, onSubm
 
         <DialogFooter>
           <Button variant="ghost" onClick={() => onOpenChange(false)} disabled={busy}>Cancel</Button>
-          <Button onClick={() => onSubmit({ category, reasonText })} disabled={busy}>
+          <Button onClick={() => onSubmit({ category, reasonText, holdDurationSecs: Number(holdDurationSecs) })} disabled={busy}>
             {busy ? 'Submitting…' : 'Submit dispute'}
           </Button>
         </DialogFooter>

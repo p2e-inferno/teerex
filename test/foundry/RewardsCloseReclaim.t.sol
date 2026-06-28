@@ -11,7 +11,16 @@ contract RewardsCloseReclaimTest is RewardsBase {
         total = a[0] + a[1] + a[2];
         vm.prank(creator);
         poolId = controller.createRewardPool{value: total}(
-            _params(address(0), address(attendance), a, START + 7 days, START + 12 days, MIN_WINDOW, _noManagers())
+            _params(address(0), address(attendance), a, DEFAULT_CLAIM_START, DEFAULT_CLAIM_END, MIN_WINDOW, _noManagers())
+        );
+    }
+
+    function _createSingleEthPool() internal returns (uint256 poolId) {
+        uint256[] memory a = new uint256[](1);
+        a[0] = 1 ether;
+        vm.prank(creator);
+        poolId = controller.createRewardPool{value: 1 ether}(
+            _params(address(0), address(0), a, DEFAULT_CLAIM_START, DEFAULT_CLAIM_END, MIN_WINDOW, _noManagers())
         );
     }
 
@@ -63,9 +72,9 @@ contract RewardsCloseReclaimTest is RewardsBase {
     /// time-locked, freezable reclaim() path. Guards against a lock manager zeroing supply
     /// (e.g. by burning keys) to bypass the claim-window lockout and dispute/freeze recourse.
     function test_RevertWhen_CloseNoTicketsAfterClaimStart() public {
-        (uint256 poolId,) = _createDefaultEthPool(); // claimStart = START + 7 days
+        (uint256 poolId,) = _createDefaultEthPool();
         lock.setTotalSupply(0);
-        vm.warp(START + 7 days); // claim phase is now live
+        vm.warp(DEFAULT_CLAIM_START); // claim phase is now live
         vm.prank(creator);
         vm.expectRevert(R.EarlyExitNotAllowed.selector);
         controller.closePool(poolId);
@@ -76,7 +85,7 @@ contract RewardsCloseReclaimTest is RewardsBase {
     function test_ClosePool_AttendanceEarlyExit_AfterClaimStart() public {
         (uint256 poolId, uint256 total) = _createPoolWithAttendance();
         attendance.setConfig(address(lock), true, true, true, true);
-        vm.warp(START + 8 days); // past this pool's claimStart (START + 7 days)
+        vm.warp(DEFAULT_CLAIM_START + 1 days);
         uint256 balBefore = creator.balance;
         vm.prank(creator);
         controller.closePool(poolId);
@@ -126,7 +135,7 @@ contract RewardsCloseReclaimTest is RewardsBase {
     function test_Reclaim_FullWhenNothingClaimed() public {
         (uint256 poolId, uint256 total) = _createDefaultEthPool();
         _assign(poolId, alice, 1); // assigned but never claimed
-        vm.warp(START + 12 days + 1);
+        vm.warp(DEFAULT_CLAIM_END + 1);
         uint256 balBefore = creator.balance;
 
         vm.expectEmit(true, true, false, true, address(controller));
@@ -141,11 +150,11 @@ contract RewardsCloseReclaimTest is RewardsBase {
     function test_Reclaim_RemainderAfterPartialClaim() public {
         (uint256 poolId,) = _createDefaultEthPool();
         _assign(poolId, alice, 1);
-        vm.warp(START + 7 days);
+        vm.warp(DEFAULT_CLAIM_START);
         vm.prank(alice);
         controller.claim(poolId, 1); // 3 ether out
 
-        vm.warp(START + 12 days + 1);
+        vm.warp(DEFAULT_CLAIM_END + 1);
         uint256 balBefore = creator.balance;
         vm.prank(creator);
         controller.reclaim(poolId);
@@ -154,7 +163,7 @@ contract RewardsCloseReclaimTest is RewardsBase {
 
     function test_RevertWhen_ReclaimBeforeWindowEnd() public {
         (uint256 poolId,) = _createDefaultEthPool();
-        vm.warp(START + 12 days); // not yet strictly past
+        vm.warp(DEFAULT_CLAIM_END); // not yet strictly past
         vm.prank(creator);
         vm.expectRevert(R.NotYetReclaimable.selector);
         controller.reclaim(poolId);
@@ -162,7 +171,7 @@ contract RewardsCloseReclaimTest is RewardsBase {
 
     function test_RevertWhen_ReclaimNotCreator() public {
         (uint256 poolId,) = _createDefaultEthPool();
-        vm.warp(START + 12 days + 1);
+        vm.warp(DEFAULT_CLAIM_END + 1);
         vm.prank(stranger);
         vm.expectRevert(R.NotCreator.selector);
         controller.reclaim(poolId);
@@ -173,7 +182,7 @@ contract RewardsCloseReclaimTest is RewardsBase {
         _assign(poolId, alice, 1);
         _assign(poolId, bob, 2);
         _assign(poolId, carol, 3);
-        vm.warp(START + 7 days);
+        vm.warp(DEFAULT_CLAIM_START);
         vm.prank(alice);
         controller.claim(poolId, 1);
         vm.prank(bob);
@@ -181,7 +190,7 @@ contract RewardsCloseReclaimTest is RewardsBase {
         vm.prank(carol);
         controller.claim(poolId, 3);
 
-        vm.warp(START + 12 days + 1);
+        vm.warp(DEFAULT_CLAIM_END + 1);
         vm.prank(creator);
         vm.expectRevert(R.NothingToPay.selector);
         controller.reclaim(poolId);
@@ -191,7 +200,7 @@ contract RewardsCloseReclaimTest is RewardsBase {
         (uint256 poolId,) = _createDefaultEthPool();
         vm.prank(arbitrator);
         controller.freeze(poolId);
-        vm.warp(START + 12 days + 1 days); // past claimEnd, within backstop
+        vm.warp(DEFAULT_CLAIM_END + 1 days); // past claimEnd, within backstop
         vm.prank(creator);
         vm.expectRevert(R.PoolIsFrozen.selector);
         controller.reclaim(poolId);
@@ -202,7 +211,7 @@ contract RewardsCloseReclaimTest is RewardsBase {
         vm.prank(arbitrator);
         controller.freeze(poolId);
         // Backstop escape hatch: escrow is released even while frozen once the backstop elapses.
-        vm.warp(START + 12 days + MAX_BACKSTOP + 1);
+        vm.warp(DEFAULT_CLAIM_END + MAX_BACKSTOP + 1);
         uint256 balBefore = creator.balance;
         vm.prank(creator);
         controller.reclaim(poolId);
@@ -210,9 +219,57 @@ contract RewardsCloseReclaimTest is RewardsBase {
         assertTrue(_poolClosed(poolId));
     }
 
+    function test_RevertWhen_ReclaimAssignedFrozenPastBackstopDuringWinnerGrace() public {
+        uint256 poolId = _createSingleEthPool();
+        _assign(poolId, alice, 1);
+        vm.warp(DEFAULT_CLAIM_START);
+        vm.prank(arbitrator);
+        controller.freeze(poolId);
+
+        vm.warp(DEFAULT_CLAIM_END + MAX_BACKSTOP + 1);
+        vm.prank(creator);
+        vm.expectRevert(R.NotYetReclaimable.selector);
+        controller.reclaim(poolId);
+        assertFalse(_posReclaimed(poolId, 1));
+    }
+
+    function test_ReclaimAssignedFrozenPastBackstopAfterWinnerGrace() public {
+        uint256 poolId = _createSingleEthPool();
+        _assign(poolId, alice, 1);
+        vm.warp(DEFAULT_CLAIM_START);
+        vm.prank(arbitrator);
+        controller.freeze(poolId);
+
+        vm.warp(DEFAULT_CLAIM_END + MAX_BACKSTOP + MIN_CLAIM + 1);
+        uint256 balBefore = creator.balance;
+        vm.prank(creator);
+        controller.reclaim(poolId);
+        assertEq(creator.balance, balBefore + 1 ether);
+        assertTrue(_posReclaimed(poolId, 1));
+        assertTrue(_poolClosed(poolId));
+    }
+
+    function test_ReclaimFrozenPastBackstop_SweepsNeverAssignedDuringWinnerGrace() public {
+        (uint256 poolId,) = _createDefaultEthPool();
+        _assign(poolId, alice, 1);
+        vm.warp(DEFAULT_CLAIM_START);
+        vm.prank(arbitrator);
+        controller.freeze(poolId);
+
+        vm.warp(DEFAULT_CLAIM_END + MAX_BACKSTOP + 1);
+        uint256 balBefore = creator.balance;
+        vm.prank(creator);
+        controller.reclaim(poolId);
+        assertEq(creator.balance, balBefore + 3 ether);
+        assertFalse(_posReclaimed(poolId, 1));
+        assertTrue(_posReclaimed(poolId, 2));
+        assertTrue(_posReclaimed(poolId, 3));
+        assertFalse(_poolClosed(poolId));
+    }
+
     function test_RevertWhen_ReclaimClosedPool() public {
         (uint256 poolId,) = _createDefaultEthPool();
-        vm.warp(START + 12 days + 1);
+        vm.warp(DEFAULT_CLAIM_END + 1);
         vm.startPrank(creator);
         controller.reclaim(poolId);
         vm.expectRevert(R.PoolIsClosed.selector);
@@ -230,7 +287,7 @@ contract RewardsCloseReclaimTest is RewardsBase {
 
     function test_Reclaim_AllNeverAssigned_FullAtPoolEnd() public {
         (uint256 poolId, uint256 total) = _createDefaultEthPool();
-        vm.warp(START + 12 days + 1);
+        vm.warp(DEFAULT_CLAIM_END + 1);
         uint256 balBefore = creator.balance;
         vm.prank(creator);
         controller.reclaim(poolId);
@@ -242,8 +299,8 @@ contract RewardsCloseReclaimTest is RewardsBase {
     function test_RevertWhen_ReclaimLateAssignedNotYetEnded() public {
         uint256[] memory a = new uint256[](1);
         a[0] = 1 ether;
-        uint64 cs = START + 7 days;
-        uint64 ce = START + 12 days;
+        uint64 cs = DEFAULT_CLAIM_START;
+        uint64 ce = DEFAULT_CLAIM_END;
         vm.prank(creator);
         uint256 poolId = controller.createRewardPool{value: 1 ether}(
             _params(address(0), address(0), a, cs, ce, MIN_WINDOW, _noManagers())
@@ -268,7 +325,7 @@ contract RewardsCloseReclaimTest is RewardsBase {
     function test_Reclaim_PartialThenFull() public {
         (uint256 poolId, uint256 total) = _createDefaultEthPool();
         _assign(poolId, alice, 1); // early → ends at pool end
-        uint64 ce = START + 12 days;
+        uint64 ce = DEFAULT_CLAIM_END;
         vm.warp(ce - 1 hours);
         _assign(poolId, bob, 2); // late → ends past pool end; pos 3 never assigned
 
@@ -299,7 +356,7 @@ contract RewardsCloseReclaimTest is RewardsBase {
     function test_Reclaim_Idempotent() public {
         (uint256 poolId,) = _createDefaultEthPool();
         _assign(poolId, alice, 1); // early
-        uint64 ce = START + 12 days;
+        uint64 ce = DEFAULT_CLAIM_END;
         vm.warp(ce - 1 hours);
         _assign(poolId, bob, 2); // late keeps pool open after the first sweep
 
@@ -316,7 +373,7 @@ contract RewardsCloseReclaimTest is RewardsBase {
 
     function test_Reclaim_WinnerClaimsLateBeforeEnd_ThenCreatorReclaimsRest() public {
         (uint256 poolId,) = _createDefaultEthPool();
-        uint64 ce = START + 12 days;
+        uint64 ce = DEFAULT_CLAIM_END;
         vm.warp(ce - 1 hours);
         _assign(poolId, alice, 1); // late; pos 2 + 3 never assigned
 
@@ -341,7 +398,7 @@ contract RewardsCloseReclaimTest is RewardsBase {
     function test_RevertWhen_AssignReclaimedPosition() public {
         (uint256 poolId,) = _createDefaultEthPool();
         _assign(poolId, alice, 1); // early
-        uint64 ce = START + 12 days;
+        uint64 ce = DEFAULT_CLAIM_END;
         vm.warp(ce - 1 hours);
         _assign(poolId, bob, 2); // late keeps pool open; pos3 never assigned
 
