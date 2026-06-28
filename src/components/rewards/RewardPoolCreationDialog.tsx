@@ -24,7 +24,8 @@ import {
 } from '@/utils/rewardControllerUtils';
 
 const MIN_CHALLENGE_HOURS = 30;
-const MIN_CLAIM_DURATION_HOURS = 72;
+const MIN_CLAIM_DURATION_DAYS = 7;
+const MIN_CLAIM_DURATION_HOURS = MIN_CLAIM_DURATION_DAYS * 24;
 const MAX_POSITIONS = 200; // mirrors the contract's MAX_POSITIONS cap.
 const PENDING_POOL_VERSION = 1;
 const REWARD_POOL_DIALOG_DEBUG = true;
@@ -384,7 +385,7 @@ export function RewardPoolCreationDialog({ open, onOpenChange, eventLockAddress,
       return;
     }
     if (claimEndEpoch < claimStartEpoch + MIN_CLAIM_DURATION_HOURS * 3600) {
-      toast({ title: 'Claim window too short', description: 'The claim window must stay open for at least 3 days.', variant: 'destructive' });
+      toast({ title: 'Claim window too short', description: `The claim window must stay open for at least ${MIN_CLAIM_DURATION_DAYS} days.`, variant: 'destructive' });
       return;
     }
     if (!Number.isFinite(challengeHoursValue) || challengeHoursValue < MIN_CHALLENGE_HOURS) {

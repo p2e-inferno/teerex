@@ -7,6 +7,9 @@ import RewardsControllerAbi from "./abi/TeeRexRewardsControllerV1.json" assert {
 // mirror logic lives in exactly one place. The chain is the source of truth; the DB follows.
 
 const ZERO = "0x0000000000000000000000000000000000000000";
+const LEGACY_REWARD_POSITION_ABI = [
+  "function positions(uint256,uint16) view returns (uint256 amount,address winner,uint64 assignedAt,uint64 holdUntil,bool freeHoldUsed,bool claimed,uint64 claimedAt)",
+];
 
 export type RewardPoolStatus =
   | "funded"
@@ -51,6 +54,10 @@ export function getRewardsController(address: string, provider: ethers.Provider)
   return new ethers.Contract(address, RewardsControllerAbi as any, provider);
 }
 
+export function getLegacyRewardsController(address: string, provider: ethers.Provider): ethers.Contract {
+  return new ethers.Contract(address, LEGACY_REWARD_POSITION_ABI, provider);
+}
+
 export async function readRewardPool(
   controller: ethers.Contract,
   poolId: number | bigint,
@@ -82,10 +89,19 @@ export async function readRewardPositions(
   controller: ethers.Contract,
   poolId: number | bigint,
   positionCount: number,
+  legacyController?: ethers.Contract,
 ): Promise<OnchainPosition[]> {
   const out: OnchainPosition[] = [];
   for (let placement = 1; placement <= positionCount; placement++) {
-    const pos = await controller.positions(poolId, placement);
+    let pos: any;
+    let reclaimed = false;
+    try {
+      pos = await controller.positions(poolId, placement);
+      reclaimed = Boolean(pos.reclaimed);
+    } catch (err) {
+      if (!legacyController) throw err;
+      pos = await legacyController.positions(poolId, placement);
+    }
     const winner = String(pos.winner).toLowerCase();
     out.push({
       placement,
@@ -94,12 +110,14 @@ export async function readRewardPositions(
       assignedAt: Number(pos.assignedAt),
       holdUntil: Number(pos.holdUntil),
       claimed: Boolean(pos.claimed),
-      reclaimed: Boolean(pos.reclaimed),
+      reclaimed,
       claimedAt: Number(pos.claimedAt),
     });
   }
   return out;
 }
+
+const FREEZE_BACKSTOP_SECS = 30 * 24 * 60 * 60; // MAX_FREEZE_BACKSTOP in the controller.
 
 export function deriveRewardPoolStatus(pool: OnchainRewardPool, nowSecs: number): RewardPoolStatus {
   // `closed` is creator-driven (closePool or a reclaim that settled the last share). A pool whose
@@ -107,8 +125,12 @@ export function deriveRewardPoolStatus(pool: OnchainRewardPool, nowSecs: number)
   // fully settles a pool always sets `closed` — so this is the distinct "all winners paid" terminal.
   if (pool.closed) return "closed";
   if (BigInt(pool.claimedAmountWei) >= BigInt(pool.totalFundedWei)) return "claim_complete";
-  if (pool.frozen) return "frozen";
-  if (nowSecs > pool.claimEnd + pool.frozenAccrued) return "expired";
+  const effectiveEnd = pool.claimEnd + pool.frozenAccrued;
+  // A freeze only locks claims/reclaims until the backstop; an abandoned freeze past it releases
+  // escrow on-chain, so the mirror must stop reporting "frozen" and fall through to the time-based
+  // terminal states rather than freezing the badge forever.
+  if (pool.frozen && nowSecs <= effectiveEnd + FREEZE_BACKSTOP_SECS) return "frozen";
+  if (nowSecs > effectiveEnd) return "expired";
   if (pool.assignedCount === 0) return "funded";
   if (nowSecs >= pool.claimStart) return "claiming";
   return "results_pending";

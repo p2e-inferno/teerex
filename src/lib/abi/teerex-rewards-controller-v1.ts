@@ -648,6 +648,11 @@ export const REWARDS_CONTROLLER_V1_ABI = [
         "name": "reasonHash",
         "type": "bytes32",
         "internalType": "bytes32"
+      },
+      {
+        "name": "holdDuration",
+        "type": "uint64",
+        "internalType": "uint64"
       }
     ],
     "outputs": [],

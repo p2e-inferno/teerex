@@ -15,8 +15,10 @@ import {
 } from 'lucide-react';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
+import { FieldHelp } from '@/components/ui/field-help';
 import { getExplorerTxUrl } from '@/lib/config/network-config';
 import { cn } from '@/lib/utils';
+import { formatCountdownLabelFromMs } from '@/utils/dateUtils';
 import { useRewardPoolOnchainState } from '@/hooks/useRewardPoolOnchainState';
 import { useRewardControllerActions } from '@/hooks/useRewardControllerActions';
 import { RewardPoolBadge } from './RewardPoolBadge';
@@ -39,17 +41,7 @@ const isoToSecs = (iso?: string | null): number | null => {
 };
 
 const formatCountdown = (targetSecs: number | null | undefined, nowSecs: number): string | null => {
-  if (!targetSecs) return null;
-  const diff = targetSecs - nowSecs;
-  if (diff <= 0) return 'Now';
-  const days = Math.floor(diff / 86400);
-  const hours = Math.floor((diff % 86400) / 3600);
-  const minutes = Math.floor((diff % 3600) / 60);
-  const seconds = diff % 60;
-  if (days > 0) return `${days}d ${hours}h ${minutes}m`;
-  if (hours > 0) return `${hours}h ${minutes}m`;
-  if (minutes > 0) return `${minutes}m ${seconds}s`;
-  return `${seconds}s`;
+  return formatCountdownLabelFromMs(targetSecs ? targetSecs * 1000 : null, nowSecs * 1000);
 };
 
 const formatDateFromSecs = (secs: number | null | undefined): string => (
@@ -57,6 +49,7 @@ const formatDateFromSecs = (secs: number | null | undefined): string => (
 );
 
 const MIN_CLAIM_DURATION_SECS = 3 * 24 * 60 * 60;
+const FREEZE_BACKSTOP_SECS = 30 * 24 * 60 * 60; // MAX_FREEZE_BACKSTOP in TeeRexRewardsControllerV1.
 
 type DisplayPosition = RewardPoolOnchainPosition;
 
@@ -139,8 +132,21 @@ export function RewardPoolCard({ pool, viewerAddress, isTicketHolder, eventEndsA
   const poolEndSecs = claimEndSecs != null ? claimEndSecs + (onchainData?.frozenAccrued ?? 0) : null;
   const eventEnded = eventEndSecs == null || nowSecs >= eventEndSecs;
 
+  // Winner names are off-chain metadata; merge them in by placement regardless of whether the rest
+  // of the row comes from the on-chain read or the DB mirror.
+  const aliasByPlacement = useMemo(() => {
+    const map = new Map<number, string | null>();
+    for (const p of pool.positions) map.set(p.placement, p.winner_alias ?? null);
+    return map;
+  }, [pool.positions]);
+
   const positions = useMemo<DisplayPosition[]>(() => {
-    if (onchainData?.positions?.length) return onchainData.positions;
+    if (onchainData?.positions?.length) {
+      return onchainData.positions.map((p) => ({
+        ...p,
+        winnerAlias: aliasByPlacement.get(p.placement) ?? null,
+      }));
+    }
     return pool.positions.map((p) => {
       const assignedAt = p.assigned_at ? Math.floor(new Date(p.assigned_at).getTime() / 1000) : 0;
       const holdUntil = p.hold_until ? Math.floor(new Date(p.hold_until).getTime() / 1000) : 0;
@@ -154,6 +160,7 @@ export function RewardPoolCard({ pool, viewerAddress, isTicketHolder, eventEndsA
         placement: p.placement,
         amountWei: BigInt(p.amount_wei),
         winner: p.winner_address,
+        winnerAlias: p.winner_alias ?? null,
         claimed: p.claimed,
         reclaimed: p.reclaimed ?? false,
         canClaim: false,
@@ -164,24 +171,51 @@ export function RewardPoolCard({ pool, viewerAddress, isTicketHolder, eventEndsA
         claimedAt: p.claimed_at ? Math.floor(new Date(p.claimed_at).getTime() / 1000) : 0,
       };
     });
-  }, [claimStartSecs, onchainData, pool.challenge_window_secs, pool.positions, poolEndSecs]);
+  }, [aliasByPlacement, claimStartSecs, onchainData, pool.challenge_window_secs, pool.positions, poolEndSecs]);
 
   const myPositions = useMemo(
     () => positions.filter((p) => p.winner && p.winner.toLowerCase() === viewer),
     [positions, viewer],
   );
+  const hasEditablePlacements = useMemo(
+    () => positions.some((p) => !p.claimed && !p.reclaimed),
+    [positions],
+  );
+  const hasUnassignedPlacements = useMemo(
+    () => positions.some((p) => !p.claimed && !p.reclaimed && !p.winner),
+    [positions],
+  );
+  const hasDeclaredPlacements = useMemo(
+    () => positions.some((p) => !p.claimed && !p.reclaimed && Boolean(p.winner)),
+    [positions],
+  );
+  const canAssignUnassignedPlacements = hasUnassignedPlacements
+    && poolEndSecs != null
+    && nowSecs <= poolEndSecs;
+  const canReplaceDeclaredWinners = hasDeclaredPlacements
+    && claimStartSecs != null
+    && nowSecs < claimStartSecs;
+  const winnerDeclarationClosesSecs = poolEndSecs;
 
   useEffect(() => {
     const nextClaimOpen = positions
       .filter((p) => p.winner && !p.claimed && !p.reclaimed && !p.canClaim && p.opensAt > nowSecs)
       .reduce((min, p) => Math.min(min, p.opensAt), Number.POSITIVE_INFINITY);
+    const nextAssignmentClose = poolEndSecs && poolEndSecs > nowSecs ? poolEndSecs : Number.POSITIVE_INFINITY;
     const nextReclaimOpen = isCreator && onchainData && !onchainData.closed && !onchainData.frozen
       ? onchainData.claimEnd + onchainData.frozenAccrued
       : Number.POSITIVE_INFINITY;
     const nextEventEnd = eventEndSecs && eventEndSecs > nowSecs ? eventEndSecs : Number.POSITIVE_INFINITY;
     const nextClaimStart = claimStartSecs && claimStartSecs > nowSecs ? claimStartSecs : Number.POSITIVE_INFINITY;
     const nextClaimEnd = claimEndSecs && claimEndSecs > nowSecs ? claimEndSecs : Number.POSITIVE_INFINITY;
-    const nextAt = Math.min(nextClaimOpen, nextReclaimOpen, nextEventEnd, nextClaimStart, nextClaimEnd);
+    const nextAt = Math.min(
+      nextAssignmentClose,
+      nextClaimOpen,
+      nextReclaimOpen,
+      nextEventEnd,
+      nextClaimStart,
+      nextClaimEnd,
+    );
     const delayMs = Number.isFinite(nextAt)
       ? Math.max(1_000, Math.min((nextAt - nowSecs) * 1000 + 500, 60_000))
       : 60_000;
@@ -192,13 +226,18 @@ export function RewardPoolCard({ pool, viewerAddress, isTicketHolder, eventEndsA
       }
     }, delayMs);
     return () => window.clearTimeout(timer);
-  }, [claimEndSecs, claimStartSecs, eventEndSecs, isCreator, nowSecs, onchainData, positions, refetchOnchain]);
+  }, [claimEndSecs, claimStartSecs, eventEndSecs, isCreator, nowSecs, onchainData, poolEndSecs, positions, refetchOnchain]);
+
+  // A freeze blocks claims/reclaims only until the on-chain backstop (MAX_FREEZE_BACKSTOP); past it,
+  // an abandoned freeze no longer locks escrow, so the recovery path must be exposed in the UI.
+  const freezeBlocksNow = Boolean(onchainData?.frozen) && onchainData != null &&
+    nowSecs <= onchainData.claimEnd + onchainData.frozenAccrued + FREEZE_BACKSTOP_SECS;
 
   const canClaimPosition = (position: DisplayPosition) => (
     !position.claimed &&
     !position.reclaimed &&
     !onchainData?.closed &&
-    !onchainData?.frozen &&
+    !freezeBlocksNow &&
     (Boolean(position.canClaim) ||
       Boolean(
         position.opensAt &&
@@ -216,7 +255,7 @@ export function RewardPoolCard({ pool, viewerAddress, isTicketHolder, eventEndsA
     if (onchainData.closed) return 'This prize pool is already closed.';
     if (onchainData.frozen) return 'This prize pool is frozen while a dispute is reviewed.';
     if (onchainData.assignedCount > 0) {
-      return 'Winners are already declared. Unclaimed prize funds can be reclaimed after the claim window closes.';
+      return 'Winners are already declared. Prize pool cannot be closed while claims are in progress. Unclaimed prize funds can be reclaimed after the claim window closes.';
     }
     if (onchainData.ticketSupply === null) return 'Checking ticket supply before cancellation...';
     if (onchainData.ticketSupply === 0n) return null;
@@ -235,11 +274,29 @@ export function RewardPoolCard({ pool, viewerAddress, isTicketHolder, eventEndsA
     if (onchainData.closed) return 'This prize pool is closed.';
     if (onchainData.frozen) return 'This prize pool is frozen while a dispute is reviewed.';
     if (!eventEnded) return 'Winners can be declared after the event ends.';
+    if (!hasEditablePlacements) return 'All prize placements are already settled.';
+    if (hasUnassignedPlacements && !canAssignUnassignedPlacements) {
+      return 'Winner declaration closed when the claim window ended. Ask the arbitrator to extend the claim window, then assign again.';
+    }
+    if (hasDeclaredPlacements && !canReplaceDeclaredWinners && !hasUnassignedPlacements) {
+      return 'Declared winners are locked because the claim window has opened.';
+    }
     return null;
-  }, [canManageWinners, eventEnded, onchainData, onchainPending, onchainVerificationError]);
+  }, [
+    canAssignUnassignedPlacements,
+    canManageWinners,
+    canReplaceDeclaredWinners,
+    eventEnded,
+    hasDeclaredPlacements,
+    hasEditablePlacements,
+    hasUnassignedPlacements,
+    onchainData,
+    onchainPending,
+    onchainVerificationError,
+  ]);
 
   const canReclaim = isCreator && onchainData
-    ? !onchainData.closed && !onchainData.frozen && nowSecs > onchainData.claimEnd + onchainData.frozenAccrued
+    ? !onchainData.closed && !freezeBlocksNow && nowSecs > onchainData.claimEnd + onchainData.frozenAccrued
     : false;
   const canClose = isCreator && !closeBlockedReason;
   const canOpenAssign = canManageWinners && !assignBlockedReason;
@@ -256,12 +313,13 @@ export function RewardPoolCard({ pool, viewerAddress, isTicketHolder, eventEndsA
     } catch { /* explorer not configured */ }
   };
 
-  const submitDispute = async (input: { category: RewardDisputeCategory; reasonText: string }) => {
+  const submitDispute = async (input: { category: RewardDisputeCategory; reasonText: string; holdDurationSecs: number }) => {
     if (!viewerAddress) return;
     const ok = await actions.raiseDispute(pool, {
       placement: disputePlacement,
       category: input.category,
       reasonText: input.reasonText,
+      holdDurationSecs: input.holdDurationSecs,
       disputerAddress: viewerAddress,
     });
     if (ok) setDisputeOpen(false);
@@ -276,6 +334,7 @@ export function RewardPoolCard({ pool, viewerAddress, isTicketHolder, eventEndsA
   const closeHelperText = cancelReadyLabel
     ? `${cancelReadyLabel}. Canceling returns the prize escrow to the creator.`
     : closeBlockedReason;
+  const closeDisabledReason = !canClose ? closeBlockedReason : null;
   const showActionPanel = (
     showAssignAction ||
     showCloseAction ||
@@ -286,7 +345,7 @@ export function RewardPoolCard({ pool, viewerAddress, isTicketHolder, eventEndsA
   );
   const actionPanelMessages = Array.from(new Set([
     assignBlockedReason,
-    isCreator ? closeHelperText : null,
+    isCreator && canClose ? closeHelperText : null,
   ].filter((message): message is string => Boolean(message))));
 
   const copyWinnerAddress = async (address: string) => {
@@ -383,7 +442,13 @@ export function RewardPoolCard({ pool, viewerAddress, isTicketHolder, eventEndsA
                   {winnerAddress ? (
                     <div className="space-y-1.5">
                       <div className="font-medium text-slate-600">#{p.placement} · {fmt(p.amountWei)}</div>
-                      <div className="flex flex-wrap items-center gap-2 text-slate-950">
+                      {p.winnerAlias && (
+                        <div className="font-semibold text-slate-950 break-words">{p.winnerAlias}</div>
+                      )}
+                      <div className={cn(
+                        'flex flex-wrap items-center gap-2',
+                        p.winnerAlias ? 'font-mono text-xs text-slate-500' : 'text-slate-950',
+                      )}>
                         <span className="font-medium">{short(winnerAddress)}</span>
                         <button
                           type="button"
@@ -529,6 +594,41 @@ export function RewardPoolCard({ pool, viewerAddress, isTicketHolder, eventEndsA
 
         {showActionPanel && (
           <div className="rounded-lg border border-slate-200 bg-white/75 p-3">
+            {canManageWinners && winnerDeclarationClosesSecs != null && (
+              <div className={cn(
+                'mb-3 rounded-lg border px-3 py-2.5',
+                winnerDeclarationClosesSecs > nowSecs
+                  ? 'border-amber-200/70 bg-amber-50/60'
+                  : 'border-slate-200 bg-slate-50/70',
+              )}>
+                <div className="flex items-start gap-2">
+                  <span className={cn(
+                    'inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full',
+                    winnerDeclarationClosesSecs > nowSecs
+                      ? 'bg-amber-100 text-amber-700'
+                      : 'bg-slate-100 text-slate-500',
+                  )}>
+                    <Clock className="h-3.5 w-3.5" />
+                  </span>
+                  <div className="min-w-0">
+                    <div className={cn(
+                      'text-[11px] font-bold uppercase leading-tight tracking-normal',
+                      winnerDeclarationClosesSecs > nowSecs ? 'text-amber-700' : 'text-slate-500',
+                    )}>
+                      Winner declaration closes
+                    </div>
+                    <div className="mt-2 text-xl font-bold leading-tight text-slate-950">
+                      {formatCountdown(winnerDeclarationClosesSecs, nowSecs) ?? formatDateFromSecs(winnerDeclarationClosesSecs)}
+                    </div>
+                    <div className="mt-1 text-xs leading-snug text-slate-500">
+                      Empty placements can be assigned until {formatDateFromSecs(winnerDeclarationClosesSecs)}.
+                      {' '}Declared winners lock at {formatDateFromSecs(claimStartSecs)}.
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
             <div className="flex flex-wrap gap-2">
               {showAssignAction && (
                 <Button
@@ -541,19 +641,27 @@ export function RewardPoolCard({ pool, viewerAddress, isTicketHolder, eventEndsA
                 </Button>
               )}
               {showCloseAction && (
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={() => actions.close(pool)}
-                  disabled={actions.isBusy || !canClose}
-                  className={cn(
-                    'border-amber-300 bg-amber-50 text-amber-800 hover:bg-amber-100',
-                    !canClose && 'border-slate-200 bg-slate-50 text-slate-500 hover:bg-slate-50',
+                <span className="inline-flex items-center gap-1">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => actions.close(pool)}
+                    disabled={actions.isBusy || !canClose}
+                    className={cn(
+                      'border-amber-300 bg-amber-50 text-amber-800 hover:bg-amber-100',
+                      !canClose && 'border-slate-200 bg-slate-50 text-slate-500 hover:bg-slate-50',
+                    )}
+                  >
+                    <RotateCcw className="h-4 w-4" />
+                    Cancel prize pool
+                  </Button>
+                  {closeDisabledReason && (
+                    <FieldHelp
+                      text={closeDisabledReason}
+                      className="text-slate-400 hover:text-slate-700"
+                    />
                   )}
-                >
-                  <RotateCcw className="h-4 w-4" />
-                  Cancel prize pool
-                </Button>
+                </span>
               )}
               {showReclaimAction && (
                 <Button size="sm" variant="outline" onClick={() => actions.reclaim(pool)} disabled={actions.isBusy}>
@@ -593,8 +701,10 @@ export function RewardPoolCard({ pool, viewerAddress, isTicketHolder, eventEndsA
         open={assignOpen}
         onOpenChange={setAssignOpen}
         positions={positions}
+        canAssignUnassignedPlacements={canAssignUnassignedPlacements}
+        canReplaceDeclaredWinners={canReplaceDeclaredWinners}
         busy={actions.isBusy}
-        onSubmit={async (batch) => { const ok = await actions.assign(pool, batch); if (ok) setAssignOpen(false); }}
+        onSubmit={async ({ batch, aliasUpdates }) => { const ok = await actions.assign(pool, batch, aliasUpdates); if (ok) setAssignOpen(false); }}
       />
       <RaiseDisputeDialog
         open={disputeOpen}

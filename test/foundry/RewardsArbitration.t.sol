@@ -11,7 +11,7 @@ contract RewardsArbitrationTest is RewardsBase {
     function setUp() public override {
         super.setUp();
         (poolId,) = _createDefaultEthPool();
-        claimEnd = START + 12 days;
+        claimEnd = DEFAULT_CLAIM_END;
         _assign(poolId, alice, 1);
     }
 
@@ -46,7 +46,7 @@ contract RewardsArbitrationTest is RewardsBase {
     }
 
     function test_RevertWhen_FreezeClosedPool() public {
-        vm.warp(START + 12 days + 1);
+        vm.warp(DEFAULT_CLAIM_END + 1);
         vm.prank(creator);
         controller.reclaim(poolId); // closes the pool
         vm.prank(arbitrator);
@@ -55,11 +55,11 @@ contract RewardsArbitrationTest is RewardsBase {
     }
 
     function test_Unfreeze_ExtendsClaimEndByFrozenDuration() public {
-        vm.warp(START + 7 days);
+        vm.warp(DEFAULT_CLAIM_START);
         vm.prank(arbitrator);
         controller.freeze(poolId);
 
-        vm.warp(START + 9 days); // 2 days frozen
+        vm.warp(DEFAULT_CLAIM_START + 2 days);
         vm.prank(arbitrator);
         controller.unfreeze(poolId);
 
@@ -88,7 +88,7 @@ contract RewardsArbitrationTest is RewardsBase {
     }
 
     function test_FreezeBlocksClaim_UnfreezeRestores() public {
-        vm.warp(START + 7 days);
+        vm.warp(DEFAULT_CLAIM_START);
         vm.prank(arbitrator);
         controller.freeze(poolId);
 
@@ -134,7 +134,7 @@ contract RewardsArbitrationTest is RewardsBase {
     }
 
     function test_RevertWhen_VoidClaimed() public {
-        vm.warp(START + 7 days);
+        vm.warp(DEFAULT_CLAIM_START);
         vm.prank(alice);
         controller.claim(poolId, 1);
         vm.prank(arbitrator);
@@ -180,7 +180,7 @@ contract RewardsArbitrationTest is RewardsBase {
     }
 
     function test_RevertWhen_ReassignClaimed() public {
-        vm.warp(START + 7 days);
+        vm.warp(DEFAULT_CLAIM_START);
         vm.prank(alice);
         controller.claim(poolId, 1);
         vm.prank(arbitrator);
@@ -221,9 +221,9 @@ contract RewardsArbitrationTest is RewardsBase {
     // ---- resolveDispute ----
 
     function test_ResolveDispute_ClearsHold() public {
-        vm.warp(START + 150 hours);
+        vm.warp(DEFAULT_CLAIM_START - 18 hours);
         vm.prank(ticketHolder);
-        controller.raiseDispute(poolId, 1, keccak256("x"));
+        controller.raiseDispute(poolId, 1, keccak256("x"), MAX_HOLD);
         assertGt(_posHoldUntil(poolId, 1), 0);
 
         vm.expectEmit(true, true, false, true, address(controller));
@@ -254,7 +254,7 @@ contract RewardsArbitrationTest is RewardsBase {
     function _partialReclaimOpenPool() internal returns (uint256 pid) {
         (pid,) = _createDefaultEthPool();
         _assign(pid, alice, 1); // early → ends at pool end
-        uint64 ce = START + 12 days;
+        uint64 ce = DEFAULT_CLAIM_END;
         vm.warp(ce - 1 hours);
         _assign(pid, bob, 2); // late → keeps the pool open after the sweep
         vm.warp(ce + 1);

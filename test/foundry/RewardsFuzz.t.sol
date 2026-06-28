@@ -6,6 +6,7 @@ import {TeeRexRewardsControllerV1 as R} from "../../contracts/TeeRexRewardsContr
 
 contract RewardsFuzzTest is RewardsBase {
     uint256 internal constant MAX_PRIZE = 1e24; // 1M ether per placement
+    uint64 internal constant FUZZ_CLAIM_END = DEFAULT_CLAIM_START + 30 days;
 
     function _create3PosEthPool(uint256 x1, uint256 x2, uint256 x3, uint64 cs, uint64 ce)
         internal
@@ -28,7 +29,7 @@ contract RewardsFuzzTest is RewardsBase {
         uint256 x1 = bound(a1, 1, MAX_PRIZE);
         uint256 x2 = bound(a2, 1, MAX_PRIZE);
         uint256 x3 = bound(a3, 1, MAX_PRIZE);
-        (uint256 poolId, uint256 total) = _create3PosEthPool(x1, x2, x3, START + 7 days, START + 37 days);
+        (uint256 poolId, uint256 total) = _create3PosEthPool(x1, x2, x3, DEFAULT_CLAIM_START, FUZZ_CLAIM_END);
         assertEq(address(controller).balance, total);
         assertEq(controller.remaining(poolId), total);
         assertEq(controller.getPool(poolId).totalFunded, total);
@@ -49,7 +50,7 @@ contract RewardsFuzzTest is RewardsBase {
         vm.prank(creator);
         vm.expectRevert(abi.encodeWithSelector(R.BadFunding.selector, total, uint256(sent)));
         controller.createRewardPool{value: sent}(
-            _params(address(0), address(0), a, START + 7 days, START + 37 days, MIN_WINDOW, _noManagers())
+            _params(address(0), address(0), a, DEFAULT_CLAIM_START, FUZZ_CLAIM_END, MIN_WINDOW, _noManagers())
         );
     }
 
@@ -111,12 +112,12 @@ contract RewardsFuzzTest is RewardsBase {
     function testFuzz_DisputeHoldCap(uint64 disputeAt) public {
         (uint256 poolId,) = _createDefaultEthPool();
         _assign(poolId, alice, 1);
-        uint64 naturalOpen = START + 7 days; // claimStart dominates the 30h window
+        uint64 naturalOpen = DEFAULT_CLAIM_START; // claimStart dominates the 30h window
 
         disputeAt = uint64(bound(disputeAt, START, naturalOpen + 10 days));
         vm.warp(disputeAt);
         vm.prank(ticketHolder);
-        controller.raiseDispute(poolId, 1, keccak256("x"));
+        controller.raiseDispute(poolId, 1, keccak256("x"), MAX_HOLD);
 
         uint64 hold = _posHoldUntil(poolId, 1);
         if (hold != 0) {
@@ -133,11 +134,11 @@ contract RewardsFuzzTest is RewardsBase {
     function testFuzz_ConservationAcrossClaims(uint96 a1, uint96 a2, uint96 a3, uint8 mask) public {
         uint256[3] memory amt =
             [bound(a1, 1, MAX_PRIZE), bound(a2, 1, MAX_PRIZE), bound(a3, 1, MAX_PRIZE)];
-        (uint256 poolId, uint256 total) = _create3PosEthPool(amt[0], amt[1], amt[2], START + 7 days, START + 37 days);
+        (uint256 poolId, uint256 total) = _create3PosEthPool(amt[0], amt[1], amt[2], DEFAULT_CLAIM_START, FUZZ_CLAIM_END);
 
         address[3] memory winners = [alice, bob, carol];
         for (uint16 i = 0; i < 3; i++) _assign(poolId, winners[i], i + 1);
-        vm.warp(START + 7 days);
+        vm.warp(DEFAULT_CLAIM_START);
 
         uint256 paid;
         for (uint16 i = 0; i < 3; i++) {
@@ -158,11 +159,11 @@ contract RewardsFuzzTest is RewardsBase {
     function testFuzz_ReclaimReturnsRemainder(uint96 a1, uint96 a2, uint96 a3, uint8 mask) public {
         uint256[3] memory amt =
             [bound(a1, 1, MAX_PRIZE), bound(a2, 1, MAX_PRIZE), bound(a3, 1, MAX_PRIZE)];
-        (uint256 poolId, uint256 total) = _create3PosEthPool(amt[0], amt[1], amt[2], START + 7 days, START + 37 days);
+        (uint256 poolId, uint256 total) = _create3PosEthPool(amt[0], amt[1], amt[2], DEFAULT_CLAIM_START, FUZZ_CLAIM_END);
 
         address[3] memory winners = [alice, bob, carol];
         for (uint16 i = 0; i < 3; i++) _assign(poolId, winners[i], i + 1);
-        vm.warp(START + 7 days);
+        vm.warp(DEFAULT_CLAIM_START);
 
         uint256 paid;
         for (uint16 i = 0; i < 3; i++) {
@@ -173,7 +174,7 @@ contract RewardsFuzzTest is RewardsBase {
             }
         }
 
-        vm.warp(START + 37 days + 1);
+        vm.warp(FUZZ_CLAIM_END + 1);
         if (total - paid == 0) {
             vm.prank(creator);
             vm.expectRevert(R.NothingToPay.selector);
@@ -225,7 +226,7 @@ contract RewardsFuzzTest is RewardsBase {
     /// Initial assignment succeeds iff at/under the cutoff (pool end), else reverts AssignmentWindowClosed.
     function testFuzz_AssignmentCutoff(uint64 assignOff) public {
         (uint256 poolId,) = _createDefaultEthPool();
-        uint64 ce = START + 12 days;
+        uint64 ce = DEFAULT_CLAIM_END;
         uint64 t = uint64(bound(assignOff, START + 1, START + 90 days));
 
         vm.warp(t);
@@ -244,7 +245,7 @@ contract RewardsFuzzTest is RewardsBase {
     /// A late winner can claim at ANY instant inside their guaranteed [opensAt, positionClaimEnd] window.
     function testFuzz_LateWinnerClaimsWithinWindow(uint64 assignOff, uint64 claimOff) public {
         (uint256 poolId,) = _createDefaultEthPool();
-        uint64 ce = START + 12 days;
+        uint64 ce = DEFAULT_CLAIM_END;
         uint64 t = uint64(bound(assignOff, ce - 2 days, ce)); // late, still within the cutoff
 
         vm.warp(t);
@@ -260,12 +261,53 @@ contract RewardsFuzzTest is RewardsBase {
         assertTrue(_posClaimed(poolId, 1));
     }
 
+    /// A freeze blocks through the backstop, then only an interrupted assigned winner gets the
+    /// bounded post-backstop grace; a freeze after the normal end never reopens the position.
+    function testFuzz_FrozenBackstopClaimBoundary(uint64 freezeRaw, uint64 claimRaw) public {
+        (uint256 poolId,) = _createDefaultEthPool();
+        _assign(poolId, alice, 1);
+
+        uint256 normalEnd = DEFAULT_CLAIM_END;
+        uint64 freezeAt = uint64(bound(uint256(freezeRaw), START, normalEnd + 1 days));
+        vm.warp(freezeAt);
+        vm.prank(arbitrator);
+        controller.freeze(poolId);
+
+        uint256 expectedEnd = freezeAt <= normalEnd ? normalEnd + MAX_BACKSTOP + MIN_CLAIM : normalEnd;
+        assertEq(controller.positionClaimEnd(poolId, 1), expectedEnd);
+
+        uint256 latest = normalEnd + MAX_BACKSTOP + MIN_CLAIM + 2 days;
+        uint256 claimTime = bound(uint256(claimRaw), freezeAt, latest);
+        vm.warp(claimTime);
+
+        bool freezeBlocks = claimTime <= normalEnd + MAX_BACKSTOP;
+        bool expectedCanClaim =
+            claimTime >= DEFAULT_CLAIM_START && claimTime <= expectedEnd && !freezeBlocks;
+        (bool canClaim,) = controller.claimable(poolId, 1);
+        assertEq(canClaim, expectedCanClaim);
+
+        vm.prank(alice);
+        if (expectedCanClaim) {
+            controller.claim(poolId, 1);
+            assertTrue(_posClaimed(poolId, 1));
+        } else if (freezeBlocks) {
+            vm.expectRevert(R.PoolIsFrozen.selector);
+            controller.claim(poolId, 1);
+        } else if (claimTime < DEFAULT_CLAIM_START) {
+            vm.expectRevert(R.WindowNotOpen.selector);
+            controller.claim(poolId, 1);
+        } else {
+            vm.expectRevert(R.WindowClosed.selector);
+            controller.claim(poolId, 1);
+        }
+    }
+
     /// With winners assigned at arbitrary (sorted) times and never claimed, a single reclaim once past
     /// every per-position end returns the whole escrow and closes the pool — partial reclaim collapses
     /// to a full, conservation-preserving sweep.
     function testFuzz_PartialReclaimEventuallyFull(uint64 r1, uint64 r2, uint64 r3) public {
         (uint256 poolId, uint256 total) = _createDefaultEthPool();
-        uint64 ce = START + 12 days;
+        uint64 ce = DEFAULT_CLAIM_END;
 
         uint64[3] memory ts = [
             uint64(bound(r1, START, ce)),

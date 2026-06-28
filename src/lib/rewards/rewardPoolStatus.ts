@@ -6,6 +6,7 @@ export const REWARD_POOL_STATUS_META: Record<RewardPoolStatus, { label: string; 
   claiming: { label: 'Claim open', className: 'bg-blue-100 text-blue-800 border-blue-200' },
   frozen: { label: 'Disputed', className: 'bg-red-100 text-red-800 border-red-200' },
   expired: { label: 'Expired', className: 'bg-gray-100 text-gray-700 border-gray-200' },
+  claim_complete: { label: 'Paid out', className: 'bg-emerald-100 text-emerald-800 border-emerald-200' },
   closed: { label: 'Closed', className: 'bg-gray-100 text-gray-500 border-gray-200' },
 };
 
@@ -30,6 +31,10 @@ const EVENT_REWARD_POOL_STATUS_META: Record<RewardPoolStatus, { label: string; c
     label: 'Claim ended',
     className: 'bg-gray-50 text-gray-700 border-gray-200',
   },
+  claim_complete: {
+    label: 'Prize paid out',
+    className: 'bg-emerald-50 text-emerald-800 border-emerald-200',
+  },
   closed: {
     label: 'Prize closed',
     className: 'bg-gray-50 text-gray-500 border-gray-200',
@@ -42,7 +47,8 @@ const EVENT_STATUS_PRIORITY: Record<RewardPoolStatus, number> = {
   results_pending: 2,
   funded: 3,
   expired: 4,
-  closed: 5,
+  claim_complete: 5,
+  closed: 6,
 };
 
 export function getEventRewardPoolBadgeMeta(pools: RewardPool[]) {

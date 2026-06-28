@@ -1,12 +1,11 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef } from 'react';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
-import { usePrivy } from '@privy-io/react-auth';
-import { callEdgeFunction } from '@/lib/edgeFunctions';
 import {
   isPurchaseFormSchemaEmpty,
+  isPurchaseFormOptionField,
   PurchaseFormField,
   PurchaseFormResponseValues,
   PurchaseFormSchema,
@@ -18,8 +17,8 @@ interface PurchaseFormFieldsProps {
   errors?: Record<string, string>;
   onChange: (next: PurchaseFormResponseValues) => void;
   disabled?: boolean;
-  /** Wallet used to fetch prefill values from the user's prior tickets. */
-  prefillWallet?: string | null;
+  prefillValues?: PurchaseFormResponseValues | null;
+  prefillSource?: string | null;
 }
 
 export const PurchaseFormFields: React.FC<PurchaseFormFieldsProps> = ({
@@ -28,57 +27,49 @@ export const PurchaseFormFields: React.FC<PurchaseFormFieldsProps> = ({
   errors,
   onChange,
   disabled,
-  prefillWallet,
+  prefillValues,
+  prefillSource,
 }) => {
-  const { getAccessToken } = usePrivy();
   const empty = isPurchaseFormSchemaEmpty(schema);
-  const fields = schema?.fields ?? [];
-  const [prefillLoaded, setPrefillLoaded] = useState(false);
+  const fields = useMemo(() => schema?.fields ?? [], [schema?.fields]);
+  const appliedPrefillKeyRef = useRef<string | null>(null);
+  const prefillKey = useMemo(
+    () => (prefillValues ? `${prefillSource ?? ''}:${JSON.stringify(prefillValues)}` : null),
+    [prefillSource, prefillValues],
+  );
 
   useEffect(() => {
-    if (empty || prefillLoaded || !prefillWallet) return;
-    let cancelled = false;
-    (async () => {
-      try {
-        const token = await getAccessToken?.();
-        if (!token) return;
-        const data = await callEdgeFunction<{ prefill: PurchaseFormResponseValues }>(
-          'get-purchase-form-prefill',
-          { wallet_address: prefillWallet.toLowerCase() },
-          { privyToken: token },
-        );
-        if (cancelled || !data?.prefill) return;
-        const prefill = data.prefill;
-        const merged: PurchaseFormResponseValues = { ...values };
-        for (const f of fields) {
-          const existing = merged[f.id];
-          if (
-            existing !== undefined &&
-            existing !== null &&
-            existing !== ''
-          ) {
-            continue;
-          }
-          const candidate = prefill[f.id];
-          if (candidate === undefined || candidate === null) continue;
-          // For select fields the prefill must still be one of the current options.
-          if (f.type === 'select') {
-            if (typeof candidate !== 'string' || !(f.options ?? []).includes(candidate)) continue;
-          }
-          merged[f.id] = candidate as any;
-        }
-        onChange(merged);
-      } catch {
-        // Prefill is optional; the buyer can continue with empty fields.
-      } finally {
-        if (!cancelled) setPrefillLoaded(true);
+    if (empty || !prefillValues || !prefillKey || appliedPrefillKeyRef.current === prefillKey) return;
+
+    const merged: PurchaseFormResponseValues = { ...values };
+    let changed = false;
+
+    for (const f of fields) {
+      const existing = merged[f.id];
+      if (
+        existing !== undefined &&
+        existing !== null &&
+        existing !== ''
+      ) {
+        continue;
       }
-    })();
-    return () => {
-      cancelled = true;
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [prefillWallet, empty, getAccessToken]);
+
+      const candidate = prefillValues[f.id];
+      if (candidate === undefined || candidate === null) continue;
+      // Option-backed fields may have changed since the previous ticket was saved.
+      if (isPurchaseFormOptionField(f.type)) {
+        if (typeof candidate !== 'string' || !(f.options ?? []).includes(candidate)) {
+          continue;
+        }
+      }
+
+      merged[f.id] = candidate as any;
+      changed = true;
+    }
+
+    appliedPrefillKeyRef.current = prefillKey;
+    if (changed) onChange(merged);
+  }, [empty, fields, onChange, prefillKey, prefillValues, values]);
 
   const setValue = (field: PurchaseFormField, raw: string | number | null) => {
     onChange({ ...values, [field.id]: raw });
