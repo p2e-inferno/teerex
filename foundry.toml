@@ -1,0 +1,23 @@
+[profile.default]
+src = "contracts"
+out = "out"
+test = "test/foundry"
+cache_path = "cache_forge"
+libs = ["lib"]
+solc_version = "0.8.28"
+evm_version = "cancun"
+optimizer = true
+optimizer_runs = 200
+via_ir = true
+# TeeRex.sol targets OZ v4 (security/*) + EAS and solc 0.8.27; it is out of scope for this
+# harness, which builds the v5.6.1 controllers. Excluded so `forge build`/`forge test` stay green.
+skip = ["contracts/TeeRex.sol"]
+fs_permissions = [{ access = "read", path = "./" }]
+
+[fuzz]
+runs = 256
+
+[invariant]
+runs = 256
+depth = 50
+fail_on_revert = false

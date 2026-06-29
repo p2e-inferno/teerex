@@ -1,5 +1,6 @@
 import React, { useMemo, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { usePrivy } from '@privy-io/react-auth';
 import { Card, CardHeader, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -30,11 +31,13 @@ export const EventInteractionsCard: React.FC<EventInteractionsCardProps> = ({
   refreshToken,
 }) => {
   const navigate = useNavigate();
+  const { authenticated } = usePrivy();
   const { posts, isLoading, canManageDiscussions, error: postsError, refetch: refetchPosts } = useEventPosts(eventId);
   const { hasTicket, isChecking, error, refetch } = useTicketVerification(lockAddress, chainId);
   const { isLockManager, isChecking: isCheckingManager, error: lockManagerError } = useLockManagerVerification(lockAddress, chainId);
   const { isCreator } = useCreatorPermissions(creatorAddress, creatorId);
-  const canManagePosts = isCreator || isLockManager || canManageDiscussions;
+  const canManagePosts = authenticated && (isCreator || isLockManager || canManageDiscussions);
+  const canViewDiscussions = authenticated && (hasTicket || isCreator || isLockManager || canManageDiscussions);
 
   // Track if this is the initial mount to avoid refetching on first render
   const isInitialMountRef = useRef(true);
@@ -88,6 +91,8 @@ export const EventInteractionsCard: React.FC<EventInteractionsCardProps> = ({
     navigate(buildEventPostDiscussionsPath(eventIdentifier, latestPost.id));
   };
 
+  if (!authenticated) return null;
+
   if (isChecking || isCheckingManager || (isLoading && totalPosts === 0)) {
     return (
       <Card className="border-0 shadow-sm animate-pulse">
@@ -98,7 +103,7 @@ export const EventInteractionsCard: React.FC<EventInteractionsCardProps> = ({
     );
   }
 
-  if ((error || lockManagerError) && !(isCreator || isLockManager || canManageDiscussions)) {
+  if ((error || lockManagerError) && !canManagePosts) {
     return (
       <Card className="border-0 shadow-sm border-yellow-200 bg-yellow-50/50">
         <CardContent className="py-8 text-center space-y-3">
@@ -123,7 +128,7 @@ export const EventInteractionsCard: React.FC<EventInteractionsCardProps> = ({
     );
   }
 
-  if (!hasTicket && !isCreator && !isLockManager && !canManageDiscussions) {
+  if (!canViewDiscussions) {
     return (
       <Card className="border-0 shadow-sm">
         <CardContent className="py-8 text-center">

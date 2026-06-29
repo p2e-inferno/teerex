@@ -16,6 +16,7 @@ export default defineConfig({
     css: true,
     env: {
       VITE_PRIVY_APP_ID: "test-privy-app-id",
+      VITE_PUBLIC_PRIVY_CLIENT_ID: "test-privy-client-id",
       VITE_SUPABASE_URL: "http://localhost:54321",
       VITE_SUPABASE_ANON_KEY: "test-anon-key",
     },

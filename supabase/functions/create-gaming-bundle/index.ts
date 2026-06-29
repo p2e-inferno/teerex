@@ -4,6 +4,8 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.50.0";
 import { corsHeaders, buildPreflightHeaders } from "../_shared/cors.ts";
 import { SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY } from "../_shared/constants.ts";
 import { requireVendor } from "../_shared/vendor.ts";
+import { requireVerifiedPayoutAccount } from "../_shared/payout.ts";
+import { normalizePayoutDestination } from "../_shared/payout-routing.ts";
 
 const DEFAULT_EXPIRATION_SECONDS = 60 * 60 * 24 * 30;
 
@@ -41,6 +43,7 @@ serve(async (req) => {
     const metadataSet = body.metadata_set !== undefined ? Boolean(body.metadata_set) : false;
     const isActive = body.is_active !== undefined ? Boolean(body.is_active) : true;
     const serviceManagerAdded = body.service_manager_added !== undefined ? Boolean(body.service_manager_added) : false;
+    const payoutDestination = normalizePayoutDestination(body.payout_destination);
 
     if (!title || !description || !bundleType || !unitLabel || !location) {
       return new Response(JSON.stringify({ ok: false, error: "Missing required fields (title, description, bundle_type, unit_label, location)" }), {
@@ -71,6 +74,15 @@ serve(async (req) => {
     }
 
     const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+
+    // Hard gate (backstop): a verified payout account is required to list for fiat sale — but only
+    // when proceeds settle to the seller. Bundles routing proceeds to the platform don't need a
+    // seller bank account, so the gate is waived in that case.
+    // The client also blocks this before the on-chain deploy; this guards direct API calls.
+    if (payoutDestination === "seller") {
+      await requireVerifiedPayoutAccount(supabase, vendor.vendorId);
+    }
+
     const { data, error } = await supabase
       .from("gaming_bundles")
       .insert({
@@ -94,6 +106,7 @@ serve(async (req) => {
         metadata_set: metadataSet,
         is_active: isActive,
         service_manager_added: serviceManagerAdded,
+        payout_destination: payoutDestination,
       })
       .select("*")
       .single();
@@ -114,10 +127,14 @@ serve(async (req) => {
       status: 200,
     });
   } catch (error: any) {
-    const message = error?.message || "Internal error";
-    return new Response(JSON.stringify({ ok: false, error: message }), {
+    const rawMessage = error?.message || "Internal error";
+    const isPayoutGate = rawMessage === "payout_account_required";
+    const message = isPayoutGate
+      ? "Set up a verified payout account before creating a bundle."
+      : rawMessage;
+    return new Response(JSON.stringify({ ok: false, error: message, ...(isPayoutGate ? { code: "payout_account_required" } : {}) }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
-      status: message === "vendor_access_denied" ? 403 : 400,
+      status: rawMessage === "vendor_access_denied" || isPayoutGate ? 403 : 400,
     });
   }
 });

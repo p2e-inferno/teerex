@@ -96,6 +96,90 @@ export interface PaystackTransactionVerifyResponse {
   data: PaystackTransactionVerifyData;
 }
 
+export interface PaystackTransferRecipientCreateParams {
+  type: "nuban";
+  name: string;
+  account_number: string;
+  bank_code: string;
+  currency: "NGN";
+  metadata?: Record<string, unknown>;
+}
+
+export interface PaystackTransferRecipientData {
+  id: number;
+  recipient_code: string;
+  name: string;
+  type: string;
+  currency: string;
+  active: boolean;
+  details?: Record<string, unknown>;
+  metadata?: Record<string, unknown> | null;
+}
+
+export interface PaystackTransferRecipientResponse {
+  status: boolean;
+  message: string;
+  data: PaystackTransferRecipientData;
+}
+
+export interface PaystackTransferInitiateParams {
+  source: "balance";
+  amount: number;
+  recipient: string;
+  reference: string;
+  reason?: string;
+  currency?: "NGN";
+}
+
+export interface PaystackTransferFinalizeParams {
+  transfer_code: string;
+  otp: string;
+}
+
+export interface PaystackTransferOtpResendParams {
+  transfer_code: string;
+  reason: "transfer" | "resend_otp" | "disable_otp";
+}
+
+export interface PaystackTransferData {
+  id: number;
+  amount: number;
+  currency: string;
+  reference: string;
+  source: string;
+  reason?: string | null;
+  status: string;
+  transfer_code: string;
+  recipient?: unknown;
+  failures?: unknown;
+  gateway_response?: string | null;
+  transferred_at?: string | null;
+  createdAt?: string | null;
+  updatedAt?: string | null;
+}
+
+export interface PaystackTransferResponse {
+  status: boolean;
+  message: string;
+  data: PaystackTransferData;
+}
+
+export interface PaystackTransferOtpResponse {
+  status: boolean;
+  message: string;
+}
+
+export interface PaystackBalance {
+  currency: string;
+  balance: number;
+}
+
+export interface PaystackBalanceResponse {
+  status: boolean;
+  message: string;
+  data: PaystackBalance[];
+}
+
 // ============================================================================
 // Helper Functions
 // ============================================================================
@@ -109,6 +193,14 @@ function getPaystackHeaders(): HeadersInit {
     Authorization: `Bearer ${PAYSTACK_SECRET_KEY}`,
     "Content-Type": "application/json",
   };
+}
+
+function isPaystackTestMode(): boolean {
+  return String(Deno.env.get("PAYSTACK_SECRET_KEY") || "").startsWith("sk_test_");
+}
+
+function isPaystackTestTransferAccount(accountNumber: string, bankCode: string): boolean {
+  return bankCode === "057" && accountNumber === "0000000000";
 }
 
 // ============================================================================
@@ -216,6 +308,18 @@ export async function verifyAccountNumber(
   accountNumber: string,
   bankCode: string
 ): Promise<PaystackAccountResolveResponse> {
+  if (isPaystackTestMode() && isPaystackTestTransferAccount(accountNumber, bankCode)) {
+    return {
+      status: true,
+      message: "Account number resolved",
+      data: {
+        account_number: accountNumber,
+        account_name: "Test",
+        bank_id: 0,
+      },
+    };
+  }
+
   const response = await fetch(
     `${PAYSTACK_BASE_URL}/bank/resolve?account_number=${encodeURIComponent(
       accountNumber
@@ -261,6 +365,229 @@ export async function verifyPaystackTransaction(
   }
 
   return data as PaystackTransactionVerifyResponse;
+}
+
+/**
+ * Initiate a refund for a transaction. Omitting amount refunds it in full. Refunds settle
+ * asynchronously (Paystack emits refund.processed/failed later); a successful response here means
+ * the refund was accepted, not yet settled.
+ * @see https://paystack.com/docs/api/refund/#create
+ */
+export async function refundPaystackTransaction(params: {
+  reference: string;
+  amountKobo?: number;
+  customerNote?: string;
+  merchantNote?: string;
+}): Promise<{ ok: boolean; data?: any; error?: string }> {
+  const ref = String(params.reference || "").trim();
+  if (!ref) return { ok: false, error: "reference_required" };
+
+  const body: Record<string, unknown> = { transaction: ref };
+  if (params.amountKobo != null) body.amount = params.amountKobo;
+  if (params.customerNote) body.customer_note = params.customerNote;
+  if (params.merchantNote) body.merchant_note = params.merchantNote;
+
+  let response: Response;
+  try {
+    response = await fetch(`${PAYSTACK_BASE_URL}/refund`, {
+      method: "POST",
+      headers: getPaystackHeaders(),
+      body: JSON.stringify(body),
+    });
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : "paystack_refund_network_error" };
+  }
+
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok || !data?.status) {
+    return { ok: false, error: data?.message || `paystack_refund_failed_${response.status}`, data };
+  }
+  return { ok: true, data: data.data };
+}
+
+/**
+ * Retry a refund that Paystack marked as needing customer bank details.
+ * @see https://paystack.com/docs/api/refund/#retry
+ */
+export async function retryPaystackRefundWithCustomerDetails(params: {
+  refundId: string | number;
+  accountNumber: string;
+  bankId: string | number;
+  currency?: "NGN";
+}): Promise<{ ok: boolean; data?: any; error?: string }> {
+  const refundId = String(params.refundId || "").trim();
+  if (!refundId) return { ok: false, error: "refund_id_required" };
+
+  const body = {
+    refund_account_details: {
+      currency: params.currency || "NGN",
+      account_number: String(params.accountNumber || "").trim(),
+      bank_id: String(params.bankId || "").trim(),
+    },
+  };
+  if (!body.refund_account_details.account_number || !body.refund_account_details.bank_id) {
+    return { ok: false, error: "refund_account_details_required" };
+  }
+
+  let response: Response;
+  try {
+    response = await fetch(`${PAYSTACK_BASE_URL}/refund/retry_with_customer_details/${encodeURIComponent(refundId)}`, {
+      method: "POST",
+      headers: getPaystackHeaders(),
+      body: JSON.stringify(body),
+    });
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : "paystack_refund_retry_network_error" };
+  }
+
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok || !data?.status) {
+    return { ok: false, error: data?.message || `paystack_refund_retry_failed_${response.status}`, data };
+  }
+  return { ok: true, data: data.data };
+}
+
+// ============================================================================
+// Transfer Recipient API
+// ============================================================================
+
+/**
+ * Create a Paystack transfer recipient for user redemptions.
+ * @see https://paystack.com/docs/api/transfer-recipient/#create
+ */
+export async function createPaystackTransferRecipient(
+  params: PaystackTransferRecipientCreateParams
+): Promise<PaystackTransferRecipientResponse> {
+  const response = await fetch(`${PAYSTACK_BASE_URL}/transferrecipient`, {
+    method: "POST",
+    headers: getPaystackHeaders(),
+    body: JSON.stringify(params),
+  });
+
+  const data = await response.json();
+
+  if (!response.ok || !data.status) {
+    throw new Error(data.message || "Failed to create Paystack transfer recipient");
+  }
+
+  return data as PaystackTransferRecipientResponse;
+}
+
+// ============================================================================
+// Transfer API
+// ============================================================================
+
+/**
+ * Initiate a Paystack transfer from the integration balance.
+ * @see https://paystack.com/docs/api/transfer/#initiate
+ */
+export async function initiatePaystackTransfer(
+  params: PaystackTransferInitiateParams
+): Promise<PaystackTransferResponse> {
+  const response = await fetch(`${PAYSTACK_BASE_URL}/transfer`, {
+    method: "POST",
+    headers: getPaystackHeaders(),
+    body: JSON.stringify(params),
+  });
+
+  const data = await response.json();
+
+  if (!response.ok || !data.status) {
+    throw new Error(data.message || "Failed to initiate Paystack transfer");
+  }
+
+  return data as PaystackTransferResponse;
+}
+
+/**
+ * Verify a Paystack transfer by reference.
+ * @see https://paystack.com/docs/api/transfer/#verify
+ */
+export async function verifyPaystackTransfer(
+  reference: string
+): Promise<PaystackTransferResponse> {
+  const ref = String(reference || "").trim();
+  if (!ref) throw new Error("reference_required");
+
+  const response = await fetch(`${PAYSTACK_BASE_URL}/transfer/verify/${encodeURIComponent(ref)}`, {
+    method: "GET",
+    headers: getPaystackHeaders(),
+  });
+
+  const data = await response.json();
+
+  if (!response.ok || !data.status) {
+    throw new Error(data.message || "Failed to verify Paystack transfer");
+  }
+
+  return data as PaystackTransferResponse;
+}
+
+/**
+ * Finalize a Paystack transfer that is waiting for merchant OTP approval.
+ * @see https://paystack.com/docs/api/transfer/#finalize
+ */
+export async function finalizePaystackTransfer(
+  params: PaystackTransferFinalizeParams
+): Promise<PaystackTransferResponse> {
+  const response = await fetch(`${PAYSTACK_BASE_URL}/transfer/finalize_transfer`, {
+    method: "POST",
+    headers: getPaystackHeaders(),
+    body: JSON.stringify(params),
+  });
+
+  const data = await response.json();
+
+  if (!response.ok || !data.status) {
+    throw new Error(data.message || "Failed to finalize Paystack transfer");
+  }
+
+  return data as PaystackTransferResponse;
+}
+
+// ============================================================================
+// Transfer Control API
+// ============================================================================
+
+/**
+ * Ask Paystack to resend the OTP for a transfer waiting on merchant approval.
+ * @see https://paystack.com/docs/api/transfer-control/#resend-otp
+ */
+export async function resendPaystackTransferOtp(
+  params: PaystackTransferOtpResendParams
+): Promise<PaystackTransferOtpResponse> {
+  const response = await fetch(`${PAYSTACK_BASE_URL}/transfer/resend_otp`, {
+    method: "POST",
+    headers: getPaystackHeaders(),
+    body: JSON.stringify(params),
+  });
+
+  const data = await response.json();
+
+  if (!response.ok || !data.status) {
+    throw new Error(data.message || "Failed to resend Paystack transfer OTP");
+  }
+
+  return data as PaystackTransferOtpResponse;
+}
+
+/**
+ * Fetch available Paystack integration balances.
+ * @see https://paystack.com/docs/api/transfer-control/#check-balance
+ */
+export async function getPaystackBalances(): Promise<PaystackBalance[]> {
+  const response = await fetch(`${PAYSTACK_BASE_URL}/balance`, {
+    method: "GET",
+    headers: getPaystackHeaders(),
+  });
+
+  const data = await response.json();
+
+  if (!response.ok || !data.status) {
+    throw new Error(data.message || "Failed to fetch Paystack balance");
+  }
+
+  return (data as PaystackBalanceResponse).data;
 }
 
 // ============================================================================

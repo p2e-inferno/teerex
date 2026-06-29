@@ -13,7 +13,7 @@ export const useLockManagerVerification = (
   chainId: number
 ): UseLockManagerVerificationReturn => {
   const { wallets } = useWallets();
-  const { user } = usePrivy();
+  const { authenticated, user } = usePrivy();
 
   const [isLockManager, setIsLockManager] = useState(false);
   const [isChecking, setIsChecking] = useState(true);
@@ -36,7 +36,7 @@ export const useLockManagerVerification = (
         setIsChecking(true);
         setError(null);
 
-        if (!lockAddress || !chainId || addresses.length === 0) {
+        if (!authenticated || !lockAddress || !chainId || addresses.length === 0) {
           if (!cancelled) setIsLockManager(false);
           return;
         }
@@ -63,7 +63,7 @@ export const useLockManagerVerification = (
     return () => {
       cancelled = true;
     };
-  }, [addresses, lockAddress, chainId]);
+  }, [authenticated, addresses, lockAddress, chainId]);
 
   return { isLockManager, isChecking, error };
 };

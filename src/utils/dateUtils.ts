@@ -6,6 +6,31 @@ export interface DateDisplayOptions {
   formatStyle?: 'short' | 'long';
 }
 
+export function formatCountdownLabelFromMs(targetMs: number | null | undefined, nowMs: number): string | null {
+  if (!targetMs || !Number.isFinite(targetMs)) return null;
+
+  const diffMs = targetMs - nowMs;
+  if (diffMs <= 0) return 'Now';
+
+  const totalSeconds = Math.floor(diffMs / 1000);
+  const days = Math.floor(totalSeconds / 86400);
+  const hours = Math.floor((totalSeconds % 86400) / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+
+  if (days > 0) return `${days}d ${hours}h ${minutes}m`;
+  if (hours > 0) return `${hours}h ${minutes}m`;
+  if (minutes > 0) return `${minutes}m ${seconds}s`;
+  return `${seconds}s`;
+}
+
+export function formatCountdownLabel(targetIso: string | null | undefined, nowMs: number): string | null {
+  if (!targetIso) return null;
+
+  const targetMs = new Date(targetIso).getTime();
+  return formatCountdownLabelFromMs(targetMs, nowMs);
+}
+
 /**
  * Formats event date range intelligently based on start and end dates
  *

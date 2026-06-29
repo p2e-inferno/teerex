@@ -58,7 +58,7 @@ export async function acquireGamingBundleIssuanceLock(params: {
 
   if (lockError) {
     console.error(`[bundle-lock] [${orderId}] database error during lock acquisition:`, lockError.message);
-    return { lockId: null };
+    throw new Error(`issuance_lock_failed:${lockError.message}`);
   }
 
   if (!lockedOrder || String(lockedOrder.issuance_lock_id) !== lockId) {
@@ -143,9 +143,9 @@ export async function issueGamingBundleNftFromPaystackVerify(params: {
   const verificationIssues: string[] = [];
   if (verifyStatus !== "success") verificationIssues.push("status_not_success");
   verificationIssues.push(...verifyPaystackAmountAndCurrency({
-    paystackAmountMinor: verifyData?.amount,
+    paystackAmountKobo: verifyData?.amount,
     paystackCurrency: verifyData?.currency,
-    expectedAmountMinor: expectedAmount,
+    expectedAmountKobo: expectedAmount,
     expectedCurrency,
   }));
 

@@ -134,7 +134,7 @@ const AdminPayoutAccounts: React.FC = () => {
       const data = await callEdgeFunction<any>(
         `admin-list-payout-accounts?${params.toString()}`,
         {},
-        { privyToken: token, withAnonKey: true }
+        { privyToken: token, withAnonKey: true, method: 'GET' }
       );
       setAccounts(data.payout_accounts || []);
       setPagination(data.pagination);

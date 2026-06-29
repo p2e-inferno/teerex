@@ -7,14 +7,16 @@ import { usePrivy, useWallets } from '@privy-io/react-auth';
  */
 export function useUserAddresses(): string[] {
   const { wallets } = useWallets();
-  const { user } = usePrivy();
+  const { authenticated, user } = usePrivy();
 
   return useMemo(() => {
+    if (!authenticated) return [];
+
     const fromWallets = (wallets || [])
       .map((wallet) => wallet?.address)
       .filter((addr): addr is string => Boolean(addr));
     const embedded = user?.wallet?.address ? [user.wallet.address] : [];
     const all = [...fromWallets, ...embedded].map((addr) => addr.toLowerCase());
     return Array.from(new Set(all));
-  }, [wallets, user?.wallet?.address]);
+  }, [authenticated, wallets, user?.wallet?.address]);
 }

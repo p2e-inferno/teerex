@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { usePrivy, useWallets } from '@privy-io/react-auth';
 import {
   Dialog,
@@ -21,6 +21,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { callEdgeFunction } from '@/lib/edgeFunctions';
 import { isEventRegistrationClosed } from '@/lib/events/registration';
 import { useGaslessFallback } from '@/hooks/useGasless';
+import { useApplyPurchaseEmailPrefill, usePurchasePrefill } from '@/hooks/usePurchasePrefill';
 import { normalizeEmail } from '@/utils/emailUtils';
 import { isFreeEvent } from '@/lib/events/paymentMethods';
 import { RichTextDisplay } from '@/components/ui/rich-text/RichTextDisplay';
@@ -29,7 +30,6 @@ import { PurchaseFormFields } from '@/components/events/PurchaseFormFields';
 import {
   isPurchaseFormSchemaEmpty,
   PurchaseFormResponseValues,
-  PurchaseFormSchema,
   validatePurchaseFormResponse,
 } from '@/types/purchaseForm';
 
@@ -54,9 +54,31 @@ export const EventPurchaseDialog: React.FC<EventPurchaseDialogProps> = ({
   const [isOnchainFree, setIsOnchainFree] = useState(false);
   const [purchaseSuccessMessage, setPurchaseSuccessMessage] = useState<string | null>(null);
   const [purchaseSuccess, setPurchaseSuccess] = useState(false);
-  const [formSchema, setFormSchema] = useState<PurchaseFormSchema | null>(null);
   const [formValues, setFormValues] = useState<PurchaseFormResponseValues>({});
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
+  const purchasePrefillWallet = (wallets[0]?.address ?? user?.wallet?.address) ?? null;
+  const purchasePrefill = usePurchasePrefill(purchasePrefillWallet, event?.id, isOpen);
+  const formSchema = purchasePrefill.purchaseFormSchema;
+  useApplyPurchaseEmailPrefill(purchasePrefill.email, purchasePrefill.prefillSource, setEmail);
+  // The click-time handler closes over a possibly-stale schema; read the latest via ref.
+  const formSchemaRef = useRef(formSchema);
+  formSchemaRef.current = formSchema;
+
+  // A purchase rejection during the schema-load race is really a form error; re-derive
+  // it against the latest schema so it lands inline on the field, not just as a toast.
+  const surfaceServerFormError = (): boolean => {
+    const schema = formSchemaRef.current;
+    if (isPurchaseFormSchemaEmpty(schema)) return false;
+    const { errors } = validatePurchaseFormResponse(schema, formValues);
+    if (Object.keys(errors).length === 0) return false;
+    setFormErrors(errors);
+    toast({
+      title: 'Please fix the highlighted fields',
+      description: Object.values(errors)[0],
+      variant: 'destructive',
+    });
+    return true;
+  };
 
   // Reset success state whenever the dialog opens for a new attempt.
   useEffect(() => {
@@ -66,31 +88,6 @@ export const EventPurchaseDialog: React.FC<EventPurchaseDialogProps> = ({
       setFormErrors({});
     }
   }, [isOpen]);
-
-  // Load the event's purchase form schema (if any).
-  useEffect(() => {
-    if (!event?.id) {
-      setFormSchema(null);
-      return;
-    }
-    let cancelled = false;
-    (async () => {
-      const { data, error } = await supabase
-        .from('event_purchase_form_schemas')
-        .select('schema_json')
-        .eq('event_id', event.id)
-        .maybeSingle();
-      if (cancelled) return;
-      if (error) {
-        setFormSchema(null);
-        return;
-      }
-      setFormSchema((data?.schema_json as PurchaseFormSchema | null) ?? null);
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [event?.id]);
 
   // Check if event is free on-chain (catches bug-affected events)
   useEffect(() => {
@@ -104,25 +101,6 @@ export const EventPurchaseDialog: React.FC<EventPurchaseDialogProps> = ({
     };
     checkOnchainStatus();
   }, [event?.lock_address, event?.chain_id]);
-
-  // Load email from previous tickets (prefill if user has bought before)
-  useEffect(() => {
-    const loadEmail = async () => {
-      const address = (wallets[0]?.address ?? user?.wallet?.address)?.toLowerCase();
-      if (!address) return;
-
-      // Use secure RPC function that only returns user's own email
-      const { data, error } = await supabase
-        .rpc('get_my_ticket_email', {
-          p_owner_wallet: address
-        });
-
-      if (!error && data) {
-        setEmail(data);
-      }
-    };
-    loadEmail();
-  }, [wallets, user?.wallet?.address]);
 
   type GaslessPurchaseArgs = {
     event_id: string;
@@ -460,11 +438,13 @@ export const EventPurchaseDialog: React.FC<EventPurchaseDialogProps> = ({
           }
         } else if (result.error) {
           // Gasless returned an error before fallback
-          toast({
-            title: 'Gasless Purchase Failed',
-            description: getErrorMessage(result.error),
-            variant: 'destructive',
-          });
+          if (!surfaceServerFormError()) {
+            toast({
+              title: 'Gasless Purchase Failed',
+              description: getErrorMessage(result.error),
+              variant: 'destructive',
+            });
+          }
         }
         // If result.success is false but no result.ok, fallback was already called
       } finally {
@@ -586,7 +566,8 @@ export const EventPurchaseDialog: React.FC<EventPurchaseDialogProps> = ({
             errors={formErrors}
             onChange={setFormValues}
             disabled={isPurchasing}
-            prefillWallet={(wallets[0]?.address ?? user?.wallet?.address) ?? null}
+            prefillValues={purchasePrefill.prefill}
+            prefillSource={purchasePrefill.prefillSource}
           />
         </div>
         <DialogFooter className="flex-shrink-0">

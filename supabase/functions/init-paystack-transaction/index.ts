@@ -3,6 +3,7 @@ import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.50.0";
 import { corsHeaders, buildPreflightHeaders } from "../_shared/cors.ts";
 import { normalizeEmail } from "../_shared/email-utils.ts";
+import { resolveFiatPayoutRouting, SELLER_PAYOUT_UNAVAILABLE_MESSAGE } from "../_shared/payout-routing.ts";
 import {
   getPublishedPurchaseFormSchema,
   validatePurchaseFormResponse,
@@ -40,7 +41,7 @@ serve(async (req) => {
     // Validate event exists and get creator info
     const { data: ev, error: evErr } = await supabase
       .from('events')
-      .select('id, paystack_public_key, creator_id, ngn_price, ngn_price_kobo, payment_methods, registration_cutoff, starts_at')
+      .select('id, paystack_public_key, creator_id, ngn_price, ngn_price_kobo, payment_methods, registration_cutoff, starts_at, payout_destination')
       .eq('id', eventId)
       .maybeSingle();
     if (evErr || !ev) {
@@ -60,24 +61,25 @@ serve(async (req) => {
 
     const walletAddress = walletAddressRaw.toLowerCase();
 
-    // Fetch vendor's verified payout account for subaccount routing
+    // Resolve where this sale settles. 'seller' requires a verified subaccount (no silent platform
+    // fallback) — blocked if missing/suspended. 'platform' routes to the platform account by design.
     let subaccountCode: string | null = null;
     let payoutAccountId: string | null = null;
-    if (ev.creator_id) {
-      const { data: vendorPayoutAccount } = await supabase
-        .from('vendor_payout_accounts')
-        .select('id, provider_account_code')
-        .eq('vendor_id', ev.creator_id)
-        .eq('provider', 'paystack')
-        .eq('status', 'verified')
-        .maybeSingle();
-
-      if (vendorPayoutAccount) {
-        payoutAccountId = vendorPayoutAccount.id;
-        if (vendorPayoutAccount.provider_account_code) {
-          subaccountCode = vendorPayoutAccount.provider_account_code;
-        }
+    try {
+      const routing = await resolveFiatPayoutRouting(supabase, {
+        sellerId: ev.creator_id,
+        destination: (ev as any).payout_destination,
+      });
+      subaccountCode = routing.subaccountCode;
+      payoutAccountId = routing.payoutAccountId;
+    } catch (routingErr: any) {
+      if (routingErr?.message === 'seller_payout_unavailable') {
+        return new Response(JSON.stringify({ ok: false, error: SELLER_PAYOUT_UNAVAILABLE_MESSAGE, code: 'seller_payout_unavailable' }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          status: 409,
+        });
       }
+      throw routingErr;
     }
 
     const normalizedEmail = normalizeEmail(email);

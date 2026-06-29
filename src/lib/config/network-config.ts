@@ -17,8 +17,16 @@ export interface NetworkConfig {
   dg_token_address: string | null;
   g_token_address: string | null;
   up_token_address: string | null;
+  dg_vendor_address: string | null;
+  uniswap_v3_quoter_address: string | null;
+  uniswap_v3_weth_address: string | null;
+  uniswap_v3_eth_usdc_pool_address: string | null;
+  uniswap_v3_up_weth_fee: number | null;
+  uniswap_v3_weth_usdc_fee: number | null;
   unlock_factory_address: string | null;
   refundable_event_manager_address: string | null;
+  ticket_pass_controller_address: string | null;
+  rewards_controller_address: string | null;
   native_currency_symbol: string;
   native_currency_name: string | null;
   native_currency_decimals: number | null;
@@ -30,6 +38,18 @@ export interface NetworkConfig {
   updated_at: string;
 }
 
+function isNullableString(value: unknown): value is string | null {
+  return value === null || typeof value === 'string';
+}
+
+function isOptionalNullableString(value: unknown): value is string | null | undefined {
+  return value === undefined || isNullableString(value);
+}
+
+function isOptionalNullableNumber(value: unknown): value is number | null | undefined {
+  return value === undefined || value === null || typeof value === 'number';
+}
+
 function isValidNetworkConfig(data: any): data is NetworkConfig {
   return (
     data &&
@@ -39,16 +59,24 @@ function isValidNetworkConfig(data: any): data is NetworkConfig {
     typeof data.native_currency_symbol === 'string' &&
     typeof data.is_active === 'boolean' &&
     typeof data.is_mainnet === 'boolean' &&
-    (data.usdc_token_address === null || typeof data.usdc_token_address === 'string') &&
-    (data.dg_token_address === null || typeof data.dg_token_address === 'string') &&
-    (data.g_token_address === null || typeof data.g_token_address === 'string') &&
-    (data.up_token_address === null || typeof data.up_token_address === 'string') &&
-    (data.unlock_factory_address === null || typeof data.unlock_factory_address === 'string') &&
-    (data.refundable_event_manager_address === null || typeof data.refundable_event_manager_address === 'string') &&
-    (data.native_currency_name === null || typeof data.native_currency_name === 'string') &&
+    isNullableString(data.usdc_token_address) &&
+    isNullableString(data.dg_token_address) &&
+    isNullableString(data.g_token_address) &&
+    isNullableString(data.up_token_address) &&
+    isOptionalNullableString(data.dg_vendor_address) &&
+    isOptionalNullableString(data.uniswap_v3_quoter_address) &&
+    isOptionalNullableString(data.uniswap_v3_weth_address) &&
+    isOptionalNullableString(data.uniswap_v3_eth_usdc_pool_address) &&
+    isOptionalNullableNumber(data.uniswap_v3_up_weth_fee) &&
+    isOptionalNullableNumber(data.uniswap_v3_weth_usdc_fee) &&
+    isNullableString(data.unlock_factory_address) &&
+    isOptionalNullableString(data.refundable_event_manager_address) &&
+    isOptionalNullableString(data.ticket_pass_controller_address) &&
+    isOptionalNullableString(data.rewards_controller_address) &&
+    isNullableString(data.native_currency_name) &&
     (data.native_currency_decimals === null || typeof data.native_currency_decimals === 'number') &&
-    (data.rpc_url === null || typeof data.rpc_url === 'string') &&
-    (data.block_explorer_url === null || typeof data.block_explorer_url === 'string') &&
+    isNullableString(data.rpc_url) &&
+    isNullableString(data.block_explorer_url) &&
     (data.created_at === undefined || typeof data.created_at === 'string') &&
     (data.updated_at === undefined || typeof data.updated_at === 'string')
   );
