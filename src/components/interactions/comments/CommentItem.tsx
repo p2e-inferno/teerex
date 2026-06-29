@@ -1,5 +1,4 @@
-import React, { useMemo, useState } from 'react';
-import { usePrivy, useWallets } from '@privy-io/react-auth';
+import React, { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import {
@@ -11,6 +10,7 @@ import {
 import { MoreVertical, Pencil, Trash2, Loader2 } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
 import { usePostComments } from '../hooks/usePostComments';
+import { useUserAddresses } from '@/hooks/useUserAddresses';
 import type { PostComment } from '../types';
 import { formatDistanceToNow } from 'date-fns';
 
@@ -27,23 +27,12 @@ export const CommentItem: React.FC<CommentItemProps> = ({
   onCommentUpdated,
   onCommentDeleted,
 }) => {
-  const { wallets } = useWallets();
-  const { user } = usePrivy();
+  const addresses = useUserAddresses();
   const { updateComment, deleteComment } = usePostComments();
 
   const [isEditing, setIsEditing] = useState(false);
   const [editContent, setEditContent] = useState(comment.content);
   const [isSubmitting, setIsSubmitting] = useState(false);
-
-  // Check if current user owns this comment
-  const addresses = useMemo(() => {
-    const fromWallets = (wallets || [])
-      .map((wallet) => wallet?.address)
-      .filter((addr): addr is string => Boolean(addr));
-    const embedded = user?.wallet?.address ? [user.wallet.address] : [];
-    const all = [...fromWallets, ...embedded].map((addr) => addr.toLowerCase());
-    return Array.from(new Set(all));
-  }, [wallets, user?.wallet?.address]);
 
   const isOwner = addresses.includes(comment.user_address.toLowerCase());
 

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { usePrivy } from '@privy-io/react-auth';
 import { MessageSquare, Loader2, Copy, AlertCircle, RefreshCw } from 'lucide-react';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -33,6 +34,7 @@ export const EventDiscussionsPanel: React.FC<EventDiscussionsPanelProps> = ({
   creatorId,
   highlightPostId,
 }) => {
+  const { authenticated } = usePrivy();
   const {
     posts,
     isLoading,
@@ -54,8 +56,8 @@ export const EventDiscussionsPanel: React.FC<EventDiscussionsPanelProps> = ({
   const [activeTab, setActiveTab] = useState<'all' | 'pinned'>('all');
   const [highlightId, setHighlightId] = useState<string | null>(highlightPostId || null);
   const missingPostToastRef = useRef<string | null>(null);
-  const canView = isCreator || isLockManager || canManageDiscussions || hasTicket;
-  const canManagePosts = isCreator || isLockManager || canManageDiscussions;
+  const canView = authenticated && (isCreator || isLockManager || canManageDiscussions || hasTicket);
+  const canManagePosts = authenticated && (isCreator || isLockManager || canManageDiscussions);
 
   const totalPosts = posts?.length || 0;
   const totalComments = posts?.reduce((sum, post) => sum + (post.comment_count || 0), 0) || 0;

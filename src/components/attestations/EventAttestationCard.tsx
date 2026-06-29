@@ -493,6 +493,12 @@ export const EventAttestationCard: React.FC<EventAttestationCardProps & {
     }
   };
 
+  // Hide the whole card when no attestation schema (event attendance or global going)
+  // is configured — there's nothing actionable or meaningful to show.
+  if (!isValidSchemaUid(attendanceSchemaUid) && !isValidSchemaUid(goingSchemaUid)) {
+    return null;
+  }
+
   if (isLoadingStats) {
     return (
       <Card className="border-0 shadow-sm">

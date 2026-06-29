@@ -26,6 +26,9 @@ import AdminNetworks from "./pages/AdminNetworks";
 import AdminServiceAccount from "./pages/AdminServiceAccount";
 import AdminAnalytics from "./pages/AdminAnalytics";
 import AdminPayoutAccounts from "./pages/AdminPayoutAccounts";
+import AdminDgRedemption from "./pages/AdminDgRedemption";
+import AdminTicketPassOrders from "./pages/AdminTicketPassOrders";
+import AdminRewardDisputes from "./pages/AdminRewardDisputes";
 import AdminRoute from "./components/routes/AdminRoute";
 import VendorRoute from "./components/routes/VendorRoute";
 import VendorPayoutAccount from "./pages/VendorPayoutAccount";
@@ -38,6 +41,10 @@ import GamingBundleDetails from "./pages/GamingBundleDetails";
 import GamingBundleClaim from "./pages/GamingBundleClaim";
 import GamingBundles from "./pages/GamingBundles";
 import VendorGamingBundleOrders from "./pages/VendorGamingBundleOrders";
+import TicketPasses from "./pages/TicketPasses";
+import TicketPassDetails from "./pages/TicketPassDetails";
+import MyTicketPasses from "./pages/MyTicketPasses";
+import MyTicketPassOrders from "./pages/MyTicketPassOrders";
 import NotFound from "./pages/NotFound";
 
 const App = () => {
@@ -53,6 +60,10 @@ const App = () => {
                 <Route path="/" element={<Index />} />
                 <Route path="/explore" element={<Explore />} />
                 <Route path="/gaming-bundles" element={<GamingBundles />} />
+                <Route path="/ticket-passes" element={<TicketPasses />} />
+                <Route path="/my-ticket-passes" element={<MyTicketPasses />} />
+                <Route path="/my-pass-orders" element={<MyTicketPassOrders />} />
+                <Route path="/ticket-passes/:id" element={<TicketPassDetails />} />
                 <Route path="/create" element={<CreateEvent />} />
                 <Route path="/events" element={<MyEvents />} />
                 <Route path="/my-events" element={<MyEvents />} />
@@ -70,9 +81,14 @@ const App = () => {
                 <Route path="/admin/service-account" element={<AdminRoute><AdminServiceAccount /></AdminRoute>} />
                 <Route path="/admin/analytics" element={<AdminRoute><AdminAnalytics /></AdminRoute>} />
                 <Route path="/admin/payout-accounts" element={<AdminRoute><AdminPayoutAccounts /></AdminRoute>} />
+                <Route path="/admin/dg-redemption" element={<AdminRoute><AdminDgRedemption /></AdminRoute>} />
+                <Route path="/admin/ticket-pass-orders" element={<AdminRoute><AdminTicketPassOrders /></AdminRoute>} />
+                <Route path="/admin/reward-disputes" element={<AdminRoute><AdminRewardDisputes /></AdminRoute>} />
                 <Route path="/admin/vendor-lock" element={<AdminRoute><AdminVendorLock /></AdminRoute>} />
                 <Route path="/become-vendor" element={<BecomeVendor />} />
-                <Route path="/vendor/payout-account" element={<VendorRoute><VendorPayoutAccount /></VendorRoute>} />
+                {/* Payout setup is open to any authenticated seller (ticket-pass creators need it too,
+                    and the page + endpoints are Privy-only). Vendor membership is not required. */}
+                <Route path="/vendor/payout-account" element={<VendorPayoutAccount />} />
                 <Route path="/vendor/gaming-bundles" element={<VendorRoute><VendorGamingBundles /></VendorRoute>} />
                 <Route path="/vendor/bundles-pos" element={<VendorRoute><GamingBundlePOS /></VendorRoute>} />
                 <Route path="/vendor/bundles-redeem" element={<VendorRoute><GamingBundleRedemption /></VendorRoute>} />

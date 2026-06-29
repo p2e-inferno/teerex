@@ -63,76 +63,20 @@ export const AttendeesList: React.FC<AttendeesListProps> = ({
   }, [refreshToken]);
 
   const loadAttendees = async () => {
-    if (!eventId || !attendanceSchemaUid) return;
+    if (!eventId || !attendanceSchemaUid) {
+      setAttendees([]);
+      setIsLoading(false);
+      return;
+    }
 
     setIsLoading(true);
     try {
-      // Get attended attestations with user reputation data
-      const { data: attestationsData } = await supabase
-        .from('attestations')
-        .select(`
-          id,
-          recipient,
-          created_at,
-          data
-        `)
-        .eq('event_id', eventId)
-        .eq('schema_uid', attendanceSchemaUid)
-        .eq('is_revoked', false)
-        .order('created_at', { ascending: false });
-
-      if (!attestationsData) return;
-
-      // Dedupe recipients: keep latest attestation per address
-      const byRecipient = new Map<string, any>();
-      attestationsData.forEach((a) => {
-        const prev = byRecipient.get(a.recipient);
-        if (!prev || new Date(a.created_at) > new Date(prev.created_at)) byRecipient.set(a.recipient, a);
-      });
-      const uniqueAttestations = Array.from(byRecipient.values());
-
-      // Get reputation data for each attendee
-      const attendeeAddresses = uniqueAttestations.map(a => a.recipient);
-      const { data: reputationData } = await supabase
-        .from('user_reputation')
-        .select('user_address, reputation_score, total_attestations')
-        .in('user_address', attendeeAddresses);
-
-      // Get challenge counts for each attestation
-      const attestationIds = uniqueAttestations.map(a => a.id);
-      const { data: challengesData } = await supabase
-        .from('attestation_challenges')
-        .select('attestation_id')
-        .in('attestation_id', attestationIds);
-
-      // Get vote counts for each attestation
-      const { data: votesData } = await supabase
-        .from('attestation_votes')
-        .select('attestation_id, vote_type')
-        .in('attestation_id', attestationIds);
-
-      // Combine all data
-      const enrichedAttendees: Attendee[] = uniqueAttestations.map(attestation => {
-        const reputation = reputationData?.find(r => r.user_address === attestation.recipient);
-        const challengesCount = challengesData?.filter(c => c.attestation_id === attestation.id).length || 0;
-        const votes = votesData?.filter(v => v.attestation_id === attestation.id) || [];
-        const supportVotes = votes.filter(v => v.vote_type === 'support').length;
-        const challengeVotes = votes.filter(v => v.vote_type === 'challenge').length;
-
-        return {
-          id: attestation.id,
-          recipient: attestation.recipient,
-          created_at: attestation.created_at,
-          data: attestation.data,
-          reputation_score: reputation?.reputation_score || 100,
-          total_attestations: reputation?.total_attestations || 0,
-          challenges_count: challengesCount,
-          votes_support: supportVotes,
-          votes_challenge: challengeVotes
-        };
-      });
-
-      setAttendees(enrichedAttendees);
+      const data = await callEdgeFunction<{ attendees: Attendee[] }>(
+        'get-event-attendees',
+        { event_id: eventId, schema_uid: attendanceSchemaUid },
+        {},
+      );
+      setAttendees(data.attendees ?? []);
     } catch (error) {
       console.error('Error loading attendees:', error);
     } finally {
@@ -164,6 +108,10 @@ export const AttendeesList: React.FC<AttendeesListProps> = ({
   const formatAddress = (address: string) => {
     return `${address.slice(0, 6)}...${address.slice(-4)}`;
   };
+
+  // No attendance schema means this event can't have verified attendees yet —
+  // hide the card entirely rather than showing a misleading empty/loading state.
+  if (!attendanceSchemaUid) return null;
 
   if (isLoading) {
     return (

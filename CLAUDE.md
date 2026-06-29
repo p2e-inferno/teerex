@@ -142,7 +142,7 @@ Key tables:
 - **Chains**: Base Mainnet (8453) and Base Sepolia (84532)
 - **RPC URLs**: Stored in `network_configs` table, accessed dynamically
 - **USDC Addresses**: Chain-specific, retrieved from `getUsdcAddress()` in `src/lib/config/network-config.ts`
-- **Explorer Links**: Generated via `getExplorerTxUrl(chainId, txHash)`
+- **Explorer Links**: Always generate via `getExplorerTxUrl(chainId, txHash)` — never hardcode `basescan.org` / `sepolia.basescan.org` or build `/tx/${hash}` strings inline
 
 ### Admin Features
 - Admin access controlled via `is_admin` edge function (checks Privy user ID against allowlist)
@@ -205,6 +205,15 @@ interface CallOptions {
   method?: 'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH'; // default: POST
 }
 ```
+
+#### Client Data Access (No Direct Browser DB Calls)
+
+**All client-side data access — reads AND writes — MUST go through an edge function** (invoked via `callEdgeFunction`), not the browser Supabase client. Client components, hooks, and pages MUST NOT call `supabase.from(...)` or `supabase.rpc(...)` against application tables.
+
+- **The edge function is the authorization boundary, not the DB role.** This app's identity is the Privy DID (`did:privy:...`) in the JWT `sub` — a Privy DID can never satisfy `auth.uid()` RLS, and the browser anon client carries no Privy `sub` at all, so RLS cannot enforce per-user authz on direct browser reads. The edge function authenticates the Privy user (`verifyPrivyToken`), applies any admin/wallet guards, and **scopes every query to the caller** (e.g. `.eq('creator_id', user.sub)`). It then connects with `SUPABASE_SERVICE_ROLE_KEY` — because the role can't be the permission model, not because permission stopped mattering. service_role bypasses RLS, so each query MUST be scoped to the authenticated subject deliberately; there is no DB backstop.
+- **Why**: anon/authenticated table and RPC grants are an external attack surface and leak schema via PostgREST. When every read/write is server-mediated, locking a table down is a one-line migration (`REVOKE ... FROM anon, authenticated`) with zero client refactor.
+- **Anti-patterns**: importing `supabase` from `@/integrations/supabase/client` to call `.from(...)` / `.rpc(...)` in a component, hook, or page; adding an `anon`/`authenticated` grant so a client component can query a table directly; adding RLS policies as a substitute for an edge-function guard on a per-user or wallet-bound table.
+- **Legacy exceptions are not precedent**: the remaining direct browser `.from(...)` reads (older event/attestation/ticket flows) are legacy and being migrated. Recent code routes through edge functions — match the new code, not the legacy. The browser client may still be used for non-table concerns it owns (auth session, storage, realtime channels) where no `.from(...)`/`.rpc(...)` table access is involved.
 
 ### 2. Signing EIP-712 Messages
 ```typescript
@@ -524,18 +533,46 @@ CREATE INDEX idx_child_table_parent_id
 
 **Key Rule**: EVERY foreign key column MUST have an index. Use partial indexes (`WHERE column IS NOT NULL`) for nullable foreign keys to save space.
 
-### 4. Migration Checklist for Performance
+### 4. `ON CONFLICT` / Upsert Constraint Matching
+
+**Problem**: Postgres requires `ON CONFLICT (column_name)` to match a real unique or exclusion constraint/index for that exact target. A partial unique index such as `WHERE column_name IS NOT NULL` does not satisfy a plain Supabase `.upsert(..., { onConflict: "column_name" })`, so the failure appears only at runtime when the insert path executes.
+
+**❌ BAD - Partial unique index does not match plain upsert target:**
+```sql
+CREATE UNIQUE INDEX idx_orders_payment_reference
+  ON public.orders(payment_reference)
+  WHERE payment_reference IS NOT NULL;
+```
+
+```ts
+await supabase
+  .from("orders")
+  .upsert(order, { onConflict: "payment_reference" });
+```
+
+**✅ GOOD - Non-partial unique index matches the upsert target:**
+```sql
+CREATE UNIQUE INDEX idx_orders_payment_reference_unique
+  ON public.orders(payment_reference);
+```
+
+**Key Rule**: Every Supabase `.upsert(..., { onConflict })` and every SQL `ON CONFLICT (...)` must be backed by a matching non-partial unique index or unique constraint on the same columns, in the same order. Postgres unique indexes allow multiple `NULL` values, so do not use a nullable-column partial unique index as the conflict target for app/edge-function upserts.
+
+For composite upserts such as `{ onConflict: "event_id,wallet_address" }`, create a matching non-partial unique index on `(event_id, wallet_address)`. If raw SQL intentionally uses a partial conflict target, the `ON CONFLICT` clause must include the same predicate; Supabase client `onConflict` strings cannot express that predicate.
+
+### 5. Migration Checklist for Performance
 
 Before finalizing any migration that creates or modifies tables with RLS:
 
 - [ ] All foreign key columns have indexes
 - [ ] All RLS policies wrap `current_setting()`/`auth.*()` with `(SELECT ...)`
 - [ ] No overlapping `FOR ALL` policies with specific action policies
+- [ ] Every `.upsert(..., { onConflict })` / `ON CONFLICT (...)` target has a matching non-partial unique index or constraint
 - [ ] Partial indexes used for nullable columns (`WHERE column IS NOT NULL`)
 - [ ] Complex policies use `EXISTS` subqueries efficiently
 - [ ] Indexes on columns frequently used in WHERE clauses or JOINs
 
-### 5. Testing for Performance Issues
+### 6. Testing for Performance Issues
 
 After applying migrations, check Supabase Performance Advisor:
 
@@ -546,7 +583,7 @@ After applying migrations, check Supabase Performance Advisor:
    - `unindexed_foreign_keys` - Add missing indexes
 3. Address all WARN-level issues before deploying to production
 
-### 6. Common RLS Patterns
+### 7. Common RLS Patterns
 
 **Pattern 1: User owns record**
 ```sql
@@ -586,6 +623,89 @@ CREATE POLICY "Authenticated insert" ON table_name
   FOR INSERT TO authenticated
   WITH CHECK (true);
 ```
+
+## Database Security Best Practices
+
+These complement the performance guidance above and reflect conventions already used across this repo's migrations.
+
+### 1. Privy DID identity columns (no `auth.users` FK, no `auth.uid()` RLS)
+
+User identity in this app is the Privy DID (`did:privy:...`), carried in the JWT `sub` claim — **not** a Supabase `auth.users` UUID.
+
+- Columns that store the caller's identity MUST be typed `text` with **no foreign key to `auth.users`**.
+- Never guard such columns with `auth.uid() = user_id` — a Privy DID can never equal a Supabase auth UUID, so the policy would always deny.
+- Use the established `sub`-claim pattern (and wrap it in `(SELECT ...)` per the performance rules above):
+  ```sql
+  USING (user_id = (SELECT current_setting('request.jwt.claims', true)::json->>'sub'))
+  ```
+
+### 2. Explicit Data API grants — new tables are server-only by default
+
+From Oct 30, 2026, Supabase stops auto-exposing `public` tables to the Data API (supabase-js / PostgREST), so every migration that creates a `public.*` table MUST include explicit grants in the same migration. Because all client access is server-mediated through edge functions (see Client Data Access above), **new tables grant `service_role` only** — omit `anon`/`authenticated`:
+
+```sql
+alter table public.your_table enable row level security;
+
+-- Server-mediated default (edge functions only):
+grant select, insert, update, delete on table public.your_table to service_role;
+```
+
+For server-only RPCs: `grant execute on function public.your_fn(...) to service_role;`.
+
+Add an `anon`/`authenticated` SELECT grant **only** for genuinely public, unauthenticated, non-PII data consumed through a thin read path you have explicitly justified — not so a client component can query a table directly (route that through an edge function instead). Add RLS policies for every role granted SELECT/INSERT/UPDATE/DELETE. The remaining anon-readable tables are legacy exceptions, not a template for new work.
+
+### 3. Function security (`SET search_path = 'public'`)
+
+Every PL/pgSQL function — especially trigger functions and any `SECURITY DEFINER` function — MUST pin `SET search_path = 'public'` to prevent search_path injection and silent failures under the service_role context. This is already the convention (see `supabase/migrations/20251030000001_fix_function_search_path.sql`).
+
+```sql
+CREATE OR REPLACE FUNCTION public.my_fn()
+RETURNS TRIGGER
+SET search_path = 'public'  -- required
+AS $$ BEGIN RETURN NEW; END; $$ LANGUAGE plpgsql;
+```
+
+Use `SECURITY DEFINER` sparingly and only with `SET search_path`. Avoid `SECURITY DEFINER` on views — use RLS policies for access control instead.
+
+## Database Operation Safety
+
+These rules apply to edge functions and any multi-step DB work; they reinforce the post-success side-effect guidance in Error Handling.
+
+- **Atomicity**: If multiple DB writes must succeed or fail together, use a single PL/pgSQL function — not sequential client-side or edge-function queries. Test: "If step 2 fails, is step 1's result broken?" If yes, wrap it in one function.
+- **TOCTOU**: Check-then-act across separate queries is a race. Guards and the mutation they protect must live in the same transaction/function.
+- **Delete-then-insert is a red flag**: Removing rows before inserting replacements must be atomic — a failure in between is data loss.
+- **Post-success side effects**: Once the core operation succeeds (key grant, payment captured), a failure in a secondary step (attestation, email, analytics) should be logged and swallowed — not thrown. The user already got what they paid for; don't mask that with an error.
+- **Error status fidelity**: Never coerce a server error (500) into a client error (400/403). If the server broke, surface it. This pairs with the Edge Function Response Standard — use accurate HTTP status codes so `EdgeFunctionError.status` is meaningful.
+
+## Server-Side Key Grants & Wallet Targeting
+
+Server-issued tickets call Unlock Protocol's `grantKeys(recipients, expirations, keyManagers)` (see `paystack-grant-keys`, `grant-keys-service`, `claim-gaming-bundle`, and `_shared/unlock.ts`).
+
+- **Never pass an empty `keyManagers` array** — PublicLock reverts with an array-index error. The repo convention is `[recipient]` (the buyer manages their own key); pass an explicit admin manager only when the credential is intentionally non-transferable.
+- **Grant to the intended recipient wallet explicitly.** Authentication (a valid Privy token) proves *who* the caller is, not *which* wallet a request acts on. Resolve the recipient deliberately — never default to "the first linked wallet" or an inferred primary wallet for a wallet-bound grant. A result that should change when the user switches wallets must be bound to the wallet that was actually validated/intended.
+- Wait for transaction confirmation and persist the tx hash before reporting success, per Transaction Handling.
+
+## Code Comments (Mandatory Standard)
+
+Comments ship to production, get reviewed, and are read by attackers. Hold them to the same bar as code. Applies to every file type: TS/TSX, SQL migrations, edge functions, config.
+
+**Default: write no comment.** A well-named identifier and a small function are the comment. Only write one when the WHY is non-obvious to a senior reviewer — a hidden constraint, a subtle invariant, a security/atomicity rationale, a workaround for a specific upstream bug, or behavior that would surprise a careful reader. If deleting the comment wouldn't confuse such a reader, don't write it.
+
+**Allowed (when justified):** one short line explaining a non-obvious WHY; a reference to a durable public source (RFC, EIP, upstream issue URL) for a workaround; a field-semantics note where the name is genuinely ambiguous; license/SPDX headers.
+
+**Forbidden:**
+- Restating what the code says (`// loop over items`, `// set state`).
+- Multi-paragraph docstrings, banner comments, section-label dividers (`// --- Helpers ---`, `{/* Header */}`).
+- TODO/FIXME/HACK without an owner and a tracked ticket URL — prefer fixing it or filing the ticket and omitting the comment.
+- Author tags, dates, change logs, references to the current task/PR/caller (`// fix for the renew bug`) — git history is authoritative; these rot.
+- Commented-out code — delete it; git remembers.
+- Emojis, ASCII art, jokes, "obvious" security claims (`// safe`, `// validated`).
+
+**Security hygiene (non-negotiable):** never put secrets, API keys, tokens, JWTs, signatures, private RPC URLs, internal hostnames, DB connection strings, or admin wallet addresses in comments — even as "examples". Never include real user PII (emails, phone numbers, Privy DIDs, wallet addresses tied to a user). Never describe a known weakness or bypass in source (`// this check can be skipped if…`) — file a private ticket and fix it. SQL migrations: no business secrets, no real customer IDs, no `-- TODO drop this later`; a one-line note citing a security/atomicity invariant (e.g. why `SET search_path` is set) is acceptable.
+
+**Style:** one short line, sentence case, ending in a period, placed immediately above the line it explains. Match the file's comment syntax (`//` vs `--`).
+
+**Review gate:** before adding any comment, ask "would a senior engineer reading this diff in a year find it load-bearing, or noise?" If noise, delete it.
 
 ## Testing Considerations
 

@@ -307,6 +307,140 @@ export function getTicketEmail(
 }
 
 /**
+ * Buyer-facing notice that an order was paused for manual review. Reassurance only — no action.
+ */
+export function getTicketPassReviewBuyerEmail(params: { passTitle: string; amount: string }) {
+  const { passTitle, amount } = params;
+  const bodyHtml = `
+    <h1 style="margin: 0 0 16px; font-size: 22px; font-weight: 700; color: ${TEXT_COLOR}; text-align: center;">We're reviewing your order</h1>
+    <p style="margin: 0 0 24px; font-size: 16px; line-height: 24px; color: #4B5563; text-align: center;">
+      We hit a snag while delivering <strong>${passTitle}</strong> and have paused it for a quick manual check.
+      Your payment is safe — our team will either complete delivery or refund you in full.
+    </p>
+    <div style="background-color: #F9FAFB; border-radius: 8px; padding: 20px; margin-bottom: 24px; text-align: center;">
+      <p style="margin: 0 0 4px; font-size: 12px; color: #6B7280; text-transform: uppercase;">Pass</p>
+      <p style="margin: 0 0 16px; font-size: 18px; font-weight: 600; color: ${TEXT_COLOR};">${passTitle}</p>
+      <p style="margin: 0 0 4px; font-size: 12px; color: #6B7280; text-transform: uppercase;">Amount</p>
+      <p style="margin: 0; font-size: 16px; font-weight: 500; color: ${TEXT_COLOR};">${amount}</p>
+    </div>
+    <p style="margin: 0; font-size: 14px; line-height: 22px; color: #6B7280; text-align: center;">No action is needed from you. We'll be in touch shortly.</p>
+  `;
+  return {
+    subject: `We're reviewing your ${passTitle} order`,
+    text: `We hit a snag delivering ${passTitle} and have paused it for a manual check. Your payment is safe — we'll either complete delivery or refund you in full. No action is needed.\n\nPass: ${passTitle}\nAmount: ${amount}`,
+    html: wrapHtmlContent(`Reviewing your ${passTitle} order`, bodyHtml),
+  };
+}
+
+/**
+ * Ops-facing alert that a paid order failed to deliver for a non-retryable reason and needs
+ * manual reconciliation/refund.
+ */
+export function getTicketPassReviewOpsEmail(params: {
+  orderId: string;
+  passTitle: string;
+  reason: string;
+  amount: string;
+  reference: string;
+  buyerEmail: string | null;
+  buyerAddress: string | null;
+}) {
+  const { orderId, passTitle, reason, amount, reference, buyerEmail, buyerAddress } = params;
+  const row = (label: string, value: string) => `
+    <tr>
+      <td style="padding: 6px 12px; font-size: 12px; color: #6B7280; text-transform: uppercase; white-space: nowrap;">${label}</td>
+      <td style="padding: 6px 12px; font-size: 14px; color: ${TEXT_COLOR}; word-break: break-all;">${value}</td>
+    </tr>`;
+  const bodyHtml = `
+    <h1 style="margin: 0 0 16px; font-size: 20px; font-weight: 700; color: ${TEXT_COLOR};">Ticket pass order needs review</h1>
+    <p style="margin: 0 0 20px; font-size: 14px; line-height: 22px; color: #4B5563;">
+      A paid order failed to deliver for a reason a retry can't fix. Reconcile in the admin review queue and refund if appropriate.
+    </p>
+    <table style="width: 100%; border-collapse: collapse; background-color: #F9FAFB; border-radius: 8px;">
+      ${row("Order", orderId)}
+      ${row("Pass", passTitle)}
+      ${row("Reason", reason)}
+      ${row("Amount", amount)}
+      ${row("Reference", reference)}
+      ${row("Buyer email", buyerEmail || "—")}
+      ${row("Buyer wallet", buyerAddress || "—")}
+    </table>
+  `;
+  return {
+    subject: `[Review] Ticket pass order ${orderId} — ${reason}`,
+    text: `Ticket pass order needs review.\n\nOrder: ${orderId}\nPass: ${passTitle}\nReason: ${reason}\nAmount: ${amount}\nReference: ${reference}\nBuyer email: ${buyerEmail || "—"}\nBuyer wallet: ${buyerAddress || "—"}`,
+    html: wrapHtmlContent("Ticket pass order needs review", bodyHtml),
+  };
+}
+
+/**
+ * Buyer-facing notice that a paid-but-undelivered order was automatically refunded.
+ */
+export function getTicketPassRefundedBuyerEmail(params: { passTitle: string; amount: string }) {
+  const { passTitle, amount } = params;
+  const bodyHtml = `
+    <h1 style="margin: 0 0 16px; font-size: 22px; font-weight: 700; color: ${TEXT_COLOR}; text-align: center;">Your payment has been refunded</h1>
+    <p style="margin: 0 0 24px; font-size: 16px; line-height: 24px; color: #4B5563; text-align: center;">
+      We couldn't deliver <strong>${passTitle}</strong>, so we've refunded your payment in full. It should
+      reach your account within a few business days, depending on your bank.
+    </p>
+    <div style="background-color: #F9FAFB; border-radius: 8px; padding: 20px; margin-bottom: 24px; text-align: center;">
+      <p style="margin: 0 0 4px; font-size: 12px; color: #6B7280; text-transform: uppercase;">Pass</p>
+      <p style="margin: 0 0 16px; font-size: 18px; font-weight: 600; color: ${TEXT_COLOR};">${passTitle}</p>
+      <p style="margin: 0 0 4px; font-size: 12px; color: #6B7280; text-transform: uppercase;">Refunded</p>
+      <p style="margin: 0; font-size: 16px; font-weight: 500; color: ${TEXT_COLOR};">${amount}</p>
+    </div>
+    <p style="margin: 0; font-size: 14px; line-height: 22px; color: #6B7280; text-align: center;">Sorry for the inconvenience.</p>
+  `;
+  return {
+    subject: `Refund issued for ${passTitle}`,
+    text: `We couldn't deliver ${passTitle}, so we've refunded your payment in full. It should reach your account within a few business days.\n\nPass: ${passTitle}\nRefunded: ${amount}`,
+    html: wrapHtmlContent(`Refund issued for ${passTitle}`, bodyHtml),
+  };
+}
+
+/**
+ * Ops-facing FYI that an order was auto-refunded (no action needed — verify settlement only).
+ */
+export function getTicketPassAutoRefundOpsEmail(params: {
+  orderId: string;
+  passTitle: string;
+  reason: string;
+  amount: string;
+  reference: string;
+  buyerEmail: string | null;
+  refundId: string | null;
+}) {
+  const { orderId, passTitle, reason, amount, reference, buyerEmail, refundId } = params;
+  const row = (label: string, value: string) => `
+    <tr>
+      <td style="padding: 6px 12px; font-size: 12px; color: #6B7280; text-transform: uppercase; white-space: nowrap;">${label}</td>
+      <td style="padding: 6px 12px; font-size: 14px; color: ${TEXT_COLOR}; word-break: break-all;">${value}</td>
+    </tr>`;
+  const bodyHtml = `
+    <h1 style="margin: 0 0 16px; font-size: 20px; font-weight: 700; color: ${TEXT_COLOR};">Ticket pass order auto-refunded</h1>
+    <p style="margin: 0 0 20px; font-size: 14px; line-height: 22px; color: #4B5563;">
+      A paid order could not be delivered for an unambiguous no-delivery reason and was refunded automatically.
+      No action needed — verify settlement on Paystack if you wish.
+    </p>
+    <table style="width: 100%; border-collapse: collapse; background-color: #F9FAFB; border-radius: 8px;">
+      ${row("Order", orderId)}
+      ${row("Pass", passTitle)}
+      ${row("Reason", reason)}
+      ${row("Amount", amount)}
+      ${row("Reference", reference)}
+      ${row("Paystack refund", refundId || "—")}
+      ${row("Buyer email", buyerEmail || "—")}
+    </table>
+  `;
+  return {
+    subject: `[Auto-refunded] Ticket pass order ${orderId} — ${reason}`,
+    text: `Ticket pass order auto-refunded.\n\nOrder: ${orderId}\nPass: ${passTitle}\nReason: ${reason}\nAmount: ${amount}\nReference: ${reference}\nPaystack refund: ${refundId || "—"}\nBuyer email: ${buyerEmail || "—"}`,
+    html: wrapHtmlContent("Ticket pass order auto-refunded", bodyHtml),
+  };
+}
+
+/**
  * Generate waitlist confirmation email content
  */
 export function getWaitlistConfirmationEmail(

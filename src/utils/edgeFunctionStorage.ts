@@ -340,6 +340,7 @@ export const savePublishedEventViaEdge = async (
       price: isCrypto ? formData.price : 0,
       currency: isCrypto ? formData.currency : 'FREE',
       ngn_price: isFiat ? formData.ngnPrice : 0,
+      payout_destination: isFiat ? (formData.payoutDestination || 'seller') : 'seller',
       payment_methods: [formData.paymentMethod],
       paystack_public_key: paystackPublicKey,
       category: formData.category,
