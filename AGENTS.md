@@ -77,6 +77,64 @@ The wrapper throws `EdgeFunctionError` for both HTTP errors and `{ ok: false }` 
 
 ---
 
+## Edge Function Endpoint Design
+
+Design Edge Functions around product capabilities and authorization boundaries, not individual UI actions. Several existing functions are split by verb (`create-*`, `update-*`, `get-*`, `list-*`) even when they operate on the same resource with the same caller, auth model, and shared utilities. Treat that as an endpoint-granularity issue to improve over time, not as permission to ignore the established implementation patterns inside those functions.
+
+The default rule is: **one Edge Function per cohesive domain boundary; multiple handlers/routes inside it when operations share the same security model.**
+
+Preserve these existing conventions when grouping or adding endpoints:
+- Use `callEdgeFunction` from the frontend and keep the standard `{ ok: true, ...payload }` / `{ ok: false, error }` response contract.
+- Keep Privy as the user identity boundary; verify `X-Privy-Authorization` with existing helpers such as `verifyPrivyToken`.
+- Resolve and validate wallet context deliberately with existing Privy and wallet helpers; never infer authorization from an arbitrary first wallet when the operation is wallet-bound.
+- Use existing authorization helpers such as `getEventAuthorization`, `requireEventAuthorization`, admin checks, service-manager helpers, network validation, and Unlock/key-holder checks instead of rewriting parallel logic.
+- Scope every service-role database query to the authenticated Privy subject, validated wallet, event creator, vendor, manager, or admin context.
+- Reuse `_shared` modules for CORS, error handling, network config, Paystack, Unlock, Divvi, pricing, payout, notification, and ticket/reward helpers.
+- Keep atomic database invariants in RPCs or transactions where required; do not split coupled mutations across handlers just because they are in the same function.
+
+Create a new Edge Function when there is a real boundary:
+- Different trust model: public metadata, provider webhook, scheduled job, admin-only operation, or authenticated user operation.
+- Different external signature or validation scheme, such as Paystack webhooks versus normal client calls.
+- Different runtime profile or operational semantics, such as long-running sync, cron expiry, or background reconciliation.
+- Different secret set or integration ownership.
+- Different product domain where combining would make authorization harder to audit.
+
+Prefer adding a route/handler to an existing domain function when operations share:
+- Resource ownership and database tables.
+- Caller type and auth requirements.
+- Authorization helpers and wallet checks.
+- Error/response semantics.
+- Frontend workflow and deployment cadence.
+
+Use a small router in `index.ts` and keep business logic in typed handler functions. HTTP methods are preferred for resource operations when practical; a typed `action` field is acceptable for command-style operations within one domain. Do not create a global catch-all `api` function.
+
+Example target shape for discussions:
+```text
+event-discussions
+  GET    posts for an event
+  POST   create a post
+  PATCH  update, pin, hide, or close comments on a post
+  GET    comments for a post
+  POST   create a comment
+  PATCH  edit or soft-delete a comment
+  POST   toggle a post reaction
+```
+
+Examples of consolidation candidates to migrate gradually:
+- `event-discussions`: `get-event-discussions`, `get-post-comments`, `create-post`, `update-post`, `create-comment`, `update-comment`, `create-reaction`.
+- `ticket-passes`: `create-ticket-pass`, `update-ticket-pass`, `get-ticket-pass`, `list-ticket-passes`, `search-linkable-events`, `init-ticket-pass-transaction`, `confirm-ticket-pass-paystack`, `get-ticket-pass-order-status`, `list-my-ticket-pass-orders`, `retry-ticket-pass-issuance`, `sync-ticket-pass-status`.
+- `dg-redemptions`: `get-dg-redemption-status`, `list-user-dg-redemptions`, `quote-dg-redemption`, `cancel-dg-redemption`, `notify-dg-redemption-admin`, `submit-dg-redemption-transfer`.
+- `admin-dg-redemptions`: `get-dg-redemption-config`, `update-dg-redemption-config`, `get-dg-redemption-admin-dashboard`, `admin-resolve-dg-redemption`, `retry-dg-redemption-payout`, `manage-dg-redemption-transfer-otp`, `expire-dg-redemption-intents`.
+- `service-account`: `service-account-balances`, `service-account-gas-stats`, `service-account-key-health`.
+
+Migration guidance:
+- Do not break existing callers for cleanup. Introduce grouped endpoints, migrate callers deliberately, then retire old function slugs after verification.
+- Do not combine public, webhook, admin, and user-authenticated behavior into one endpoint just to reduce count.
+- Do not weaken authorization, wallet validation, idempotency, or error semantics during consolidation.
+- Add new single-action functions only when the boundary criteria above are met.
+
+---
+
 ## Client Data Access (No Direct Browser DB Calls)
 
 New client-side application data access must go through an Edge Function invoked with `callEdgeFunction`. Client components, hooks, pages, and browser-reachable modules must not call Supabase tables (`.from(...)`) or RPCs (`.rpc(...)`) directly for application data.
