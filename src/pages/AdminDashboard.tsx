@@ -14,7 +14,10 @@ import {
   Zap,
   ExternalLink,
   Network,
-  Building2
+  Building2,
+  Gift,
+  Banknote,
+  Trophy
 } from 'lucide-react';
 
 const AdminDashboard: React.FC = () => {
@@ -69,6 +72,30 @@ const AdminDashboard: React.FC = () => {
       color: "bg-violet-500/10 border-violet-500/20",
       iconColor: "text-violet-600",
       path: "/admin/payout-accounts"
+    },
+    {
+      title: "Redeem DG",
+      description: "Configure reward redemption limits, fees, wallets, and payout reviews",
+      icon: Gift,
+      color: "bg-emerald-500/10 border-emerald-500/20",
+      iconColor: "text-emerald-600",
+      path: "/admin/dg-redemption"
+    },
+    {
+      title: "Ticket Pass Orders",
+      description: "Review paid passes that failed to deliver; retry issuance or mark refunded",
+      icon: Banknote,
+      color: "bg-rose-500/10 border-rose-500/20",
+      iconColor: "text-rose-600",
+      path: "/admin/ticket-pass-orders"
+    },
+    {
+      title: "Reward Disputes",
+      description: "Review tournament prize disputes; freeze, void, reassign, extend, or resolve",
+      icon: Trophy,
+      color: "bg-amber-500/10 border-amber-500/20",
+      iconColor: "text-amber-600",
+      path: "/admin/reward-disputes"
     }
   ];
 

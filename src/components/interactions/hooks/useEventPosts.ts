@@ -40,6 +40,15 @@ export const useEventPosts = (eventId: string): UseEventPostsReturn => {
   // Fetch posts with engagement stats and user reactions
   const fetchPosts = useCallback(async (opts?: { background?: boolean }) => {
     if (!eventId) return;
+    if (!authenticated) {
+      setPosts([]);
+      setCanManageDiscussions(false);
+      setError(null);
+      setIsLoading(false);
+      setIsRefreshing(false);
+      return;
+    }
+
     const isBackground = opts?.background;
 
     try {
@@ -79,7 +88,7 @@ export const useEventPosts = (eventId: string): UseEventPostsReturn => {
       setIsLoading(false);
       setIsRefreshing(false);
     }
-  }, [eventId, getAccessToken, walletKey, normalizePost]);
+  }, [authenticated, eventId, getAccessToken, walletKey, normalizePost]);
 
   // Store latest fetchPosts in ref to avoid stale closures
   const fetchPostsRef = useRef(fetchPosts);

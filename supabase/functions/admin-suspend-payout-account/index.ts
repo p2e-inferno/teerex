@@ -10,6 +10,40 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.50.0";
 import { corsHeaders, buildPreflightHeaders } from "../_shared/cors.ts";
 import { ensureAdmin } from "../_shared/admin-check.ts";
 import { maskAccountNumber } from "../_shared/paystack.ts";
+import { sendEmail } from "../_shared/email-utils.ts";
+
+// Support contact shown in the suspension email.
+const SUPPORT_CONTACT = "info@p2einferno.com";
+
+/**
+ * Best-effort notification so a seller is never blind to a payout-account status change that
+ * affects their ability to receive fiat. Never throws — email failures must not block the action.
+ */
+async function notifyPayoutStatusChange(
+  account: { contact_email?: string | null; business_name?: string | null },
+  action: "suspend" | "unsuspend",
+  reason?: string,
+): Promise<void> {
+  try {
+    const to = account.contact_email?.trim();
+    if (!to) return; // No contact email on file — nothing to notify.
+
+    const name = account.business_name?.trim() || "there";
+    const subject =
+      action === "suspend"
+        ? "Your TeeRex payout account has been suspended"
+        : "Your TeeRex payout account has been reinstated";
+
+    const text =
+      action === "suspend"
+        ? `Hi ${name},\n\nYour TeeRex payout account has been suspended, so your listings can no longer be purchased with fiat until it's reinstated.\n\n${reason ? `Reason: ${reason}\n\n` : ""}What this means: any pass, bundle, or event you sell for Naira is paused to protect your funds — buyers won't be charged into an account that can't pay out.\n\nWhat to do: please contact support at ${SUPPORT_CONTACT} to resolve this. Once reinstated, your fiat sales resume automatically.\n\n— TeeRex`
+        : `Hi ${name},\n\nGood news — your TeeRex payout account has been reinstated. Your listings can be purchased with fiat again and proceeds will settle to your bank account as usual.\n\n— TeeRex`;
+
+    await sendEmail({ to, subject, text, tags: ["payout-account", `payout-${action}`] });
+  } catch (err) {
+    console.error("[admin-suspend-payout-account] notification failed", err);
+  }
+}
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -183,7 +217,14 @@ serve(async (req) => {
       );
     }
 
-    // 7. Return success response
+    // 7. Notify the seller (best-effort; does not block the response).
+    await notifyPayoutStatusChange(
+      { contact_email: existingAccount.contact_email, business_name: updatedAccount.business_name },
+      body.action,
+      body.reason?.trim(),
+    );
+
+    // 8. Return success response
     return new Response(
       JSON.stringify({
         ok: true,

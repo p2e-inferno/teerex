@@ -4,12 +4,12 @@ import StarterKit from '@tiptap/starter-kit';
 import Link from '@tiptap/extension-link';
 import { Color } from '@tiptap/extension-color';
 import HardBreak from '@tiptap/extension-hard-break';
-import DOMPurify from 'dompurify';
 import { Button } from '@/components/ui/button';
 import { RichTextDisplay } from './RichTextDisplay';
 import { LinkInputDialog } from './LinkInputDialog';
 import { LinkPopover } from './LinkPopover';
 import { useToast } from '@/hooks/use-toast';
+import { sanitizeRichTextHtml } from '@/lib/richText';
 import {
   Bold,
   Italic,
@@ -55,20 +55,6 @@ export const RichTextEditor: React.FC<RichTextEditorProps> = ({
 
   const { toast } = useToast();
 
-  const sanitizeHtml = (html: string) => DOMPurify.sanitize(html, {
-    ALLOWED_TAGS: [
-      'p', 'br', 'strong', 'em', 'u', 's', 'code', 'pre',
-      'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
-      'ul', 'ol', 'li',
-      'blockquote', 'a',
-      'span'
-    ],
-    ALLOWED_ATTR: [
-      'href', 'target', 'rel',
-      'class', 'style'
-    ]
-  });
-
   const editor = useEditor({
     extensions: [
       StarterKit.configure({
@@ -102,7 +88,7 @@ export const RichTextEditor: React.FC<RichTextEditorProps> = ({
       if (disabled) return;
       if (isLinkDialogOpen) return;
       const html = editor.getHTML();
-      const sanitized = sanitizeHtml(html);
+      const sanitized = sanitizeRichTextHtml(html);
       if (sanitized !== html) {
         editor.commands.setContent(sanitized, { emitUpdate: false });
         lastEmittedValueRef.current = sanitized;
@@ -131,7 +117,7 @@ export const RichTextEditor: React.FC<RichTextEditorProps> = ({
         const clipboardEvent = event as ClipboardEvent;
         const html = clipboardEvent.clipboardData?.getData('text/html');
         if (!html) return false;
-        const sanitized = sanitizeHtml(html);
+        const sanitized = sanitizeRichTextHtml(html);
         if (!sanitized.trim()) return false;
         clipboardEvent.preventDefault();
         editor.chain().focus().insertContent(sanitized).run();

@@ -10,16 +10,16 @@ export const PrivySetupInstructions: React.FC = () => {
           <AlertTriangle className="h-12 w-12 text-orange-500 mx-auto mb-4" />
           <CardTitle>Privy Setup Required</CardTitle>
           <CardDescription>
-            Set VITE_PRIVY_APP_ID in your .env file with your real Privy App ID
+            Set VITE_PRIVY_APP_ID and VITE_PUBLIC_PRIVY_CLIENT_ID in your .env file with your real Privy values
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="text-sm space-y-2">
-            <p><strong>Steps to get your Privy App ID:</strong></p>
+            <p><strong>Steps to get your Privy values:</strong></p>
             <ol className="list-decimal list-inside space-y-1 text-muted-foreground">
               <li>Visit <a href="https://dashboard.privy.io" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">Privy Dashboard</a></li>
-              <li>Copy your App ID from your app settings</li>
-              <li>Copy .env.example to .env and set VITE_PRIVY_APP_ID</li>
+              <li>Copy your App ID and App Client ID from your app settings</li>
+              <li>Copy .env.example to .env and set VITE_PRIVY_APP_ID and VITE_PUBLIC_PRIVY_CLIENT_ID</li>
               <li>Restart the development server</li>
             </ol>
           </div>

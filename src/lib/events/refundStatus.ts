@@ -5,6 +5,19 @@ export interface RefundProtectionBadge {
   className: string;
 }
 
+export type RewardPoolCreationGateKind =
+  | 'ready'
+  | 'release_required'
+  | 'refund_required'
+  | 'pending_resolution';
+
+export interface RewardPoolCreationGate {
+  kind: RewardPoolCreationGateKind;
+  buttonLabel: string;
+  helperText: string | null;
+  disabled: boolean;
+}
+
 const MISSED_THRESHOLD_STATUSES = new Set([
   'refund_available',
   'creator_only_refund_window',
@@ -127,4 +140,60 @@ export function getRefundProtectionPurchaseStateLabel(status?: string | null): s
   }
 
   return 'Awaiting Resolution';
+}
+
+export function getRewardPoolCreationGate({
+  isProtectedEvent,
+  status,
+  refundComplete,
+  managerReleased,
+  signerIsCreator,
+  authorizedRefundCaller,
+  signerMatchesAuthorizedRefundCaller,
+}: {
+  isProtectedEvent: boolean;
+  status?: string | null;
+  refundComplete?: boolean | null;
+  managerReleased?: boolean | null;
+  signerIsCreator?: boolean;
+  authorizedRefundCaller?: boolean;
+  signerMatchesAuthorizedRefundCaller?: boolean;
+}): RewardPoolCreationGate {
+  if (!isProtectedEvent || managerReleased || status === 'released') {
+    return {
+      kind: 'ready',
+      buttonLabel: 'Create prize pool',
+      helperText: null,
+      disabled: false,
+    };
+  }
+
+  if (refundComplete || status === 'refunded' || status === 'threshold_met') {
+    return {
+      kind: 'release_required',
+      buttonLabel: 'Release protection to create prize pool',
+      helperText: signerIsCreator
+        ? 'The attendance controller is still managing this event. Release it back to your wallet before funding prizes.'
+        : 'Switch to the event creator wallet to release this event before funding prizes.',
+      disabled: !signerIsCreator,
+    };
+  }
+
+  if (MISSED_THRESHOLD_STATUSES.has(status || '') || status === 'refund_in_progress') {
+    return {
+      kind: 'refund_required',
+      buttonLabel: status === 'refund_in_progress' ? 'Continue refunds' : 'Cancel and refund tickets',
+      helperText: signerMatchesAuthorizedRefundCaller
+        ? 'This protected event missed its attendance threshold. Resolve refunds before creating a prize pool.'
+        : 'Switch to the authorized refund wallet to resolve refunds before creating a prize pool.',
+      disabled: !authorizedRefundCaller || !signerMatchesAuthorizedRefundCaller,
+    };
+  }
+
+  return {
+    kind: 'pending_resolution',
+    buttonLabel: 'Protection pending',
+    helperText: 'Prize pools unlock after attendance protection resolves.',
+    disabled: true,
+  };
 }

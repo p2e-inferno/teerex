@@ -32,6 +32,7 @@ The project now uses environment variables for secure and flexible configuration
 - `VITE_SUPABASE_URL` - Supabase project URL (client-safe)
 - `VITE_SUPABASE_ANON_KEY` - Supabase anonymous key (client-safe)  
 - `VITE_PRIVY_APP_ID` - Privy application ID (client-safe)
+- `VITE_PUBLIC_PRIVY_CLIENT_ID` - Privy app client ID required by the browser SDK (client-safe)
 - `SUPABASE_SERVICE_ROLE_KEY` - Service role for edge functions (secret)
 - `PAYSTACK_SECRET_KEY` - Paystack payment processing (secret)
 - `UNLOCK_SERVICE_PRIVATE_KEY` - Smart contract interactions (secret)

@@ -108,6 +108,10 @@ function trimOrNull(value: unknown): string | null {
   return trimmed.length > 0 ? trimmed : null;
 }
 
+function isOptionFieldType(type: PurchaseFormFieldType): boolean {
+  return type === "select" || type === "checkbox";
+}
+
 export function isSensitiveLabel(label: string): boolean {
   return SENSITIVE_LABEL_PATTERNS.some((re) => re.test(label));
 }
@@ -216,7 +220,7 @@ export function validatePurchaseFormSchema(
       field.max_length = Math.min(requested, PURCHASE_FORM_MAX_TEXT_LENGTH);
     }
 
-    if (type === "select" || type === "checkbox") {
+    if (isOptionFieldType(type)) {
       if (!Array.isArray(raw.options)) {
         throw new Error(`Field "${id}" requires an options array`);
       }
@@ -322,7 +326,7 @@ export function assertAdditiveSchemaEdit(
         `Cannot make existing field "${a.id}" required after tickets exist (allowed direction: required -> optional only).`,
       );
     }
-    if (a.type === "select" || a.type === "checkbox") {
+    if (isOptionFieldType(a.type)) {
       const prevOpts = new Set(a.options ?? []);
       for (const opt of prevOpts) {
         if (!(b.options ?? []).includes(opt)) {

@@ -186,6 +186,7 @@ serve(async (req) => {
         account_number: body.account_number.trim(),
         currency: "NGN",
         percentage_charge: percentageCharge,
+        contact_email: body.primary_contact_email?.trim() || null,
         status: "pending_verification",
         submitted_at: new Date().toISOString(),
       })

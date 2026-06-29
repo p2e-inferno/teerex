@@ -1,6 +1,6 @@
 
-import React, { useEffect, useState } from 'react';
-import { PrivyProvider as Privy } from '@privy-io/react-auth';
+import React, { useEffect, useRef, useState } from 'react';
+import { PrivyProvider as Privy, usePrivy, useWallets } from '@privy-io/react-auth';
 import { WagmiProvider } from 'wagmi';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { Card, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -16,14 +16,55 @@ interface PrivyProviderProps {
 // Create a query client for wagmi
 const queryClient = new QueryClient();
 
+const WalletSessionGuard: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const { ready, authenticated, logout } = usePrivy();
+  const { wallets } = useWallets();
+  const initialPrimaryWalletRef = useRef<string | null>(null);
+  const logoutInProgressRef = useRef(false);
+  const primaryWalletAddress = authenticated ? wallets?.[0]?.address?.toLowerCase() ?? null : null;
+
+  useEffect(() => {
+    if (!ready) return;
+
+    if (!authenticated) {
+      initialPrimaryWalletRef.current = null;
+      logoutInProgressRef.current = false;
+      return;
+    }
+
+    if (!primaryWalletAddress) return;
+
+    if (!initialPrimaryWalletRef.current) {
+      initialPrimaryWalletRef.current = primaryWalletAddress;
+      return;
+    }
+
+    if (
+      initialPrimaryWalletRef.current === primaryWalletAddress ||
+      logoutInProgressRef.current
+    ) {
+      return;
+    }
+
+    logoutInProgressRef.current = true;
+    queryClient.clear();
+    void logout().catch((error) => {
+      console.error('Failed to log out after wallet switch:', error);
+      logoutInProgressRef.current = false;
+    });
+  }, [authenticated, logout, primaryWalletAddress, ready]);
+
+  return <>{children}</>;
+};
+
 export const PrivyProvider: React.FC<PrivyProviderProps> = ({ children }) => {
   const [privyConfig, setPrivyConfig] = useState<any>(null);
   const [wagmiConfig, setWagmiConfig] = useState<any>(fallbackWagmiConfig);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // Get Privy App ID from environment variables or fallback to default
-  const appId = import.meta.env.VITE_PRIVY_APP_ID;
+  const appId = import.meta.env.VITE_PRIVY_APP_ID?.trim();
+  const clientId = import.meta.env.VITE_PUBLIC_PRIVY_CLIENT_ID?.trim() || "";
 
   useEffect(() => {
     async function loadPrivyConfig({ silent = false }: { silent?: boolean } = {}) {
@@ -133,18 +174,25 @@ export const PrivyProvider: React.FC<PrivyProviderProps> = ({ children }) => {
     );
   }
 
-  // If no valid App ID is provided, show setup instructions
-  if (!appId || appId === 'your_privy_app_id_here') {
+  // If no valid Privy IDs are provided, show setup instructions
+  if (
+    !appId ||
+    appId === 'your_privy_app_id_here' ||
+    !clientId ||
+    clientId === 'your_privy_client_id_here'
+  ) {
     return <PrivySetupInstructions />;
   }
 
   return (
-    <Privy appId={appId} config={privyConfig}>
+    <Privy appId={appId} clientId={clientId} config={privyConfig}>
       <QueryClientProvider client={queryClient}>
         <WagmiProvider config={wagmiConfig}>
-          <SupabaseAuthSync>
-            {children}
-          </SupabaseAuthSync>
+          <WalletSessionGuard>
+            <SupabaseAuthSync>
+              {children}
+            </SupabaseAuthSync>
+          </WalletSessionGuard>
         </WagmiProvider>
       </QueryClientProvider>
     </Privy>

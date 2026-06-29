@@ -30,6 +30,7 @@
 | `SUPABASE_URL` | Local Supabase API URL | Output from `supabase start` |
 | `SUPABASE_SERVICE_ROLE_KEY` | Service role key (bypass RLS) | Output from `supabase start` |
 | `VITE_PRIVY_APP_ID` | Privy application ID | Already in `.env` |
+| `VITE_PUBLIC_PRIVY_CLIENT_ID` | Privy app client ID for the browser SDK | Already in `.env` |
 | `UNLOCK_SERVICE_PRIVATE_KEY` | Private key for gasless txs | Create test wallet or use existing |
 | `DIVVI_CONSUMER_ADDRESS` | Divvi referral tracking | Already in `.env` |
 

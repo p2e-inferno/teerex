@@ -51,6 +51,9 @@ export interface PurchaseFormSchema {
 
 export type PurchaseFormResponseValues = Record<string, string | number | null>;
 
+export const isPurchaseFormOptionField = (type: PurchaseFormFieldType): boolean =>
+  type === 'select' || type === 'checkbox';
+
 const SENSITIVE_LABEL_PATTERNS: RegExp[] = [
   /\bssn\b/i,
   /social\s*security/i,
@@ -98,7 +101,7 @@ export const purchaseFormFieldSchema = z
         message: 'Label looks like sensitive data — pick something else.',
       });
     }
-    if (field.type === 'select' || field.type === 'checkbox') {
+    if (isPurchaseFormOptionField(field.type)) {
       const opts = (field.options ?? []).map((o) => o.trim()).filter(Boolean);
       if (opts.length === 0) {
         ctx.addIssue({
@@ -205,6 +208,9 @@ export const validateResponseField = (
     case 'checkbox': {
       if (typeof rawValue !== 'string' || rawValue === '') {
         return field.required ? `${field.label} must be checked.` : null;
+      }
+      if (!(field.options ?? []).includes(rawValue)) {
+        return `${field.label} is not one of the allowed options.`;
       }
       return null;
     }

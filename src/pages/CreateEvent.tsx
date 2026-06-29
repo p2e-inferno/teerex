@@ -55,6 +55,7 @@ const getDefaultFormData = (): EventFormData => ({
   price: 0,
   currency: 'ETH',
   ngnPrice: 0,
+  payoutDestination: 'seller',
   paymentMethod: 'free',
   category: '',
   imageUrl: '',
@@ -125,6 +126,8 @@ export interface EventFormData {
   currency: CryptoCurrency;
   // Fiat pricing (used only when paymentMethod === 'fiat')
   ngnPrice: number;
+  // Where fiat proceeds settle: 'seller' (verified payout account) or 'platform'.
+  payoutDestination?: 'seller' | 'platform';
   // Single, mutually exclusive payment method
   paymentMethod: 'free' | 'crypto' | 'fiat';
   category: string;

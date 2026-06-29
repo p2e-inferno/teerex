@@ -10,6 +10,12 @@ import { appendDivviTagToCalldataAsync, submitDivviReferralBestEffort } from "..
 import { getExpectedFiatCurrency, getExpectedPaystackAmountKobo, verifyPaystackAmountAndCurrency } from "../_shared/paystack.ts";
 import { grantLockKey } from "../_shared/unlock.ts";
 import { getEventPurchaseMessageSnapshot } from "../_shared/purchase-message.ts";
+import {
+  appendPaystackRefundGatewayResponse,
+  canApplyPaystackRefundStatus,
+  paystackRefundUpdateValues,
+  transactionReferenceFromPaystackRefund,
+} from "../_shared/ticket-pass-refund.ts";
 
 const PAYSTACK_SUCCESS_EVENT = "charge.success";
 
@@ -75,6 +81,49 @@ async function hmacSha512Hex(secret: string, data: Uint8Array): Promise<string> 
     .join("");
 }
 
+async function handleTicketPassRefundWebhook(supabase: any, body: any) {
+  const refund = body?.data || {};
+  const reference = transactionReferenceFromPaystackRefund(refund);
+  if (!reference) {
+    return json({ ok: true, skipped: true, reason: "refund_transaction_reference_missing" }, 200);
+  }
+
+  const { data: order, error } = await supabase
+    .from("ticket_pass_orders")
+    .select("id, payment_reference, status, refund_status, gateway_response")
+    .eq("payment_reference", reference)
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+  if (!order) return json({ ok: true, skipped: true, reason: "refund_order_not_found" }, 200);
+
+  const values = paystackRefundUpdateValues({ refund });
+  if (!canApplyPaystackRefundStatus({
+    currentOrderStatus: order.status,
+    currentRefundStatus: order.refund_status,
+    nextRefundStatus: values.refund_status,
+  })) {
+    return json({ ok: true, skipped: true, reason: "stale_refund_status", status: order.status }, 200);
+  }
+
+  const { data: updated, error: updateError } = await supabase
+    .from("ticket_pass_orders")
+    .update({
+      ...values,
+      gateway_response: appendPaystackRefundGatewayResponse(order.gateway_response || {}, refund, {
+        source: "paystack_webhook",
+        event: body?.event,
+      }),
+    })
+    .eq("id", order.id)
+    .eq("status", order.status)
+    .select("id")
+    .maybeSingle();
+  if (updateError) throw new Error(updateError.message);
+  if (!updated) return json({ ok: true, skipped: true, reason: "refund_status_changed" }, 200);
+
+  return json({ ok: true, reference, status: values.status, refund_status: values.refund_status }, 200);
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, {
@@ -112,6 +161,15 @@ serve(async (req) => {
     auditBody = body;
     const paystackEvent = String(body?.event || "").trim();
     const paystackStatus = String(body?.data?.status || "").toLowerCase();
+
+    const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
+    const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+    const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+
+    if (paystackEvent.startsWith("refund.")) {
+      return await handleTicketPassRefundWebhook(supabase, body);
+    }
+
     const reference: string | undefined = body?.data?.reference ?? body.reference;
     if (!reference) throw new Error("Missing reference in webhook payload");
     auditReference = reference;
@@ -131,9 +189,6 @@ serve(async (req) => {
     }
 
     // Supabase: fetch transaction and event to get canonical lock_address and chain_id
-    const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
-    const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-    const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
     const { data: tx } = await supabase
       .from("paystack_transactions")
       .select("id, reference, status, amount, currency, user_email, purchase_form_response, gateway_response, verified_at, issuance_lock_id, issuance_locked_at, issuance_attempts, events:events(id, title, date, lock_address, chain_id)")

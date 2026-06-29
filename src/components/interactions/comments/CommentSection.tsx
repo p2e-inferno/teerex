@@ -37,6 +37,13 @@ export const CommentSection: React.FC<CommentSectionProps> = ({
   // Fetch comments for this post
   const fetchComments = useCallback(async () => {
     if (!postId || !commentsEnabled) return;
+    if (!authenticated) {
+      setComments([]);
+      setIsAllowed(false);
+      setError(null);
+      setIsLoading(false);
+      return;
+    }
 
     try {
       setIsLoading(true);
@@ -65,7 +72,7 @@ export const CommentSection: React.FC<CommentSectionProps> = ({
     } finally {
       setIsLoading(false);
     }
-  }, [postId, commentsEnabled, getAccessToken, walletKey]);
+  }, [authenticated, postId, commentsEnabled, getAccessToken]);
 
   // Initial fetch
   useEffect(() => {

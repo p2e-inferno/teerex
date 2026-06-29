@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { callEdgeFunction } from '@/lib/edgeFunctions';
+import { PAYSTACK_TEST_BANK } from '@/hooks/useBanks';
 
 export interface ResolvedAccount {
   account_number: string;
@@ -9,13 +10,24 @@ export interface ResolvedAccount {
 
 /**
  * Resolve bank account details using Paystack API
- * In development mode, uses Paystack test bank code "001" which doesn't have daily limits
  * @see https://paystack.com/docs/payments/test-payments/
  */
 async function resolveAccount(accountNumber: string, bankCode: string): Promise<ResolvedAccount> {
+  if (
+    import.meta.env.VITE_NODE_ENV === 'development' &&
+    bankCode === PAYSTACK_TEST_BANK.code &&
+    accountNumber === PAYSTACK_TEST_BANK.defaultAccountNumber
+  ) {
+    return {
+      account_number: accountNumber,
+      account_name: 'Test',
+      bank_id: 0,
+    };
+  }
+
   const functionName = `resolve-bank-account?account_number=${encodeURIComponent(accountNumber)}&bank_code=${encodeURIComponent(bankCode)}`;
 
-  const data = await callEdgeFunction<any>(functionName, {}, { withAnonKey: true });
+  const data = await callEdgeFunction<any>(functionName, {}, { withAnonKey: true, method: 'GET' });
   return {
     account_number: data.account_number,
     account_name: data.account_name,

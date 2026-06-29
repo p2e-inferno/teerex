@@ -28,6 +28,7 @@ import { CACHE_TIMES } from '@/lib/config/react-query-config';
 import { getDefaultRefundTriggerIso, getEventEndIso, getEventStartIso } from '@/utils/eventTime';
 import { previewProtectedEventReserveBond, type ProtectedReserveBondPreview, getTicketExpirationSeconds, MIN_PROTECTED_EXPIRATION_SECONDS, MIN_PROTECTED_EXPIRATION_DAYS } from '@/utils/lockUtils';
 import { PurchaseFormBuilder } from '@/components/create-event/PurchaseFormBuilder';
+import { PayoutDestinationField, type PayoutDestination } from '@/components/vendor/PayoutDestinationField';
 
 interface PayoutAccountInfo {
   id: string;
@@ -237,7 +238,7 @@ export const TicketSettings: React.FC<TicketSettingsProps> = ({
     setPayoutAccountLoading(true);
     try {
       const token = await getAccessToken();
-      const data = await callEdgeFunction<any>('get-vendor-payout-account', {}, { privyToken: token, withAnonKey: true });
+      const data = await callEdgeFunction<any>('get-vendor-payout-account', {}, { privyToken: token, withAnonKey: true, method: 'GET' });
 
       setHasPayoutAccount(data?.can_receive_fiat_payments === true);
 
@@ -860,7 +861,14 @@ export const TicketSettings: React.FC<TicketSettingsProps> = ({
       {formData.paymentMethod === 'fiat' && (
         <div className="space-y-4">
           <h3 className="text-lg font-medium text-gray-900">Fiat Pricing (NGN)</h3>
-          
+
+          <PayoutDestinationField
+            value={(formData.payoutDestination as PayoutDestination) || 'seller'}
+            onChange={(v) => updateFormData({ payoutDestination: v } as Partial<EventFormData>)}
+            noun="event"
+            commissionPercent={payoutAccount?.percentage_charge}
+          />
+
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label htmlFor="ngn-price">
@@ -903,8 +911,20 @@ export const TicketSettings: React.FC<TicketSettingsProps> = ({
             </div>
           )}
 
-          {/* Payout Account Warning - No verified account */}
-          {hasPayoutAccount === false && !payoutAccountLoading && (
+          {/* Platform-routed: proceeds go to the platform, no payout account needed. */}
+          {((formData.payoutDestination as PayoutDestination) || 'seller') === 'platform' && (
+            <Alert className="bg-blue-50 border-blue-200">
+              <CheckCircle2 className="h-4 w-4 text-blue-600" />
+              <AlertTitle className="text-blue-800">Proceeds go to the platform</AlertTitle>
+              <AlertDescription className="text-blue-700">
+                Fiat payments for this event settle to the TeeRex platform account — no payout account
+                needed. Use this for platform-run, sponsored, or community events you aren't collecting for.
+              </AlertDescription>
+            </Alert>
+          )}
+
+          {/* Payout Account Warning - No verified account (only when routing to the seller) */}
+          {((formData.payoutDestination as PayoutDestination) || 'seller') === 'seller' && hasPayoutAccount === false && !payoutAccountLoading && (
             <Alert className="bg-amber-50 border-amber-200">
               <AlertTriangle className="h-4 w-4 text-amber-600" />
               <AlertTitle className="text-amber-800">Payout Account Required</AlertTitle>
@@ -913,6 +933,7 @@ export const TicketSettings: React.FC<TicketSettingsProps> = ({
                 You can still create this event as a draft, but fiat payments won't work until you set up your payout account.
                 <Link
                   to="/vendor/payout-account"
+                  state={{ returnTo: '/create' }}
                   className="block mt-2 font-medium text-amber-900 hover:underline"
                 >
                   Set up Payout Account →
@@ -921,8 +942,8 @@ export const TicketSettings: React.FC<TicketSettingsProps> = ({
             </Alert>
           )}
 
-          {/* Payout Account Info - Verified account */}
-          {hasPayoutAccount === true && payoutAccount && !payoutAccountLoading && (
+          {/* Payout Account Info - Verified account (only when routing to the seller) */}
+          {((formData.payoutDestination as PayoutDestination) || 'seller') === 'seller' && hasPayoutAccount === true && payoutAccount && !payoutAccountLoading && (
             <div className="bg-green-50 border border-green-200 rounded-lg p-4">
               <div className="flex items-start justify-between">
                 <div className="flex items-start gap-3">

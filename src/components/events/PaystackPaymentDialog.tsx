@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { usePrivy, useWallets } from "@privy-io/react-auth";
 import { usePaystackPayment } from "react-paystack";
 import {
@@ -14,15 +14,14 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import type { PublishedEvent } from "@/types/event";
-import { supabase } from "@/integrations/supabase/client";
 import { callEdgeFunction } from "@/lib/edgeFunctions";
+import { useApplyPurchaseEmailPrefill, usePurchasePrefill } from "@/hooks/usePurchasePrefill";
 import { Loader2, CreditCard } from "lucide-react";
 import { format } from "date-fns";
 import { PurchaseFormFields } from "@/components/events/PurchaseFormFields";
 import {
   isPurchaseFormSchemaEmpty,
   PurchaseFormResponseValues,
-  PurchaseFormSchema,
   validatePurchaseFormResponse,
 } from "@/types/purchaseForm";
 
@@ -62,33 +61,30 @@ export const PaystackPaymentDialog: React.FC<PaystackPaymentDialogProps> = ({
   const [reference, setReference] = useState<string>("");
   const [shouldLaunchPaystack, setShouldLaunchPaystack] = useState(false);
   const [amountKobo, setAmountKobo] = useState<number | null>(null);
-  const [formSchema, setFormSchema] = useState<PurchaseFormSchema | null>(null);
   const [formValues, setFormValues] = useState<PurchaseFormResponseValues>({});
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
+  const purchasePrefill = usePurchasePrefill(userWalletAddress, event?.id, isOpen);
+  const formSchema = purchasePrefill.purchaseFormSchema;
+  useApplyPurchaseEmailPrefill(purchasePrefill.email, purchasePrefill.prefillSource, setUserEmail);
+  // The click-time handler closes over a possibly-stale schema; read the latest via ref.
+  const formSchemaRef = useRef(formSchema);
+  formSchemaRef.current = formSchema;
 
-  useEffect(() => {
-    if (!event?.id) {
-      setFormSchema(null);
-      return;
-    }
-    let cancelled = false;
-    (async () => {
-      const { data, error } = await supabase
-        .from("event_purchase_form_schemas")
-        .select("schema_json")
-        .eq("event_id", event.id)
-        .maybeSingle();
-      if (cancelled) return;
-      if (error) {
-        setFormSchema(null);
-        return;
-      }
-      setFormSchema((data?.schema_json as PurchaseFormSchema | null) ?? null);
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [event?.id]);
+  // A checkout rejection during the schema-load race is really a form error; re-derive
+  // it against the latest schema so it lands inline on the field, not just as a toast.
+  const surfaceServerFormError = (): boolean => {
+    const schema = formSchemaRef.current;
+    if (isPurchaseFormSchemaEmpty(schema)) return false;
+    const { errors } = validatePurchaseFormResponse(schema, formValues);
+    if (Object.keys(errors).length === 0) return false;
+    setFormErrors(errors);
+    toast({
+      title: "Please fix the highlighted fields",
+      description: Object.values(errors)[0],
+      variant: "destructive",
+    });
+    return true;
+  };
 
   useEffect(() => {
     if (isOpen) return;
@@ -167,7 +163,7 @@ export const PaystackPaymentDialog: React.FC<PaystackPaymentDialogProps> = ({
     };
   };
 
-  const handlePaymentSuccess = (reference: { reference: string }) => {
+  const handlePaymentSuccess = useCallback((reference: { reference: string }) => {
     if (!event || !user?.id) return;
     setPaymentHandled(true);
 
@@ -190,9 +186,9 @@ export const PaystackPaymentDialog: React.FC<PaystackPaymentDialogProps> = ({
     // Pass payment data to parent; parent will open issuing flow
     onSuccess(paymentData);
     setIsLoading(false);
-  };
+  }, [event, onSuccess, user?.id, userEmail, userPhone, userWalletAddress]);
 
-  const handlePaymentClose = () => {
+  const handlePaymentClose = useCallback(() => {
     // Paystack closes after success too; avoid misleading cancel toasts
     setIsLoading(false);
     if (paymentHandled) return;
@@ -201,7 +197,7 @@ export const PaystackPaymentDialog: React.FC<PaystackPaymentDialogProps> = ({
       description:
         "If you completed payment, your ticket will be issued shortly.",
     });
-  };
+  }, [paymentHandled, toast]);
 
   useEffect(() => {
     if (!shouldLaunchPaystack) return;
@@ -229,6 +225,7 @@ export const PaystackPaymentDialog: React.FC<PaystackPaymentDialogProps> = ({
     initializePayment,
     handlePaymentClose,
     handlePaymentSuccess,
+    onClose,
     toast,
   ]);
 
@@ -316,11 +313,13 @@ export const PaystackPaymentDialog: React.FC<PaystackPaymentDialogProps> = ({
       setShouldLaunchPaystack(true);
     } catch (err) {
       setIsLoading(false);
-      toast({
-        title: "Could not start checkout",
-        description: err instanceof Error ? err.message : String(err),
-        variant: "destructive",
-      });
+      if (!surfaceServerFormError()) {
+        toast({
+          title: "Could not start checkout",
+          description: err instanceof Error ? err.message : String(err),
+          variant: "destructive",
+        });
+      }
     }
   };
 
@@ -422,7 +421,8 @@ export const PaystackPaymentDialog: React.FC<PaystackPaymentDialogProps> = ({
             errors={formErrors}
             onChange={setFormValues}
             disabled={isLoading}
-            prefillWallet={userWalletAddress || null}
+            prefillValues={purchasePrefill.prefill}
+            prefillSource={purchasePrefill.prefillSource}
           />
 
           <div className="bg-blue-50 p-3 rounded-lg">
