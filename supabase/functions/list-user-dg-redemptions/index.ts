@@ -7,6 +7,7 @@ import {
   loadDgRedemptionConfig,
   normalizeValidatedDgRedemptionFailure,
   publicDgRedemptionIntentWithAdminNotify,
+  reconcileDgRedemptionPaystackTransfer,
 } from "../_shared/dg-redemption.ts";
 import { verifyPrivyToken } from "../_shared/privy.ts";
 
@@ -54,8 +55,16 @@ serve(async (req) => {
     const normalizedRedemptions = await Promise.all(
       (redemptions.data || []).map((intent: any) => normalizeValidatedDgRedemptionFailure(supabase, intent)),
     );
+    const reconciledRedemptions = await Promise.all(
+      normalizedRedemptions.map((intent: any) =>
+        reconcileDgRedemptionPaystackTransfer(supabase, intent, {
+          failedStatus: "manual_review",
+          logPrefix: "list-user-dg-redemptions",
+        })
+      ),
+    );
     const publicRedemptions = await Promise.all(
-      normalizedRedemptions.map((intent: any) => publicDgRedemptionIntentWithAdminNotify(supabase, intent)),
+      reconciledRedemptions.map((intent: any) => publicDgRedemptionIntentWithAdminNotify(supabase, intent)),
     );
 
     return json({

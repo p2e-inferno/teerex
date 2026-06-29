@@ -2,7 +2,7 @@
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2.50.0";
 import { Contract, JsonRpcProvider, ethers } from "https://esm.sh/ethers@6.14.4";
 import type { NetworkConfig } from "./network-helpers.ts";
-import { getPaystackBalances, type PaystackTransferData } from "./paystack.ts";
+import { getPaystackBalances, verifyPaystackTransfer, type PaystackTransferData } from "./paystack.ts";
 import { withBaseMainnetPricingDefaults } from "./pricing/base-defaults.ts";
 import { fetchFiatEdges } from "./pricing/sources/fiat.ts";
 import { normalizeUniswapQuotesToEdges } from "./pricing/sources/uniswap.ts";
@@ -103,6 +103,7 @@ export interface DgRedemptionDiagnostics {
     exchange_rate: string | null;
     sell_fee_bps: number | null;
     vendor_up_balance_raw: string | null;
+    vendor_up_balance_decimals: number | null;
     status: "ok" | "warning" | "error";
     error?: string;
   }>;
@@ -477,7 +478,7 @@ export function mapPaystackTransferStatus(params: {
 }): DgRedemptionIntentStatus {
   const event = String(params.event || "").toLowerCase();
   const status = String(params.status || "").toLowerCase();
-  if (event === "transfer.success" || status === "success") return "completed";
+  if (event === "transfer.success" || status === "success" || status === "successful") return "completed";
   if (event === "transfer.failed" || event === "transfer.reversed" || isPaystackTransferTerminalFailureStatus(status)) {
     return "failed";
   }
@@ -562,6 +563,83 @@ export function canApplyPaystackTransferStatus(params: {
   if (currentStatus === "cancelled" || currentStatus === "expired") return false;
   if (currentStatus === "failed") return nextStatus === "completed" || nextStatus === "failed";
   return true;
+}
+
+const PAYSTACK_RECONCILABLE_DG_REDEMPTION_STATUSES = new Set([
+  "payout_pending",
+  "payout_processing",
+  "manual_review",
+]);
+
+export function canReconcileDgRedemptionPaystackTransfer(intent: any): boolean {
+  return Boolean(
+    PAYSTACK_RECONCILABLE_DG_REDEMPTION_STATUSES.has(String(intent?.status || "")) &&
+      intent?.paystack_reference &&
+      (intent?.paystack_transfer_code || intent?.paystack_transfer_id),
+  );
+}
+
+export async function reconcileDgRedemptionPaystackTransfer(
+  supabase: any,
+  intent: any,
+  options: {
+    actorUserId?: string;
+    eventType?: string;
+    failedStatus?: "failed" | "manual_review";
+    logPrefix?: string;
+  } = {},
+) {
+  if (!canReconcileDgRedemptionPaystackTransfer(intent)) return intent;
+
+  try {
+    const verified = await verifyPaystackTransfer(intent.paystack_reference);
+    const nextStatus = mapPaystackTransferStatus({ status: verified.data?.status });
+    if (!canApplyPaystackTransferStatus({ currentStatus: intent.status, nextStatus })) {
+      return intent;
+    }
+
+    let updateQuery = supabase
+      .from("dg_redemption_intents")
+      .update(paystackTransferUpdateValues({
+        transfer: verified.data,
+        failedStatus: options.failedStatus || "manual_review",
+      }))
+      .eq("id", intent.id)
+      .eq("status", intent.status);
+
+    if (intent.paystack_transfer_code === null || intent.paystack_transfer_code === undefined) {
+      updateQuery = updateQuery.is("paystack_transfer_code", null);
+    } else {
+      updateQuery = updateQuery.eq("paystack_transfer_code", intent.paystack_transfer_code);
+    }
+
+    if (intent.paystack_transfer_id === null || intent.paystack_transfer_id === undefined) {
+      updateQuery = updateQuery.is("paystack_transfer_id", null);
+    } else {
+      updateQuery = updateQuery.eq("paystack_transfer_id", intent.paystack_transfer_id);
+    }
+
+    const { data: updated, error } = await updateQuery.select("*").maybeSingle();
+
+    if (error) throw new Error(error.message);
+    if (!updated) return intent;
+
+    await supabase.from("dg_redemption_events").insert({
+      intent_id: updated.id,
+      event_type: options.eventType || "paystack_transfer_reconciled",
+      actor_user_id: options.actorUserId || updated.user_id,
+      actor_wallet_address: updated.wallet_address,
+      metadata: { paystack_transfer: verified.data, mapped_status: nextStatus },
+    });
+
+    return updated;
+  } catch (error) {
+    console.warn(
+      `[${options.logPrefix || "dg-redemption"}] Paystack transfer reconciliation failed`,
+      error instanceof Error ? error.message : error,
+    );
+    return intent;
+  }
 }
 
 function requireAddress(value: string | null | undefined, label: string): string {
@@ -1029,12 +1107,13 @@ export async function getDgRedemptionDiagnostics(params: {
       const provider = new JsonRpcProvider(rpcUrl);
       const vendor = new Contract(vendorAddress, DG_VENDOR_ABI, provider);
       const upToken = new Contract(upTokenAddress, ERC20_ABI, provider);
-      const [paused, tokenConfigRaw, feeConfigRaw, exchangeRateRaw, upBalanceRawValue] = await Promise.all([
+      const [paused, tokenConfigRaw, feeConfigRaw, exchangeRateRaw, upBalanceRawValue, upDecimalsRaw] = await Promise.all([
         vendor.paused(),
         vendor.getTokenConfig(),
         vendor.getFeeConfig(),
         vendor.getExchangeRate(),
         upToken.balanceOf(vendorAddress),
+        upToken.decimals(),
       ]);
       const baseToken = String(tokenConfigRaw.baseToken ?? tokenConfigRaw[0]).toLowerCase();
       const swapToken = String(tokenConfigRaw.swapToken ?? tokenConfigRaw[1]).toLowerCase();
@@ -1059,6 +1138,7 @@ export async function getDgRedemptionDiagnostics(params: {
         exchange_rate: BigInt(exchangeRateRaw.toString()).toString(),
         sell_fee_bps: Number.isFinite(sellFeeBps) ? sellFeeBps : null,
         vendor_up_balance_raw: BigInt(upBalanceRawValue.toString()).toString(),
+        vendor_up_balance_decimals: Number(upDecimalsRaw),
         status: issues.length ? "warning" as const : "ok" as const,
         error: issues.length ? issues.join(", ") : undefined,
       };
@@ -1076,6 +1156,7 @@ export async function getDgRedemptionDiagnostics(params: {
         exchange_rate: null,
         sell_fee_bps: null,
         vendor_up_balance_raw: null,
+        vendor_up_balance_decimals: null,
         status: "error" as const,
         error: error instanceof Error ? error.message : "Diagnostics failed",
       };

@@ -10,14 +10,8 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
+import { BankSelect } from '@/components/shared/BankSelect';
 
 export const UserPayoutAccountCard: React.FC = () => {
   const { getAccessToken } = usePrivy();
@@ -139,19 +133,15 @@ export const UserPayoutAccountCard: React.FC = () => {
 
         <div className="grid gap-4 sm:grid-cols-2">
           <div className="space-y-2">
-            <Label>Bank</Label>
-            <Select value={bankCode} onValueChange={selectBank} disabled={banksLoading}>
-              <SelectTrigger>
-                <SelectValue placeholder={banksLoading ? 'Loading banks...' : 'Select bank'} />
-              </SelectTrigger>
-              <SelectContent>
-                {banks.map((bank) => (
-                  <SelectItem key={bank.code} value={bank.code}>
-                    {bank.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <Label htmlFor="dg-redemption-bank">Bank</Label>
+            <BankSelect
+              id="dg-redemption-bank"
+              banks={banks}
+              value={bankCode}
+              onValueChange={selectBank}
+              loading={banksLoading}
+              placeholder="Search and select your bank..."
+            />
           </div>
           <div className="space-y-2">
             <Label>Account Number</Label>
