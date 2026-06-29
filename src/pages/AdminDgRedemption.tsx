@@ -515,13 +515,7 @@ const AdminDgRedemption: React.FC = () => {
 
   const statusCounts = useMemo(() => dashboard?.summary_24h.by_status || {}, [dashboard]);
   const hasChanges = Boolean(config && savedConfig && stableStringify(config) !== stableStringify(savedConfig));
-  const configuredNetworks = useMemo(() => {
-    if (!config) return [];
-    return networks.filter((network) => (
-      config.supported_chains.includes(network.chain_id) ||
-      Boolean(config.wallets_by_chain[String(network.chain_id)]?.trim())
-    ));
-  }, [config, networks]);
+  const configurableNetworks = useMemo(() => networks.filter((network) => network.is_active), [networks]);
   const configuredDiagnostics = useMemo(() => (
     diagnostics?.chains.filter((chain) => chain.supported || Boolean(chain.redemption_wallet_address?.trim())) || []
   ), [diagnostics]);
@@ -692,10 +686,10 @@ const AdminDgRedemption: React.FC = () => {
               </CardHeader>
               <CardContent>
                 <div className="space-y-3">
-                  {configuredNetworks.length === 0 && (
-                    <p className="text-sm text-muted-foreground">No Redeem DG networks are configured yet.</p>
+                  {configurableNetworks.length === 0 && (
+                    <p className="text-sm text-muted-foreground">No active networks are configured yet.</p>
                   )}
-                  {configuredNetworks.map((network) => {
+                  {configurableNetworks.map((network) => {
                     const enabled = config.supported_chains.includes(network.chain_id);
                     return (
                       <div key={network.chain_id} className="grid gap-3 rounded-md border p-3 sm:grid-cols-[180px_minmax(0,1fr)_112px] sm:items-center">
