@@ -5,7 +5,7 @@ import { corsHeaders, buildPreflightHeaders } from "../_shared/cors.ts";
 import { ensureAdmin } from "../_shared/admin-check.ts";
 import { SUPABASE_SERVICE_ROLE_KEY, SUPABASE_URL } from "../_shared/constants.ts";
 import { getPaystackBalances } from "../_shared/paystack.ts";
-import { getNgnBalanceKobo, loadDgRedemptionConfig } from "../_shared/dg-redemption.ts";
+import { getNgnBalanceKobo, loadDgRedemptionConfig, reconcileDgRedemptionPaystackTransfer } from "../_shared/dg-redemption.ts";
 
 function json(payload: Record<string, unknown>, status = 200): Response {
   return new Response(JSON.stringify(payload), {
@@ -48,13 +48,24 @@ serve(async (req) => {
         .limit(50),
       supabase
         .from("dg_redemption_intents")
-        .select("status,gross_ngn_kobo,total_fee_kobo,net_payout_kobo")
+        .select("id,status,gross_ngn_kobo,total_fee_kobo,net_payout_kobo")
         .gte("created_at", since24h),
       getPaystackBalances().then((balances) => ({ balances, error: null })).catch((error) => ({ balances: [], error })),
     ]);
 
     if (recentResult.error) throw new Error(recentResult.error.message);
     if (dailyResult.error) throw new Error(dailyResult.error.message);
+
+    const recentRedemptions = await Promise.all(
+      (recentResult.data || []).map((intent: any) =>
+        reconcileDgRedemptionPaystackTransfer(supabase, intent, {
+          failedStatus: "manual_review",
+          logPrefix: "get-dg-redemption-admin-dashboard",
+        })
+      ),
+    );
+    const recentById = new Map(recentRedemptions.map((row: any) => [row.id, row]));
+    const dailyRows = (dailyResult.data || []).map((row: any) => recentById.get(row.id) || row);
 
     const balances = balancesResult.balances as Array<{ currency: string; balance: number }>;
     return json({
@@ -65,8 +76,8 @@ serve(async (req) => {
         balances,
         error: balancesResult.error instanceof Error ? balancesResult.error.message : null,
       },
-      summary_24h: summarize(dailyResult.data || []),
-      recent_redemptions: recentResult.data || [],
+      summary_24h: summarize(dailyRows),
+      recent_redemptions: recentRedemptions,
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Internal error";
