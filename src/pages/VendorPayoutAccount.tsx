@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { usePrivy } from '@privy-io/react-auth';
 import { callEdgeFunction } from '@/lib/edgeFunctions';
@@ -10,15 +10,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import {
-  Command,
-  CommandEmpty,
-  CommandGroup,
-  CommandInput,
-  CommandItem,
-  CommandList,
-} from '@/components/ui/command';
+import { BankSelect } from '@/components/shared/BankSelect';
 import {
   Loader2,
   Building2,
@@ -30,11 +22,8 @@ import {
   Ban,
   CreditCard,
   Hash,
-  ChevronsUpDown,
-  Check,
   ArrowLeft,
 } from 'lucide-react';
-import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 import { useBanks } from '@/hooks/useBanks';
 import { useResolveAccount } from '@/hooks/useResolveAccount';
@@ -82,12 +71,6 @@ const VendorPayoutAccount: React.FC = () => {
   const [selectedBankCode, setSelectedBankCode] = useState('');
   const [accountNumber, setAccountNumber] = useState('');
   const [entryMethod, setEntryMethod] = useState<'bank-first' | 'account-first'>('bank-first');
-  const [bankPopoverOpen, setBankPopoverOpen] = useState(false);
-
-  // Get selected bank name for display
-  const selectedBankName = useMemo(() => {
-    return banks.find((b) => b.code === selectedBankCode)?.name || '';
-  }, [banks, selectedBankCode]);
 
   const selectBank = useCallback((bankCode: string) => {
     const bank = banks.find((item) => item.code === bankCode);
@@ -467,51 +450,14 @@ const VendorPayoutAccount: React.FC = () => {
             <CardContent>
               <form onSubmit={(e) => { e.preventDefault(); handleRetry(); }} className="space-y-6">
                 <div className="space-y-2">
-                  <Label>Bank</Label>
-                  <Popover open={bankPopoverOpen} onOpenChange={setBankPopoverOpen}>
-                    <PopoverTrigger asChild>
-                      <Button
-                        variant="outline"
-                        role="combobox"
-                        aria-expanded={bankPopoverOpen}
-                        className="w-full justify-between font-normal"
-                        disabled={banksLoading}
-                      >
-                        {banksLoading
-                          ? 'Loading banks...'
-                          : selectedBankName || 'Search and select your bank...'}
-                        <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-                      </Button>
-                    </PopoverTrigger>
-                    <PopoverContent className="w-full p-0" align="start">
-                      <Command>
-                        <CommandInput placeholder="Search banks..." />
-                        <CommandList>
-                          <CommandEmpty>No bank found.</CommandEmpty>
-                          <CommandGroup>
-                            {banks.map((bank, index) => (
-                              <CommandItem
-                                key={`${bank.code}-${index}`}
-                                value={bank.name}
-                                onSelect={() => {
-                                  selectBank(bank.code);
-                                  setBankPopoverOpen(false);
-                                }}
-                              >
-                                <Check
-                                  className={cn(
-                                    'mr-2 h-4 w-4',
-                                    selectedBankCode === bank.code ? 'opacity-100' : 'opacity-0'
-                                  )}
-                                />
-                                {bank.name}
-                              </CommandItem>
-                            ))}
-                          </CommandGroup>
-                        </CommandList>
-                      </Command>
-                    </PopoverContent>
-                  </Popover>
+                  <Label htmlFor="retry-bank-combobox">Bank</Label>
+                  <BankSelect
+                    id="retry-bank-combobox"
+                    banks={banks}
+                    value={selectedBankCode}
+                    onValueChange={selectBank}
+                    loading={banksLoading}
+                  />
                 </div>
 
                 <div className="space-y-2">
@@ -615,51 +561,13 @@ const VendorPayoutAccount: React.FC = () => {
                       <Label htmlFor="bank-combobox-1">
                         Bank <span className="text-red-500">*</span>
                       </Label>
-                      <Popover open={bankPopoverOpen} onOpenChange={setBankPopoverOpen}>
-                        <PopoverTrigger asChild>
-                          <Button
-                            id="bank-combobox-1"
-                            variant="outline"
-                            role="combobox"
-                            aria-expanded={bankPopoverOpen}
-                            className="w-full justify-between font-normal"
-                            disabled={banksLoading}
-                          >
-                            {banksLoading
-                              ? 'Loading banks...'
-                              : selectedBankName || 'Search and select your bank...'}
-                            <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-                          </Button>
-                        </PopoverTrigger>
-                        <PopoverContent className="w-full p-0" align="start">
-                          <Command>
-                            <CommandInput placeholder="Search banks..." />
-                            <CommandList>
-                              <CommandEmpty>No bank found.</CommandEmpty>
-                              <CommandGroup>
-                                {banks.map((bank, index) => (
-                                  <CommandItem
-                                    key={`${bank.code}-${index}`}
-                                    value={bank.name}
-                                    onSelect={() => {
-                                      selectBank(bank.code);
-                                      setBankPopoverOpen(false);
-                                    }}
-                                  >
-                                    <Check
-                                      className={cn(
-                                        'mr-2 h-4 w-4',
-                                        selectedBankCode === bank.code ? 'opacity-100' : 'opacity-0'
-                                      )}
-                                    />
-                                    {bank.name}
-                                  </CommandItem>
-                                ))}
-                              </CommandGroup>
-                            </CommandList>
-                          </Command>
-                        </PopoverContent>
-                      </Popover>
+                      <BankSelect
+                        id="bank-combobox-1"
+                        banks={banks}
+                        value={selectedBankCode}
+                        onValueChange={selectBank}
+                        loading={banksLoading}
+                      />
                       <p className="text-xs text-slate-500">Type to search for your bank</p>
                     </div>
 
@@ -761,53 +669,15 @@ const VendorPayoutAccount: React.FC = () => {
                       <Label htmlFor="bank-combobox-2">
                         Bank <span className="text-red-500">*</span>
                       </Label>
-                      <Popover open={bankPopoverOpen} onOpenChange={setBankPopoverOpen}>
-                        <PopoverTrigger asChild>
-                          <Button
-                            id="bank-combobox-2"
-                            variant="outline"
-                            role="combobox"
-                            aria-expanded={bankPopoverOpen}
-                            className="w-full justify-between font-normal"
-                            disabled={banksLoading || accountNumber.length !== 10}
-                          >
-                            {accountNumber.length !== 10
-                              ? 'Enter account number first'
-                              : banksLoading
-                                ? 'Loading banks...'
-                                : selectedBankName || 'Search and select your bank...'}
-                            <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-                          </Button>
-                        </PopoverTrigger>
-                        <PopoverContent className="w-full p-0" align="start">
-                          <Command>
-                            <CommandInput placeholder="Search banks..." />
-                            <CommandList>
-                              <CommandEmpty>No bank found.</CommandEmpty>
-                              <CommandGroup>
-                                {banks.map((bank, index) => (
-                                  <CommandItem
-                                    key={`${bank.code}-${index}`}
-                                    value={bank.name}
-                                    onSelect={() => {
-                                      selectBank(bank.code);
-                                      setBankPopoverOpen(false);
-                                    }}
-                                  >
-                                    <Check
-                                      className={cn(
-                                        'mr-2 h-4 w-4',
-                                        selectedBankCode === bank.code ? 'opacity-100' : 'opacity-0'
-                                      )}
-                                    />
-                                    {bank.name}
-                                  </CommandItem>
-                                ))}
-                              </CommandGroup>
-                            </CommandList>
-                          </Command>
-                        </PopoverContent>
-                      </Popover>
+                      <BankSelect
+                        id="bank-combobox-2"
+                        banks={banks}
+                        value={selectedBankCode}
+                        onValueChange={selectBank}
+                        loading={banksLoading}
+                        disabled={accountNumber.length !== 10}
+                        disabledPlaceholder="Enter account number first"
+                      />
                       <p className="text-xs text-slate-500">
                         {accountNumber.length === 10
                           ? 'Type to search for your bank'

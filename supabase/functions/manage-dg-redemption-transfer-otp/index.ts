@@ -8,6 +8,7 @@ import {
   finalizePaystackTransfer,
   resendPaystackTransferOtp,
   verifyPaystackTransfer,
+  type PaystackTransferData,
   type PaystackTransferResponse,
 } from "../_shared/paystack.ts";
 import { paystackTransferUpdateValues } from "../_shared/dg-redemption.ts";
@@ -89,6 +90,24 @@ async function reconcileStalePaystackOtpState(
   });
 
   return updated;
+}
+
+async function verifiedTransferAfterFinalize(
+  intent: any,
+  finalized: PaystackTransferResponse,
+): Promise<PaystackTransferData> {
+  if (!intent.paystack_reference) return finalized.data;
+
+  try {
+    const verified = await verifyPaystackTransfer(intent.paystack_reference);
+    return verified.data;
+  } catch (error) {
+    console.warn(
+      "[manage-dg-redemption-transfer-otp] Paystack post-finalize verification failed",
+      error instanceof Error ? error.message : error,
+    );
+    return finalized.data;
+  }
 }
 
 serve(async (req) => {
@@ -219,9 +238,10 @@ serve(async (req) => {
       return json({ ok: false, error: message }, paystackOtpErrorStatus(message));
     }
 
+    const transfer = await verifiedTransferAfterFinalize(intent, finalized);
     const { data: updated, error: updateError } = await supabase
       .from("dg_redemption_intents")
-      .update(paystackTransferUpdateValues({ transfer: finalized.data, failedStatus: "manual_review" }))
+      .update(paystackTransferUpdateValues({ transfer, failedStatus: "manual_review" }))
       .eq("id", intent.id)
       .eq("status", "manual_review")
       .eq("paystack_status", "otp")
@@ -234,7 +254,8 @@ serve(async (req) => {
 
     await logEvent(supabase, updated, adminUserId, "admin_finalized_paystack_transfer_otp", {
       previous_status: intent.status,
-      paystack_transfer: finalized.data,
+      paystack_finalize_response: finalized.data,
+      paystack_transfer: transfer,
     });
 
     return json({ ok: true, status: updated.status, redemption: updated });

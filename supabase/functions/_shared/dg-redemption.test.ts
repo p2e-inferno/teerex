@@ -128,6 +128,7 @@ Deno.test("validateDgRedemptionConfigForSave rejects missing wallet for enabled 
 
 Deno.test("Paystack status mapping prevents stale pending regression", () => {
   assertEquals(mapPaystackTransferStatus({ event: "transfer.success", status: "success" }), "completed");
+  assertEquals(mapPaystackTransferStatus({ status: "successful" }), "completed");
   assertEquals(mapPaystackTransferStatus({ event: "transfer.reversed", status: "reversed" }), "failed");
   assertEquals(canApplyPaystackTransferStatus({
     currentStatus: "completed",

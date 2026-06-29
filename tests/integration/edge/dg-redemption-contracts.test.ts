@@ -187,10 +187,19 @@ describe('DG redemption edge-call contracts', () => {
   });
 
   it('only reconciles Paystack transfers after Paystack has created a transfer', () => {
-    const source = read('supabase/functions/get-dg-redemption-status/index.ts');
+    const sharedSource = read('supabase/functions/_shared/dg-redemption.ts');
+    const statusSource = read('supabase/functions/get-dg-redemption-status/index.ts');
+    const listSource = read('supabase/functions/list-user-dg-redemptions/index.ts');
+    const dashboardSource = read('supabase/functions/get-dg-redemption-admin-dashboard/index.ts');
 
-    expect(source).toContain('PAYSTACK_RECONCILABLE_STATUSES');
-    expect(source).toContain('!(intent.paystack_transfer_code || intent.paystack_transfer_id)');
+    expect(sharedSource).toContain('PAYSTACK_RECONCILABLE_DG_REDEMPTION_STATUSES');
+    expect(sharedSource).toContain('canReconcileDgRedemptionPaystackTransfer');
+    expect(sharedSource).toContain('intent?.paystack_transfer_code || intent?.paystack_transfer_id');
+    expect(sharedSource).toContain('verifyPaystackTransfer(intent.paystack_reference)');
+    expect(sharedSource).toContain('paystackTransferUpdateValues({');
+    expect(statusSource).toContain('reconcileDgRedemptionPaystackTransfer');
+    expect(listSource).toContain('reconcileDgRedemptionPaystackTransfer');
+    expect(dashboardSource).toContain('reconcileDgRedemptionPaystackTransfer');
   });
 
   it('exposes guarded admin resolution actions with responsive controls', () => {
@@ -240,8 +249,10 @@ describe('DG redemption edge-call contracts', () => {
     expect(otpSource).toContain('ensureAdmin');
     expect(otpSource).toContain('String(intent.status) !== "manual_review"');
     expect(otpSource).toContain('String(intent.paystack_status || "").toLowerCase() !== "otp"');
-    expect(otpSource).toContain('paystackTransferUpdateValues({ transfer: finalized.data, failedStatus: "manual_review" })');
+    expect(otpSource).toContain('verifiedTransferAfterFinalize');
+    expect(otpSource).toContain('paystackTransferUpdateValues({ transfer, failedStatus: "manual_review" })');
     expect(otpSource).toContain('verifyPaystackTransfer(intent.paystack_reference)');
+    expect(otpSource).toContain('paystack_finalize_response');
     expect(otpSource).toContain('isStalePaystackOtpStateError');
     expect(otpSource).toContain('paystackOtpErrorStatus');
     expect(otpSource).toContain('admin_reconciled_stale_paystack_otp');

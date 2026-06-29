@@ -15,6 +15,7 @@ import { FieldHelp, FieldLabel } from '@/components/ui/field-help';
 import { Textarea } from '@/components/ui/textarea';
 import { InputOTP, InputOTPGroup, InputOTPSlot } from '@/components/ui/input-otp';
 import { formatNairaFromKobo, nairaInputValueFromKobo, nairaToKobo } from '@/lib/currency';
+import { formatERC20Balance } from '@/utils/balanceHelpers';
 import {
   Dialog,
   DialogContent,
@@ -131,6 +132,7 @@ interface DgRedemptionDiagnostics {
     exchange_rate: string | null;
     sell_fee_bps: number | null;
     vendor_up_balance_raw: string | null;
+    vendor_up_balance_decimals: number | null;
     status: 'ok' | 'warning' | 'error';
     error?: string;
   }>;
@@ -170,6 +172,15 @@ const percentToBps = (percent: string | number): number => {
 };
 const percentInputValueFromBps = (bps?: number | null): string => String(bpsToPercent(bps));
 const formatPercentFromBps = (bps?: number | null): string => `${bpsToPercent(bps).toLocaleString(undefined, { maximumFractionDigits: 2 })}%`;
+const formatUpBalance = (raw?: string | null, decimals?: number | null): string => {
+  if (!raw || decimals === null || decimals === undefined) return 'n/a';
+  if (!Number.isInteger(decimals) || decimals < 0) return 'n/a';
+  try {
+    return formatERC20Balance(BigInt(raw), 'UP', decimals);
+  } catch {
+    return 'n/a';
+  }
+};
 
 const stableStringify = (value: unknown): string => JSON.stringify(value);
 
@@ -984,7 +995,7 @@ const AdminDgRedemption: React.FC = () => {
                           <span>Vendor fee: {chain.sell_fee_bps === null ? 'n/a' : formatPercentFromBps(chain.sell_fee_bps)}</span>
                         </div>
                         <div className="mt-2 break-all text-xs text-muted-foreground">
-                          UP balance: {chain.vendor_up_balance_raw || 'n/a'}
+                          UP balance: {formatUpBalance(chain.vendor_up_balance_raw, chain.vendor_up_balance_decimals)}
                         </div>
                         {chain.error && <p className="mt-2 text-xs text-destructive">{chain.error}</p>}
                       </div>

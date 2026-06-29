@@ -4,13 +4,10 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.50.0";
 import { corsHeaders, buildPreflightHeaders } from "../_shared/cors.ts";
 import { SUPABASE_SERVICE_ROLE_KEY, SUPABASE_URL } from "../_shared/constants.ts";
 import { verifyPrivyToken } from "../_shared/privy.ts";
-import { verifyPaystackTransfer } from "../_shared/paystack.ts";
 import {
-  canApplyPaystackTransferStatus,
-  mapPaystackTransferStatus,
   normalizeValidatedDgRedemptionFailure,
-  paystackTransferUpdateValues,
   publicDgRedemptionIntentWithAdminNotify,
+  reconcileDgRedemptionPaystackTransfer,
 } from "../_shared/dg-redemption.ts";
 
 function json(payload: Record<string, unknown>, status = 200): Response {
@@ -20,56 +17,11 @@ function json(payload: Record<string, unknown>, status = 200): Response {
   });
 }
 
-const PAYSTACK_RECONCILABLE_STATUSES = new Set([
-  "payout_pending",
-  "payout_processing",
-  "manual_review",
-]);
-
 async function reconcilePaystackTransfer(supabase: any, intent: any) {
-  if (
-    !PAYSTACK_RECONCILABLE_STATUSES.has(String(intent.status || "")) ||
-    !intent.paystack_reference ||
-    !(intent.paystack_transfer_code || intent.paystack_transfer_id)
-  ) {
-    return intent;
-  }
-
-  try {
-    const verified = await verifyPaystackTransfer(intent.paystack_reference);
-    const nextStatus = mapPaystackTransferStatus({ status: verified.data?.status });
-    if (!canApplyPaystackTransferStatus({ currentStatus: intent.status, nextStatus })) {
-      return intent;
-    }
-
-    const { data: updated, error } = await supabase
-      .from("dg_redemption_intents")
-      .update(paystackTransferUpdateValues({ transfer: verified.data, failedStatus: "manual_review" }))
-      .eq("id", intent.id)
-      .eq("user_id", intent.user_id)
-      .eq("status", intent.status)
-      .select("*")
-      .maybeSingle();
-
-    if (error) throw new Error(error.message);
-    if (!updated) return intent;
-
-    await supabase.from("dg_redemption_events").insert({
-      intent_id: updated.id,
-      event_type: "paystack_transfer_reconciled",
-      actor_user_id: updated.user_id,
-      actor_wallet_address: updated.wallet_address,
-      metadata: { paystack_transfer: verified.data, mapped_status: nextStatus },
-    });
-
-    return updated;
-  } catch (error) {
-    console.warn(
-      "[get-dg-redemption-status] Paystack transfer reconciliation failed",
-      error instanceof Error ? error.message : error,
-    );
-    return intent;
-  }
+  return await reconcileDgRedemptionPaystackTransfer(supabase, intent, {
+    failedStatus: "manual_review",
+    logPrefix: "get-dg-redemption-status",
+  });
 }
 
 serve(async (req) => {
