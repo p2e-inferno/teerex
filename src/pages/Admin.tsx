@@ -13,6 +13,7 @@ import { registerSchema, getAttestationSchemas, checkSchemaExists, importExistin
 import { checkKeyOwnership } from '@/utils/lockUtils';
 import { usePrivy, useWallets } from '@privy-io/react-auth';
 import { Database } from '@/integrations/supabase/types';
+import { supabase } from '@/integrations/supabase/client';
 import { 
   Shield, 
   Plus, 

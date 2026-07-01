@@ -217,9 +217,9 @@ export const TicketPassPaystackDialog: React.FC<TicketPassPaystackDialogProps> =
           </div>
         </div>
 
-        <DialogFooter>
-          <Button variant="outline" onClick={onClose} disabled={isLoading}>Cancel</Button>
-          <Button onClick={handlePayment} disabled={isLoading || !fiatEnabled} className="w-32">
+        <DialogFooter className="gap-3 sm:gap-2">
+          <Button variant="outline" onClick={onClose} disabled={isLoading} className="w-full sm:w-auto">Cancel</Button>
+          <Button onClick={handlePayment} disabled={isLoading || !fiatEnabled} className="w-full sm:w-32">
             {isLoading ? <Loader2 className="animate-spin" /> : 'Pay Now'}
           </Button>
         </DialogFooter>

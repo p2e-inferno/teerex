@@ -1,6 +1,7 @@
 import { supabase } from '@/integrations/supabase/client';
 import { EventDraft, PublishedDraftEvent } from '@/types/event';
 import { EventFormData } from '@/pages/CreateEvent';
+import { PurchaseFormSchema } from '@/types/purchaseForm';
 
 export const uploadEventImage = async (file: File, userId: string): Promise<string | null> => {
   try {
@@ -241,7 +242,8 @@ export const getDraft = async (id: string, userId: string): Promise<EventDraft |
       image_crop_y: data.image_crop_y || undefined,
       ticket_duration: data.ticket_duration || undefined,
       custom_duration_days: data.custom_duration_days || undefined,
-      chain_id: (data as any).chain_id
+      chain_id: (data as any).chain_id,
+      purchase_form_schema: (data.purchase_form_schema as PurchaseFormSchema | null) ?? null,
     };
   } catch (error) {
     console.error('Error fetching draft:', error);

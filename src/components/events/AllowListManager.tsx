@@ -46,6 +46,10 @@ type UpsertEntry = {
 
 type ManageAllowListPayload =
   | {
+      action: 'get_allow_list';
+      event_id: string;
+    }
+  | {
       action: 'upsert_allow_list';
       event_id: string;
       entries: UpsertEntry[];
@@ -95,7 +99,7 @@ export const AllowListManager: React.FC<AllowListManagerProps> = ({ event, isOpe
       throw new Error('Authentication required to manage allow list');
     }
 
-    return callEdgeFunction('manage-allow-list', payload as Record<string, unknown>, { privyToken: accessToken });
+    return callEdgeFunction<any>('manage-allow-list', payload as Record<string, unknown>, { privyToken: accessToken });
   };
 
   useEffect(() => {
@@ -110,14 +114,11 @@ export const AllowListManager: React.FC<AllowListManagerProps> = ({ event, isOpe
 
     setIsLoading(true);
     try {
-      const { data, error } = await supabase
-        .from('event_allow_list')
-        .select('id, wallet_address, user_email, created_at')
-        .eq('event_id', event.id)
-        .order('created_at', { ascending: false });
-
-      if (error) throw error;
-      setAllowList(data || []);
+      const data = await callManageAllowList({
+        action: 'get_allow_list',
+        event_id: event.id,
+      });
+      setAllowList((data?.data as AllowListEntry[]) || []);
     } catch (error) {
       console.error('Error loading allow list:', error);
       toast({
