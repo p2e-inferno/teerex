@@ -1,9 +1,8 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState } from 'react';
 import { usePrivy } from '@privy-io/react-auth';
 import { Button } from '@/components/ui/button';
 import { Loader2, Download, Inbox, Copy, Check, Users } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
-import { supabase } from '@/integrations/supabase/client';
 import { callEdgeFunction } from '@/lib/edgeFunctions';
 import {
   Table,

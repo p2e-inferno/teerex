@@ -36,7 +36,7 @@ export function useEventManagers(eventId: string | null, enabled: boolean) {
   const call = useCallback(async (body: Record<string, unknown>) => {
     const token = await getAccessToken?.();
     if (!token) throw new Error('Authentication required');
-    return callEdgeFunction('manage-event-managers', body, { privyToken: token });
+    return callEdgeFunction<any>('manage-event-managers', body, { privyToken: token });
   }, [getAccessToken]);
 
   const refresh = useCallback(async () => {

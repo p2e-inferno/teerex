@@ -17,6 +17,10 @@ type UpsertEntry = {
 
 type ManageAllowListPayload =
   | {
+      action: 'get_allow_list';
+      event_id: string;
+    }
+  | {
       action: 'upsert_allow_list';
       event_id: string;
       entries: UpsertEntry[];
@@ -168,6 +172,24 @@ serve(async (req) => {
 
       return { inserted: rows.length };
     };
+
+    if (action === 'get_allow_list') {
+      const { data, error } = await supabase
+        .from('event_allow_list')
+        .select('id, wallet_address, user_email, created_at')
+        .eq('event_id', event_id)
+        .order('created_at', { ascending: false });
+
+      if (error) {
+        console.error('[manage-allow-list] Error fetching allow list:', error);
+        throw new Error('Failed to load allow list');
+      }
+
+      return new Response(
+        JSON.stringify({ ok: true, data: data || [] }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 200 },
+      );
+    }
 
     if (action === 'upsert_allow_list') {
       const entries = (body as any).entries as UpsertEntry[] | undefined;

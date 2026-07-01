@@ -37,13 +37,13 @@ interface VendorLockSettings {
   updated_at: string;
 }
 
-interface CreateLockFormData {
+type CreateLockFormData = {
   lock_address: string;
   chain_id: number;
   description: string;
   image_url: string;
   benefits: string[];
-}
+};
 
 interface EditLockFormData {
   description: string;
