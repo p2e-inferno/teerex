@@ -349,6 +349,7 @@ const AdminNetworks: React.FC = () => {
       unlock_factory_address: '',
       refundable_event_manager_address: '',
       ticket_pass_controller_address: '',
+      rewards_controller_address: '',
       native_currency_symbol: 'ETH',
       native_currency_name: 'Ethereum',
       native_currency_decimals: 18,

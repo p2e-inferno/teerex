@@ -47,14 +47,10 @@ export default function AdminGasSponsorship() {
 
   const loadNetworks = async () => {
     try {
-      const { data, error } = await supabase
-        .from('network_configs')
-        .select('chain_id, chain_name, is_active, is_mainnet')
-        .eq('is_active', true)
-        .order('chain_id');
-
-      if (error) throw error;
-      setNetworks(data || []);
+      const token = await getAccessToken?.();
+      const data = await callEdgeFunction<any>('manage-network-config', {}, { privyToken: token, withAnonKey: true, method: 'GET' });
+      const activeNetworks = ((data.networks || []) as NetworkConfig[]).filter((n) => n.is_active);
+      setNetworks(activeNetworks);
     } catch (err: any) {
       console.error('Failed to load networks', err);
       toast.error('Could not load network configurations');

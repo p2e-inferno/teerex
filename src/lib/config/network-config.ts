@@ -400,10 +400,12 @@ export function buildPrivyChains(networkConfigs: NetworkConfig[]): any[] {
 // Cache configuration
 const CACHE_KEY = 'teerex_privy_config';
 const CACHE_TTL = 60 * 60 * 1000; // 1 hour in milliseconds
+const CACHE_VERSION = 2;
 
 interface CachedConfig {
   data: any;
   timestamp: number;
+  version?: number;
 }
 
 function getCachedPrivyConfig(): any | null {
@@ -411,8 +413,13 @@ function getCachedPrivyConfig(): any | null {
     const cached = localStorage.getItem(CACHE_KEY);
     if (!cached) return null;
 
-    const { data, timestamp }: CachedConfig = JSON.parse(cached);
+    const { data, timestamp, version }: CachedConfig = JSON.parse(cached);
     const now = Date.now();
+
+    if (version !== CACHE_VERSION) {
+      localStorage.removeItem(CACHE_KEY);
+      return null;
+    }
 
     // Check if cache is still valid
     if (now - timestamp < CACHE_TTL) {
@@ -435,6 +442,7 @@ function setCachedPrivyConfig(config: any): void {
     const cached: CachedConfig = {
       data: config,
       timestamp: Date.now(),
+      version: CACHE_VERSION,
     };
     localStorage.setItem(CACHE_KEY, JSON.stringify(cached));
   } catch (error) {
@@ -464,7 +472,9 @@ export async function getPrivyConfig(): Promise<any> {
       accentColor: '#676FFF',
     },
     embeddedWallets: {
-      createOnLogin: 'users-without-wallets' as const,
+      ethereum: {
+        createOnLogin: 'users-without-wallets' as const,
+      },
     },
     loginMethods: ['email', 'wallet'] as const,
     defaultChain,

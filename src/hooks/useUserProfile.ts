@@ -1,5 +1,14 @@
-import { usePrivy, useWallets } from '@privy-io/react-auth';
+import { useActiveWallet, usePrivy, useWallets } from '@privy-io/react-auth';
 import { useUserAddresses } from '@/hooks/useUserAddresses';
+import {
+  getPreferredPrivyLinkedConnectedWallet,
+  getPrivyWalletByAddress,
+  isPrivyEmbeddedWallet,
+  isPrivyWalletAccount,
+  isPrivyWalletAddressLinked,
+  normalizeWalletAddress,
+  type PrivyWalletIdentitySource,
+} from '@/lib/wallet/privyWalletIdentity';
 import { useMemo } from 'react';
 
 export type WalletType = 'embedded' | 'connected' | 'none';
@@ -43,35 +52,49 @@ export interface UserProfile {
 export function useUserProfile(): UserProfile {
   const { user, ready, authenticated } = usePrivy();
   const { wallets } = useWallets();
+  const { wallet: activeWallet } = useActiveWallet();
   const userAddresses = useUserAddresses();
+  const linkedWallets = useMemo(
+    () => (user?.linkedAccounts ?? []).filter(isPrivyWalletAccount),
+    [user?.linkedAccounts]
+  );
 
-  // Determine primary address (first connected wallet or embedded wallet)
-  const primaryAddress = useMemo(() => {
-    if (wallets && wallets.length > 0) {
-      return wallets[0].address;
+  const primaryWallet = useMemo(() => {
+    if (!authenticated) return undefined;
+
+    const activeWalletSource = (activeWallet ?? null) as PrivyWalletIdentitySource | null;
+    if (isPrivyWalletAddressLinked(user?.linkedAccounts, activeWalletSource?.address)) {
+      return activeWalletSource ?? undefined;
     }
-    if (user?.wallet?.address) {
-      return user.wallet.address;
-    }
-    return undefined;
-  }, [wallets, user]);
+
+    return (
+      getPreferredPrivyLinkedConnectedWallet(user?.linkedAccounts, wallets ?? []) ??
+      user?.wallet ??
+      linkedWallets[0] ??
+      undefined
+    );
+  }, [activeWallet, authenticated, linkedWallets, user?.linkedAccounts, user?.wallet, wallets]);
+
+  const primaryAddress = primaryWallet?.address ?? undefined;
 
   // Determine wallet type
   const walletType: WalletType = useMemo(() => {
-    if (!primaryAddress) return 'none';
+    if (!primaryWallet?.address) return 'none';
 
-    // If user has connected wallets (via MetaMask, WalletConnect, etc.)
-    if (wallets && wallets.length > 0) {
-      return 'connected';
-    }
+    const matchingWallet =
+      getPrivyWalletByAddress(wallets ?? [], primaryWallet.address) ??
+      getPrivyWalletByAddress(linkedWallets, primaryWallet.address) ??
+      (normalizeWalletAddress(user?.wallet?.address) === normalizeWalletAddress(primaryWallet.address)
+        ? user?.wallet
+        : undefined) ??
+      primaryWallet;
 
-    // If user only has Privy embedded wallet
-    if (user?.wallet?.address) {
+    if (isPrivyEmbeddedWallet(matchingWallet)) {
       return 'embedded';
     }
 
-    return 'none';
-  }, [primaryAddress, wallets, user]);
+    return 'connected';
+  }, [linkedWallets, primaryWallet, wallets, user?.wallet]);
 
   return {
     primaryAddress,
