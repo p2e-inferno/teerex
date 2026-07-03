@@ -4,6 +4,7 @@ import { usePrivy } from '@privy-io/react-auth';
 import { ArrowLeft, Banknote, CheckCircle2, Clock, Copy, Eye, KeyRound, Loader2, MailCheck, RefreshCw, RotateCw, Save, Settings2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { callEdgeFunction } from '@/lib/edgeFunctions';
+import { formatShortWalletAddress } from '@/lib/wallet/privyWalletIdentity';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -110,6 +111,12 @@ interface DashboardData {
     gross_kobo: number;
     net_payout_kobo: number;
     fees_kobo: number;
+    ngn?: {
+      count: number;
+      gross_kobo: number;
+      net_payout_kobo: number;
+      fees_kobo: number;
+    };
     usdc?: {
       count: number;
       gross_usdc_micro: number;
@@ -290,6 +297,14 @@ const canMarkManualPaidStatus = (row: DgRedemptionRow) => {
   return isPaystackTransferTerminalFailure(row.paystack_status);
 };
 
+const formatPayoutWalletDiagnosticsError = (error: string) => {
+  const labels: Record<string, string> = {
+    missing_payout_key: 'Payout signer key is not set on the server (DG_REDEMPTION_PAYOUT_PRIVATE_KEY)',
+    invalid_payout_key: 'Payout signer key on the server is not a valid private key',
+  };
+  return labels[error] || error;
+};
+
 const formatLastError = (error?: string | null) => {
   const labels: Record<string, string> = {
     paystack_otp_required: 'Paystack OTP required',
@@ -393,6 +408,7 @@ const AdminDgRedemption: React.FC = () => {
   const [otpSubmittingId, setOtpSubmittingId] = useState<string | null>(null);
   const [otpResendingId, setOtpResendingId] = useState<string | null>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [methodTab, setMethodTab] = useState<'ngn' | 'usdc'>('ngn');
 
   const loadData = useCallback(async () => {
     setIsLoading(true);
@@ -733,7 +749,7 @@ const AdminDgRedemption: React.FC = () => {
                   </div>
                 </div>
 
-                <Tabs defaultValue="ngn">
+                <Tabs value={methodTab} onValueChange={(value) => setMethodTab(value === 'usdc' ? 'usdc' : 'ngn')}>
                   <TabsList className="grid w-full grid-cols-2">
                     <TabsTrigger value="ngn">Fiat (NGN)</TabsTrigger>
                     <TabsTrigger value="usdc">Crypto (USDC)</TabsTrigger>
@@ -1165,19 +1181,21 @@ const AdminDgRedemption: React.FC = () => {
                 <CardDescription>Current payout availability.</CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
-                <div className="rounded-md border p-4">
-                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                    <CheckCircle2 className="h-4 w-4 text-emerald-600" />
-                    Paystack balance
+                {methodTab === 'ngn' && (
+                  <div className="rounded-md border p-4">
+                    <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                      <CheckCircle2 className={`h-4 w-4 ${dashboard?.provider_health.error ? 'text-destructive' : 'text-emerald-600'}`} />
+                      Paystack balance
+                    </div>
+                    <div className="mt-2 text-2xl font-bold">
+                      {formatNairaFromKobo(dashboard?.provider_health.paystack_balance_kobo)}
+                    </div>
+                    {dashboard?.provider_health.error && (
+                      <p className="mt-2 text-sm text-destructive">{dashboard.provider_health.error}</p>
+                    )}
                   </div>
-                  <div className="mt-2 text-2xl font-bold">
-                    {formatNairaFromKobo(dashboard?.provider_health.paystack_balance_kobo)}
-                  </div>
-                  {dashboard?.provider_health.error && (
-                    <p className="mt-2 text-sm text-destructive">{dashboard.provider_health.error}</p>
-                  )}
-                </div>
-                {(dashboard?.provider_health.payout_wallets || []).map((wallet) => (
+                )}
+                {methodTab === 'usdc' && (dashboard?.provider_health.payout_wallets || []).map((wallet) => (
                   <div key={wallet.chain_id} className="rounded-md border p-4">
                     <div className="flex items-center gap-2 text-sm text-muted-foreground">
                       <CheckCircle2 className={`h-4 w-4 ${wallet.error ? 'text-destructive' : 'text-emerald-600'}`} />
@@ -1189,8 +1207,23 @@ const AdminDgRedemption: React.FC = () => {
                       <>
                         <div className="mt-2 text-2xl font-bold">{formatUsdcFromMicro(wallet.usdc_balance_micro)}</div>
                         <div className="mt-1 space-y-0.5 text-xs text-muted-foreground">
-                          <div className="break-all font-mono">{wallet.address}</div>
-                          <div>Committed: {formatUsdcFromMicro(wallet.committed_usdc_micro)} · Available: {formatUsdcFromMicro(wallet.available_usdc_micro)}</div>
+                          <div className="flex items-center gap-2">
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <span className="font-mono text-sm font-semibold text-foreground" title={wallet.address}>
+                                  {formatShortWalletAddress(wallet.address)}
+                                </span>
+                              </TooltipTrigger>
+                              <TooltipContent>
+                                <span className="font-mono text-xs">{wallet.address}</span>
+                              </TooltipContent>
+                            </Tooltip>
+                            <ActionButton label="Copy payout wallet address" size="icon" variant="ghost" className="h-7 w-7 shrink-0 text-foreground hover:bg-muted" onClick={() => copyValue('Payout wallet address', wallet.address)}>
+                              <Copy className="h-4 w-4" />
+                            </ActionButton>
+                          </div>
+                          <div>Committed: {formatUsdcFromMicro(wallet.committed_usdc_micro)}</div>
+                          <div>Available: {formatUsdcFromMicro(wallet.available_usdc_micro)}</div>
                           <div>Gas: {formatNativeEth(wallet.native_balance_wei)}</div>
                         </div>
                       </>
@@ -1198,30 +1231,45 @@ const AdminDgRedemption: React.FC = () => {
                   </div>
                 ))}
                 <div className="grid grid-cols-2 gap-3">
-                  <div className="rounded-md border p-3">
-                    <div className="text-xs text-muted-foreground">24h requests</div>
-                    <div className="text-xl font-semibold">{dashboard?.summary_24h.count || 0}</div>
-                  </div>
-                  <div className="rounded-md border p-3">
-                    <div className="text-xs text-muted-foreground">24h fees (NGN)</div>
-                    <div className="text-xl font-semibold">{formatNairaFromKobo(dashboard?.summary_24h.fees_kobo)}</div>
-                  </div>
-                  <div className="rounded-md border p-3">
-                    <div className="text-xs text-muted-foreground">24h value (NGN)</div>
-                    <div className="text-xl font-semibold">{formatNairaFromKobo(dashboard?.summary_24h.gross_kobo)}</div>
-                  </div>
-                  <div className="rounded-md border p-3">
-                    <div className="text-xs text-muted-foreground">24h payout (NGN)</div>
-                    <div className="text-xl font-semibold">{formatNairaFromKobo(dashboard?.summary_24h.net_payout_kobo)}</div>
-                  </div>
-                  <div className="rounded-md border p-3">
-                    <div className="text-xs text-muted-foreground">24h value (USDC)</div>
-                    <div className="text-xl font-semibold">{formatUsdcFromMicro(dashboard?.summary_24h.usdc?.gross_usdc_micro)}</div>
-                  </div>
-                  <div className="rounded-md border p-3">
-                    <div className="text-xs text-muted-foreground">24h payout (USDC)</div>
-                    <div className="text-xl font-semibold">{formatUsdcFromMicro(dashboard?.summary_24h.usdc?.net_payout_usdc_micro)}</div>
-                  </div>
+                  {methodTab === 'ngn' ? (
+                    <>
+                      <div className="rounded-md border p-3">
+                        <div className="text-xs text-muted-foreground">24h requests</div>
+                        <div className="text-xl font-semibold">{dashboard?.summary_24h.ngn?.count ?? dashboard?.summary_24h.count ?? 0}</div>
+                      </div>
+                      <div className="rounded-md border p-3">
+                        <div className="text-xs text-muted-foreground">24h fees (NGN)</div>
+                        <div className="text-xl font-semibold">{formatNairaFromKobo(dashboard?.summary_24h.fees_kobo)}</div>
+                      </div>
+                      <div className="rounded-md border p-3">
+                        <div className="text-xs text-muted-foreground">24h value (NGN)</div>
+                        <div className="text-xl font-semibold">{formatNairaFromKobo(dashboard?.summary_24h.gross_kobo)}</div>
+                      </div>
+                      <div className="rounded-md border p-3">
+                        <div className="text-xs text-muted-foreground">24h payout (NGN)</div>
+                        <div className="text-xl font-semibold">{formatNairaFromKobo(dashboard?.summary_24h.net_payout_kobo)}</div>
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <div className="rounded-md border p-3">
+                        <div className="text-xs text-muted-foreground">24h requests</div>
+                        <div className="text-xl font-semibold">{dashboard?.summary_24h.usdc?.count ?? 0}</div>
+                      </div>
+                      <div className="rounded-md border p-3">
+                        <div className="text-xs text-muted-foreground">24h fees (USDC)</div>
+                        <div className="text-xl font-semibold">{formatUsdcFromMicro(dashboard?.summary_24h.usdc?.fees_usdc_micro)}</div>
+                      </div>
+                      <div className="rounded-md border p-3">
+                        <div className="text-xs text-muted-foreground">24h value (USDC)</div>
+                        <div className="text-xl font-semibold">{formatUsdcFromMicro(dashboard?.summary_24h.usdc?.gross_usdc_micro)}</div>
+                      </div>
+                      <div className="rounded-md border p-3">
+                        <div className="text-xs text-muted-foreground">24h payout (USDC)</div>
+                        <div className="text-xl font-semibold">{formatUsdcFromMicro(dashboard?.summary_24h.usdc?.net_payout_usdc_micro)}</div>
+                      </div>
+                    </>
+                  )}
                 </div>
                 <div className="space-y-2">
                   {Object.entries(statusCounts).map(([status, count]) => (
@@ -1241,25 +1289,33 @@ const AdminDgRedemption: React.FC = () => {
                   <CardDescription>Read-only checks for configured Redeem DG providers.</CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-3">
-                  <div className="flex items-center justify-between rounded-md border p-3 text-sm">
-                    <span className="text-muted-foreground">Paystack balance API</span>
-                    <Badge variant={diagnostics.paystack_balance.status === 'error' ? 'destructive' : 'secondary'}>
-                      {diagnostics.paystack_balance.status}
-                    </Badge>
-                  </div>
-                  {diagnostics.paystack_balance.error && (
-                    <p className="text-sm text-destructive">{diagnostics.paystack_balance.error}</p>
+                  {methodTab === 'ngn' && (
+                    <>
+                      <div className="flex items-center justify-between rounded-md border p-3 text-sm">
+                        <span className="text-muted-foreground">Paystack balance API</span>
+                        <Badge variant={diagnostics.paystack_balance.status === 'error' ? 'destructive' : 'secondary'}>
+                          {diagnostics.paystack_balance.status}
+                        </Badge>
+                      </div>
+                      {diagnostics.paystack_balance.error && (
+                        <p className="text-sm text-destructive">{diagnostics.paystack_balance.error}</p>
+                      )}
+                    </>
                   )}
-                  {diagnostics.payout_wallet && (
-                    <div className="flex items-center justify-between rounded-md border p-3 text-sm">
-                      <span className="text-muted-foreground">USDC payout wallet</span>
-                      <Badge variant={diagnostics.payout_wallet.status === 'error' ? 'destructive' : 'secondary'}>
-                        {diagnostics.payout_wallet.status}
-                      </Badge>
-                    </div>
-                  )}
-                  {diagnostics.payout_wallet?.error && (
-                    <p className="text-sm text-destructive">{diagnostics.payout_wallet.error}</p>
+                  {methodTab === 'usdc' && (
+                    <>
+                      {diagnostics.payout_wallet && (
+                        <div className="flex items-center justify-between rounded-md border p-3 text-sm">
+                          <span className="text-muted-foreground">USDC payout wallet</span>
+                          <Badge variant={diagnostics.payout_wallet.status === 'error' ? 'destructive' : 'secondary'}>
+                            {diagnostics.payout_wallet.status}
+                          </Badge>
+                        </div>
+                      )}
+                      {diagnostics.payout_wallet?.error && (
+                        <p className="text-sm text-destructive">{formatPayoutWalletDiagnosticsError(diagnostics.payout_wallet.error)}</p>
+                      )}
+                    </>
                   )}
                   <div className="space-y-2">
                     {configuredDiagnostics.length === 0 && (
@@ -1285,7 +1341,7 @@ const AdminDgRedemption: React.FC = () => {
                         <div className="mt-2 break-all text-xs text-muted-foreground">
                           UP balance: {formatUpBalance(chain.vendor_up_balance_raw, chain.vendor_up_balance_decimals)}
                         </div>
-                        {chain.payout_wallet_usdc_micro !== null && chain.payout_wallet_usdc_micro !== undefined && (
+                        {methodTab === 'usdc' && chain.payout_wallet_usdc_micro !== null && chain.payout_wallet_usdc_micro !== undefined && (
                           <div className="mt-1 break-all text-xs text-muted-foreground">
                             Payout wallet USDC: {formatUsdcFromMicro(Number(chain.payout_wallet_usdc_micro))}
                           </div>

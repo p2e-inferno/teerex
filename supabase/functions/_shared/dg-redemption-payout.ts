@@ -24,6 +24,52 @@ const USDC_OPEN_INTENT_STATUSES = [
 
 const CONFIRMATION_WAIT_MS = 60_000;
 
+const SEND_LOCK_STALE_MS = 90_000;
+const SEND_LOCK_MAX_ATTEMPTS = 8;
+const SEND_LOCK_RETRY_DELAY_MS = 500;
+
+// Serializes the nonce-sensitive send section (nonce fetch, sign, persist, broadcast)
+// across concurrent sends from the shared payout wallet on one chain. Returning null
+// falls back to unserialized sends, which the persist-before-broadcast CAS guards
+// already keep safe from double-pay.
+async function acquirePayoutSendLock(supabase: any, chainId: number): Promise<string | null> {
+  const { error: seedError } = await supabase
+    .from("dg_payout_wallet_locks")
+    .upsert({ chain_id: chainId }, { onConflict: "chain_id", ignoreDuplicates: true });
+  if (seedError) {
+    console.warn("[dg-redemption-payout] send lock seed failed", seedError.message);
+    return null;
+  }
+
+  const lockId = crypto.randomUUID();
+  for (let attempt = 0; attempt < SEND_LOCK_MAX_ATTEMPTS; attempt += 1) {
+    const staleBefore = new Date(Date.now() - SEND_LOCK_STALE_MS).toISOString();
+    const { data, error } = await supabase
+      .from("dg_payout_wallet_locks")
+      .update({ lock_id: lockId, locked_at: new Date().toISOString() })
+      .eq("chain_id", chainId)
+      .or(`lock_id.is.null,locked_at.is.null,locked_at.lt.${staleBefore}`)
+      .select("chain_id")
+      .maybeSingle();
+    if (error) {
+      console.warn("[dg-redemption-payout] send lock acquire failed", error.message);
+      return null;
+    }
+    if (data) return lockId;
+    await new Promise((resolve) => setTimeout(resolve, SEND_LOCK_RETRY_DELAY_MS));
+  }
+  return null;
+}
+
+async function releasePayoutSendLock(supabase: any, chainId: number, lockId: string): Promise<void> {
+  const { error } = await supabase
+    .from("dg_payout_wallet_locks")
+    .update({ lock_id: null, locked_at: null })
+    .eq("chain_id", chainId)
+    .eq("lock_id", lockId);
+  if (error) console.warn("[dg-redemption-payout] send lock release failed", error.message);
+}
+
 export interface UsdcPayoutAvailability {
   payoutWalletAddress: string;
   usdcBalanceMicro: number;
@@ -49,7 +95,7 @@ export interface UsdcFeeTransferResult {
 
 export function getDgRedemptionPayoutWallet(network: NetworkConfig): Wallet {
   const key = getDgRedemptionPayoutPrivateKey();
-  if (!key) throw new Error("USDC payout wallet is not configured");
+  if (!key) throw new Error("USDC payout signer is not configured (set DG_REDEMPTION_PAYOUT_PRIVATE_KEY)");
   if (!network.rpc_url) throw new Error("RPC URL is not configured");
   return new Wallet(key, new JsonRpcProvider(network.rpc_url));
 }
@@ -590,78 +636,86 @@ export async function executeUsdcPayout(params: {
   }).catch(() => calldata) || calldata;
 
   for (let attempt = 0; attempt < 2; attempt += 1) {
-    const [nonce, feeData, gasEstimate] = await Promise.all([
-      provider.getTransactionCount(wallet.address, "pending"),
-      provider.getFeeData(),
-      provider.estimateGas({ from: wallet.address, to: tokenAddress, data: taggedData }),
-    ]);
-    const maxFeePerGas = (feeData.maxFeePerGas ?? feeData.gasPrice ?? ethers.parseUnits("1", "gwei")) * 2n;
-    const maxPriorityFeePerGas = feeData.maxPriorityFeePerGas ?? ethers.parseUnits("0.01", "gwei");
-
-    const signedRaw = await wallet.signTransaction({
-      type: 2,
-      chainId: params.network.chain_id,
-      to: tokenAddress,
-      data: taggedData,
-      value: 0n,
-      nonce,
-      gasLimit: (gasEstimate * 12n) / 10n,
-      maxFeePerGas,
-      maxPriorityFeePerGas: maxPriorityFeePerGas > maxFeePerGas ? maxFeePerGas : maxPriorityFeePerGas,
-    });
-    const txHash = ethers.Transaction.from(signedRaw).hash;
-    if (!txHash) throw new Error("Could not derive payout transaction hash");
-
-    // Persist before broadcasting: a crash after this point is recoverable by
-    // rebroadcasting the stored raw tx (same nonce, same hash, no double-pay).
-    const persisted = await lockedIntentUpdate(params.supabase, intent, params.lockId, {
-      status: "payout_processing",
-      payout_tx_hash: txHash,
-      payout_raw_tx: signedRaw,
-      last_error: null,
-    });
-    if (!persisted) {
-      return { status: "payout_processing", intent, txHash: null, error: "lock_lost" };
-    }
-    intent = persisted;
-    await recordPayoutEvent(params.supabase, intent, "usdc_payout_initiated", actorUserId, {
-      payout_tx_hash: txHash,
-      nonce,
-      amount_usdc_micro: netPayoutMicro,
-      destination: destination.toLowerCase(),
-    });
-
+    const sendLockId = await acquirePayoutSendLock(params.supabase, params.network.chain_id);
+    let txHash = "";
     try {
-      await provider.broadcastTransaction(signedRaw);
-    } catch (error) {
-      if (isAlreadyKnownBroadcastError(error)) {
-        // The tx is in the mempool; proceed to confirmation.
-      } else if (isNonceBroadcastError(error) && attempt === 0) {
-        const inFlight = await provider.getTransaction(txHash).catch(() => null);
-        if (!inFlight) {
-          const cleared = await lockedIntentUpdate(params.supabase, intent, params.lockId, {
-            payout_tx_hash: null,
-            payout_raw_tx: null,
-          });
-          if (!cleared) {
-            return { status: "payout_processing", intent, txHash: null, error: "lock_lost" };
-          }
-          intent = cleared;
-          continue;
-        }
-      } else {
-        return markPayoutManualReview({
-          supabase: params.supabase,
-          intent,
-          lockId: params.lockId,
-          actorUserId,
-          lastError: "usdc_payout_broadcast_failed",
-          metadata: {
-            payout_tx_hash: txHash,
-            error: error instanceof Error ? error.message : String(error),
-          },
-        });
+      const [nonce, feeData, gasEstimate] = await Promise.all([
+        provider.getTransactionCount(wallet.address, "pending"),
+        provider.getFeeData(),
+        provider.estimateGas({ from: wallet.address, to: tokenAddress, data: taggedData }),
+      ]);
+      const maxFeePerGas = (feeData.maxFeePerGas ?? feeData.gasPrice ?? ethers.parseUnits("1", "gwei")) * 2n;
+      const maxPriorityFeePerGas = feeData.maxPriorityFeePerGas ?? ethers.parseUnits("0.01", "gwei");
+
+      const signedRaw = await wallet.signTransaction({
+        type: 2,
+        chainId: params.network.chain_id,
+        to: tokenAddress,
+        data: taggedData,
+        value: 0n,
+        nonce,
+        gasLimit: (gasEstimate * 12n) / 10n,
+        maxFeePerGas,
+        maxPriorityFeePerGas: maxPriorityFeePerGas > maxFeePerGas ? maxFeePerGas : maxPriorityFeePerGas,
+      });
+      txHash = ethers.Transaction.from(signedRaw).hash || "";
+      if (!txHash) throw new Error("Could not derive payout transaction hash");
+
+      // Persist before broadcasting: a crash after this point is recoverable by
+      // rebroadcasting the stored raw tx (same nonce, same hash, no double-pay).
+      const persisted = await lockedIntentUpdate(params.supabase, intent, params.lockId, {
+        status: "payout_processing",
+        payout_tx_hash: txHash,
+        payout_raw_tx: signedRaw,
+        last_error: null,
+      });
+      if (!persisted) {
+        return { status: "payout_processing", intent, txHash: null, error: "lock_lost" };
       }
+      intent = persisted;
+      await recordPayoutEvent(params.supabase, intent, "usdc_payout_initiated", actorUserId, {
+        payout_tx_hash: txHash,
+        nonce,
+        amount_usdc_micro: netPayoutMicro,
+        destination: destination.toLowerCase(),
+      });
+
+      try {
+        await provider.broadcastTransaction(signedRaw);
+      } catch (error) {
+        if (isAlreadyKnownBroadcastError(error)) {
+          // The tx is in the mempool; proceed to confirmation.
+        } else if (isNonceBroadcastError(error) && attempt === 0) {
+          const inFlight = await provider.getTransaction(txHash).catch(() => null);
+          if (!inFlight) {
+            const cleared = await lockedIntentUpdate(params.supabase, intent, params.lockId, {
+              payout_tx_hash: null,
+              payout_raw_tx: null,
+            });
+            if (!cleared) {
+              return { status: "payout_processing", intent, txHash: null, error: "lock_lost" };
+            }
+            intent = cleared;
+            continue;
+          }
+        } else {
+          return markPayoutManualReview({
+            supabase: params.supabase,
+            intent,
+            lockId: params.lockId,
+            actorUserId,
+            lastError: "usdc_payout_broadcast_failed",
+            metadata: {
+              payout_tx_hash: txHash,
+              error: error instanceof Error ? error.message : String(error),
+            },
+          });
+        }
+      }
+    } finally {
+      // Confirmation waiting happens outside the send lock; only nonce assignment
+      // through broadcast needs serialization.
+      if (sendLockId) await releasePayoutSendLock(params.supabase, params.network.chain_id, sendLockId);
     }
 
     const receipt = await waitForPayoutReceipt(provider, txHash, requiredConfirmations);
@@ -1024,85 +1078,93 @@ export async function executeUsdcFeeTransfer(params: {
   }).catch(() => calldata) || calldata;
 
   for (let attempt = 0; attempt < 2; attempt += 1) {
-    const [nonce, feeData, gasEstimate] = await Promise.all([
-      provider.getTransactionCount(wallet.address, "pending"),
-      provider.getFeeData(),
-      provider.estimateGas({ from: wallet.address, to: tokenAddress, data: taggedData }),
-    ]);
-    const maxFeePerGas = (feeData.maxFeePerGas ?? feeData.gasPrice ?? ethers.parseUnits("1", "gwei")) * 2n;
-    const maxPriorityFeePerGas = feeData.maxPriorityFeePerGas ?? ethers.parseUnits("0.01", "gwei");
-
-    const signedRaw = await wallet.signTransaction({
-      type: 2,
-      chainId: params.network.chain_id,
-      to: tokenAddress,
-      data: taggedData,
-      value: 0n,
-      nonce,
-      gasLimit: (gasEstimate * 12n) / 10n,
-      maxFeePerGas,
-      maxPriorityFeePerGas: maxPriorityFeePerGas > maxFeePerGas ? maxFeePerGas : maxPriorityFeePerGas,
-    });
-    const txHash = ethers.Transaction.from(signedRaw).hash;
-    if (!txHash) throw new Error("Could not derive fee transfer transaction hash");
-
-    const persisted = await feeTransferUpdate(params.supabase, intent, {
-      fee_transfer_status: "processing",
-      fee_transfer_tx_hash: txHash,
-      fee_transfer_raw_tx: signedRaw,
-      fee_transfer_last_error: null,
-    }, {
-      lockId: params.lockId,
-      statuses: params.allowManualReviewRetry ? ["pending", "manual_review"] : ["pending"],
-      txHash: null,
-    });
-    if (!persisted) {
-      return { status: getUsdcFeeTransferStatus(intent), intent, txHash: null, error: "lock_lost" };
-    }
-    intent = persisted;
-    await recordPayoutEvent(params.supabase, intent, "usdc_fee_transfer_initiated", actorUserId, {
-      fee_transfer_tx_hash: txHash,
-      nonce,
-      amount_usdc_micro: amountMicro,
-      destination: destination.toLowerCase(),
-    });
-
+    const sendLockId = await acquirePayoutSendLock(params.supabase, params.network.chain_id);
+    let txHash = "";
     try {
-      await provider.broadcastTransaction(signedRaw);
-    } catch (error) {
-      if (isAlreadyKnownBroadcastError(error)) {
-        // The tx is in the mempool; proceed to confirmation.
-      } else if (isNonceBroadcastError(error) && attempt === 0) {
-        const inFlight = await provider.getTransaction(txHash).catch(() => null);
-        if (!inFlight) {
-          const cleared = await feeTransferUpdate(params.supabase, intent, {
-            fee_transfer_status: "pending",
-            fee_transfer_tx_hash: null,
-            fee_transfer_raw_tx: null,
-          }, {
+      const [nonce, feeData, gasEstimate] = await Promise.all([
+        provider.getTransactionCount(wallet.address, "pending"),
+        provider.getFeeData(),
+        provider.estimateGas({ from: wallet.address, to: tokenAddress, data: taggedData }),
+      ]);
+      const maxFeePerGas = (feeData.maxFeePerGas ?? feeData.gasPrice ?? ethers.parseUnits("1", "gwei")) * 2n;
+      const maxPriorityFeePerGas = feeData.maxPriorityFeePerGas ?? ethers.parseUnits("0.01", "gwei");
+
+      const signedRaw = await wallet.signTransaction({
+        type: 2,
+        chainId: params.network.chain_id,
+        to: tokenAddress,
+        data: taggedData,
+        value: 0n,
+        nonce,
+        gasLimit: (gasEstimate * 12n) / 10n,
+        maxFeePerGas,
+        maxPriorityFeePerGas: maxPriorityFeePerGas > maxFeePerGas ? maxFeePerGas : maxPriorityFeePerGas,
+      });
+      txHash = ethers.Transaction.from(signedRaw).hash || "";
+      if (!txHash) throw new Error("Could not derive fee transfer transaction hash");
+
+      const persisted = await feeTransferUpdate(params.supabase, intent, {
+        fee_transfer_status: "processing",
+        fee_transfer_tx_hash: txHash,
+        fee_transfer_raw_tx: signedRaw,
+        fee_transfer_last_error: null,
+      }, {
+        lockId: params.lockId,
+        statuses: params.allowManualReviewRetry ? ["pending", "manual_review"] : ["pending"],
+        txHash: null,
+      });
+      if (!persisted) {
+        return { status: getUsdcFeeTransferStatus(intent), intent, txHash: null, error: "lock_lost" };
+      }
+      intent = persisted;
+      await recordPayoutEvent(params.supabase, intent, "usdc_fee_transfer_initiated", actorUserId, {
+        fee_transfer_tx_hash: txHash,
+        nonce,
+        amount_usdc_micro: amountMicro,
+        destination: destination.toLowerCase(),
+      });
+
+      try {
+        await provider.broadcastTransaction(signedRaw);
+      } catch (error) {
+        if (isAlreadyKnownBroadcastError(error)) {
+          // The tx is in the mempool; proceed to confirmation.
+        } else if (isNonceBroadcastError(error) && attempt === 0) {
+          const inFlight = await provider.getTransaction(txHash).catch(() => null);
+          if (!inFlight) {
+            const cleared = await feeTransferUpdate(params.supabase, intent, {
+              fee_transfer_status: "pending",
+              fee_transfer_tx_hash: null,
+              fee_transfer_raw_tx: null,
+            }, {
+              lockId: params.lockId,
+              txHash,
+            });
+            if (!cleared) {
+              return { status: "processing", intent, txHash, error: "lock_lost" };
+            }
+            intent = cleared;
+            continue;
+          }
+        } else {
+          return markFeeTransferManualReview({
+            supabase: params.supabase,
+            intent,
             lockId: params.lockId,
+            actorUserId,
+            lastError: "usdc_fee_transfer_broadcast_failed",
+            metadata: {
+              fee_transfer_tx_hash: txHash,
+              error: error instanceof Error ? error.message : String(error),
+            },
             txHash,
           });
-          if (!cleared) {
-            return { status: "processing", intent, txHash, error: "lock_lost" };
-          }
-          intent = cleared;
-          continue;
         }
-      } else {
-        return markFeeTransferManualReview({
-          supabase: params.supabase,
-          intent,
-          lockId: params.lockId,
-          actorUserId,
-          lastError: "usdc_fee_transfer_broadcast_failed",
-          metadata: {
-            fee_transfer_tx_hash: txHash,
-            error: error instanceof Error ? error.message : String(error),
-          },
-          txHash,
-        });
       }
+    } finally {
+      // Confirmation waiting happens outside the send lock; only nonce assignment
+      // through broadcast needs serialization.
+      if (sendLockId) await releasePayoutSendLock(params.supabase, params.network.chain_id, sendLockId);
     }
 
     const receipt = await waitForPayoutReceipt(provider, txHash, requiredConfirmations);

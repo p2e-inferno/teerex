@@ -420,6 +420,24 @@ export type Database = {
         }
         Relationships: []
       }
+      dg_payout_wallet_locks: {
+        Row: {
+          chain_id: number
+          lock_id: string | null
+          locked_at: string | null
+        }
+        Insert: {
+          chain_id: number
+          lock_id?: string | null
+          locked_at?: string | null
+        }
+        Update: {
+          chain_id?: number
+          lock_id?: string | null
+          locked_at?: string | null
+        }
+        Relationships: []
+      }
       dg_redemption_events: {
         Row: {
           actor_user_id: string | null
@@ -3285,6 +3303,7 @@ export type Database = {
           p_payout_snapshot: Json
           p_payout_token_address?: string
           p_payout_wallet_address?: string
+          p_payout_wallet_balance_usdc_micro?: number
           p_paystack_reference: string
           p_platform_daily_limit_kobo: number
           p_platform_daily_limit_usdc_micro?: number

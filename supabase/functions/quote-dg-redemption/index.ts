@@ -39,6 +39,9 @@ function friendlyError(message: string): string {
   if (message.includes("platform_daily_limit_exceeded")) {
     return "Redeem DG daily platform limit has been reached";
   }
+  if (message.includes("payout_wallet_liquidity_exceeded")) {
+    return "Redeem DG amount is above current payout availability";
+  }
   return message;
 }
 
@@ -360,6 +363,9 @@ serve(async (req) => {
         p_net_payout_usdc_micro: fees.netPayoutUsdcMicro,
         p_user_daily_limit_usdc_micro: config.usdc.limits.per_user_daily_usdc_micro,
         p_platform_daily_limit_usdc_micro: config.usdc.limits.platform_daily_usdc_micro,
+        // Null when the balance cap is disabled; the RPC re-checks committed liquidity
+        // under its advisory lock so concurrent quotes cannot both pass the cap.
+        p_payout_wallet_balance_usdc_micro: payoutWalletBalanceMicro,
       });
 
       if (intentError) throw new Error(friendlyError(intentError.message));
@@ -621,6 +627,8 @@ serve(async (req) => {
       : lower.includes("not available") || lower.includes("invalid") || lower.includes("minimum") || lower.includes("maximum") ||
           lower.includes("save your") || lower.includes("must be linked")
       ? 400
+      : lower.includes("availability")
+      ? 409
       : 500;
     return json({ ok: false, error: message }, status);
   }
