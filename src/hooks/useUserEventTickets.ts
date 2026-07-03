@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useMemo } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 
 /**
@@ -16,24 +16,30 @@ export function useUserEventTickets(
   const [ownedEventIds, setOwnedEventIds] = useState<Set<string>>(new Set());
 
   // Stringify addresses and IDs for stable dependency comparison
-  const addressesKey = JSON.stringify(userAddresses.map(a => a.toLowerCase()).sort());
-  const eventIdsKey = JSON.stringify([...eventIds].sort());
+  const addressesKey = useMemo(
+    () => JSON.stringify(userAddresses.map(a => a.toLowerCase()).sort()),
+    [userAddresses]
+  );
+  const eventIdsKey = useMemo(
+    () => JSON.stringify([...eventIds].sort()),
+    [eventIds]
+  );
+  const normalizedUserAddresses = useMemo(() => JSON.parse(addressesKey) as string[], [addressesKey]);
+  const normalizedEventIds = useMemo(() => JSON.parse(eventIdsKey) as string[], [eventIdsKey]);
 
   // Fetch user's tickets for specified events
   const fetchUserTickets = useCallback(async () => {
-    if (!userAddresses.length || !eventIds.length) {
+    if (!normalizedUserAddresses.length || !normalizedEventIds.length) {
       setOwnedEventIds(new Set());
       return;
     }
 
     try {
-      const lowercasedAddresses = userAddresses.map((addr) => addr.toLowerCase());
-
       const { data, error } = await supabase
         .from('tickets')
         .select('event_id')
-        .in('event_id', eventIds)
-        .in('owner_wallet', lowercasedAddresses);
+        .in('event_id', normalizedEventIds)
+        .in('owner_wallet', normalizedUserAddresses);
 
       if (error) throw error;
 
@@ -43,7 +49,7 @@ export function useUserEventTickets(
       console.error('Failed to fetch user tickets:', error);
       setOwnedEventIds(new Set());
     }
-  }, [addressesKey, eventIdsKey]);
+  }, [normalizedEventIds, normalizedUserAddresses]);
 
   // Initial fetch
   useEffect(() => {
@@ -52,7 +58,7 @@ export function useUserEventTickets(
 
   // Subscribe to real-time ticket changes
   useEffect(() => {
-    if (!userAddresses.length || !eventIds.length) return;
+    if (!normalizedUserAddresses.length || !normalizedEventIds.length) return;
 
     const channel = supabase
       .channel('user-event-tickets')
@@ -71,8 +77,8 @@ export function useUserEventTickets(
           // Only update if this ticket belongs to one of our events and user
           if (
             eventId &&
-            eventIds.includes(eventId) &&
-            userAddresses.some((addr) => addr.toLowerCase() === ownerWallet)
+            normalizedEventIds.includes(eventId) &&
+            normalizedUserAddresses.includes(ownerWallet)
           ) {
             // Refetch to get accurate ownership state
             fetchUserTickets();
@@ -84,7 +90,7 @@ export function useUserEventTickets(
     return () => {
       channel.unsubscribe();
     };
-  }, [addressesKey, eventIdsKey, fetchUserTickets]);
+  }, [fetchUserTickets, normalizedEventIds, normalizedUserAddresses]);
 
   return ownedEventIds;
 }

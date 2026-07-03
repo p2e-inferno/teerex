@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   Dialog,
   DialogContent,
@@ -93,23 +93,16 @@ export const AllowListManager: React.FC<AllowListManagerProps> = ({ event, isOpe
   const [requestsLoading, setRequestsLoading] = useState(false);
   const { getAccessToken } = usePrivy();
 
-  const callManageAllowList = async (payload: ManageAllowListPayload) => {
+  const callManageAllowList = useCallback(async (payload: ManageAllowListPayload) => {
     const accessToken = await getAccessToken();
     if (!accessToken) {
       throw new Error('Authentication required to manage allow list');
     }
 
     return callEdgeFunction<any>('manage-allow-list', payload as Record<string, unknown>, { privyToken: accessToken });
-  };
+  }, [getAccessToken]);
 
-  useEffect(() => {
-    if (isOpen && event) {
-      loadAllowList();
-      loadRequests();
-    }
-  }, [isOpen, event]);
-
-  const loadAllowList = async () => {
+  const loadAllowList = useCallback(async () => {
     if (!event) return;
 
     setIsLoading(true);
@@ -129,7 +122,7 @@ export const AllowListManager: React.FC<AllowListManagerProps> = ({ event, isOpe
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [callManageAllowList, event, toast]);
 
   const addAddress = async () => {
     if (!event || !newAddress) return;
@@ -280,7 +273,7 @@ export const AllowListManager: React.FC<AllowListManagerProps> = ({ event, isOpe
     }
   };
 
-  const loadRequests = async () => {
+  const loadRequests = useCallback(async () => {
     if (!event) return;
 
     setRequestsLoading(true);
@@ -303,7 +296,14 @@ export const AllowListManager: React.FC<AllowListManagerProps> = ({ event, isOpe
     } finally {
       setRequestsLoading(false);
     }
-  };
+  }, [callManageAllowList, event, toast]);
+
+  useEffect(() => {
+    if (isOpen && event) {
+      loadAllowList();
+      loadRequests();
+    }
+  }, [event, isOpen, loadAllowList, loadRequests]);
 
   const approveRequest = async (requestId: string) => {
     if (!event) return;

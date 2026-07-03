@@ -169,7 +169,10 @@ export const TicketSettings: React.FC<TicketSettingsProps> = ({
   }, [formData.refundProtectionEnabled, hasRefundManager, isPaidCrypto, updateFormData]);
 
   // Fetch token metadata for all available tokens on current chain
-  const availableTokens = currentChainId ? getAvailableTokens(currentChainId) : ['ETH'];
+  const availableTokens = useMemo(
+    () => currentChainId ? getAvailableTokens(currentChainId) : ['ETH'],
+    [currentChainId, getAvailableTokens]
+  );
   const tokenAddresses = useMemo(() => {
     if (!currentChainId) return [];
     return availableTokens
@@ -363,8 +366,9 @@ export const TicketSettings: React.FC<TicketSettingsProps> = ({
       setReserveBondPreviewError(error instanceof Error ? error.message : 'Failed to estimate reserve bond.');
       updateFormData({ refundReserveBond: null } as any);
     } finally {
-      if (requestId !== reserveBondPreviewRequestIdRef.current) return;
-      setReserveBondPreviewLoading(false);
+      if (requestId === reserveBondPreviewRequestIdRef.current) {
+        setReserveBondPreviewLoading(false);
+      }
     }
   }, [
     clearReserveBondPreview,
@@ -391,6 +395,8 @@ export const TicketSettings: React.FC<TicketSettingsProps> = ({
     currentChainId,
     formData.capacity,
     formData.currency,
+    formData.price,
+    formData.refundMinAttendees,
     formData.refundProtectionEnabled,
     hasRefundManager,
     isPaidCrypto,

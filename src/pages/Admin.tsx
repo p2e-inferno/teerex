@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -60,7 +60,7 @@ const Admin: React.FC = () => {
     revocable: true
   });
 
-  const predefinedSchemas = [
+  const predefinedSchemas = useMemo(() => [
     {
       name: 'TeeRex Event Going v1',
       description: 'Declaration of intent to attend a TeeRex event',
@@ -85,7 +85,7 @@ const Admin: React.FC = () => {
       category: 'purchase',
       schemaDefinition: 'string eventId, address lockAddress, string eventTitle, uint256 tokenId, uint256 price, uint256 timestamp, string platform'
     }
-  ];
+  ], []);
 
   useEffect(() => {
     fetchSchemas();
@@ -104,7 +104,7 @@ const Admin: React.FC = () => {
     checkAdmin();
   }, [getAccessToken]);
 
-  const checkPredefinedSchemas = async () => {
+  const checkPredefinedSchemas = useCallback(async () => {
     if (!wallet) return;
     
     setCheckingSchemas(true);
@@ -127,13 +127,13 @@ const Admin: React.FC = () => {
     } finally {
       setCheckingSchemas(false);
     }
-  };
+  }, [predefinedSchemas, wallet]);
 
   useEffect(() => {
     if (wallet && user) {
       checkPredefinedSchemas();
     }
-  }, [wallet, user]);
+  }, [checkPredefinedSchemas, user, wallet]);
 
   const fetchSchemas = async () => {
     try {

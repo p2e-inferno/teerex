@@ -4,11 +4,20 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.50.0";
 import { corsHeaders, buildPreflightHeaders } from "../_shared/cors.ts";
 import { SUPABASE_SERVICE_ROLE_KEY, SUPABASE_URL } from "../_shared/constants.ts";
 import { verifyPrivyToken } from "../_shared/privy.ts";
+import { validateChain } from "../_shared/network-helpers.ts";
 import {
+  loadDgRedemptionConfig,
   normalizeValidatedDgRedemptionFailure,
   publicDgRedemptionIntentWithAdminNotify,
   reconcileDgRedemptionPaystackTransfer,
 } from "../_shared/dg-redemption.ts";
+import {
+  canReconcileUsdcFeeTransfer,
+  canReconcileUsdcPayout,
+  reconcileUsdcFeeTransfer,
+  reconcileUsdcPayout,
+} from "../_shared/dg-redemption-payout.ts";
+import { alertIfNewlyManualReview } from "../_shared/dg-redemption-notify.ts";
 
 function json(payload: Record<string, unknown>, status = 200): Response {
   return new Response(JSON.stringify(payload), {
@@ -51,7 +60,48 @@ serve(async (req) => {
     if (!data) return json({ ok: false, error: "Redeem DG request was not found" }, 404);
 
     const normalized = await normalizeValidatedDgRedemptionFailure(supabase, data);
-    const redemption = await reconcilePaystackTransfer(supabase, normalized);
+    let redemption = await reconcilePaystackTransfer(supabase, normalized);
+    // Compare against the raw row so normalize-driven failed -> manual_review flips also alert.
+    await alertIfNewlyManualReview({
+      supabase,
+      before: data,
+      after: redemption,
+      reason: redemption.last_error || "paystack_transfer_failed",
+      actorUserId: userId,
+      logPrefix: "get-dg-redemption-status",
+    });
+    if (canReconcileUsdcPayout(redemption)) {
+      const [config, network] = await Promise.all([
+        loadDgRedemptionConfig(supabase),
+        validateChain(supabase, redemption.chain_id),
+      ]);
+      if (network) {
+        redemption = await reconcileUsdcPayout({
+          supabase,
+          intent: redemption,
+          network,
+          requiredConfirmations: config.required_confirmations,
+          actorUserId: userId,
+          logPrefix: "get-dg-redemption-status",
+        });
+      }
+    }
+    if (canReconcileUsdcFeeTransfer(redemption)) {
+      const [config, network] = await Promise.all([
+        loadDgRedemptionConfig(supabase),
+        validateChain(supabase, redemption.chain_id),
+      ]);
+      if (network) {
+        redemption = await reconcileUsdcFeeTransfer({
+          supabase,
+          intent: redemption,
+          network,
+          requiredConfirmations: config.required_confirmations,
+          actorUserId: userId,
+          logPrefix: "get-dg-redemption-status",
+        });
+      }
+    }
 
     return json({ ok: true, redemption: await publicDgRedemptionIntentWithAdminNotify(supabase, redemption) });
   } catch (error) {

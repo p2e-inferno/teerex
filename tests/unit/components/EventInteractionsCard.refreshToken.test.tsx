@@ -64,7 +64,6 @@ describe("EventInteractionsCard (refreshToken)", () => {
         creatorAddress="0xcreator"
         creatorId="creator-id"
         chainId={8453}
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         {...({ refreshToken: 0 } as any)}
       />
     );
@@ -83,7 +82,6 @@ describe("EventInteractionsCard (refreshToken)", () => {
         creatorId="creator-id"
         chainId={8453}
         // refreshToken is introduced by the upcoming implementation
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         {...({ refreshToken: 0 } as any)}
       />
     );
@@ -99,7 +97,6 @@ describe("EventInteractionsCard (refreshToken)", () => {
         creatorAddress="0xcreator"
         creatorId="creator-id"
         chainId={8453}
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         {...({ refreshToken: 1 } as any)}
       />
     );
@@ -116,7 +113,6 @@ describe("EventInteractionsCard (refreshToken)", () => {
         creatorAddress="0xcreator"
         creatorId="creator-id"
         chainId={8453}
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         {...({ refreshToken: 1 } as any)}
       />
     );
@@ -132,7 +128,6 @@ describe("EventInteractionsCard (refreshToken)", () => {
         creatorAddress="0xcreator"
         creatorId="creator-id"
         chainId={8453}
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         {...({ refreshToken: 1 } as any)}
       />
     );
@@ -150,7 +145,6 @@ describe("EventInteractionsCard (refreshToken)", () => {
         creatorAddress="0xcreator"
         creatorId="creator-id"
         chainId={8453}
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         {...({ refreshToken: 0 } as any)}
       />
     );
@@ -166,7 +160,6 @@ describe("EventInteractionsCard (refreshToken)", () => {
         creatorAddress="0xcreator"
         creatorId="creator-id"
         chainId={8453}
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         {...({ refreshToken: 1 } as any)}
       />
     );
@@ -182,7 +175,6 @@ describe("EventInteractionsCard (refreshToken)", () => {
         creatorAddress="0xcreator"
         creatorId="creator-id"
         chainId={8453}
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         {...({ refreshToken: 2 } as any)}
       />
     );

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -104,15 +104,6 @@ export const EventAttestationCard: React.FC<EventAttestationCardProps & {
   // Track if this is the initial mount to avoid refetching on first render
   const isInitialMountRef = useRef(true);
 
-  // Reload stats when refreshToken changes (but not on initial mount)
-  useEffect(() => {
-    if (isInitialMountRef.current) {
-      isInitialMountRef.current = false;
-      return;
-    }
-    loadStats();
-  }, [refreshToken]);
-
   // Calculate event timing - handle both ISO and regular date formats
   const eventDateTime = React.useMemo(() => {
     if (startsAt) return new Date(startsAt);
@@ -186,7 +177,7 @@ export const EventAttestationCard: React.FC<EventAttestationCardProps & {
   }, [attendanceSchemaUid]);
 
   // Load attestation statistics
-  const loadStats = async () => {
+  const loadStats = useCallback(async () => {
     if (!eventId) return;
     
     setIsLoadingStats(true);
@@ -311,25 +302,40 @@ export const EventAttestationCard: React.FC<EventAttestationCardProps & {
       const uniqueAttended = new Set((attendedData || []).map((a: any) => a.recipient)).size;
       const attendedCount = uniqueAttended;
 
-      setStats({
+      setStats(prev => ({
         goingCount: eventHasEnded ? 0 : goingCount,
         attendedCount: eventHasEnded ? attendedCount : 0,
         userGoingStatus: userGoing,
         userAttendedStatus: userAttended,
         totalChallenges: challengesCount,
-        userReputation: stats.userReputation
-      });
+        userReputation: prev.userReputation
+      }));
 
     } catch (error) {
       console.error('Error loading attestation stats:', error);
     } finally {
       setIsLoadingStats(false);
     }
-  };
+  }, [attendanceSchemaUid, chainId, eventHasEnded, eventId, goingSchemaUid, wallet?.address]);
+
+  const loadStatsRef = useRef(loadStats);
+
+  useEffect(() => {
+    loadStatsRef.current = loadStats;
+  }, [loadStats]);
+
+  // Reload stats when refreshToken changes (but not on initial mount)
+  useEffect(() => {
+    if (isInitialMountRef.current) {
+      isInitialMountRef.current = false;
+      return;
+    }
+    loadStatsRef.current();
+  }, [refreshToken]);
 
   useEffect(() => {
     loadStats();
-  }, [eventId, wallet?.address, attendanceSchemaUid, goingSchemaUid, eventHasEnded]);
+  }, [loadStats]);
 
   const handleDeclareGoing = async () => {
     if (!wallet?.address || !isValidSchemaUid(goingSchemaUid) || !goingSchemaDef) return;

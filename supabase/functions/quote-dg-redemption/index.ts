@@ -10,16 +10,20 @@ import { getPaystackBalances } from "../_shared/paystack.ts";
 import {
   assertRedemptionEnabled,
   calculateFees,
+  calculateUsdcFees,
+  type DgRedemptionPayoutMethod,
   getNgnBalanceKobo,
   getRedemptionWallet,
   getVendorRedemptionQuote,
   loadDgRedemptionConfig,
   parseReferenceId,
   priceDgRedemptionAmounts,
+  priceDgRedemptionAmountsUsdc,
   publicPayoutAccount,
   validateAmountAgainstConfig,
   withRedemptionPricingDefaults,
 } from "../_shared/dg-redemption.ts";
+import { getUsdcPayoutAvailability, requireUsdcTokenAddress } from "../_shared/dg-redemption-payout.ts";
 
 function json(payload: Record<string, unknown>, status = 200): Response {
   return new Response(JSON.stringify(payload), {
@@ -35,11 +39,15 @@ function friendlyError(message: string): string {
   if (message.includes("platform_daily_limit_exceeded")) {
     return "Redeem DG daily platform limit has been reached";
   }
+  if (message.includes("payout_wallet_liquidity_exceeded")) {
+    return "Redeem DG amount is above current payout availability";
+  }
   return message;
 }
 
 type DailyUsageRow = {
-  gross_ngn_kobo: number | string | null;
+  gross_ngn_kobo?: number | string | null;
+  gross_usdc_micro?: number | string | null;
   status: string | null;
   expires_at: string | null;
 };
@@ -56,11 +64,42 @@ function countsTowardDailyLimit(row: Pick<DailyUsageRow, "status" | "expires_at"
   return true;
 }
 
-function sumActiveGrossKobo(rows: DailyUsageRow[] | null | undefined): number {
+function sumActiveGross(rows: DailyUsageRow[] | null | undefined, field: "gross_ngn_kobo" | "gross_usdc_micro"): number {
   const nowMs = Date.now();
   return (rows || [])
     .filter((row) => countsTowardDailyLimit(row, nowMs))
-    .reduce((total, row) => total + Number(row.gross_ngn_kobo || 0), 0);
+    .reduce((total, row) => total + Number(row[field] || 0), 0);
+}
+
+async function fetchDailyUsage(params: {
+  supabase: any;
+  payoutMethod: DgRedemptionPayoutMethod;
+  userId: string;
+  userLimit: number;
+  platformLimit: number;
+}): Promise<{ userUsed: number; platformUsed: number }> {
+  const field = params.payoutMethod === "usdc" ? "gross_usdc_micro" : "gross_ngn_kobo";
+  const dayStart = new Date();
+  dayStart.setUTCHours(0, 0, 0, 0);
+  const baseQuery = () =>
+    params.supabase
+      .from("dg_redemption_intents")
+      .select(`${field},status,expires_at`)
+      .eq("payout_method", params.payoutMethod)
+      .gte("created_at", dayStart.toISOString())
+      .not("status", "in", "(expired,cancelled,failed)");
+
+  const [userUsage, platformUsage] = await Promise.all([
+    params.userLimit > 0 ? baseQuery().eq("user_id", params.userId) : Promise.resolve({ data: [], error: null }),
+    params.platformLimit > 0 ? baseQuery() : Promise.resolve({ data: [], error: null }),
+  ]);
+  if (userUsage.error) throw new Error(userUsage.error.message);
+  if (platformUsage.error) throw new Error(platformUsage.error.message);
+
+  return {
+    userUsed: sumActiveGross(userUsage.data as DailyUsageRow[], field),
+    platformUsed: sumActiveGross(platformUsage.data as DailyUsageRow[], field),
+  };
 }
 
 serve(async (req) => {
@@ -78,6 +117,8 @@ serve(async (req) => {
     const chainId = Number(body.chain_id ?? body.chainId);
     const amountDg = String(body.amount_dg ?? body.amountDg ?? "").trim();
     const previewOnly = Boolean(body.preview_only ?? body.previewOnly ?? false);
+    const payoutMethod: DgRedemptionPayoutMethod =
+      String(body.payout_method ?? body.payoutMethod ?? "ngn") === "usdc" ? "usdc" : "ngn";
     const walletAddress = await validateUserWallet(userId, String(body.wallet_address || body.walletAddress || ""));
 
     if (!Number.isInteger(chainId) || chainId <= 0) {
@@ -94,8 +135,248 @@ serve(async (req) => {
       return json({ ok: false, error: "Network not found or inactive" }, 404);
     }
 
-    assertRedemptionEnabled(config, chainId);
+    assertRedemptionEnabled(config, chainId, payoutMethod);
     validateAmountAgainstConfig({ amountDg, config });
+
+    const pricingNetwork = withRedemptionPricingDefaults(network);
+    const redemptionWallet = getRedemptionWallet(config, chainId);
+
+    if (payoutMethod === "usdc") {
+      const requestedPayoutWallet = String(
+        body.payout_wallet_address || body.payoutWalletAddress || walletAddress,
+      );
+      const payoutWalletAddress = await validateUserWallet(
+        userId,
+        requestedPayoutWallet,
+        "The payout wallet must be linked to your account",
+      );
+      const usdcTokenAddress = requireUsdcTokenAddress(pricingNetwork);
+
+      const vendorQuote = await getVendorRedemptionQuote({
+        network: pricingNetwork,
+        walletAddress,
+        amountDg,
+        enforceWalletBalance: false,
+      });
+
+      const pricing = await priceDgRedemptionAmountsUsdc(
+        pricingNetwork,
+        {
+          gross: vendorQuote.amountDgRaw,
+          after_vendor: vendorQuote.netDgRaw,
+        },
+        vendorQuote.dgDecimals,
+      );
+      const preVendorValueUsdcMicro = pricing.amounts.gross;
+      const grossValueUsdcMicro = pricing.amounts.after_vendor;
+      const vendorFeeUsdcMicro = Math.max(preVendorValueUsdcMicro - grossValueUsdcMicro, 0);
+      const fees = calculateUsdcFees({
+        grossValueUsdcMicro,
+        vendorFeeUsdcMicro,
+        config,
+      });
+
+      const baseUnavailablePayload = {
+        ok: true,
+        can_redeem: false,
+        payout_wallet_address: payoutWalletAddress,
+        quote: {
+          payout_method: payoutMethod,
+          amount_dg: amountDg,
+          pre_vendor_value_usdc_micro: preVendorValueUsdcMicro,
+          gross_value_usdc_micro: grossValueUsdcMicro,
+          estimated_receive_usdc_micro: fees.netPayoutUsdcMicro,
+          service_fee_usdc_micro: fees.serviceFeeUsdcMicro,
+          vendor_fee_usdc_micro: vendorFeeUsdcMicro,
+          total_fee_usdc_micro: fees.totalFeeUsdcMicro,
+        },
+      };
+
+      if (vendorQuote.amountDgRaw > vendorQuote.dgBalanceRaw) {
+        return json({
+          ...baseUnavailablePayload,
+          error: "Your DG balance is not enough for this redemption",
+          max_redeemable: {
+            amount_dg: ethers.formatUnits(vendorQuote.dgBalanceRaw, vendorQuote.dgDecimals),
+            reason: "wallet_balance",
+          },
+        });
+      }
+
+      if (vendorQuote.liquidityExceeded) {
+        const feeDenominator = BigInt(Math.max(10_000 - vendorQuote.sellFeeBps, 1));
+        const maxDgRaw = (vendorQuote.upBalanceRaw * vendorQuote.exchangeRate * 10_000n) / feeDenominator;
+        return json({
+          ...baseUnavailablePayload,
+          error: "Redeem DG amount is above current platform liquidity",
+          max_redeemable: {
+            amount_dg: ethers.formatUnits(maxDgRaw, vendorQuote.dgDecimals),
+            reason: "platform_liquidity",
+          },
+        });
+      }
+
+      if (config.usdc.limits.min_gross_usdc_micro > 0 && grossValueUsdcMicro < config.usdc.limits.min_gross_usdc_micro) {
+        return json({
+          ...baseUnavailablePayload,
+          error: "Redeem DG amount is below the current minimum payout value",
+          minimum_gross_value_usdc_micro: config.usdc.limits.min_gross_usdc_micro,
+        });
+      }
+
+      const usage = await fetchDailyUsage({
+        supabase,
+        payoutMethod,
+        userId,
+        userLimit: config.usdc.limits.per_user_daily_usdc_micro,
+        platformLimit: config.usdc.limits.platform_daily_usdc_micro,
+      });
+      const userDailyLeftMicro = config.usdc.limits.per_user_daily_usdc_micro > 0
+        ? Math.max(config.usdc.limits.per_user_daily_usdc_micro - usage.userUsed, 0)
+        : null;
+      if (userDailyLeftMicro !== null && grossValueUsdcMicro > userDailyLeftMicro) {
+        return json({
+          ...baseUnavailablePayload,
+          error: "You have reached today's Redeem DG limit",
+          max_redeemable: {
+            gross_value_usdc_micro: userDailyLeftMicro,
+            reason: "user_daily_limit",
+          },
+        });
+      }
+      const platformDailyLeftMicro = config.usdc.limits.platform_daily_usdc_micro > 0
+        ? Math.max(config.usdc.limits.platform_daily_usdc_micro - usage.platformUsed, 0)
+        : null;
+      if (platformDailyLeftMicro !== null && grossValueUsdcMicro > platformDailyLeftMicro) {
+        return json({
+          ...baseUnavailablePayload,
+          error: "Redeem DG daily platform limit has been reached",
+          max_redeemable: {
+            gross_value_usdc_micro: platformDailyLeftMicro,
+            reason: "platform_daily_limit",
+          },
+        });
+      }
+
+      let payoutWalletBalanceMicro: number | null = null;
+      if (config.usdc.balance_cap_enabled) {
+        const availability = await getUsdcPayoutAvailability({ supabase, network: pricingNetwork });
+        payoutWalletBalanceMicro = availability.usdcBalanceMicro;
+        const requiredWalletMicro = fees.netPayoutUsdcMicro + fees.serviceFeeUsdcMicro;
+        if (requiredWalletMicro > availability.availableMicro) {
+          return json({
+            ...baseUnavailablePayload,
+            error: "Redeem DG amount is above current payout availability",
+            max_redeemable: {
+              net_payout_usdc_micro: Math.max(availability.availableMicro - fees.serviceFeeUsdcMicro, 0),
+              reason: "payout_wallet_balance",
+            },
+          });
+        }
+      }
+
+      if (fees.netPayoutUsdcMicro <= 0) {
+        return json({ ok: false, error: "Redeem DG amount is too small after fees" }, 400);
+      }
+
+      const quotePayload = {
+        payout_method: payoutMethod,
+        chain_id: chainId,
+        redemption_wallet_address: redemptionWallet,
+        payout_wallet_address: payoutWalletAddress,
+        amount_dg: amountDg,
+        amount_dg_raw: vendorQuote.amountDgRaw.toString(),
+        pre_vendor_value_usdc_micro: preVendorValueUsdcMicro,
+        gross_value_usdc_micro: grossValueUsdcMicro,
+        estimated_receive_usdc_micro: fees.netPayoutUsdcMicro,
+        service_fee_usdc_micro: fees.serviceFeeUsdcMicro,
+        vendor_fee_usdc_micro: vendorFeeUsdcMicro,
+        total_fee_usdc_micro: fees.totalFeeUsdcMicro,
+        vendor_conversion_fee_bps: vendorQuote.sellFeeBps,
+        required_confirmations: config.required_confirmations,
+      };
+
+      if (previewOnly) {
+        return json({
+          ok: true,
+          can_redeem: true,
+          payout_wallet_address: payoutWalletAddress,
+          quote: { intent_id: null, expires_at: null, ...quotePayload },
+        });
+      }
+
+      const expiresAt = new Date(Date.now() + config.quote_ttl_seconds * 1000).toISOString();
+      const { data: intent, error: intentError } = await supabase.rpc("create_dg_redemption_intent", {
+        p_user_id: userId,
+        p_wallet_address: walletAddress,
+        p_chain_id: chainId,
+        p_payout_account_id: null,
+        p_dg_token_address: pricingNetwork.dg_token_address,
+        p_up_token_address: pricingNetwork.up_token_address,
+        p_vendor_address: pricingNetwork.dg_vendor_address,
+        p_redemption_wallet_address: redemptionWallet,
+        p_amount_dg_raw: vendorQuote.amountDgRaw.toString(),
+        p_vendor_fee_dg_raw: vendorQuote.vendorFeeDgRaw.toString(),
+        p_net_dg_raw: vendorQuote.netDgRaw.toString(),
+        p_estimated_up_out_raw: vendorQuote.estimatedUpOutRaw.toString(),
+        p_gross_ngn_kobo: 0,
+        p_service_fee_kobo: 0,
+        p_vat_kobo: 0,
+        p_vat_rate_bps: 0,
+        p_vat_basis: "none",
+        p_vat_basis_kobo: 0,
+        p_total_fee_kobo: 0,
+        p_net_payout_kobo: 0,
+        p_fee_breakdown: {
+          ...fees.feeBreakdown,
+          amount_dg: amountDg,
+          pre_vendor_value_usdc_micro: preVendorValueUsdcMicro,
+          gross_after_vendor_usdc_micro: grossValueUsdcMicro,
+        },
+        p_vendor_snapshot: vendorQuote.snapshot,
+        p_pricing_snapshot: pricing.snapshot,
+        p_limits_snapshot: {
+          min_dg: config.limits.min_dg,
+          max_dg: config.limits.max_dg,
+          min_gross_usdc_micro: config.usdc.limits.min_gross_usdc_micro,
+          per_user_daily_usdc_micro: config.usdc.limits.per_user_daily_usdc_micro,
+          platform_daily_usdc_micro: config.usdc.limits.platform_daily_usdc_micro,
+          required_confirmations: config.required_confirmations,
+          payout_wallet_balance_micro: payoutWalletBalanceMicro,
+          payout_wallet_required_micro: fees.netPayoutUsdcMicro + fees.serviceFeeUsdcMicro,
+        },
+        p_payout_snapshot: {
+          payout_method: payoutMethod,
+          payout_wallet_address: payoutWalletAddress,
+          payout_token_address: usdcTokenAddress,
+        },
+        p_paystack_reference: parseReferenceId(),
+        p_expires_at: expiresAt,
+        p_user_daily_limit_kobo: 0,
+        p_platform_daily_limit_kobo: 0,
+        p_payout_method: payoutMethod,
+        p_payout_wallet_address: payoutWalletAddress,
+        p_payout_token_address: usdcTokenAddress,
+        p_gross_usdc_micro: grossValueUsdcMicro,
+        p_service_fee_usdc_micro: fees.serviceFeeUsdcMicro,
+        p_total_fee_usdc_micro: fees.totalFeeUsdcMicro,
+        p_net_payout_usdc_micro: fees.netPayoutUsdcMicro,
+        p_user_daily_limit_usdc_micro: config.usdc.limits.per_user_daily_usdc_micro,
+        p_platform_daily_limit_usdc_micro: config.usdc.limits.platform_daily_usdc_micro,
+        // Null when the balance cap is disabled; the RPC re-checks committed liquidity
+        // under its advisory lock so concurrent quotes cannot both pass the cap.
+        p_payout_wallet_balance_usdc_micro: payoutWalletBalanceMicro,
+      });
+
+      if (intentError) throw new Error(friendlyError(intentError.message));
+
+      return json({
+        ok: true,
+        can_redeem: true,
+        payout_wallet_address: payoutWalletAddress,
+        quote: { intent_id: intent.id, expires_at: intent.expires_at, ...quotePayload },
+      });
+    }
 
     const { data: payoutAccount, error: payoutError } = await supabase
       .from("user_payout_accounts")
@@ -112,8 +393,6 @@ serve(async (req) => {
       return json({ ok: false, error: "Save your bank account before redeeming DG" }, 400);
     }
 
-    const pricingNetwork = withRedemptionPricingDefaults(network);
-    const redemptionWallet = getRedemptionWallet(config, chainId);
     const vendorQuote = await getVendorRedemptionQuote({
       network: pricingNetwork,
       walletAddress,
@@ -143,6 +422,7 @@ serve(async (req) => {
       can_redeem: false,
       payout_account: publicPayoutAccount(payoutAccount),
       quote: {
+        payout_method: payoutMethod,
         amount_dg: amountDg,
         pre_vendor_value_kobo: preVendorValueKobo,
         gross_value_kobo: grossValueKobo,
@@ -186,30 +466,15 @@ serve(async (req) => {
       });
     }
 
-    const dayStart = new Date();
-    dayStart.setUTCHours(0, 0, 0, 0);
-    const [userDailyUsage, platformDailyUsage] = await Promise.all([
-      config.limits.per_user_daily_ngn_kobo > 0
-        ? supabase
-          .from("dg_redemption_intents")
-          .select("gross_ngn_kobo,status,expires_at")
-          .eq("user_id", userId)
-          .gte("created_at", dayStart.toISOString())
-          .not("status", "in", "(expired,cancelled,failed)")
-        : Promise.resolve({ data: [], error: null }),
-      config.limits.platform_daily_ngn_kobo > 0
-        ? supabase
-          .from("dg_redemption_intents")
-          .select("gross_ngn_kobo,status,expires_at")
-          .gte("created_at", dayStart.toISOString())
-          .not("status", "in", "(expired,cancelled,failed)")
-        : Promise.resolve({ data: [], error: null }),
-    ]);
-    if (userDailyUsage.error) throw new Error(userDailyUsage.error.message);
-    if (platformDailyUsage.error) throw new Error(platformDailyUsage.error.message);
-
+    const usage = await fetchDailyUsage({
+      supabase,
+      payoutMethod,
+      userId,
+      userLimit: config.limits.per_user_daily_ngn_kobo,
+      platformLimit: config.limits.platform_daily_ngn_kobo,
+    });
     const userDailyLeftKobo = config.limits.per_user_daily_ngn_kobo > 0
-      ? Math.max(config.limits.per_user_daily_ngn_kobo - sumActiveGrossKobo(userDailyUsage.data), 0)
+      ? Math.max(config.limits.per_user_daily_ngn_kobo - usage.userUsed, 0)
       : null;
     if (userDailyLeftKobo !== null && grossValueKobo > userDailyLeftKobo) {
       return json({
@@ -222,7 +487,7 @@ serve(async (req) => {
       });
     }
     const platformDailyLeftKobo = config.limits.platform_daily_ngn_kobo > 0
-      ? Math.max(config.limits.platform_daily_ngn_kobo - sumActiveGrossKobo(platformDailyUsage.data), 0)
+      ? Math.max(config.limits.platform_daily_ngn_kobo - usage.platformUsed, 0)
       : null;
     if (platformDailyLeftKobo !== null && grossValueKobo > platformDailyLeftKobo) {
       return json({
@@ -262,6 +527,7 @@ serve(async (req) => {
         quote: {
           intent_id: null,
           expires_at: null,
+          payout_method: payoutMethod,
           chain_id: chainId,
           redemption_wallet_address: redemptionWallet,
           amount_dg: amountDg,
@@ -335,6 +601,7 @@ serve(async (req) => {
       quote: {
         intent_id: intent.id,
         expires_at: intent.expires_at,
+        payout_method: payoutMethod,
         chain_id: chainId,
         redemption_wallet_address: redemptionWallet,
         amount_dg: amountDg,
@@ -357,8 +624,11 @@ serve(async (req) => {
       ? 401
       : lower.includes("not found")
       ? 404
-      : lower.includes("not available") || lower.includes("invalid") || lower.includes("minimum") || lower.includes("maximum") || lower.includes("save your")
+      : lower.includes("not available") || lower.includes("invalid") || lower.includes("minimum") || lower.includes("maximum") ||
+          lower.includes("save your") || lower.includes("must be linked")
       ? 400
+      : lower.includes("availability")
+      ? 409
       : 500;
     return json({ ok: false, error: message }, status);
   }

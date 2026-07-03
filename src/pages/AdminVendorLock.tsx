@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { callEdgeFunction } from '@/lib/edgeFunctions';
 import { Button } from '@/components/ui/button';
@@ -87,7 +87,7 @@ const AdminVendorLock: React.FC = () => {
 
   const [newBenefit, setNewBenefit] = useState('');
 
-  const loadCurrentLock = async () => {
+  const loadCurrentLock = useCallback(async () => {
     try {
       setIsLoading(true);
       const token = await getAccessToken?.();
@@ -118,11 +118,11 @@ const AdminVendorLock: React.FC = () => {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [getAccessToken, toast]);
 
   useEffect(() => {
     loadCurrentLock();
-  }, []);
+  }, [loadCurrentLock]);
 
   // Cleanup blob URLs on unmount
   useEffect(() => {

@@ -9,6 +9,7 @@ import {
   paystackTransferUpdateValues,
   verifyPaystackWebhookSignature,
 } from "../_shared/dg-redemption.ts";
+import { alertAdminDgRedemptionReview } from "../_shared/dg-redemption-notify.ts";
 
 function json(payload: Record<string, unknown>, status = 200): Response {
   return new Response(JSON.stringify(payload), {
@@ -67,7 +68,7 @@ serve(async (req) => {
       .update(paystackTransferUpdateValues({ transfer: data, event, failedStatus: "manual_review" }))
       .eq("id", intent.id)
       .eq("status", intent.status)
-      .select("id,user_id,wallet_address,status")
+      .select("id,user_id,wallet_address,status,last_error")
       .maybeSingle();
 
     if (error) throw new Error(error.message);
@@ -80,6 +81,16 @@ serve(async (req) => {
       actor_wallet_address: updated.wallet_address,
       metadata: { event, paystack_transfer: data, mapped_status: status },
     });
+
+    if (String(updated.status) === "manual_review") {
+      await alertAdminDgRedemptionReview({
+        supabase,
+        intentId: updated.id,
+        reason: String(updated.last_error || `paystack_transfer_${status}`),
+        actorUserId: updated.user_id,
+        logPrefix: "paystack-transfer-webhook",
+      });
+    }
 
     return json({ ok: true, status });
   } catch (error) {

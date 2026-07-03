@@ -185,6 +185,9 @@ bun.lockb
 # reference files
 reff/
 
+# Transcription outputs
+output/transcribe/
+
 # Cypress/Synpress
 cypress/
 e2e/videos/

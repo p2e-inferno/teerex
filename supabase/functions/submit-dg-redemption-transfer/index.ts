@@ -7,12 +7,15 @@ import { validateChain } from "../_shared/network-helpers.ts";
 import { verifyPrivyToken } from "../_shared/privy.ts";
 import { initiatePaystackTransfer } from "../_shared/paystack.ts";
 import {
+  getDgRedemptionPayoutMethod,
   loadDgRedemptionConfig,
   paystackTransferUpdateValues,
   publicPayoutAccount,
   validateDgTransfer,
   withRedemptionPricingDefaults,
 } from "../_shared/dg-redemption.ts";
+import { executeUsdcFeeTransfer, executeUsdcPayout } from "../_shared/dg-redemption-payout.ts";
+import { alertAdminDgRedemptionReview } from "../_shared/dg-redemption-notify.ts";
 
 function json(payload: Record<string, unknown>, status = 200): Response {
   return new Response(JSON.stringify(payload), {
@@ -45,6 +48,15 @@ async function markIntent(
     actor_wallet_address: data.wallet_address,
     metadata,
   });
+  if (String((values as any).status) === "manual_review") {
+    await alertAdminDgRedemptionReview({
+      supabase,
+      intentId,
+      reason: String((metadata as any)?.reason || (values as any).last_error || eventType),
+      actorUserId: data.user_id,
+      logPrefix: "submit-dg-redemption-transfer",
+    });
+  }
   return data;
 }
 
@@ -138,6 +150,13 @@ async function requestExpiredTransferReview(params: {
       quote_created_at: intent.created_at,
       quote_expires_at: intent.expires_at,
     },
+  });
+  await alertAdminDgRedemptionReview({
+    supabase: params.supabase,
+    intentId: updated.id,
+    reason: "expired_quote_transfer_submitted",
+    actorUserId: updated.user_id,
+    logPrefix: "submit-dg-redemption-transfer",
   });
 
   return json({
@@ -249,6 +268,114 @@ serve(async (req) => {
         { tx_hash: txHash, error: message },
       );
       return json({ ok: false, error: message }, message.includes("Waiting for") ? 409 : 400);
+    }
+
+    if (getDgRedemptionPayoutMethod(lockedIntent) === "usdc") {
+      const reviewThresholdMicro = config.usdc.limits.manual_review_usdc_micro;
+      if (reviewThresholdMicro > 0 && Number(lockedIntent.net_payout_usdc_micro) >= reviewThresholdMicro) {
+        const reviewed = await markIntent(
+          supabase,
+          lockedIntent.id,
+          lockId,
+          {
+            status: "manual_review",
+            lock_id: null,
+            locked_at: null,
+            last_error: "manual_review_required",
+          },
+          "manual_review_required",
+          { transfer_proof: transferProof },
+        );
+        return json({
+          ok: true,
+          status: reviewed.status,
+          message: "Redeem DG transfer received and is pending review",
+        });
+      }
+
+      const pendingIntent = await markIntent(
+        supabase,
+        lockedIntent.id,
+        lockId,
+        {
+          status: "payout_pending",
+          last_error: null,
+        },
+        "transfer_validated",
+        { transfer_proof: transferProof },
+      );
+
+      let result;
+      try {
+        result = await executeUsdcPayout({
+          supabase,
+          intent: pendingIntent,
+          lockId,
+          actorUserId: userId,
+          network,
+          config,
+        });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "USDC payout failed";
+        await markIntent(
+          supabase,
+          lockedIntent.id,
+          lockId,
+          {
+            status: "manual_review",
+            lock_id: null,
+            locked_at: null,
+            last_error: message,
+          },
+          "usdc_payout_admin_review_required",
+          { error: message },
+        );
+        return json({ ok: false, error: message }, 502);
+      }
+
+      if (result.status === "manual_review") {
+        return json({
+          ok: false,
+          status: result.status,
+          error: "Redeem DG transfer was received, but the payout needs admin attention",
+        }, 502);
+      }
+
+      let feeTransfer = null;
+      if (result.status === "completed") {
+        try {
+          const feeResult = await executeUsdcFeeTransfer({
+            supabase,
+            intent: result.intent,
+            actorUserId: userId,
+            network,
+            config,
+          });
+          feeTransfer = {
+            status: feeResult.status,
+            tx_hash: feeResult.txHash,
+            amount_usdc_micro: Number(result.intent.service_fee_usdc_micro || 0),
+            destination: result.intent.redemption_wallet_address,
+            error: feeResult.error || null,
+          };
+        } catch (error) {
+          console.warn(
+            "[submit-dg-redemption-transfer] USDC fee transfer failed",
+            error instanceof Error ? error.message : error,
+          );
+        }
+      }
+
+      return json({
+        ok: true,
+        status: result.status,
+        payout: {
+          tx_hash: result.txHash,
+          amount_usdc_micro: Number(lockedIntent.net_payout_usdc_micro),
+          payout_wallet_address: lockedIntent.payout_wallet_address,
+        },
+        fee_transfer: feeTransfer,
+      });
     }
 
     const { data: payoutAccount, error: payoutError } = await supabase

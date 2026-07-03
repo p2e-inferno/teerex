@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { callEdgeFunction } from '@/lib/edgeFunctions';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -102,7 +102,7 @@ const AdminNetworks: React.FC = () => {
     is_active: true,
   });
 
-  const loadNetworks = async (opts?: { background?: boolean }) => {
+  const loadNetworks = useCallback(async (opts?: { background?: boolean }) => {
     const isBackground = opts?.background;
 
     try {
@@ -125,11 +125,11 @@ const AdminNetworks: React.FC = () => {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [getAccessToken]);
 
   useEffect(() => {
     loadNetworks();
-  }, []);
+  }, [loadNetworks]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();

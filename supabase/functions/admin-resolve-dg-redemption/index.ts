@@ -4,7 +4,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.50.0";
 import { corsHeaders, buildPreflightHeaders } from "../_shared/cors.ts";
 import { ensureAdmin } from "../_shared/admin-check.ts";
 import { SUPABASE_SERVICE_ROLE_KEY, SUPABASE_URL } from "../_shared/constants.ts";
-import { isDgRedemptionManuallyPayable } from "../_shared/dg-redemption.ts";
+import { getDgRedemptionPayoutMethod, isDgRedemptionManuallyPayable } from "../_shared/dg-redemption.ts";
 
 function json(payload: Record<string, unknown>, status = 200): Response {
   return new Response(JSON.stringify(payload), {
@@ -48,8 +48,14 @@ serve(async (req) => {
     if (!MANUAL_PAID_STATUSES.includes(String(intent.status))) {
       return json({ ok: false, error: "Redeem DG request is not ready for manual payment resolution" }, 400);
     }
+    const payoutMethod = getDgRedemptionPayoutMethod(intent);
     if (!isDgRedemptionManuallyPayable(intent)) {
-      return json({ ok: false, error: "Redeem DG request still has an active Paystack transfer" }, 400);
+      return json({
+        ok: false,
+        error: payoutMethod === "usdc"
+          ? "Redeem DG request already has an active USDC payout"
+          : "Redeem DG request still has an active Paystack transfer",
+      }, 400);
     }
 
     const completedAt = new Date().toISOString();
@@ -61,11 +67,15 @@ serve(async (req) => {
         lock_id: null,
         locked_at: null,
         last_error: null,
-        paystack_status: paymentReference ? "manual_paid" : intent.paystack_status,
+        paystack_status: payoutMethod === "ngn" && paymentReference ? "manual_paid" : intent.paystack_status,
       })
       .eq("id", intent.id)
       .not("tx_hash", "is", null)
       .eq("status", intent.status);
+
+    updateQuery = intent.payout_tx_hash === null || intent.payout_tx_hash === undefined
+      ? updateQuery.is("payout_tx_hash", null)
+      : updateQuery.eq("payout_tx_hash", intent.payout_tx_hash);
 
     updateQuery = intent.paystack_status === null || intent.paystack_status === undefined
       ? updateQuery.is("paystack_status", null)
@@ -90,6 +100,7 @@ serve(async (req) => {
       metadata: {
         previous_status: intent.status,
         previous_last_error: intent.last_error || null,
+        payout_method: payoutMethod,
         payment_reference: paymentReference || null,
         note: note || null,
       },

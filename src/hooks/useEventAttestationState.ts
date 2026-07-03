@@ -94,7 +94,6 @@ export function useEventAttestationState(params: Params) {
       }
     };
     run();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [eventId, userAddress, attendanceSchema.uid, likeSchema.uid, goingSchema.uid]);
 
   // Effect C: On-chain instance revocable (depends on instance UIDs)
@@ -121,7 +120,6 @@ export function useEventAttestationState(params: Params) {
       }
     };
     run();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [attendanceInstance.uid, likeInstance.uid, goingInstance.uid, chainId]);
 
   // Derived UI flags

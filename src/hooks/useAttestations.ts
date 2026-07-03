@@ -1,5 +1,5 @@
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useWallets } from '@privy-io/react-auth';
 import { 
   createAttestation, 
@@ -63,7 +63,7 @@ export const useEventAttestations = (eventId: string) => {
   const [attestations, setAttestations] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
-  const fetchAttestations = async () => {
+  const fetchAttestations = useCallback(async () => {
     if (!eventId) return;
     
     setIsLoading(true);
@@ -75,11 +75,11 @@ export const useEventAttestations = (eventId: string) => {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [eventId]);
 
   useEffect(() => {
     fetchAttestations();
-  }, [eventId]);
+  }, [fetchAttestations]);
 
   return { attestations, isLoading, refetch: fetchAttestations };
 };
@@ -88,7 +88,7 @@ export const useUserAttestations = (userAddress: string) => {
   const [attestations, setAttestations] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
-  const fetchAttestations = async () => {
+  const fetchAttestations = useCallback(async () => {
     if (!userAddress) return;
     
     setIsLoading(true);
@@ -100,11 +100,11 @@ export const useUserAttestations = (userAddress: string) => {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [userAddress]);
 
   useEffect(() => {
     fetchAttestations();
-  }, [userAddress]);
+  }, [fetchAttestations]);
 
   return { attestations, isLoading, refetch: fetchAttestations };
 };

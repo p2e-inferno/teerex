@@ -50,14 +50,15 @@ export const EventCard: React.FC<EventCardProps> = ({
 }) => {
   const [imgError, setImgError] = useState(false);
   const [waitlistDialogOpen, setWaitlistDialogOpen] = useState(false);
+  const eventUpdatedAt = (event as any).updated_at;
   const imageSrc = useMemo(() => {
     if (!event.image_url) return '';
-    const ts = (event as any).updated_at instanceof Date
-      ? (event as any).updated_at.getTime()
+    const ts = eventUpdatedAt instanceof Date
+      ? eventUpdatedAt.getTime()
       : Date.now();
     const sep = event.image_url.includes('?') ? '&' : '?';
     return `${event.image_url}${sep}t=${ts}`;
-  }, [event.image_url, (event as any).updated_at]);
+  }, [event.image_url, eventUpdatedAt]);
   const navigate = useNavigate();
   const spotsLeft = event.capacity - keysSold;
   const isSoldOut = spotsLeft <= 0;

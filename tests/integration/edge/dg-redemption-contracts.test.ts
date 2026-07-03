@@ -43,7 +43,10 @@ describe('DG redemption edge-call contracts', () => {
   });
 
   it('keeps resumable user requests and stale expiry reachable from existing pages', () => {
-    const profileSource = read('src/components/profile/DgRedemptionCard.tsx');
+    const profileSource = [
+      read('src/components/profile/DgRedemptionCard.tsx'),
+      read('src/components/profile/dg-redemption/DgRedemptionHistoryList.tsx'),
+    ].join('\n');
     const adminSource = read('src/pages/AdminDgRedemption.tsx');
 
     expect(profileSource).toContain('list-user-dg-redemptions');
@@ -57,7 +60,13 @@ describe('DG redemption edge-call contracts', () => {
   });
 
   it('keeps Redeem DG previews visible while blocking unavailable quotes', () => {
-    const profileSource = read('src/components/profile/DgRedemptionCard.tsx');
+    const profileSource = [
+      read('src/components/profile/DgRedemptionCard.tsx'),
+      read('src/components/profile/dg-redemption/DgRedemptionFlowPanel.tsx'),
+      read('src/components/profile/dg-redemption/DgRedemptionHistoryList.tsx'),
+      read('src/components/profile/dg-redemption/useDgRedemptionFlow.ts'),
+      read('src/components/profile/dg-redemption/types.ts'),
+    ].join('\n');
     const quoteSource = read('supabase/functions/quote-dg-redemption/index.ts');
 
     expect(quoteSource).toContain('enforceWalletBalance: false');
@@ -79,10 +88,9 @@ describe('DG redemption edge-call contracts', () => {
     expect(profileSource).toContain('Already sent after this quote was created?');
     expect(profileSource).toContain('Receive');
     expect(profileSource).toContain('Redeem');
-    expect(profileSource).toContain('Transaction hash');
+    expect(profileSource).toContain('Transaction Hash');
     expect(profileSource).toContain('disabled={isQuoting || !previewCanRedeem}');
     expect(profileSource).toContain('canSubmitTransferForStatus');
-    expect(profileSource).toContain('Promise.allSettled');
     expect(profileSource).toContain('notify-dg-redemption-admin');
     expect(profileSource).toContain('Notify Admin');
     expect(profileSource).toContain('getNotifyCooldownMs');
@@ -103,7 +111,10 @@ describe('DG redemption edge-call contracts', () => {
   });
 
   it('accepts expired quote transfers only into manual review after validating quote timing', () => {
-    const profileSource = read('src/components/profile/DgRedemptionCard.tsx');
+    const profileSource = [
+      read('src/components/profile/DgRedemptionCard.tsx'),
+      read('src/components/profile/dg-redemption/types.ts'),
+    ].join('\n');
     const submitSource = read('supabase/functions/submit-dg-redemption-transfer/index.ts');
     const sharedSource = read('supabase/functions/_shared/dg-redemption.ts');
 
@@ -126,11 +137,11 @@ describe('DG redemption edge-call contracts', () => {
     const migrationSource = read('supabase/migrations/20260625143000_exclude_time_expired_dg_quotes_from_limits.sql');
 
     expect(quoteSource).toContain('countsTowardDailyLimit');
-    expect(quoteSource).toContain('.select("gross_ngn_kobo,status,expires_at")');
+    expect(quoteSource).toContain('.select(`${field},status,expires_at`)');
     expect(quoteSource).toContain('status === "awaiting_transfer" || status === "validating_transfer"');
     expect(quoteSource).toContain('expiresAtMs > nowMs');
-    expect(quoteSource).toContain('sumActiveGrossKobo(userDailyUsage.data)');
-    expect(quoteSource).toContain('sumActiveGrossKobo(platformDailyUsage.data)');
+    expect(quoteSource).toContain('sumActiveGross(userUsage.data as DailyUsageRow[], field)');
+    expect(quoteSource).toContain('sumActiveGross(platformUsage.data as DailyUsageRow[], field)');
     expect(migrationSource).toContain("status NOT IN ('awaiting_transfer', 'validating_transfer')");
     expect(migrationSource).toContain('OR expires_at IS NULL');
     expect(migrationSource).toContain('OR expires_at > NOW()');
@@ -287,5 +298,42 @@ describe('DG redemption edge-call contracts', () => {
     expect(retrySource).toContain('rotateReference = true');
     expect(retrySource).toContain('parseReferenceId("dgr_retry")');
     expect(retrySource).toContain('admin_retry_reference_rotated');
+  });
+
+  it('tracks USDC service fee sweeps separately from user payouts', () => {
+    const migrationSource = read('supabase/migrations/20260702120000_add_dg_redemption_usdc_payout.sql');
+    const payoutSource = read('supabase/functions/_shared/dg-redemption-payout.ts');
+    const submitSource = read('supabase/functions/submit-dg-redemption-transfer/index.ts');
+    const statusSource = read('supabase/functions/get-dg-redemption-status/index.ts');
+    const dashboardSource = read('supabase/functions/get-dg-redemption-admin-dashboard/index.ts');
+    const retrySource = read('supabase/functions/retry-dg-redemption-payout/index.ts');
+    const adminSource = read('src/pages/AdminDgRedemption.tsx');
+
+    expect(migrationSource).toContain('fee_transfer_status TEXT NOT NULL DEFAULT');
+    expect(migrationSource).toContain('fee_transfer_tx_hash TEXT');
+    expect(migrationSource).toContain("WHEN v_method = 'usdc' AND COALESCE(p_service_fee_usdc_micro, 0) > 0 THEN 'pending'");
+    expect(migrationSource).toContain('idx_dg_redemption_intents_fee_transfer_tx_hash');
+    expect(migrationSource).toContain('idx_dg_redemption_intents_usdc_completed_fee_transfer');
+    expect(migrationSource).toContain("AND fee_transfer_status IN ('pending', 'processing', 'manual_review')");
+    expect(payoutSource).toContain('openCommittedMicro');
+    expect(payoutSource).toContain('feeCommittedMicro');
+    expect(payoutSource).toContain('pendingFeeMicro');
+    expect(payoutSource).toContain('executeUsdcFeeTransfer');
+    expect(payoutSource).toContain('fee_transfer_raw_tx');
+    expect(payoutSource).toContain('usdc_fee_transfer_rebroadcast');
+    expect(payoutSource).toContain('usdc_fee_transfer_manual_review');
+    expect(payoutSource).toContain('["pending", "processing", "manual_review"].includes(getUsdcFeeTransferStatus(intent))');
+    expect(payoutSource).toContain('currentStatus === "manual_review" && !params.allowManualReviewRetry && !intent.fee_transfer_tx_hash');
+    expect(payoutSource).toContain('Boolean(intent?.fee_transfer_tx_hash)');
+    expect(payoutSource).not.toContain('const result = await executeUsdcFeeTransfer({\n      supabase: params.supabase,\n      intent: params.intent');
+    expect(submitSource).toContain('executeUsdcFeeTransfer');
+    expect(statusSource).toContain('reconcileUsdcFeeTransfer');
+    expect(dashboardSource).toContain('fee_transfer_status');
+    expect(retrySource).toContain('canRetryUsdcFeeTransfer');
+    expect(retrySource).toContain('USDC fee transfer has not started yet. Retry the fee sweep instead.');
+    expect(adminSource).toContain('Boolean(row.fee_transfer_tx_hash)');
+    expect(adminSource).toContain('Retry fee sweep');
+    expect(adminSource).toContain('Fee destination');
+    expect(adminSource).toContain('Fee transaction');
   });
 });

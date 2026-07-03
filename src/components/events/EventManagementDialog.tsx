@@ -199,7 +199,7 @@ export const EventManagementDialog: React.FC<EventManagementDialogProps> = ({
         : undefined);
 
   // Check if current user is a lock manager
-  const refreshLockManagerState = async () => {
+  const refreshLockManagerState = useCallback(async () => {
     if (!wallet || !open) {
       setIsLockManager(false);
       return;
@@ -216,7 +216,7 @@ export const EventManagementDialog: React.FC<EventManagementDialogProps> = ({
       console.error('Error checking user lock manager status:', error);
       setIsLockManager(false);
     }
-  };
+  }, [event.chain_id, event.lock_address, open, wallet]);
 
   const refreshWithdrawableBalance = useCallback(async () => {
     if (!open || !canWithdrawLockBalance) {
@@ -235,7 +235,7 @@ export const EventManagementDialog: React.FC<EventManagementDialogProps> = ({
 
   useEffect(() => {
     void refreshLockManagerState();
-  }, [wallet, event.lock_address, event.chain_id, open]);
+  }, [refreshLockManagerState]);
 
   useEffect(() => {
     void refreshWithdrawableBalance();
@@ -249,7 +249,7 @@ export const EventManagementDialog: React.FC<EventManagementDialogProps> = ({
   useEffect(() => {
     setLocalRegistrationClosed(isEventRegistrationClosed(event));
     setPendingRegistrationClosed(null);
-  }, [event.id, event.registration_cutoff, event.starts_at, event.date]);
+  }, [event]);
 
   const handleToggleRegistration = async (isOpening: boolean) => {
     if (!wallets[0]) {

@@ -5,12 +5,21 @@ import { corsHeaders, buildPreflightHeaders } from "../_shared/cors.ts";
 import { ensureAdmin } from "../_shared/admin-check.ts";
 import { SUPABASE_SERVICE_ROLE_KEY, SUPABASE_URL } from "../_shared/constants.ts";
 import { initiatePaystackTransfer, verifyPaystackTransfer } from "../_shared/paystack.ts";
+import { validateChain } from "../_shared/network-helpers.ts";
 import {
+  getDgRedemptionPayoutMethod,
   isPaystackTransferTerminalFailureStatus,
+  loadDgRedemptionConfig,
   mapPaystackTransferStatus,
   parseReferenceId,
   paystackTransferUpdateValues,
 } from "../_shared/dg-redemption.ts";
+import {
+  canRetryUsdcFeeTransfer,
+  executeUsdcFeeTransfer,
+  executeUsdcPayout,
+} from "../_shared/dg-redemption-payout.ts";
+import { alertAdminDgRedemptionReview } from "../_shared/dg-redemption-notify.ts";
 
 function json(payload: Record<string, unknown>, status = 200): Response {
   return new Response(JSON.stringify(payload), {
@@ -44,6 +53,15 @@ async function updateLockedIntent(
     .maybeSingle();
   if (error) throw new Error(error.message);
   if (!data) throw new Error("Redeem DG retry lock was lost");
+  if (String((values as any).status) === "manual_review") {
+    await alertAdminDgRedemptionReview({
+      supabase,
+      intentId: data.id,
+      reason: String((values as any).last_error || "retry_manual_review"),
+      actorUserId: data.user_id,
+      logPrefix: "retry-dg-redemption-payout",
+    });
+  }
   return data;
 }
 
@@ -102,6 +120,134 @@ serve(async (req) => {
       if (!existing) return json({ ok: false, error: "Redeem DG request was not found" }, 404);
       if (!existing.tx_hash) return json({ ok: false, error: "DG transfer has not been validated" }, 400);
       return json({ ok: false, error: "Redeem DG request is not retryable" }, 400);
+    }
+
+    if (getDgRedemptionPayoutMethod(intent) === "usdc") {
+      const [config, network] = await Promise.all([
+        loadDgRedemptionConfig(supabase),
+        validateChain(supabase, intent.chain_id),
+      ]);
+      if (!network) {
+        await updateLockedIntent(supabase, intent, lockId, {
+          status: intent.status,
+          lock_id: null,
+          locked_at: null,
+          last_error: "Network not found or inactive",
+        });
+        return json({ ok: false, error: "Network not found or inactive" }, 404);
+      }
+      if (String(intent.status) === "completed") {
+        if (!canRetryUsdcFeeTransfer(intent)) {
+          await updateLockedIntent(supabase, intent, lockId, {
+            status: intent.status,
+            lock_id: null,
+            locked_at: null,
+          });
+          return json({ ok: false, error: "USDC fee transfer is not retryable" }, 400);
+        }
+        if (reconcileOnly && !intent.fee_transfer_tx_hash) {
+          await updateLockedIntent(supabase, intent, lockId, {
+            status: intent.status,
+            lock_id: null,
+            locked_at: null,
+          });
+          return json({ ok: false, error: "USDC fee transfer has not started yet. Retry the fee sweep instead." }, 400);
+        }
+
+        try {
+          const feeResult = await executeUsdcFeeTransfer({
+            supabase,
+            intent,
+            lockId,
+            actorUserId: adminUserId,
+            network,
+            config,
+            allowManualReviewRetry: !reconcileOnly,
+            allowResendAfterRevert: !reconcileOnly,
+          });
+          await logEvent(supabase, feeResult.intent, adminUserId, reconcileOnly ? "admin_reconcile_usdc_fee_transfer" : "admin_retry_usdc_fee_transfer", {
+            status: feeResult.status,
+            fee_transfer_tx_hash: feeResult.txHash,
+            error: feeResult.error || null,
+          });
+          return json({
+            ok: true,
+            status: feeResult.intent.status,
+            redemption: feeResult.intent,
+            fee_transfer: {
+              status: feeResult.status,
+              tx_hash: feeResult.txHash,
+              error: feeResult.error || null,
+            },
+          });
+        } catch (error) {
+          const message = error instanceof Error ? error.message : "USDC fee transfer failed";
+          await updateLockedIntent(supabase, intent, lockId, {
+            status: intent.status,
+            lock_id: null,
+            locked_at: null,
+            fee_transfer_last_error: message,
+          });
+          await logEvent(supabase, intent, adminUserId, "admin_retry_usdc_fee_transfer_failed", { error: message });
+          return json({ ok: false, error: message }, 502);
+        }
+      }
+      if (reconcileOnly && !intent.payout_tx_hash) {
+        await updateLockedIntent(supabase, intent, lockId, {
+          status: intent.status,
+          lock_id: null,
+          locked_at: null,
+        });
+        return json({ ok: false, error: "USDC payout has not started yet. Retry the payout instead." }, 400);
+      }
+
+      try {
+        const result = await executeUsdcPayout({
+          supabase,
+          intent,
+          lockId,
+          actorUserId: adminUserId,
+          network,
+          config,
+          allowResendAfterRevert: !reconcileOnly,
+        });
+        let feeResult = null;
+        if (result.status === "completed" && canRetryUsdcFeeTransfer(result.intent)) {
+          try {
+            feeResult = await executeUsdcFeeTransfer({
+              supabase,
+              intent: result.intent,
+              actorUserId: adminUserId,
+              network,
+              config,
+              allowManualReviewRetry: !reconcileOnly,
+              allowResendAfterRevert: !reconcileOnly,
+            });
+          } catch (error) {
+            await logEvent(supabase, result.intent, adminUserId, "admin_retry_usdc_fee_transfer_failed", {
+              error: error instanceof Error ? error.message : "USDC fee transfer failed",
+            });
+          }
+        }
+        await logEvent(supabase, intent, adminUserId, reconcileOnly ? "admin_reconcile_usdc_payout" : "admin_retry_usdc_payout", {
+          status: result.status,
+          payout_tx_hash: result.txHash,
+          fee_transfer_status: feeResult?.status || null,
+          fee_transfer_tx_hash: feeResult?.txHash || null,
+          error: result.error || null,
+        });
+        return json({ ok: true, status: result.status, redemption: feeResult?.intent || result.intent });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "USDC payout failed";
+        await updateLockedIntent(supabase, intent, lockId, {
+          status: intent.status,
+          lock_id: null,
+          locked_at: null,
+          last_error: message,
+        });
+        await logEvent(supabase, intent, adminUserId, "admin_retry_usdc_payout_failed", { error: message });
+        return json({ ok: false, error: message }, 502);
+      }
     }
 
     let rotateReference = needsFreshPaystackReference(intent);

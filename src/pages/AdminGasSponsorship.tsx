@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { callEdgeFunction } from '@/lib/edgeFunctions';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -21,12 +21,7 @@ export default function AdminGasSponsorship() {
   const [isLoading, setIsLoading] = useState(false);
   const { getAccessToken } = usePrivy();
 
-  useEffect(() => {
-    loadData();
-    loadNetworks();
-  }, []);
-
-  const loadData = async () => {
+  const loadData = useCallback(async () => {
     setIsLoading(true);
     try {
       const token = await getAccessToken?.();
@@ -43,9 +38,9 @@ export default function AdminGasSponsorship() {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [getAccessToken]);
 
-  const loadNetworks = async () => {
+  const loadNetworks = useCallback(async () => {
     try {
       const token = await getAccessToken?.();
       const data = await callEdgeFunction<any>('manage-network-config', {}, { privyToken: token, withAnonKey: true, method: 'GET' });
@@ -55,7 +50,12 @@ export default function AdminGasSponsorship() {
       console.error('Failed to load networks', err);
       toast.error('Could not load network configurations');
     }
-  };
+  }, [getAccessToken]);
+
+  useEffect(() => {
+    loadData();
+    loadNetworks();
+  }, [loadData, loadNetworks]);
 
   // Helper function to get chain name by chain_id
   const getChainName = (chainId: number): string => {
