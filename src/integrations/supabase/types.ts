@@ -469,7 +469,13 @@ export type Database = {
           estimated_up_out_raw: string
           expires_at: string
           fee_breakdown: Json
+          fee_transfer_completed_at: string | null
+          fee_transfer_last_error: string | null
+          fee_transfer_raw_tx: string | null
+          fee_transfer_status: string
+          fee_transfer_tx_hash: string | null
           gross_ngn_kobo: number
+          gross_usdc_micro: number | null
           id: string
           last_error: string | null
           limits_snapshot: Json
@@ -477,8 +483,14 @@ export type Database = {
           locked_at: string | null
           net_dg_raw: string
           net_payout_kobo: number
-          payout_account_id: string
+          net_payout_usdc_micro: number | null
+          payout_account_id: string | null
+          payout_method: string
+          payout_raw_tx: string | null
           payout_snapshot: Json
+          payout_token_address: string | null
+          payout_tx_hash: string | null
+          payout_wallet_address: string | null
           paystack_reference: string
           paystack_status: string | null
           paystack_transfer_code: string | null
@@ -486,8 +498,10 @@ export type Database = {
           pricing_snapshot: Json
           redemption_wallet_address: string
           service_fee_kobo: number
+          service_fee_usdc_micro: number | null
           status: string
           total_fee_kobo: number
+          total_fee_usdc_micro: number | null
           tx_hash: string | null
           up_token_address: string
           updated_at: string
@@ -511,7 +525,13 @@ export type Database = {
           estimated_up_out_raw: string
           expires_at: string
           fee_breakdown?: Json
+          fee_transfer_completed_at?: string | null
+          fee_transfer_last_error?: string | null
+          fee_transfer_raw_tx?: string | null
+          fee_transfer_status?: string
+          fee_transfer_tx_hash?: string | null
           gross_ngn_kobo: number
+          gross_usdc_micro?: number | null
           id?: string
           last_error?: string | null
           limits_snapshot?: Json
@@ -519,8 +539,14 @@ export type Database = {
           locked_at?: string | null
           net_dg_raw: string
           net_payout_kobo: number
-          payout_account_id: string
+          net_payout_usdc_micro?: number | null
+          payout_account_id?: string | null
+          payout_method?: string
+          payout_raw_tx?: string | null
           payout_snapshot?: Json
+          payout_token_address?: string | null
+          payout_tx_hash?: string | null
+          payout_wallet_address?: string | null
           paystack_reference: string
           paystack_status?: string | null
           paystack_transfer_code?: string | null
@@ -528,8 +554,10 @@ export type Database = {
           pricing_snapshot?: Json
           redemption_wallet_address: string
           service_fee_kobo: number
+          service_fee_usdc_micro?: number | null
           status?: string
           total_fee_kobo: number
+          total_fee_usdc_micro?: number | null
           tx_hash?: string | null
           up_token_address: string
           updated_at?: string
@@ -553,7 +581,13 @@ export type Database = {
           estimated_up_out_raw?: string
           expires_at?: string
           fee_breakdown?: Json
+          fee_transfer_completed_at?: string | null
+          fee_transfer_last_error?: string | null
+          fee_transfer_raw_tx?: string | null
+          fee_transfer_status?: string
+          fee_transfer_tx_hash?: string | null
           gross_ngn_kobo?: number
+          gross_usdc_micro?: number | null
           id?: string
           last_error?: string | null
           limits_snapshot?: Json
@@ -561,8 +595,14 @@ export type Database = {
           locked_at?: string | null
           net_dg_raw?: string
           net_payout_kobo?: number
-          payout_account_id?: string
+          net_payout_usdc_micro?: number | null
+          payout_account_id?: string | null
+          payout_method?: string
+          payout_raw_tx?: string | null
           payout_snapshot?: Json
+          payout_token_address?: string | null
+          payout_tx_hash?: string | null
+          payout_wallet_address?: string | null
           paystack_reference?: string
           paystack_status?: string | null
           paystack_transfer_code?: string | null
@@ -570,8 +610,10 @@ export type Database = {
           pricing_snapshot?: Json
           redemption_wallet_address?: string
           service_fee_kobo?: number
+          service_fee_usdc_micro?: number | null
           status?: string
           total_fee_kobo?: number
+          total_fee_usdc_micro?: number | null
           tx_hash?: string | null
           up_token_address?: string
           updated_at?: string
@@ -3086,7 +3128,13 @@ export type Database = {
           estimated_up_out_raw: string
           expires_at: string
           fee_breakdown: Json
+          fee_transfer_completed_at: string | null
+          fee_transfer_last_error: string | null
+          fee_transfer_raw_tx: string | null
+          fee_transfer_status: string
+          fee_transfer_tx_hash: string | null
           gross_ngn_kobo: number
+          gross_usdc_micro: number | null
           id: string
           last_error: string | null
           limits_snapshot: Json
@@ -3094,8 +3142,14 @@ export type Database = {
           locked_at: string | null
           net_dg_raw: string
           net_payout_kobo: number
-          payout_account_id: string
+          net_payout_usdc_micro: number | null
+          payout_account_id: string | null
+          payout_method: string
+          payout_raw_tx: string | null
           payout_snapshot: Json
+          payout_token_address: string | null
+          payout_tx_hash: string | null
+          payout_wallet_address: string | null
           paystack_reference: string
           paystack_status: string | null
           paystack_transfer_code: string | null
@@ -3103,8 +3157,10 @@ export type Database = {
           pricing_snapshot: Json
           redemption_wallet_address: string
           service_fee_kobo: number
+          service_fee_usdc_micro: number | null
           status: string
           total_fee_kobo: number
+          total_fee_usdc_micro: number | null
           tx_hash: string | null
           up_token_address: string
           updated_at: string
@@ -3142,7 +3198,13 @@ export type Database = {
           estimated_up_out_raw: string
           expires_at: string
           fee_breakdown: Json
+          fee_transfer_completed_at: string | null
+          fee_transfer_last_error: string | null
+          fee_transfer_raw_tx: string | null
+          fee_transfer_status: string
+          fee_transfer_tx_hash: string | null
           gross_ngn_kobo: number
+          gross_usdc_micro: number | null
           id: string
           last_error: string | null
           limits_snapshot: Json
@@ -3150,8 +3212,14 @@ export type Database = {
           locked_at: string | null
           net_dg_raw: string
           net_payout_kobo: number
-          payout_account_id: string
+          net_payout_usdc_micro: number | null
+          payout_account_id: string | null
+          payout_method: string
+          payout_raw_tx: string | null
           payout_snapshot: Json
+          payout_token_address: string | null
+          payout_tx_hash: string | null
+          payout_wallet_address: string | null
           paystack_reference: string
           paystack_status: string | null
           paystack_transfer_code: string | null
@@ -3159,8 +3227,10 @@ export type Database = {
           pricing_snapshot: Json
           redemption_wallet_address: string
           service_fee_kobo: number
+          service_fee_usdc_micro: number | null
           status: string
           total_fee_kobo: number
+          total_fee_usdc_micro: number | null
           tx_hash: string | null
           up_token_address: string
           updated_at: string
@@ -3205,19 +3275,28 @@ export type Database = {
           p_expires_at: string
           p_fee_breakdown: Json
           p_gross_ngn_kobo: number
+          p_gross_usdc_micro?: number
           p_limits_snapshot: Json
           p_net_dg_raw: string
           p_net_payout_kobo: number
+          p_net_payout_usdc_micro?: number
           p_payout_account_id: string
+          p_payout_method?: string
           p_payout_snapshot: Json
+          p_payout_token_address?: string
+          p_payout_wallet_address?: string
           p_paystack_reference: string
           p_platform_daily_limit_kobo: number
+          p_platform_daily_limit_usdc_micro?: number
           p_pricing_snapshot: Json
           p_redemption_wallet_address: string
           p_service_fee_kobo: number
+          p_service_fee_usdc_micro?: number
           p_total_fee_kobo: number
+          p_total_fee_usdc_micro?: number
           p_up_token_address: string
           p_user_daily_limit_kobo: number
+          p_user_daily_limit_usdc_micro?: number
           p_user_id: string
           p_vat_basis: string
           p_vat_basis_kobo: number
@@ -3238,7 +3317,13 @@ export type Database = {
           estimated_up_out_raw: string
           expires_at: string
           fee_breakdown: Json
+          fee_transfer_completed_at: string | null
+          fee_transfer_last_error: string | null
+          fee_transfer_raw_tx: string | null
+          fee_transfer_status: string
+          fee_transfer_tx_hash: string | null
           gross_ngn_kobo: number
+          gross_usdc_micro: number | null
           id: string
           last_error: string | null
           limits_snapshot: Json
@@ -3246,8 +3331,14 @@ export type Database = {
           locked_at: string | null
           net_dg_raw: string
           net_payout_kobo: number
-          payout_account_id: string
+          net_payout_usdc_micro: number | null
+          payout_account_id: string | null
+          payout_method: string
+          payout_raw_tx: string | null
           payout_snapshot: Json
+          payout_token_address: string | null
+          payout_tx_hash: string | null
+          payout_wallet_address: string | null
           paystack_reference: string
           paystack_status: string | null
           paystack_transfer_code: string | null
@@ -3255,8 +3346,10 @@ export type Database = {
           pricing_snapshot: Json
           redemption_wallet_address: string
           service_fee_kobo: number
+          service_fee_usdc_micro: number | null
           status: string
           total_fee_kobo: number
+          total_fee_usdc_micro: number | null
           tx_hash: string | null
           up_token_address: string
           updated_at: string

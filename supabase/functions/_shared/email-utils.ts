@@ -441,6 +441,78 @@ export function getTicketPassAutoRefundOpsEmail(params: {
 }
 
 /**
+ * Ops-facing alert that a Redeem DG payout was moved to manual review and needs an admin to
+ * reconcile, retry, or resolve it. Covers both fiat (NGN) and crypto (USDC) payouts.
+ */
+export function getDgRedemptionReviewOpsEmail(params: {
+  intentId: string;
+  payoutMethod: string;
+  reason: string;
+  amountDg: string;
+  netPayout: string;
+  destination: string;
+  chainId: number | string;
+  userId: string;
+  walletAddress: string;
+  depositTxHash: string | null;
+  payoutTxHash: string | null;
+  lastError: string | null;
+}) {
+  const {
+    intentId, payoutMethod, reason, amountDg, netPayout, destination,
+    chainId, userId, walletAddress, depositTxHash, payoutTxHash, lastError,
+  } = params;
+  const method = payoutMethod === 'usdc' ? 'Crypto (USDC)' : 'Fiat (NGN)';
+  const row = (label: string, value: string) => `
+    <tr>
+      <td style="padding: 6px 12px; font-size: 12px; color: #6B7280; text-transform: uppercase; white-space: nowrap;">${label}</td>
+      <td style="padding: 6px 12px; font-size: 14px; color: ${TEXT_COLOR}; word-break: break-all;">${value}</td>
+    </tr>`;
+  const payoutTxRow = payoutMethod === 'usdc' ? row('Payout tx', payoutTxHash || 'not sent') : '';
+  const bodyHtml = `
+    <h1 style="margin: 0 0 16px; font-size: 20px; font-weight: 700; color: ${TEXT_COLOR};">Redeem DG payout needs review</h1>
+    <p style="margin: 0 0 20px; font-size: 14px; line-height: 22px; color: #4B5563;">
+      A Redeem DG request was moved to manual review. Reconcile, retry, or resolve it in the Redeem DG admin dashboard.
+    </p>
+    <table style="width: 100%; border-collapse: collapse; background-color: #F9FAFB; border-radius: 8px;">
+      ${row('Request', intentId)}
+      ${row('Method', method)}
+      ${row('Reason', reason)}
+      ${row('Amount DG', amountDg)}
+      ${row('Net payout', netPayout)}
+      ${row('Destination', destination)}
+      ${row('Chain', String(chainId))}
+      ${row('User', userId)}
+      ${row('Wallet', walletAddress)}
+      ${row('Deposit tx', depositTxHash || '—')}
+      ${payoutTxRow}
+      ${row('Last error', lastError || 'none')}
+    </table>
+  `;
+  const textLines = [
+    'Redeem DG payout needs review.',
+    '',
+    `Request: ${intentId}`,
+    `Method: ${method}`,
+    `Reason: ${reason}`,
+    `Amount DG: ${amountDg}`,
+    `Net payout: ${netPayout}`,
+    `Destination: ${destination}`,
+    `Chain: ${chainId}`,
+    `User: ${userId}`,
+    `Wallet: ${walletAddress}`,
+    `Deposit tx: ${depositTxHash || '—'}`,
+  ];
+  if (payoutMethod === 'usdc') textLines.push(`Payout tx: ${payoutTxHash || 'not sent'}`);
+  textLines.push(`Last error: ${lastError || 'none'}`);
+  return {
+    subject: `[Review] Redeem DG ${intentId} — ${reason}`,
+    text: textLines.join('\n'),
+    html: wrapHtmlContent('Redeem DG payout needs review', bodyHtml),
+  };
+}
+
+/**
  * Generate waitlist confirmation email content
  */
 export function getWaitlistConfirmationEmail(

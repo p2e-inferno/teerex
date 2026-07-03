@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -53,16 +53,7 @@ export const AttendeesList: React.FC<AttendeesListProps> = ({
   // Track if this is the initial mount to avoid refetching on first render
   const isInitialMountRef = useRef(true);
 
-  // Reload attendees when refreshToken changes (but not on initial mount)
-  useEffect(() => {
-    if (isInitialMountRef.current) {
-      isInitialMountRef.current = false;
-      return;
-    }
-    loadAttendees();
-  }, [refreshToken]);
-
-  const loadAttendees = async () => {
+  const loadAttendees = useCallback(async () => {
     if (!eventId || !attendanceSchemaUid) {
       setAttendees([]);
       setIsLoading(false);
@@ -82,11 +73,25 @@ export const AttendeesList: React.FC<AttendeesListProps> = ({
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [attendanceSchemaUid, eventId]);
+  const loadAttendeesRef = useRef(loadAttendees);
+
+  useEffect(() => {
+    loadAttendeesRef.current = loadAttendees;
+  }, [loadAttendees]);
+
+  // Reload attendees when refreshToken changes (but not on initial mount)
+  useEffect(() => {
+    if (isInitialMountRef.current) {
+      isInitialMountRef.current = false;
+      return;
+    }
+    loadAttendeesRef.current();
+  }, [refreshToken]);
 
   useEffect(() => {
     loadAttendees();
-  }, [eventId, attendanceSchemaUid]);
+  }, [loadAttendees]);
 
   const handleVote = async (attestationId: string, voteType: 'support' | 'challenge') => {
     if (!wallet?.address) return;

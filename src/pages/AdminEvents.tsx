@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import {
   Card,
   CardContent,
@@ -101,18 +101,7 @@ const AdminEvents: React.FC = () => {
     checkAdmin();
   }, [getAccessToken]);
 
-  useEffect(() => {
-    fetchEvents();
-    fetchServiceAddress();
-  }, []);
-
-  useEffect(() => {
-    if (selectedEvent) {
-      fetchEventTransactions(selectedEvent.id);
-    }
-  }, [selectedEvent]);
-
-  const fetchEvents = async () => {
+  const fetchEvents = useCallback(async () => {
     try {
       const { data, error } = await supabase
         .from("events")
@@ -129,9 +118,9 @@ const AdminEvents: React.FC = () => {
         variant: "destructive",
       });
     }
-  };
+  }, []);
 
-  const fetchServiceAddress = async () => {
+  const fetchServiceAddress = useCallback(async () => {
     try {
       const data = await callEdgeFunction<any>("get-service-address", {}, {});
       if (data?.address) {
@@ -140,9 +129,9 @@ const AdminEvents: React.FC = () => {
     } catch (error) {
       console.error("Error fetching service address:", error);
     }
-  };
+  }, []);
 
-  const fetchEventTransactions = async (eventId: string) => {
+  const fetchEventTransactions = useCallback(async (eventId: string) => {
     console.log("Fetching transactions for event:", eventId);
     try {
       // Use admin function to bypass RLS
@@ -163,7 +152,18 @@ const AdminEvents: React.FC = () => {
         variant: "destructive",
       });
     }
-  };
+  }, [getAccessToken]);
+
+  useEffect(() => {
+    fetchEvents();
+    fetchServiceAddress();
+  }, [fetchEvents, fetchServiceAddress]);
+
+  useEffect(() => {
+    if (selectedEvent) {
+      fetchEventTransactions(selectedEvent.id);
+    }
+  }, [fetchEventTransactions, selectedEvent]);
 
   const handleGrantKeys = async () => {
     if (!transactionRef.trim()) {

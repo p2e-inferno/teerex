@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Dialog,
   DialogContent,
@@ -49,48 +49,7 @@ export const GamingBundleProcessingDialog: React.FC<GamingBundleProcessingDialog
   const pollTimeoutRef = useRef<number | null>(null);
   const hasTriggeredConfirmRef = useRef(false);
 
-  useEffect(() => {
-    if (paymentData) {
-      monitorSessionRef.current += 1;
-      if (pollTimeoutRef.current) {
-        clearTimeout(pollTimeoutRef.current);
-        pollTimeoutRef.current = null;
-      }
-      setStatus('processing');
-      setProgressMessage('Processing your payment...');
-      setTransactionHash(null);
-      hasCalledSuccessRef.current = false;
-      hasTriggeredConfirmRef.current = false;
-      startMonitoring(monitorSessionRef.current);
-    }
-  }, [paymentData?.reference]);
-
-  const startMonitoring = (sessionId: number) => {
-    if (!paymentData) return;
-    setProgressMessage('Payment recorded. Issuing your bundle NFT...');
-    if (!hasTriggeredConfirmRef.current) {
-      hasTriggeredConfirmRef.current = true;
-      (async () => {
-        const token = await getAccessToken?.();
-        return callEdgeFunction('confirm-gaming-bundle-paystack',
-          { reference: paymentData.reference },
-          { privyToken: token }
-        );
-      })()
-        .catch((err) => {
-          console.warn('[BUNDLE MONITOR] confirm-gaming-bundle-paystack failed:', err);
-          toast({
-            title: 'Payment confirmation delayed',
-            description:
-              err instanceof Error ? err.message : 'We could not confirm your Paystack payment yet. We will keep checking.',
-            variant: 'destructive',
-          });
-        });
-    }
-    monitorStatus(sessionId);
-  };
-
-  const monitorStatus = (sessionId: number) => {
+  const monitorStatus = useCallback((sessionId: number) => {
     if (!paymentData) return;
     let attempts = 0;
     const maxAttempts = 30;
@@ -169,7 +128,48 @@ export const GamingBundleProcessingDialog: React.FC<GamingBundleProcessingDialog
     };
 
     pollTimeoutRef.current = window.setTimeout(poll, 3000);
-  };
+  }, [onPurchaseSuccess, paymentData, toast]);
+
+  const startMonitoring = useCallback((sessionId: number) => {
+    if (!paymentData) return;
+    setProgressMessage('Payment recorded. Issuing your bundle NFT...');
+    if (!hasTriggeredConfirmRef.current) {
+      hasTriggeredConfirmRef.current = true;
+      (async () => {
+        const token = await getAccessToken?.();
+        return callEdgeFunction('confirm-gaming-bundle-paystack',
+          { reference: paymentData.reference },
+          { privyToken: token }
+        );
+      })()
+        .catch((err) => {
+          console.warn('[BUNDLE MONITOR] confirm-gaming-bundle-paystack failed:', err);
+          toast({
+            title: 'Payment confirmation delayed',
+            description:
+              err instanceof Error ? err.message : 'We could not confirm your Paystack payment yet. We will keep checking.',
+            variant: 'destructive',
+          });
+        });
+    }
+    monitorStatus(sessionId);
+  }, [getAccessToken, monitorStatus, paymentData, toast]);
+
+  useEffect(() => {
+    if (paymentData) {
+      monitorSessionRef.current += 1;
+      if (pollTimeoutRef.current) {
+        clearTimeout(pollTimeoutRef.current);
+        pollTimeoutRef.current = null;
+      }
+      setStatus('processing');
+      setProgressMessage('Processing your payment...');
+      setTransactionHash(null);
+      hasCalledSuccessRef.current = false;
+      hasTriggeredConfirmRef.current = false;
+      startMonitoring(monitorSessionRef.current);
+    }
+  }, [paymentData, startMonitoring]);
 
   if (!bundle || !paymentData) return null;
 

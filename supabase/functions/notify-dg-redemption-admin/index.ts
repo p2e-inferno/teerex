@@ -3,12 +3,13 @@ import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.50.0";
 import { corsHeaders, buildPreflightHeaders } from "../_shared/cors.ts";
 import { SUPABASE_SERVICE_ROLE_KEY, SUPABASE_URL } from "../_shared/constants.ts";
-import { sendEmail } from "../_shared/email-utils.ts";
+import { getDgRedemptionReviewOpsEmail, sendEmail } from "../_shared/email-utils.ts";
 import {
   getDgRedemptionAdminNotifyCooldownSeconds,
   getNextDgRedemptionAdminNotifyAt,
   publicDgRedemptionIntent,
 } from "../_shared/dg-redemption.ts";
+import { buildDgRedemptionReviewOpsEmailParams } from "../_shared/dg-redemption-notify.ts";
 import { verifyPrivyToken } from "../_shared/privy.ts";
 
 function json(payload: Record<string, unknown>, status = 200): Response {
@@ -16,34 +17,6 @@ function json(payload: Record<string, unknown>, status = 200): Response {
     status,
     headers: { ...corsHeaders, "Content-Type": "application/json" },
   });
-}
-
-function formatNairaFromKobo(value: unknown): string {
-  const amount = Number(value || 0) / 100;
-  return `NGN ${amount.toLocaleString("en-NG", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-}
-
-function buildAdminEmail(intent: any): { subject: string; text: string } {
-  const payout = intent.payout_snapshot || {};
-  const subject = `Redeem DG needs review: ${intent.id}`;
-  const text = [
-    "A user requested admin review for a Redeem DG payout.",
-    "",
-    `Request ID: ${intent.id}`,
-    `Status: ${intent.status}`,
-    `User ID: ${intent.user_id}`,
-    `Wallet: ${intent.wallet_address}`,
-    `Chain ID: ${intent.chain_id}`,
-    `Amount DG: ${publicDgRedemptionIntent(intent).amount_dg || intent.amount_dg_raw}`,
-    `Net payout: ${formatNairaFromKobo(intent.net_payout_kobo)}`,
-    `Transaction hash: ${intent.tx_hash || "not submitted"}`,
-    `Paystack reference: ${intent.paystack_reference || "not created"}`,
-    `Last error: ${intent.last_error || "none"}`,
-    `Bank: ${payout.bank_name || "unknown"} ******${payout.account_number_last4 || "unknown"}`,
-    "",
-    "Review this in the Redeem DG admin dashboard and retry or resolve the payout.",
-  ].join("\n");
-  return { subject, text };
 }
 
 serve(async (req) => {
@@ -94,11 +67,14 @@ serve(async (req) => {
       return json({ ok: false, error: "Admin email is not configured" }, 500);
     }
 
-    const email = buildAdminEmail(intent);
+    const email = getDgRedemptionReviewOpsEmail(
+      buildDgRedemptionReviewOpsEmailParams(intent, "user_requested_review"),
+    );
     const result = await sendEmail({
       to: opsEmail,
       subject: email.subject,
       text: email.text,
+      html: email.html,
       tags: ["dg-redemption", "admin-review"],
     });
 

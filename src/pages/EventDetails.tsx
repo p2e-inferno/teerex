@@ -237,7 +237,7 @@ const EventDetailsContent = () => {
     };
 
     checkVendorPayoutAccount();
-  }, [event?.creator_id, event?.payment_methods, getAccessToken]);
+  }, [event, getAccessToken]);
 
   // Centralized attestation state (schemas, UIDs, on-chain instance revocability)
   const { state } = useEventAttestationState({
@@ -369,9 +369,12 @@ const EventDetailsContent = () => {
     ? `${explorerBase.replace(/\/$/, '')}/address/${event.lock_address}`
     : '#';
 
-  const isValidSchemaUid = (uid?: string | null) => !!uid && uid.startsWith('0x') && uid.length === 66 && /^0x[0-9a-f]{64}$/i.test(uid);
+  const isValidSchemaUid = useCallback(
+    (uid?: string | null) => !!uid && uid.startsWith('0x') && uid.length === 66 && /^0x[0-9a-f]{64}$/i.test(uid),
+    []
+  );
 
-  const refreshLikes = async (ev: PublishedEvent) => {
+  const refreshLikes = useCallback(async (ev: PublishedEvent) => {
     try {
       const { data: schema } = await supabase
         .from('attestation_schemas')
@@ -409,11 +412,11 @@ const EventDetailsContent = () => {
     } catch (e) {
       console.error('Error loading likes:', e);
     }
-  };
+  }, [isValidSchemaUid, wallet?.address]);
 
   useEffect(() => {
     if (event) refreshLikes(event);
-  }, [event?.id, wallet?.address]);
+  }, [event, refreshLikes]);
 
   // Going schema + my UID + instance revocability
   const [goingSchemaUid, setGoingSchemaUid] = useState<string | null>(null);
@@ -442,7 +445,7 @@ const EventDetailsContent = () => {
       }
     };
     loadGoingSchema();
-  }, []);
+  }, [isValidSchemaUid]);
 
   useEffect(() => {
     const loadMyGoing = async () => {
@@ -476,7 +479,7 @@ const EventDetailsContent = () => {
       }
     };
     loadMyGoing();
-  }, [event?.id, wallet?.address, goingSchemaUid, event?.chain_id]);
+  }, [event, goingSchemaUid, isValidSchemaUid, wallet?.address]);
 
   const handleToggleLike = async () => {
     if (!event) return;
@@ -732,7 +735,7 @@ const EventDetailsContent = () => {
     };
 
     loadAttendanceSchema();
-  }, [event]);
+  }, [event, isValidSchemaUid]);
 
   const handleShare = (platform?: string) => {
     // Use lock_address for Web3-native shareable URLs

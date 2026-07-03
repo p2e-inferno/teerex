@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { usePrivy } from '@privy-io/react-auth';
 import { useNavigate } from 'react-router-dom';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -29,7 +29,7 @@ const MyEvents = () => {
   // Real-time ticket counts for all displayed events
   const { keysSoldMap } = useMultiEventTicketRealtime(visibleEvents);
 
-  const loadUserEvents = async () => {
+  const loadUserEvents = useCallback(async () => {
     try {
       if (user?.id) {
         console.log('Loading events for user:', user.id);
@@ -63,11 +63,11 @@ const MyEvents = () => {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [getAccessToken, toast, user?.id]);
 
   useEffect(() => {
     loadUserEvents();
-  }, [user?.id, getAccessToken]);
+  }, [loadUserEvents]);
 
   const handleManageEvent = (event: PublishedEvent) => {
     setSelectedEvent(event);

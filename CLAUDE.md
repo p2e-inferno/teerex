@@ -44,6 +44,7 @@ Server-side only (Edge Functions):
 - `SUPABASE_SERVICE_ROLE_KEY` - For edge functions (sensitive)
 - `PAYSTACK_SECRET_KEY` - Payment processing (sensitive)
 - `UNLOCK_SERVICE_PRIVATE_KEY` - Smart contract interactions (sensitive)
+- `DG_REDEMPTION_PAYOUT_PRIVATE_KEY` - Dedicated wallet for USDC DG-redemption payouts; fund with USDC + gas ETH per supported chain (sensitive)
 - `PRIVY_APP_SECRET` or `PRIVY_VERIFICATION_KEY` - Token verification (sensitive)
 
 ## Architecture Overview

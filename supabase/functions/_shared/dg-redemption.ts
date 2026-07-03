@@ -62,6 +62,27 @@ export interface DgRedemptionConfig {
     vat_bps: number;
     basis: "service_fee" | "none";
   };
+  usdc: {
+    enabled: boolean;
+    balance_cap_enabled: boolean;
+    limits: {
+      min_gross_usdc_micro: number;
+      per_user_daily_usdc_micro: number;
+      platform_daily_usdc_micro: number;
+      manual_review_usdc_micro: number;
+    };
+    service_fee: {
+      bps: number;
+      min_usdc_micro: number;
+      max_usdc_micro: number;
+    };
+  };
+}
+
+export type DgRedemptionPayoutMethod = "ngn" | "usdc";
+
+export function getDgRedemptionPayoutMethod(intent: any): DgRedemptionPayoutMethod {
+  return String(intent?.payout_method || "ngn") === "usdc" ? "usdc" : "ngn";
 }
 
 export interface FeeCalculation {
@@ -70,6 +91,13 @@ export interface FeeCalculation {
   vatBasisKobo: number;
   totalFeeKobo: number;
   netPayoutKobo: number;
+  feeBreakdown: Record<string, unknown>;
+}
+
+export interface UsdcFeeCalculation {
+  serviceFeeUsdcMicro: number;
+  totalFeeUsdcMicro: number;
+  netPayoutUsdcMicro: number;
   feeBreakdown: Record<string, unknown>;
 }
 
@@ -90,6 +118,11 @@ export interface DgRedemptionDiagnostics {
     status: "ok" | "disabled" | "error";
     error?: string;
   };
+  payout_wallet: {
+    status: "ok" | "disabled" | "error";
+    address: string | null;
+    error?: string;
+  };
   chains: Array<{
     chain_id: number;
     chain_name: string;
@@ -104,6 +137,9 @@ export interface DgRedemptionDiagnostics {
     sell_fee_bps: number | null;
     vendor_up_balance_raw: string | null;
     vendor_up_balance_decimals: number | null;
+    usdc_token_address: string | null;
+    payout_wallet_usdc_micro: string | null;
+    payout_wallet_native_wei: string | null;
     status: "ok" | "warning" | "error";
     error?: string;
   }>;
@@ -154,6 +190,21 @@ export const DEFAULT_DG_REDEMPTION_CONFIG: DgRedemptionConfig = {
     enabled: false,
     vat_bps: 750,
     basis: "service_fee",
+  },
+  usdc: {
+    enabled: false,
+    balance_cap_enabled: true,
+    limits: {
+      min_gross_usdc_micro: 0,
+      per_user_daily_usdc_micro: 500_000_000,
+      platform_daily_usdc_micro: 5_000_000_000,
+      manual_review_usdc_micro: 250_000_000,
+    },
+    service_fee: {
+      bps: 300,
+      min_usdc_micro: 300_000,
+      max_usdc_micro: 10_000_000,
+    },
   },
 };
 
@@ -248,7 +299,57 @@ export function normalizeDgRedemptionConfig(input: unknown): DgRedemptionConfig 
     tax: {
       enabled: Boolean(tax.enabled),
       vat_bps: clampInteger(tax.vat_bps, base.tax.vat_bps, 0, 10_000),
-      basis: tax.basis === "service_fee" ? "service_fee" : "none",
+      // A missing basis falls back to the default; only an explicit non-service_fee value means none.
+      basis: (tax.basis ?? base.tax.basis) === "service_fee" ? "service_fee" : "none",
+    },
+    usdc: normalizeUsdcSection(raw.usdc),
+  };
+}
+
+function normalizeUsdcSection(input: unknown): DgRedemptionConfig["usdc"] {
+  const base = DEFAULT_DG_REDEMPTION_CONFIG.usdc;
+  const raw = asObject(input);
+  const limits = asObject(raw.limits);
+  const serviceFee = asObject(raw.service_fee);
+  const minFee = clampInteger(serviceFee.min_usdc_micro, base.service_fee.min_usdc_micro, 0, Number.MAX_SAFE_INTEGER);
+  return {
+    enabled: Boolean(raw.enabled),
+    balance_cap_enabled: raw.balance_cap_enabled !== undefined
+      ? Boolean(raw.balance_cap_enabled)
+      : base.balance_cap_enabled,
+    limits: {
+      min_gross_usdc_micro: clampInteger(
+        limits.min_gross_usdc_micro,
+        base.limits.min_gross_usdc_micro,
+        0,
+        Number.MAX_SAFE_INTEGER,
+      ),
+      per_user_daily_usdc_micro: clampInteger(
+        limits.per_user_daily_usdc_micro,
+        base.limits.per_user_daily_usdc_micro,
+        0,
+        Number.MAX_SAFE_INTEGER,
+      ),
+      platform_daily_usdc_micro: clampInteger(
+        limits.platform_daily_usdc_micro,
+        base.limits.platform_daily_usdc_micro,
+        0,
+        Number.MAX_SAFE_INTEGER,
+      ),
+      manual_review_usdc_micro: clampInteger(
+        limits.manual_review_usdc_micro,
+        base.limits.manual_review_usdc_micro,
+        0,
+        Number.MAX_SAFE_INTEGER,
+      ),
+    },
+    service_fee: {
+      bps: clampInteger(serviceFee.bps, base.service_fee.bps, 0, 10_000),
+      min_usdc_micro: minFee,
+      max_usdc_micro: Math.max(
+        clampInteger(serviceFee.max_usdc_micro, base.service_fee.max_usdc_micro, 0, Number.MAX_SAFE_INTEGER),
+        minFee,
+      ),
     },
   };
 }
@@ -323,6 +424,26 @@ export function validateDgRedemptionConfigForSave(
     throw new Error("VAT basis must be service_fee or none");
   }
 
+  const usdc = asObject(raw.usdc);
+  const usdcLimits = asObject(usdc.limits);
+  const usdcServiceFee = asObject(usdc.service_fee);
+  const usdcDefaults = DEFAULT_DG_REDEMPTION_CONFIG.usdc;
+  const usdcMinFee = requireIntegerInRange(
+    usdcServiceFee.min_usdc_micro ?? usdcDefaults.service_fee.min_usdc_micro,
+    "Minimum USDC service fee",
+    0,
+    Number.MAX_SAFE_INTEGER,
+  );
+  const usdcMaxFee = requireIntegerInRange(
+    usdcServiceFee.max_usdc_micro ?? usdcDefaults.service_fee.max_usdc_micro,
+    "Maximum USDC service fee",
+    0,
+    Number.MAX_SAFE_INTEGER,
+  );
+  if (usdcMaxFee < usdcMinFee) {
+    throw new Error("Maximum USDC service fee must be greater than or equal to the minimum");
+  }
+
   return {
     ...normalizeDgRedemptionConfig(raw),
     supported_chains: [...new Set(supportedChains)],
@@ -368,6 +489,43 @@ export function validateDgRedemptionConfigForSave(
       enabled: Boolean(tax.enabled),
       vat_bps: requireIntegerInRange(tax.vat_bps ?? DEFAULT_DG_REDEMPTION_CONFIG.tax.vat_bps, "VAT bps", 0, 10_000),
       basis: basis === "service_fee" ? "service_fee" : "none",
+    },
+    usdc: {
+      enabled: Boolean(usdc.enabled),
+      balance_cap_enabled: usdc.balance_cap_enabled !== undefined
+        ? Boolean(usdc.balance_cap_enabled)
+        : usdcDefaults.balance_cap_enabled,
+      limits: {
+        min_gross_usdc_micro: requireIntegerInRange(
+          usdcLimits.min_gross_usdc_micro ?? usdcDefaults.limits.min_gross_usdc_micro,
+          "Minimum gross USDC value",
+          0,
+          Number.MAX_SAFE_INTEGER,
+        ),
+        per_user_daily_usdc_micro: requireIntegerInRange(
+          usdcLimits.per_user_daily_usdc_micro ?? usdcDefaults.limits.per_user_daily_usdc_micro,
+          "Per-user daily USDC limit",
+          0,
+          Number.MAX_SAFE_INTEGER,
+        ),
+        platform_daily_usdc_micro: requireIntegerInRange(
+          usdcLimits.platform_daily_usdc_micro ?? usdcDefaults.limits.platform_daily_usdc_micro,
+          "Platform daily USDC limit",
+          0,
+          Number.MAX_SAFE_INTEGER,
+        ),
+        manual_review_usdc_micro: requireIntegerInRange(
+          usdcLimits.manual_review_usdc_micro ?? usdcDefaults.limits.manual_review_usdc_micro,
+          "USDC manual review threshold",
+          0,
+          Number.MAX_SAFE_INTEGER,
+        ),
+      },
+      service_fee: {
+        bps: requireIntegerInRange(usdcServiceFee.bps ?? usdcDefaults.service_fee.bps, "USDC service fee bps", 0, 10_000),
+        min_usdc_micro: usdcMinFee,
+        max_usdc_micro: usdcMaxFee,
+      },
     },
   };
 }
@@ -423,13 +581,23 @@ export function withRedemptionPricingDefaults(network: NetworkConfig): NetworkCo
   } as NetworkConfig;
 }
 
-export function assertRedemptionEnabled(config: DgRedemptionConfig, chainId: number): void {
-  if (!config.enabled) {
+export function assertRedemptionEnabled(
+  config: DgRedemptionConfig,
+  chainId: number,
+  payoutMethod: DgRedemptionPayoutMethod = "ngn",
+): void {
+  const enabled = payoutMethod === "usdc" ? config.usdc.enabled : config.enabled;
+  if (!enabled) {
     throw new Error("Redeem DG is not available right now");
   }
   if (!config.supported_chains.includes(chainId)) {
     throw new Error("Redeem DG is not available on this network");
   }
+}
+
+export function getDgRedemptionPayoutPrivateKey(): string | null {
+  const key = Deno.env.get("DG_REDEMPTION_PAYOUT_PRIVATE_KEY")?.trim();
+  return key || null;
 }
 
 export function parseReferenceId(prefix = "dgr"): string {
@@ -472,6 +640,30 @@ export function calculateFees(params: {
   };
 }
 
+export function calculateUsdcFees(params: {
+  grossValueUsdcMicro: number;
+  vendorFeeUsdcMicro: number;
+  config: DgRedemptionConfig;
+}): UsdcFeeCalculation {
+  const fee = params.config.usdc.service_fee;
+  const rawServiceFee = Math.floor((params.grossValueUsdcMicro * fee.bps) / 10_000);
+  const serviceFeeUsdcMicro = Math.min(Math.max(rawServiceFee, fee.min_usdc_micro), fee.max_usdc_micro);
+  const totalFeeUsdcMicro = params.vendorFeeUsdcMicro + serviceFeeUsdcMicro;
+  const netPayoutUsdcMicro = Math.max(params.grossValueUsdcMicro - serviceFeeUsdcMicro, 0);
+
+  return {
+    serviceFeeUsdcMicro,
+    totalFeeUsdcMicro,
+    netPayoutUsdcMicro,
+    feeBreakdown: {
+      vendor_fee_usdc_micro: params.vendorFeeUsdcMicro,
+      service_fee_usdc_micro: serviceFeeUsdcMicro,
+      service_fee_bps: fee.bps,
+      total_fee_usdc_micro: totalFeeUsdcMicro,
+    },
+  };
+}
+
 export function mapPaystackTransferStatus(params: {
   event?: unknown;
   status?: unknown;
@@ -498,6 +690,12 @@ export function isDgRedemptionManuallyPayable(intent: any): boolean {
   if (!intent?.tx_hash) return false;
   const status = String(intent.status || "");
   if (!["failed", "manual_review", "payout_pending", "payout_processing"].includes(status)) return false;
+
+  if (getDgRedemptionPayoutMethod(intent) === "usdc") {
+    // A recorded payout tx blocks manual settlement unless it is known to have reverted onchain.
+    if (intent.payout_tx_hash) return String(intent.last_error || "") === "usdc_payout_reverted";
+    return true;
+  }
 
   const paystackStatus = String(intent.paystack_status || "").toLowerCase();
   const hasPaystackTransfer = Boolean(intent.paystack_transfer_code || intent.paystack_transfer_id);
@@ -737,9 +935,10 @@ async function fetchVendorEdges(network: NetworkConfig): Promise<RateEdge[]> {
   });
 }
 
-async function convertRawAmountsToNgnKobo(
+async function convertRawAmounts(
   network: NetworkConfig,
   from: SupportedSymbol,
+  to: "NGN" | "USDC",
   amounts: Record<string, bigint>,
   decimals: number,
 ): Promise<{ amounts: Record<string, number>; snapshot: Record<string, unknown> }> {
@@ -751,11 +950,13 @@ async function convertRawAmountsToNgnKobo(
     };
   }
 
+  // NGN needs the fiat leg; USDC terminates at the Uniswap output.
+  const outputScale = to === "NGN" ? 100 : 1_000_000;
   const snapshot = await getPricingSnapshot({
     fetchers: {
       vendor: () => fetchVendorEdges(network),
       uniswap: () => fetchUniswapEdges(network),
-      fiat: () => fetchFiatEdges(),
+      ...(to === "NGN" ? { fiat: () => fetchFiatEdges() } : {}),
     },
   });
   const result: Record<string, number> = {};
@@ -775,17 +976,18 @@ async function convertRawAmountsToNgnKobo(
     const conversion = await convertAmount({
       amount: tokenAmount,
       from,
-      to: "NGN",
+      to,
       snapshot,
     });
     if (!conversion.outputAmount || conversion.outputAmount <= 0) {
       throw new Error(conversion.errors[0] || "Could not price DG reward redemption");
     }
-    result[key] = Math.floor(conversion.outputAmount * 100);
+    result[key] = Math.floor(conversion.outputAmount * outputScale);
     lastSnapshot = {
       input_symbol: from,
       input_amount: tokenAmount,
-      output_ngn: conversion.outputAmount,
+      output_symbol: to,
+      output_amount: conversion.outputAmount,
       path: conversion.path,
       stale: conversion.stale,
       errors: conversion.errors,
@@ -804,7 +1006,15 @@ export async function priceDgRedemptionAmounts(
   amounts: Record<string, bigint>,
   dgDecimals: number,
 ): Promise<{ amounts: Record<string, number>; snapshot: Record<string, unknown> }> {
-  return convertRawAmountsToNgnKobo(network, "DG", amounts, dgDecimals);
+  return convertRawAmounts(network, "DG", "NGN", amounts, dgDecimals);
+}
+
+export async function priceDgRedemptionAmountsUsdc(
+  network: NetworkConfig,
+  amounts: Record<string, bigint>,
+  dgDecimals: number,
+): Promise<{ amounts: Record<string, number>; snapshot: Record<string, unknown> }> {
+  return convertRawAmounts(network, "DG", "USDC", amounts, dgDecimals);
 }
 
 export async function getVendorRedemptionQuote(params: {
@@ -1095,6 +1305,22 @@ export async function getDgRedemptionDiagnostics(params: {
       }))
     : { available_kobo: null, status: "disabled" as const };
 
+  const payoutKey = getDgRedemptionPayoutPrivateKey();
+  let payoutWallet: DgRedemptionDiagnostics["payout_wallet"];
+  let payoutWalletAddress: string | null = null;
+  if (!params.config.usdc.enabled) {
+    payoutWallet = { status: "disabled", address: null };
+  } else if (!payoutKey) {
+    payoutWallet = { status: "error", address: null, error: "missing_payout_key" };
+  } else {
+    try {
+      payoutWalletAddress = new ethers.Wallet(payoutKey).address.toLowerCase();
+      payoutWallet = { status: "ok", address: payoutWalletAddress };
+    } catch (_) {
+      payoutWallet = { status: "error", address: null, error: "invalid_payout_key" };
+    }
+  }
+
   const chains = await Promise.all(params.networks.map(async (network) => {
     const supported = params.config.supported_chains.includes(network.chain_id);
     const redemptionWallet = params.config.wallets_by_chain[String(network.chain_id)] || null;
@@ -1119,11 +1345,28 @@ export async function getDgRedemptionDiagnostics(params: {
       const swapToken = String(tokenConfigRaw.swapToken ?? tokenConfigRaw[1]).toLowerCase();
       const tokenConfigMatches = baseToken === upTokenAddress.toLowerCase() && swapToken === dgTokenAddress.toLowerCase();
       const sellFeeBps = Number(feeConfigRaw.sellFeeBps ?? feeConfigRaw[3]);
+
+      const usdcTokenAddress = pricingNetwork.usdc_token_address?.toLowerCase() || null;
+      let payoutWalletUsdcMicro: string | null = null;
+      let payoutWalletNativeWei: string | null = null;
+      if (params.config.usdc.enabled && supported && payoutWalletAddress && usdcTokenAddress) {
+        const usdcToken = new Contract(usdcTokenAddress, ERC20_ABI, provider);
+        const [usdcBalance, nativeBalance] = await Promise.all([
+          usdcToken.balanceOf(payoutWalletAddress),
+          provider.getBalance(payoutWalletAddress),
+        ]);
+        payoutWalletUsdcMicro = BigInt(usdcBalance.toString()).toString();
+        payoutWalletNativeWei = BigInt(nativeBalance.toString()).toString();
+      }
+
       const issues = [
         supported && !redemptionWallet ? "missing_redemption_wallet" : null,
         !tokenConfigMatches ? "token_config_mismatch" : null,
         paused ? "vendor_paused" : null,
         !Number.isFinite(sellFeeBps) || sellFeeBps < 0 || sellFeeBps > 10_000 ? "invalid_sell_fee" : null,
+        params.config.usdc.enabled && supported && !payoutWalletAddress ? "missing_payout_key" : null,
+        params.config.usdc.enabled && supported && !usdcTokenAddress ? "missing_usdc_token" : null,
+        params.config.usdc.enabled && supported && payoutWalletUsdcMicro === "0" ? "payout_wallet_empty" : null,
       ].filter(Boolean);
       return {
         chain_id: network.chain_id,
@@ -1139,6 +1382,9 @@ export async function getDgRedemptionDiagnostics(params: {
         sell_fee_bps: Number.isFinite(sellFeeBps) ? sellFeeBps : null,
         vendor_up_balance_raw: BigInt(upBalanceRawValue.toString()).toString(),
         vendor_up_balance_decimals: Number(upDecimalsRaw),
+        usdc_token_address: usdcTokenAddress,
+        payout_wallet_usdc_micro: payoutWalletUsdcMicro,
+        payout_wallet_native_wei: payoutWalletNativeWei,
         status: issues.length ? "warning" as const : "ok" as const,
         error: issues.length ? issues.join(", ") : undefined,
       };
@@ -1157,13 +1403,16 @@ export async function getDgRedemptionDiagnostics(params: {
         sell_fee_bps: null,
         vendor_up_balance_raw: null,
         vendor_up_balance_decimals: null,
+        usdc_token_address: network.usdc_token_address?.toLowerCase() || null,
+        payout_wallet_usdc_micro: null,
+        payout_wallet_native_wei: null,
         status: "error" as const,
         error: error instanceof Error ? error.message : "Diagnostics failed",
       };
     }
   }));
 
-  return { paystack_balance: paystackBalance, chains };
+  return { paystack_balance: paystackBalance, payout_wallet: payoutWallet, chains };
 }
 
 export function publicDgRedemptionIntent(intent: any): Record<string, unknown> {
@@ -1188,6 +1437,7 @@ export function publicDgRedemptionIntent(intent: any): Record<string, unknown> {
   return {
     id: intent.id,
     status,
+    payout_method: getDgRedemptionPayoutMethod(intent),
     chain_id: intent.chain_id,
     wallet_address: intent.wallet_address,
     redemption_wallet_address: intent.redemption_wallet_address,
@@ -1201,6 +1451,18 @@ export function publicDgRedemptionIntent(intent: any): Record<string, unknown> {
     vat_basis_kobo: intent.vat_basis_kobo,
     total_fee_kobo: intent.total_fee_kobo,
     estimated_receive_kobo: intent.net_payout_kobo,
+    gross_value_usdc_micro: intent.gross_usdc_micro ?? null,
+    service_fee_usdc_micro: intent.service_fee_usdc_micro ?? null,
+    vendor_fee_usdc_micro: Number(intent.fee_breakdown?.vendor_fee_usdc_micro || 0),
+    pre_vendor_value_usdc_micro: Number(intent.fee_breakdown?.pre_vendor_value_usdc_micro || 0),
+    total_fee_usdc_micro: intent.total_fee_usdc_micro ?? null,
+    estimated_receive_usdc_micro: intent.net_payout_usdc_micro ?? null,
+    payout_wallet_address: intent.payout_wallet_address ?? null,
+    payout_tx_hash: intent.payout_tx_hash ?? null,
+    fee_transfer_status: intent.fee_transfer_status ?? null,
+    fee_transfer_tx_hash: intent.fee_transfer_tx_hash ?? null,
+    fee_transfer_last_error: intent.fee_transfer_last_error ?? null,
+    fee_transfer_completed_at: intent.fee_transfer_completed_at ?? null,
     required_confirmations: Number(intent.limits_snapshot?.required_confirmations || 0),
     tx_hash: intent.tx_hash,
     last_error: intent.last_error,

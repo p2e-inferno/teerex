@@ -9,6 +9,14 @@ import {
   publicDgRedemptionIntentWithAdminNotify,
   reconcileDgRedemptionPaystackTransfer,
 } from "../_shared/dg-redemption.ts";
+import {
+  canReconcileUsdcFeeTransfer,
+  canReconcileUsdcPayout,
+  reconcileUsdcFeeTransfer,
+  reconcileUsdcPayout,
+} from "../_shared/dg-redemption-payout.ts";
+import { alertIfNewlyManualReview } from "../_shared/dg-redemption-notify.ts";
+import { validateChain } from "../_shared/network-helpers.ts";
 import { verifyPrivyToken } from "../_shared/privy.ts";
 
 function json(payload: Record<string, unknown>, status = 200): Response {
@@ -63,8 +71,60 @@ serve(async (req) => {
         })
       ),
     );
+    // Compare against the raw rows so normalize-driven failed -> manual_review flips also alert.
+    await Promise.all(
+      reconciledRedemptions.map((after: any, index: number) =>
+        alertIfNewlyManualReview({
+          supabase,
+          before: (redemptions.data || [])[index],
+          after,
+          reason: after.last_error || "paystack_transfer_failed",
+          actorUserId: userId,
+          logPrefix: "list-user-dg-redemptions",
+        })
+      ),
+    );
+    const networkCache = new Map<number, Promise<any>>();
+    const usdcReconciledRedemptions = await Promise.all(
+      reconciledRedemptions.map(async (intent: any) => {
+        if (!canReconcileUsdcPayout(intent)) return intent;
+        const chainId = Number(intent.chain_id);
+        if (!networkCache.has(chainId)) {
+          networkCache.set(chainId, validateChain(supabase, chainId));
+        }
+        const network = await networkCache.get(chainId);
+        if (!network) return intent;
+        return reconcileUsdcPayout({
+          supabase,
+          intent,
+          network,
+          requiredConfirmations: config.required_confirmations,
+          actorUserId: userId,
+          logPrefix: "list-user-dg-redemptions",
+        });
+      }),
+    );
+    const feeReconciledRedemptions = await Promise.all(
+      usdcReconciledRedemptions.map(async (intent: any) => {
+        if (!canReconcileUsdcFeeTransfer(intent)) return intent;
+        const chainId = Number(intent.chain_id);
+        if (!networkCache.has(chainId)) {
+          networkCache.set(chainId, validateChain(supabase, chainId));
+        }
+        const network = await networkCache.get(chainId);
+        if (!network) return intent;
+        return reconcileUsdcFeeTransfer({
+          supabase,
+          intent,
+          network,
+          requiredConfirmations: config.required_confirmations,
+          actorUserId: userId,
+          logPrefix: "list-user-dg-redemptions",
+        });
+      }),
+    );
     const publicRedemptions = await Promise.all(
-      reconciledRedemptions.map((intent: any) => publicDgRedemptionIntentWithAdminNotify(supabase, intent)),
+      feeReconciledRedemptions.map((intent: any) => publicDgRedemptionIntentWithAdminNotify(supabase, intent)),
     );
 
     return json({
@@ -79,6 +139,10 @@ serve(async (req) => {
       limits: {
         min_dg: config.limits.min_dg,
         max_dg: config.limits.max_dg,
+      },
+      methods: {
+        ngn_enabled: config.enabled,
+        usdc_enabled: config.usdc.enabled,
       },
     });
   } catch (error) {

@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef } from "react";
+import React, { useEffect, useState, useRef, useCallback } from "react";
 import {
   Dialog,
   DialogContent,
@@ -63,40 +63,8 @@ export const TicketProcessingDialog: React.FC<TicketProcessingDialogProps> = ({
     resolveExplorerUrl();
   }, [transactionHash, event?.chain_id]);
 
-  useEffect(() => {
-    if (isOpen && paymentData) {
-      setStatus("processing");
-      setProgressMessage("Processing your payment...");
-      setTransactionHash(null);
-      setPurchaseMessage(null);
-      hasCalledSuccessRef.current = false; // Reset on new dialog open
-      startWebhookMonitoring();
-    }
-  }, [isOpen, paymentData]);
-
-  const startWebhookMonitoring = async () => {
-    if (!paymentData) return;
-    try {
-      console.log(
-        "[TICKET PROCESSING] Starting webhook monitoring for reference:",
-        paymentData.reference
-      );
-      setProgressMessage("Payment recorded. Issuing your NFT ticket...");
-      monitorWebhookStatusNew();
-    } catch (error) {
-      console.error("[TICKET PROCESSING] Error starting monitoring:", error);
-      setStatus("error");
-      toast({
-        title: "Payment Processing Error",
-        description:
-          "Payment was successful but there was an error processing your ticket. Please go to My Tickets for manual issuance.",
-        variant: "destructive",
-      });
-    }
-  };
-
   // Poll status through service-side function to avoid RLS issues
-  const monitorWebhookStatusNew = () => {
+  const monitorWebhookStatusNew = useCallback(() => {
     if (!paymentData) return;
 
     let attempts = 0;
@@ -196,7 +164,39 @@ export const TicketProcessingDialog: React.FC<TicketProcessingDialogProps> = ({
     };
 
     setTimeout(pollForStatus, 3000);
-  };
+  }, [onPurchaseSuccess, paymentData, toast]);
+
+  const startWebhookMonitoring = useCallback(async () => {
+    if (!paymentData) return;
+    try {
+      console.log(
+        "[TICKET PROCESSING] Starting webhook monitoring for reference:",
+        paymentData.reference
+      );
+      setProgressMessage("Payment recorded. Issuing your NFT ticket...");
+      monitorWebhookStatusNew();
+    } catch (error) {
+      console.error("[TICKET PROCESSING] Error starting monitoring:", error);
+      setStatus("error");
+      toast({
+        title: "Payment Processing Error",
+        description:
+          "Payment was successful but there was an error processing your ticket. Please go to My Tickets for manual issuance.",
+        variant: "destructive",
+      });
+    }
+  }, [monitorWebhookStatusNew, paymentData, toast]);
+
+  useEffect(() => {
+    if (isOpen && paymentData) {
+      setStatus("processing");
+      setProgressMessage("Processing your payment...");
+      setTransactionHash(null);
+      setPurchaseMessage(null);
+      hasCalledSuccessRef.current = false; // Reset on new dialog open
+      startWebhookMonitoring();
+    }
+  }, [isOpen, paymentData, startWebhookMonitoring]);
 
   const handleViewTickets = () => {
     window.location.href = "/my-tickets";
