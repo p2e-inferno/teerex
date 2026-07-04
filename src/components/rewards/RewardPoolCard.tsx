@@ -248,6 +248,14 @@ export function RewardPoolCard({ pool, viewerAddress, isTicketHolder, eventEndsA
       ))
   );
 
+  const canDisputePosition = (position: DisplayPosition) => (
+    Boolean(position.winner) &&
+    !position.claimed &&
+    !position.reclaimed &&
+    Boolean(position.opensAt) &&
+    nowSecs < position.opensAt
+  );
+
   const closeBlockedReason = useMemo(() => {
     if (!isCreator) return 'Only the prize pool creator can cancel it.';
     if (onchainVerificationError) return 'Unable to verify this prize pool on-chain. If this event still points to an older rewards controller, refresh after the controller and network config are updated.';
@@ -299,12 +307,13 @@ export function RewardPoolCard({ pool, viewerAddress, isTicketHolder, eventEndsA
   const canReclaim = isCreator && onchainData
     ? !onchainData.closed && !freezeBlocksNow && nowSecs > onchainData.claimEnd + onchainData.frozenAccrued
     : false;
+  const canDisputeAnyPosition = positions.some(canDisputePosition);
   const canClose = isCreator && !closeBlockedReason;
   const canOpenAssign = canManageWinners && !assignBlockedReason;
   const showAssignAction = canManageWinners;
   const showCloseAction = isCreator;
   const showReclaimAction = isCreator && canReclaim;
-  const showDisputeAction = isTicketHolder && !isCreator;
+  const showDisputeAction = isTicketHolder && !isCreator && canDisputeAnyPosition;
 
   const openTx = async () => {
     if (!pool.tx_hash) return;
@@ -467,7 +476,7 @@ export function RewardPoolCard({ pool, viewerAddress, isTicketHolder, eventEndsA
                         {claimable && (
                           <span className="text-xs font-medium text-blue-600">claimable</span>
                         )}
-                        {isTicketHolder && !isCreator && !p.claimed && !p.reclaimed && (
+                        {isTicketHolder && !isCreator && canDisputePosition(p) && (
                           <button
                             onClick={() => { setDisputePlacement(p.placement); setDisputeOpen(true); }}
                             className="text-xs font-medium text-red-600 hover:underline"

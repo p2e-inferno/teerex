@@ -14,6 +14,26 @@ export type PrivyEmailAccount = Extract<LinkedAccountWithMetadata, { type: 'emai
 export type PrivyWalletAccount = Extract<LinkedAccountWithMetadata, { type: 'wallet' }>;
 
 const EMBEDDED_WALLET_CLIENT_TYPES = new Set(['privy', 'privy-v2']);
+const LOGIN_ACCOUNT_TYPES = new Set<LinkedAccountWithMetadata['type']>([
+  'wallet',
+  'email',
+  'phone',
+  'google_oauth',
+  'twitter_oauth',
+  'discord_oauth',
+  'github_oauth',
+  'spotify_oauth',
+  'instagram_oauth',
+  'tiktok_oauth',
+  'line_oauth',
+  'linkedin_oauth',
+  'apple_oauth',
+  'custom_auth',
+  'farcaster',
+  'passkey',
+  'telegram',
+  'cross_app',
+]);
 
 export const normalizeWalletAddress = (address?: string | null) =>
   address?.toLowerCase() ?? null;
@@ -28,6 +48,9 @@ export const isPrivyEmailAccount = (
 export const isPrivyWalletAccount = (
   account: LinkedAccountWithMetadata
 ): account is PrivyWalletAccount => account.type === 'wallet';
+
+export const isPrivyLoginAccount = (account: LinkedAccountWithMetadata) =>
+  LOGIN_ACCOUNT_TYPES.has(account.type);
 
 export const getPrivyLinkedWallets = (linkedAccounts?: LinkedAccountWithMetadata[] | null) =>
   (linkedAccounts ?? []).filter(isPrivyWalletAccount);
@@ -58,6 +81,39 @@ export const isPrivyEmbeddedWallet = (wallet?: PrivyWalletIdentitySource | null)
 
 export const isPrivyExternalWallet = (wallet?: PrivyWalletIdentitySource | null) =>
   Boolean(wallet?.address) && !isPrivyEmbeddedWallet(wallet);
+
+const getLatestVerifiedAtTime = (account: LinkedAccountWithMetadata) => {
+  const value = account.latestVerifiedAt;
+  if (!value) return 0;
+  const time = value instanceof Date ? value.getTime() : Date.parse(String(value));
+  return Number.isFinite(time) ? time : 0;
+};
+
+export const getPrivyExternalWalletLoginAccount = (
+  linkedAccounts?: LinkedAccountWithMetadata[] | null
+) => {
+  const loginAccounts = (linkedAccounts ?? []).filter(isPrivyLoginAccount);
+  const externalWalletAccounts = loginAccounts
+    .filter(isPrivyWalletAccount)
+    .filter(isPrivyExternalWallet);
+
+  if (externalWalletAccounts.length === 0) return null;
+
+  const latestLoginAccount = loginAccounts.reduce<LinkedAccountWithMetadata | null>((latest, account) => {
+    const latestTime = latest ? getLatestVerifiedAtTime(latest) : 0;
+    const accountTime = getLatestVerifiedAtTime(account);
+    return accountTime > latestTime ? account : latest;
+  }, null);
+
+  if (latestLoginAccount && getLatestVerifiedAtTime(latestLoginAccount) > 0) {
+    return isPrivyWalletAccount(latestLoginAccount) && isPrivyExternalWallet(latestLoginAccount)
+      ? latestLoginAccount
+      : null;
+  }
+
+  const hasNonWalletLoginAccount = loginAccounts.some((account) => !isPrivyWalletAccount(account));
+  return hasNonWalletLoginAccount ? null : externalWalletAccounts[0];
+};
 
 export const getPrivyWalletByAddress = <T extends PrivyWalletIdentitySource>(
   wallets: T[],

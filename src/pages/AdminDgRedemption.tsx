@@ -1208,17 +1208,17 @@ const AdminDgRedemption: React.FC = () => {
                         <div className="mt-2 text-2xl font-bold">{formatUsdcFromMicro(wallet.usdc_balance_micro)}</div>
                         <div className="mt-1 space-y-0.5 text-xs text-muted-foreground">
                           <div className="flex items-center gap-2">
-                            <Tooltip>
-                              <TooltipTrigger asChild>
-                                <span className="font-mono text-sm font-semibold text-foreground" title={wallet.address}>
-                                  {formatShortWalletAddress(wallet.address)}
-                                </span>
-                              </TooltipTrigger>
-                              <TooltipContent>
-                                <span className="font-mono text-xs">{wallet.address}</span>
-                              </TooltipContent>
-                            </Tooltip>
-                            <ActionButton label="Copy payout wallet address" size="icon" variant="ghost" className="h-7 w-7 shrink-0 text-foreground hover:bg-muted" onClick={() => copyValue('Payout wallet address', wallet.address)}>
+	                            <Tooltip>
+	                              <TooltipTrigger asChild>
+	                                <span className="font-mono text-sm font-semibold text-foreground" title={wallet.address ?? undefined}>
+	                                  {wallet.address ? formatShortWalletAddress(wallet.address) : 'No wallet address'}
+	                                </span>
+	                              </TooltipTrigger>
+	                              <TooltipContent>
+	                                <span className="font-mono text-xs">{wallet.address ?? 'No wallet address'}</span>
+	                              </TooltipContent>
+	                            </Tooltip>
+	                            <ActionButton label="Copy payout wallet address" size="icon" variant="ghost" className="h-7 w-7 shrink-0 text-foreground hover:bg-muted" disabled={!wallet.address} onClick={() => wallet.address && copyValue('Payout wallet address', wallet.address)}>
                               <Copy className="h-4 w-4" />
                             </ActionButton>
                           </div>

@@ -22,6 +22,17 @@ function json(data: any, status = 200) {
 
 const isAddr = (v: unknown) => typeof v === "string" && /^0x[a-fA-F0-9]{40}$/.test(v);
 
+type StandingDisplayStatus = "review_open" | "under_dispute" | "ready_to_finalize" | "final";
+
+function deriveDisplayStatus(row: any, disputed: boolean, nowMs: number): StandingDisplayStatus {
+  if (row?.status === "final") return "final";
+  if (disputed) return "under_dispute";
+
+  const holdMs = row?.hold_until ? new Date(row.hold_until).getTime() : NaN;
+  if (Number.isFinite(holdMs) && holdMs <= nowMs) return "ready_to_finalize";
+  return "review_open";
+}
+
 async function handleGames(supabase: any) {
   const { data, error } = await supabase
     .from("games")
@@ -113,6 +124,7 @@ async function handleEventStandings(supabase: any, body: any) {
 
   const entries = computeStandings(results as any, profile);
   const resultById = new Map(results.map((r: any) => [r.id, r]));
+  const nowMs = Date.now();
 
   const standings = entries.map((entry) => {
     const row = resultById.get(entry.result_id);
@@ -125,7 +137,7 @@ async function handleEventStandings(supabase: any, body: any) {
     return {
       ...entry,
       alias,
-      display_status: entry.status === "provisional" && disputed ? "under_dispute" : entry.status,
+      display_status: deriveDisplayStatus(row, disputed, nowMs),
       participant_count: row?.participant_count ?? null,
     };
   });

@@ -19,6 +19,77 @@ function json(data: any, status = 200) {
 const isAddr = (v: unknown) => typeof v === "string" && /^0x[a-fA-F0-9]{40}$/.test(v);
 const CATEGORIES = ["wrong_winner", "rules_breach", "collusion", "not_paid", "standings", "other"];
 
+const parseTime = (value: unknown): number | null => {
+  if (!value) return null;
+  const ms = new Date(String(value)).getTime();
+  return Number.isFinite(ms) ? ms : null;
+};
+
+function positionDisputeDeadlineMs(pool: any, position: any): number | null {
+  const deadlines = [
+    parseTime(pool.claim_start),
+    parseTime(position.hold_until),
+  ];
+  const assignedMs = parseTime(position.assigned_at);
+  const challengeSecs = Number(pool.challenge_window_secs) || 0;
+  if (assignedMs != null && challengeSecs > 0) {
+    deadlines.push(assignedMs + challengeSecs * 1000);
+  }
+
+  const valid = deadlines.filter((v): v is number => v != null);
+  return valid.length > 0 ? Math.max(...valid) : null;
+}
+
+function canDisputePosition(pool: any, position: any, nowMs: number): boolean {
+  if (!position?.winner_address || position.claimed || position.reclaimed) return false;
+  const deadlineMs = positionDisputeDeadlineMs(pool, position);
+  return deadlineMs != null && nowMs < deadlineMs;
+}
+
+async function getDisputeWindowError(
+  supabase: any,
+  pool: any,
+  placement: number | null,
+  category: string,
+): Promise<string | null> {
+  const nowMs = Date.now();
+
+  if (category === "standings") {
+    const { data: event, error: eventErr } = await supabase
+      .from("events")
+      .select("id")
+      .ilike("lock_address", pool.event_lock_address)
+      .maybeSingle();
+    if (eventErr) return eventErr.message;
+    if (!event) return "event_not_found";
+
+    const { count, error } = await supabase
+      .from("game_results")
+      .select("id", { count: "exact", head: true })
+      .eq("event_id", event.id)
+      .eq("source", "organizer")
+      .eq("status", "provisional")
+      .gt("hold_until", new Date(nowMs).toISOString());
+    if (error) return error.message;
+    return count && count > 0 ? null : "dispute_window_closed";
+  }
+
+  let query = supabase
+    .from("reward_pool_positions")
+    .select("placement, winner_address, assigned_at, hold_until, claimed, reclaimed")
+    .eq("reward_pool_id", pool.id);
+  if (placement != null) query = query.eq("placement", placement);
+  else query = query.not("winner_address", "is", null);
+
+  const { data: positions, error } = await query;
+  if (error) return error.message;
+  if (!positions || positions.length === 0) return placement != null ? "Invalid placement" : "dispute_window_closed";
+
+  return positions.some((position: any) => canDisputePosition(pool, position, nowMs))
+    ? null
+    : "dispute_window_closed";
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: buildPreflightHeaders(req) });
 
@@ -47,13 +118,16 @@ serve(async (req) => {
 
     const { data: pool } = await supabase
       .from("reward_pools")
-      .select("id, chain_id, controller_address, pool_id, event_lock_address, position_count")
+      .select("id, chain_id, controller_address, pool_id, event_lock_address, position_count, claim_start, challenge_window_secs")
       .eq("id", rewardPoolId)
       .maybeSingle();
     if (!pool) return json({ ok: false, error: "pool_not_found" }, 404);
     if (placement != null && placement > Number(pool.position_count)) {
       return json({ ok: false, error: "Invalid placement" }, 400);
     }
+
+    const windowError = await getDisputeWindowError(supabase, pool, placement, category);
+    if (windowError) return json({ ok: false, error: windowError }, 400);
 
     const networkConfig = await validateChain(supabase, Number(pool.chain_id));
     if (!networkConfig?.rpc_url) return json({ ok: false, error: "rpc_not_configured" }, 400);

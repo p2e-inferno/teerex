@@ -745,6 +745,7 @@ export type Database = {
           end_date: string | null
           ends_at: string | null
           event_type: string
+          game_id: string | null
           has_allow_list: boolean | null
           id: string
           image_crop_x: number | null
@@ -791,6 +792,7 @@ export type Database = {
           end_date?: string | null
           ends_at?: string | null
           event_type?: string
+          game_id?: string | null
           has_allow_list?: boolean | null
           id?: string
           image_crop_x?: number | null
@@ -837,6 +839,7 @@ export type Database = {
           end_date?: string | null
           ends_at?: string | null
           event_type?: string
+          game_id?: string | null
           has_allow_list?: boolean | null
           id?: string
           image_crop_x?: number | null
@@ -870,7 +873,15 @@ export type Database = {
           updated_at?: string
           user_id?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "event_drafts_game_id_fkey"
+            columns: ["game_id"]
+            isOneToOne: false
+            referencedRelation: "games"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       event_managers: {
         Row: {
@@ -1112,6 +1123,7 @@ export type Database = {
           end_date: string | null
           ends_at: string | null
           event_type: string
+          game_id: string | null
           has_allow_list: boolean | null
           id: string
           idempotency_hash: string | null
@@ -1169,6 +1181,7 @@ export type Database = {
           end_date?: string | null
           ends_at?: string | null
           event_type?: string
+          game_id?: string | null
           has_allow_list?: boolean | null
           id?: string
           idempotency_hash?: string | null
@@ -1226,6 +1239,7 @@ export type Database = {
           end_date?: string | null
           ends_at?: string | null
           event_type?: string
+          game_id?: string | null
           has_allow_list?: boolean | null
           id?: string
           idempotency_hash?: string | null
@@ -1265,6 +1279,150 @@ export type Database = {
           title?: string
           transaction_hash?: string
           transferable?: boolean
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "events_game_id_fkey"
+            columns: ["game_id"]
+            isOneToOne: false
+            referencedRelation: "games"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      game_results: {
+        Row: {
+          created_at: string
+          event_id: string
+          finalized_at: string | null
+          game_id: string | null
+          hold_until: string | null
+          id: string
+          idempotency_key: string
+          is_ranked: boolean
+          metadata: Json
+          occurred_at: string
+          organizer_id: string
+          participant_count: number | null
+          placement: number
+          player_id: string | null
+          result_kind: string
+          reward_pool_id: string | null
+          source: string
+          status: string
+          updated_at: string
+          void_reason: string | null
+          voided_at: string | null
+          wallet_address: string
+        }
+        Insert: {
+          created_at?: string
+          event_id: string
+          finalized_at?: string | null
+          game_id?: string | null
+          hold_until?: string | null
+          id?: string
+          idempotency_key: string
+          is_ranked?: boolean
+          metadata?: Json
+          occurred_at?: string
+          organizer_id: string
+          participant_count?: number | null
+          placement: number
+          player_id?: string | null
+          result_kind?: string
+          reward_pool_id?: string | null
+          source?: string
+          status?: string
+          updated_at?: string
+          void_reason?: string | null
+          voided_at?: string | null
+          wallet_address: string
+        }
+        Update: {
+          created_at?: string
+          event_id?: string
+          finalized_at?: string | null
+          game_id?: string | null
+          hold_until?: string | null
+          id?: string
+          idempotency_key?: string
+          is_ranked?: boolean
+          metadata?: Json
+          occurred_at?: string
+          organizer_id?: string
+          participant_count?: number | null
+          placement?: number
+          player_id?: string | null
+          result_kind?: string
+          reward_pool_id?: string | null
+          source?: string
+          status?: string
+          updated_at?: string
+          void_reason?: string | null
+          voided_at?: string | null
+          wallet_address?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "game_results_event_id_fkey"
+            columns: ["event_id"]
+            isOneToOne: false
+            referencedRelation: "events"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "game_results_game_id_fkey"
+            columns: ["game_id"]
+            isOneToOne: false
+            referencedRelation: "games"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "game_results_reward_pool_id_fkey"
+            columns: ["reward_pool_id"]
+            isOneToOne: false
+            referencedRelation: "reward_pools"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      games: {
+        Row: {
+          category: string | null
+          cover_url: string | null
+          created_at: string
+          id: string
+          is_active: boolean
+          metadata: Json
+          name: string
+          scoring_profile: Json
+          slug: string
+          updated_at: string
+        }
+        Insert: {
+          category?: string | null
+          cover_url?: string | null
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          metadata?: Json
+          name: string
+          scoring_profile?: Json
+          slug: string
+          updated_at?: string
+        }
+        Update: {
+          category?: string | null
+          cover_url?: string | null
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          metadata?: Json
+          name?: string
+          scoring_profile?: Json
+          slug?: string
           updated_at?: string
         }
         Relationships: []
@@ -3425,6 +3583,7 @@ export type Database = {
           isSetofReturn: false
         }
       }
+      finalize_game_results: { Args: never; Returns: Json }
       get_my_purchase_form_prefill: {
         Args: { p_owner_wallet: string }
         Returns: Json
@@ -3439,6 +3598,7 @@ export type Database = {
         Returns: number
       }
       get_waitlist_count: { Args: { p_event_id: string }; Returns: number }
+      ingest_reward_pool_results: { Args: { p_rows: Json }; Returns: number }
       replace_user_payout_account: {
         Args: {
           p_account_holder_name: string
@@ -3480,6 +3640,10 @@ export type Database = {
           isOneToOne: true
           isSetofReturn: false
         }
+      }
+      submit_extended_placements: {
+        Args: { p_entries: Json; p_event_id: string }
+        Returns: number
       }
       update_reputation_score: {
         Args: {

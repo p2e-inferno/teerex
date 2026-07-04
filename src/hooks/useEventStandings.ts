@@ -3,7 +3,7 @@ import { usePrivy } from '@privy-io/react-auth';
 import { callEdgeFunction } from '@/lib/edgeFunctions';
 import type { Game, ScoringProfile } from '@/hooks/useGames';
 
-export type StandingDisplayStatus = 'provisional' | 'under_dispute' | 'final';
+export type StandingDisplayStatus = 'review_open' | 'under_dispute' | 'ready_to_finalize' | 'final';
 
 export interface StandingRow {
   result_id: string;

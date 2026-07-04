@@ -25,9 +25,12 @@ function statusBadge(row: StandingRow) {
   if (row.display_status === 'under_dispute') {
     return <Badge variant="outline" className="border-red-200 bg-red-50 text-red-700">Under dispute</Badge>;
   }
+  if (row.display_status === 'ready_to_finalize') {
+    return <Badge variant="outline" className="border-blue-200 bg-blue-50 text-blue-700">Finalization pending</Badge>;
+  }
   return (
     <Badge variant="outline" className="border-amber-200 bg-amber-50 text-amber-700">
-      {row.source === 'organizer' ? 'Pending review' : 'Pending dispute window'}
+      {row.source === 'organizer' ? 'Review window open' : 'Dispute window open'}
     </Badge>
   );
 }
@@ -142,9 +145,9 @@ export function EventStandings({ event }: Props) {
   const hasRows = data.standings.length > 0;
   if (!hasRows && !canManage) return null;
 
-  const organizerPending = bands.organizer.some((r) => r.display_status !== 'final');
+  const organizerReviewOpen = bands.organizer.some((r) => r.display_status === 'review_open');
   const reportPool = pools[0] ?? null;
-  const showReport = organizerPending && isTicketHolder && !isCreator && reportPool != null;
+  const showReport = organizerReviewOpen && isTicketHolder && !isCreator && reportPool != null;
   const showExtend = canManage && pools.length > 0 && bands.prize.length > 0;
 
   const submitReport = async (input: { category: RewardDisputeCategory; reasonText: string; holdDurationSecs: number }) => {
@@ -196,7 +199,7 @@ export function EventStandings({ event }: Props) {
           {bands.prize.length > 0 && (
             <div className="space-y-1.5">
               <div className="flex items-center gap-1.5 text-xs font-bold uppercase text-amber-700">
-                <Medal className="h-3.5 w-3.5" /> Prize placements · verified on-chain
+                <Medal className="h-3.5 w-3.5" /> Top finishers
               </div>
               {bands.prize.map((r) => (
                 <StandingsRow key={r.result_id} row={r} rank={`#${r.placement}`} />
@@ -206,7 +209,7 @@ export function EventStandings({ event }: Props) {
 
           {bands.organizer.length > 0 && (
             <div className="space-y-1.5">
-              <div className="text-xs font-bold uppercase text-slate-500">Organizer-reported placements</div>
+              <div className="text-xs font-bold uppercase text-slate-500">Honorable mentions</div>
               {bands.organizer.map((r) => (
                 <StandingsRow key={r.result_id} row={r} rank={`#${r.placement}`} />
               ))}
