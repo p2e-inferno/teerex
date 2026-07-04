@@ -31,6 +31,10 @@ enabled = true
 [functions.expire-dg-redemption-intents]
   verify_jwt = false
 
+[functions.finalize-game-results]
+  # Cron endpoint: bearer LEADERBOARDS_CRON_SECRET or admin Privy token.
+  verify_jwt = false
+
 [functions.csp-report]
   # Public browser endpoint for CSP violation reports.
   verify_jwt = false

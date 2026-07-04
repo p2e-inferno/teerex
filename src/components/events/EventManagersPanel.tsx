@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Clock, Info, Loader2, MessageSquare, MoreHorizontal, Plus, RefreshCw, Trash2, UserCheck, Users } from 'lucide-react';
+import { Clock, Info, ListOrdered, Loader2, MessageSquare, MoreHorizontal, Plus, RefreshCw, Trash2, UserCheck, Users } from 'lucide-react';
 import type { PublishedEvent } from '@/types/event';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -46,6 +46,12 @@ const PERMISSION_LABELS: Array<{
     label: 'Manage Event Discussions',
     description: 'Create, edit, and moderate posts and comments in event discussions.',
     icon: MessageSquare,
+  },
+  {
+    key: 'manage_results',
+    label: 'Manage Results',
+    description: 'Submit and edit organizer-reported tournament standings.',
+    icon: ListOrdered,
   },
 ];
 

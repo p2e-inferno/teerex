@@ -1,13 +1,6 @@
 import { useRewardDisputes } from '@/hooks/useRewardDisputes';
-import type { RewardDisputeCategory, RewardDisputeStatus } from '@/types/rewardPool';
-
-const CATEGORY_LABEL: Record<RewardDisputeCategory, string> = {
-  wrong_winner: 'Wrong winner',
-  rules_breach: 'Rules breach',
-  collusion: 'Suspected collusion',
-  not_paid: "Couldn't claim",
-  other: 'Other',
-};
+import { REWARD_DISPUTE_CATEGORY_LABELS } from '@/lib/rewards/disputeCategories';
+import type { RewardDisputeStatus } from '@/types/rewardPool';
 
 const STATUS_META: Record<RewardDisputeStatus, { label: string; className: string }> = {
   open: { label: 'Open', className: 'bg-amber-100 text-amber-800' },
@@ -37,7 +30,7 @@ export function RewardDisputesList({ rewardPoolId, requesterAddress, enabled }: 
             <div key={d.id} className="rounded-md border p-2 text-xs space-y-1">
               <div className="flex items-center justify-between gap-2">
                 <span className="font-medium">
-                  {CATEGORY_LABEL[d.category] ?? d.category}
+                  {REWARD_DISPUTE_CATEGORY_LABELS[d.category] ?? d.category}
                   {d.placement ? ` · #${d.placement}` : ''}
                 </span>
                 <span className={`rounded px-1.5 py-0.5 ${status.className}`}>{status.label}</span>

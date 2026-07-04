@@ -83,6 +83,7 @@ serve(async (req: Request) => {
             payout_destination,
             payment_methods,
             category,
+            game_id,
             image_url,
             image_crop_x,
             image_crop_y,
@@ -270,6 +271,20 @@ serve(async (req: Request) => {
             }
         }
 
+        let resolvedGameId: string | null = null;
+        if (category === "Tournament" && game_id) {
+            const { data: game } = await supabase
+                .from("games")
+                .select("id")
+                .eq("id", String(game_id))
+                .eq("is_active", true)
+                .maybeSingle();
+            if (!game) {
+                throw new Error("Invalid or inactive game_id");
+            }
+            resolvedGameId = game.id;
+        }
+
         let sanitizedPurchaseMessage: string | null = null;
         try {
             sanitizedPurchaseMessage = sanitizePurchaseMessage(purchase_confirmation_message);
@@ -320,6 +335,7 @@ serve(async (req: Request) => {
             payment_methods,
             paystack_public_key: resolvedPaystackPublicKey,
             category,
+            game_id: resolvedGameId,
             image_url,
             image_crop_x,
             image_crop_y,

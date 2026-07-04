@@ -37,6 +37,7 @@ import { isEventRegistrationClosed } from "@/lib/events/registration";
 import { EventPurchaseDialog } from "@/components/events/EventPurchaseDialog";
 import { EventPassOnramp } from "@/components/ticket-pass/EventPassOnramp";
 import { EventRewardPools } from "@/components/rewards/EventRewardPools";
+import { EventStandings } from "@/components/leaderboards/EventStandings";
 import { PaystackPaymentDialog } from "@/components/events/PaystackPaymentDialog";
 import { TicketProcessingDialog } from "@/components/events/TicketProcessingDialog";
 import { PaymentMethodDialog } from "@/components/events/PaymentMethodDialog";
@@ -1212,6 +1213,8 @@ const EventDetailsContent = () => {
                 onReleaseProtectedEvent={refundActions.releaseEvent}
                 onRefundProtectedEvent={() => refundActions.cancelAndRefundThenMaybeRelease(50)}
               />
+
+              <EventStandings event={event} />
 
               {/* Attendees List */}
               <AttendeesList

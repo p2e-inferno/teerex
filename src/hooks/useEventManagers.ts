@@ -6,6 +6,7 @@ export type EventManagerPermissions = {
   manage_access: boolean;
   manage_waitlist: boolean;
   manage_discussions: boolean;
+  manage_results: boolean;
 };
 
 export type EventManager = {
@@ -24,6 +25,7 @@ const DEFAULT_PERMISSIONS: EventManagerPermissions = {
   manage_access: true,
   manage_waitlist: true,
   manage_discussions: true,
+  manage_results: true,
 };
 
 export function useEventManagers(eventId: string | null, enabled: boolean) {

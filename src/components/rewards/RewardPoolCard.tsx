@@ -100,9 +100,10 @@ interface Props {
   viewerAddress?: string | null;
   isTicketHolder: boolean;
   eventEndsAt?: string | null;
+  promptWinnerAliases?: boolean;
 }
 
-export function RewardPoolCard({ pool, viewerAddress, isTicketHolder, eventEndsAt }: Props) {
+export function RewardPoolCard({ pool, viewerAddress, isTicketHolder, eventEndsAt, promptWinnerAliases = false }: Props) {
   const { wallets } = useWallets();
   const wallet = wallets?.[0];
   const onchain = useRewardPoolOnchainState(pool.controller_address, pool.pool_id, pool.chain_id);
@@ -703,6 +704,7 @@ export function RewardPoolCard({ pool, viewerAddress, isTicketHolder, eventEndsA
         positions={positions}
         canAssignUnassignedPlacements={canAssignUnassignedPlacements}
         canReplaceDeclaredWinners={canReplaceDeclaredWinners}
+        aliasNudge={promptWinnerAliases}
         busy={actions.isBusy}
         onSubmit={async ({ batch, aliasUpdates }) => { const ok = await actions.assign(pool, batch, aliasUpdates); if (ok) setAssignOpen(false); }}
       />

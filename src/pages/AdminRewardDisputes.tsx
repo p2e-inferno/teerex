@@ -48,6 +48,7 @@ function DisputeRow({ d, wallet, onRefetch }: { d: AdminDispute; wallet: any; on
 
   const pool = d.pool;
   if (!pool) return null;
+  const isStandings = d.category === 'standings';
 
   // Reconcile the DB mirror after an on-chain arbitrator action so the public event card doesn't
   // show stale status / frozen / claim_end / winners.
@@ -74,10 +75,14 @@ function DisputeRow({ d, wallet, onRefetch }: { d: AdminDispute; wallet: any; on
     const placement = d.placement ?? 0;
     const resolutionHash = keccak256(toUtf8Bytes(note || (upheld ? 'upheld' : 'rejected')));
     setBusy(true);
-    const onchain = await resolveRewardDisputeOnchain(
-      pool.controller_address, pool.pool_id, placement, upheld, resolutionHash, wallet, pool.chain_id,
-    );
-    if (!onchain.success) { setBusy(false); toast.error(onchain.error || 'On-chain resolution failed'); return; }
+    let onchainTxHash: string | null = null;
+    if (!isStandings) {
+      const onchain = await resolveRewardDisputeOnchain(
+        pool.controller_address, pool.pool_id, placement, upheld, resolutionHash, wallet, pool.chain_id,
+      );
+      if (!onchain.success) { setBusy(false); toast.error(onchain.error || 'On-chain resolution failed'); return; }
+      onchainTxHash = onchain.transactionHash ?? null;
+    }
     try {
       const token = await getAccessToken?.();
       await callEdgeFunction('resolve-reward-dispute', {
@@ -85,12 +90,12 @@ function DisputeRow({ d, wallet, onRefetch }: { d: AdminDispute; wallet: any; on
         status: upheld ? 'upheld' : 'rejected',
         resolution_note: note || null,
         resolution_hash: resolutionHash,
-        onchain_tx_hash: onchain.transactionHash ?? null,
+        onchain_tx_hash: onchainTxHash,
       }, { privyToken: token });
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Failed to record resolution');
     }
-    await syncPool();
+    if (!isStandings) await syncPool();
     setBusy(false);
     toast.success(upheld ? 'Dispute upheld' : 'Dispute rejected');
     await onRefetch();
@@ -116,27 +121,29 @@ function DisputeRow({ d, wallet, onRefetch }: { d: AdminDispute; wallet: any; on
         </div>
         {d.reason_text && <p className="rounded bg-muted p-2">{d.reason_text}</p>}
 
-        <div className="flex flex-wrap gap-2">
-          {pool.frozen ? (
-            <Button size="sm" variant="outline" disabled={busy}
-              onClick={() => run(() => unfreezeRewardPool(pool.controller_address, pool.pool_id, wallet, pool.chain_id), 'Pool unfrozen')}>
-              Unfreeze
-            </Button>
-          ) : (
-            <Button size="sm" variant="outline" disabled={busy}
-              onClick={() => run(() => freezeRewardPool(pool.controller_address, pool.pool_id, wallet, pool.chain_id), 'Pool frozen')}>
-              Freeze
-            </Button>
-          )}
-          {d.placement != null && (
-            <Button size="sm" variant="outline" disabled={busy}
-              onClick={() => run(() => voidRewardAssignment(pool.controller_address, pool.pool_id, d.placement as number, wallet, pool.chain_id), 'Assignment voided')}>
-              Void placement
-            </Button>
-          )}
-        </div>
+        {!isStandings && (
+          <div className="flex flex-wrap gap-2">
+            {pool.frozen ? (
+              <Button size="sm" variant="outline" disabled={busy}
+                onClick={() => run(() => unfreezeRewardPool(pool.controller_address, pool.pool_id, wallet, pool.chain_id), 'Pool unfrozen')}>
+                Unfreeze
+              </Button>
+            ) : (
+              <Button size="sm" variant="outline" disabled={busy}
+                onClick={() => run(() => freezeRewardPool(pool.controller_address, pool.pool_id, wallet, pool.chain_id), 'Pool frozen')}>
+                Freeze
+              </Button>
+            )}
+            {d.placement != null && (
+              <Button size="sm" variant="outline" disabled={busy}
+                onClick={() => run(() => voidRewardAssignment(pool.controller_address, pool.pool_id, d.placement as number, wallet, pool.chain_id), 'Assignment voided')}>
+                Void placement
+              </Button>
+            )}
+          </div>
+        )}
 
-        {d.placement != null && (
+        {!isStandings && d.placement != null && (
           <div className="flex items-end gap-2">
             <div className="flex-1 space-y-1">
               <Label htmlFor={`reassign-${d.id}`}>Reassign winner</Label>
@@ -149,16 +156,18 @@ function DisputeRow({ d, wallet, onRefetch }: { d: AdminDispute; wallet: any; on
           </div>
         )}
 
-        <div className="flex items-end gap-2">
-          <div className="flex-1 space-y-1">
-            <Label htmlFor={`extend-${d.id}`}>Extend claim end</Label>
-            <Input id={`extend-${d.id}`} type="datetime-local" value={newClaimEnd} onChange={(e) => setNewClaimEnd(e.target.value)} />
+        {!isStandings && (
+          <div className="flex items-end gap-2">
+            <div className="flex-1 space-y-1">
+              <Label htmlFor={`extend-${d.id}`}>Extend claim end</Label>
+              <Input id={`extend-${d.id}`} type="datetime-local" value={newClaimEnd} onChange={(e) => setNewClaimEnd(e.target.value)} />
+            </div>
+            <Button size="sm" variant="outline" disabled={busy || !newClaimEnd}
+              onClick={() => run(() => extendRewardClaimEnd(pool.controller_address, pool.pool_id, Math.floor(new Date(newClaimEnd).getTime() / 1000), wallet, pool.chain_id), 'Claim end extended')}>
+              Extend
+            </Button>
           </div>
-          <Button size="sm" variant="outline" disabled={busy || !newClaimEnd}
-            onClick={() => run(() => extendRewardClaimEnd(pool.controller_address, pool.pool_id, Math.floor(new Date(newClaimEnd).getTime() / 1000), wallet, pool.chain_id), 'Claim end extended')}>
-            Extend
-          </Button>
-        </div>
+        )}
 
         <div className="space-y-2 border-t pt-3">
           <Label htmlFor={`note-${d.id}`}>Resolution note</Label>

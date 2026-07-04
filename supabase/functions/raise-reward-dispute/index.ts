@@ -17,7 +17,7 @@ function json(data: any, status = 200) {
 }
 
 const isAddr = (v: unknown) => typeof v === "string" && /^0x[a-fA-F0-9]{40}$/.test(v);
-const CATEGORIES = ["wrong_winner", "rules_breach", "collusion", "not_paid", "other"];
+const CATEGORIES = ["wrong_winner", "rules_breach", "collusion", "not_paid", "standings", "other"];
 
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: buildPreflightHeaders(req) });

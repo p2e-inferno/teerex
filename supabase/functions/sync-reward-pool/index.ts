@@ -14,6 +14,7 @@ import {
   deriveRewardPoolStatus,
   epochToIso,
 } from "../_shared/reward-pools.ts";
+import { ingestRewardPoolResults } from "../_shared/leaderboards.ts";
 
 function json(data: any, status = 200) {
   return new Response(JSON.stringify(data), {
@@ -100,6 +101,19 @@ serve(async (req) => {
           { onConflict: "reward_pool_id,placement" },
         );
       if (posErr) return json({ ok: false, error: posErr.message }, 400);
+
+      // Post-success side effect: mirrors assigned winners into leaderboard results.
+      // Logs and swallows internally — must never fail the sync.
+      await ingestRewardPoolResults(
+        supabase,
+        {
+          poolDbId: row.id,
+          eventLock: pool.eventLock,
+          claimStart: pool.claimStart,
+          challengeWindowSecs: pool.challengeWindow,
+        },
+        positions,
+      );
     }
 
     return json({ ok: true, pool_id: row.id, status: deriveRewardPoolStatus(pool, nowSecs) }, 200);

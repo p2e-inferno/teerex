@@ -29,6 +29,7 @@ import AdminPayoutAccounts from "./pages/AdminPayoutAccounts";
 import AdminDgRedemption from "./pages/AdminDgRedemption";
 import AdminTicketPassOrders from "./pages/AdminTicketPassOrders";
 import AdminRewardDisputes from "./pages/AdminRewardDisputes";
+import AdminGames from "./pages/AdminGames";
 import AdminRoute from "./components/routes/AdminRoute";
 import VendorRoute from "./components/routes/VendorRoute";
 import VendorPayoutAccount from "./pages/VendorPayoutAccount";
@@ -85,6 +86,7 @@ const App = () => {
                 <Route path="/admin/ticket-pass-orders" element={<AdminRoute><AdminTicketPassOrders /></AdminRoute>} />
                 <Route path="/admin/reward-disputes" element={<AdminRoute><AdminRewardDisputes /></AdminRoute>} />
                 <Route path="/admin/vendor-lock" element={<AdminRoute><AdminVendorLock /></AdminRoute>} />
+                <Route path="/admin/games" element={<AdminRoute><AdminGames /></AdminRoute>} />
                 <Route path="/become-vendor" element={<BecomeVendor />} />
                 {/* Payout setup is open to any authenticated seller (ticket-pass creators need it too,
                     and the page + endpoints are Privy-only). Vendor membership is not required. */}

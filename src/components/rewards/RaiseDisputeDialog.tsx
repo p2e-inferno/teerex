@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from '@/components/ui/dialog';
@@ -6,15 +6,11 @@ import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import {
+  REWARD_DISPUTE_CATEGORY_OPTIONS,
+  REWARD_POOL_DISPUTE_CATEGORY_OPTIONS,
+} from '@/lib/rewards/disputeCategories';
 import type { RewardDisputeCategory } from '@/types/rewardPool';
-
-const CATEGORIES: { value: RewardDisputeCategory; label: string }[] = [
-  { value: 'wrong_winner', label: 'Wrong winner declared' },
-  { value: 'rules_breach', label: 'Organizer broke the stated rules' },
-  { value: 'collusion', label: 'Suspected collusion' },
-  { value: 'not_paid', label: "Won but couldn't claim" },
-  { value: 'other', label: 'Other' },
-];
 
 const HOLD_OPTIONS = [
   { value: String(24 * 60 * 60), label: '1 day' },
@@ -26,14 +22,23 @@ interface Props {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   placement?: number | null;
+  defaultCategory?: RewardDisputeCategory;
   busy?: boolean;
   onSubmit: (input: { category: RewardDisputeCategory; reasonText: string; holdDurationSecs: number }) => void;
 }
 
-export function RaiseDisputeDialog({ open, onOpenChange, placement, busy, onSubmit }: Props) {
-  const [category, setCategory] = useState<RewardDisputeCategory>('wrong_winner');
+export function RaiseDisputeDialog({ open, onOpenChange, placement, defaultCategory = 'wrong_winner', busy, onSubmit }: Props) {
+  const [category, setCategory] = useState<RewardDisputeCategory>(defaultCategory);
   const [reasonText, setReasonText] = useState('');
   const [holdDurationSecs, setHoldDurationSecs] = useState(HOLD_OPTIONS[0].value);
+  const categoryOptions = defaultCategory === 'standings'
+    ? REWARD_DISPUTE_CATEGORY_OPTIONS.filter((option) => option.value === 'standings')
+    : REWARD_POOL_DISPUTE_CATEGORY_OPTIONS;
+  const isStandings = category === 'standings';
+
+  useEffect(() => {
+    if (open) setCategory(defaultCategory);
+  }, [open, defaultCategory]);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -42,8 +47,9 @@ export function RaiseDisputeDialog({ open, onOpenChange, placement, busy, onSubm
           <DialogTitle>Raise a dispute</DialogTitle>
           <DialogDescription>
             {placement ? `Disputing placement #${placement}. ` : ''}
-            Disputes are reviewed by an arbitrator. Funds for the contested placement are held during
-            the review window.
+            {isStandings
+              ? 'Standings reports are reviewed by the team before organizer-reported placements finalize.'
+              : 'Disputes are reviewed by an arbitrator. Funds for the contested placement are held during the review window.'}
           </DialogDescription>
         </DialogHeader>
 
@@ -53,23 +59,25 @@ export function RaiseDisputeDialog({ open, onOpenChange, placement, busy, onSubm
             <Select value={category} onValueChange={(v) => setCategory(v as RewardDisputeCategory)}>
               <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
-                {CATEGORIES.map((c) => (
+                {categoryOptions.map((c) => (
                   <SelectItem key={c.value} value={c.value}>{c.label}</SelectItem>
                 ))}
               </SelectContent>
             </Select>
           </div>
-          <div className="space-y-2">
-            <Label>Hold duration</Label>
-            <Select value={holdDurationSecs} onValueChange={setHoldDurationSecs}>
-              <SelectTrigger><SelectValue /></SelectTrigger>
-              <SelectContent>
-                {HOLD_OPTIONS.map((option) => (
-                  <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
+          {!isStandings && (
+            <div className="space-y-2">
+              <Label>Hold duration</Label>
+              <Select value={holdDurationSecs} onValueChange={setHoldDurationSecs}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {HOLD_OPTIONS.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
           <div className="space-y-2">
             <Label htmlFor="dispute-reason">Details</Label>
             <Textarea
@@ -84,7 +92,7 @@ export function RaiseDisputeDialog({ open, onOpenChange, placement, busy, onSubm
 
         <DialogFooter>
           <Button variant="ghost" onClick={() => onOpenChange(false)} disabled={busy}>Cancel</Button>
-          <Button onClick={() => onSubmit({ category, reasonText, holdDurationSecs: Number(holdDurationSecs) })} disabled={busy}>
+          <Button onClick={() => onSubmit({ category, reasonText, holdDurationSecs: isStandings ? 0 : Number(holdDurationSecs) })} disabled={busy}>
             {busy ? 'Submitting…' : 'Submit dispute'}
           </Button>
         </DialogFooter>

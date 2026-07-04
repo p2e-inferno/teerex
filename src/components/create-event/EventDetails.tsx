@@ -6,7 +6,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Checkbox } from '@/components/ui/checkbox';
 import { EventFormData } from '@/pages/CreateEvent';
-import { MapPin, Globe } from 'lucide-react';
+import { useGames } from '@/hooks/useGames';
+import { MapPin, Globe, Gamepad2 } from 'lucide-react';
 
 interface EventDetailsProps {
   formData: EventFormData;
@@ -24,6 +25,8 @@ export const EventDetails: React.FC<EventDetailsProps> = ({
 }) => {
   const visibilityLocked = Boolean(editingEventId && editingEventVisibilityLocked);
   const visibilityEditableInEditMode = Boolean(editingEventId && !editingEventVisibilityLocked);
+  const isTournament = formData.category === 'Tournament';
+  const { data: games = [] } = useGames();
 
   const categories = [
     'Tournament',
@@ -46,7 +49,13 @@ export const EventDetails: React.FC<EventDetailsProps> = ({
       {/* Category */}
       <div className="space-y-2">
         <Label>Category *</Label>
-        <Select value={formData.category} onValueChange={(value) => updateFormData({ category: value })}>
+        <Select
+          value={formData.category}
+          onValueChange={(value) => updateFormData({
+            category: value,
+            gameId: value === 'Tournament' ? formData.gameId ?? null : null,
+          })}
+        >
           <SelectTrigger>
             <SelectValue placeholder="Select a category" />
           </SelectTrigger>
@@ -62,6 +71,35 @@ export const EventDetails: React.FC<EventDetailsProps> = ({
           <p className="text-sm text-red-600">Category is required</p>
         )}
       </div>
+
+      {/* Game (Tournament only) — selecting a game opts the event into Event Standings */}
+      {isTournament && games.length > 0 && (
+        <div className="space-y-2">
+          <Label className="flex items-center gap-2">
+            <Gamepad2 className="h-4 w-4" />
+            Game (optional)
+          </Label>
+          <Select
+            value={formData.gameId ?? 'none'}
+            onValueChange={(value) => updateFormData({ gameId: value === 'none' ? null : value })}
+          >
+            <SelectTrigger>
+              <SelectValue placeholder="Select a game" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="none">No game</SelectItem>
+              {games.map((game) => (
+                <SelectItem key={game.id} value={game.id}>
+                  {game.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <p className="text-sm text-gray-600">
+            Selecting a game enables Event Standings, generated from declared prize winners after your tournament ends.
+          </p>
+        </div>
+      )}
 
       {/* Event Type */}
       <div className="space-y-2">
