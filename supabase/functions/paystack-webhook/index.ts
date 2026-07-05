@@ -10,6 +10,7 @@ import { appendDivviTagToCalldataAsync, submitDivviReferralBestEffort } from "..
 import { getExpectedFiatCurrency, getExpectedPaystackAmountKobo, verifyPaystackAmountAndCurrency } from "../_shared/paystack.ts";
 import { grantLockKey } from "../_shared/unlock.ts";
 import { getEventPurchaseMessageSnapshot } from "../_shared/purchase-message.ts";
+import { notifyTicketIssuedTelegram } from "../_shared/telegram-dispatch.ts";
 import {
   appendPaystackRefundGatewayResponse,
   canApplyPaystackRefundStatus,
@@ -589,6 +590,15 @@ serve(async (req) => {
         purchase_confirmation_message_snapshot_at: purchaseMessageSnapshot ? ticketCreatedAt : null,
         purchase_form_response_snapshot: formResponseSnapshot,
         purchase_form_schema_version_at: formResponseSnapshot ? formSchemaVersionAt : null,
+      });
+
+      notifyTicketIssuedTelegram(supabase, {
+        eventId: txEvent?.id,
+        ownerWallet: recipient.toLowerCase(),
+        reference,
+        txHash: grantTxHash,
+      }).catch(err => {
+        console.error('[WEBHOOK] Failed to send Telegram ticket notification:', err);
       });
     }
 

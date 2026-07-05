@@ -4,7 +4,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.50.0";
 import { ensureAdmin } from "../_shared/admin-check.ts";
 import { corsHeaders, buildPreflightHeaders } from "../_shared/cors.ts";
 import { SUPABASE_SERVICE_ROLE_KEY, SUPABASE_URL } from "../_shared/constants.ts";
-import { resolvePlayerIds } from "../_shared/leaderboards.ts";
+import { recomputeActiveBoards, resolvePlayerIds } from "../_shared/leaderboards.ts";
 
 function json(payload: Record<string, unknown>, status = 200): Response {
   return new Response(JSON.stringify(payload), {
@@ -66,7 +66,14 @@ serve(async (req) => {
       }
     }
 
-    return json({ ok: true, ...(counts ?? {}), players_resolved: resolvedCount });
+    const boardsRecomputed = await recomputeActiveBoards(supabase);
+
+    return json({
+      ok: true,
+      ...(counts ?? {}),
+      players_resolved: resolvedCount,
+      boards_recomputed: boardsRecomputed,
+    });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Internal error";
     const lower = message.toLowerCase();

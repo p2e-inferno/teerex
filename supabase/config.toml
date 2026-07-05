@@ -35,6 +35,10 @@ enabled = true
   # Cron endpoint: bearer LEADERBOARDS_CRON_SECRET or admin Privy token.
   verify_jwt = false
 
+[functions.leaderboards]
+  # Public reads plus Privy-authenticated writes; the function validates Privy tokens per route.
+  verify_jwt = false
+
 [functions.csp-report]
   # Public browser endpoint for CSP violation reports.
   verify_jwt = false
@@ -56,6 +60,14 @@ enabled = true
 
 [functions.send-post-notification]
   verify_jwt = true
+
+[functions.telegram-notifications]
+  # Browser sends Privy JWT; the function performs identity checks itself.
+  verify_jwt = false
+
+[functions.telegram-webhook]
+  # Telegram calls this endpoint with X-Telegram-Bot-Api-Secret-Token.
+  verify_jwt = false
 
 [functions.nft-metadata]
   # Public endpoint - NFT marketplaces and wallets need unauthenticated access

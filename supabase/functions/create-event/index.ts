@@ -9,6 +9,7 @@ import { Contract, JsonRpcProvider, Wallet } from "https://esm.sh/ethers@6.14.4"
 import { buildStartsAtUtcIso, toDateOnly } from "../_shared/datetime.ts";
 import { sanitizePurchaseMessage } from "../_shared/purchase-message.ts";
 import { validatePurchaseFormSchema } from "../_shared/purchase-form.ts";
+import { notifyOrganizerEventCreatedTelegram } from "../_shared/telegram-dispatch.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -456,6 +457,10 @@ serve(async (req: Request) => {
                 purchaseFormSaved = false;
             }
         }
+
+        notifyOrganizerEventCreatedTelegram(supabase, newEvent).catch((err) => {
+            console.error("[create-event] Failed to trigger Telegram organizer subscriber notification:", err?.message || err);
+        });
 
         return new Response(
             JSON.stringify({

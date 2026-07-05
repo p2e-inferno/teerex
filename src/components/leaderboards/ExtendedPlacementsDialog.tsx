@@ -50,6 +50,9 @@ export function ExtendedPlacementsDialog({ open, onOpenChange, eventId }: Props)
 
   const prizeFloor = data?.prize_floor ?? 0;
   const locked = Boolean(data?.sheet_final);
+  const hadEntries = (data?.entries.length ?? 0) > 0;
+  const canSubmit = !submit.isPending && (ranked.length > 0 || hadEntries);
+  const isClearing = ranked.length === 0 && hadEntries;
 
   const move = (index: number, delta: number) => {
     setRanked((prev) => {
@@ -67,8 +70,10 @@ export function ExtendedPlacementsDialog({ open, onOpenChange, eventId }: Props)
         ranked.map((wallet, i) => ({ wallet, placement: prizeFloor + i + 1 })),
       );
       toast({
-        title: 'Standings submitted',
-        description: 'Placements are pending review and finalize after the review window.',
+        title: isClearing ? 'Standings cleared' : 'Standings submitted',
+        description: isClearing
+          ? 'Organizer-reported placements were removed. Remaining players stay in the Participated tier.'
+          : 'Placements are pending review and finalize after the review window.',
       });
       onOpenChange(false);
     } catch (err) {
@@ -179,8 +184,8 @@ export function ExtendedPlacementsDialog({ open, onOpenChange, eventId }: Props)
             Cancel
           </Button>
           {!locked && prizeFloor > 0 && (
-            <Button onClick={handleSubmit} disabled={submit.isPending || ranked.length === 0}>
-              {submit.isPending ? 'Submitting…' : 'Submit standings'}
+            <Button onClick={handleSubmit} disabled={!canSubmit}>
+              {submit.isPending ? 'Submitting…' : isClearing ? 'Clear standings' : 'Submit standings'}
             </Button>
           )}
         </DialogFooter>

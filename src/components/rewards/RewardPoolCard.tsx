@@ -132,6 +132,11 @@ export function RewardPoolCard({ pool, viewerAddress, isTicketHolder, eventEndsA
   const claimEndSecs = onchainData?.claimEnd ?? isoToSecs(pool.claim_end);
   const poolEndSecs = claimEndSecs != null ? claimEndSecs + (onchainData?.frozenAccrued ?? 0) : null;
   const eventEnded = eventEndSecs == null || nowSecs >= eventEndSecs;
+  // Mirrors closePool()'s on-chain `noTickets` gate: the zero-ticket fast exit only exists before
+  // claimStart. Once the claim window opens, the creator must use reclaim() after claimEnd instead.
+  const noTicketsExitReady = onchainData?.ticketSupply === 0n
+    && claimStartSecs != null
+    && nowSecs < claimStartSecs;
 
   // Winner names are off-chain metadata; merge them in by placement regardless of whether the rest
   // of the row comes from the on-chain read or the DB mirror.
@@ -267,13 +272,16 @@ export function RewardPoolCard({ pool, viewerAddress, isTicketHolder, eventEndsA
       return 'Winners are already declared. Prize pool cannot be closed while claims are in progress. Unclaimed prize funds can be reclaimed after the claim window closes.';
     }
     if (onchainData.ticketSupply === null) return 'Checking ticket supply before cancellation...';
-    if (onchainData.ticketSupply === 0n) return null;
+    if (noTicketsExitReady) return null;
     if (onchainData.attendanceEarlyExitReady) return null;
+    if (onchainData.ticketSupply === 0n) {
+      return 'The claim window has already started, so the no-tickets cancellation is no longer available. You can reclaim any unclaimed prize funds after the claim window closes.';
+    }
     if (onchainData.attendanceCancelInitiated && !onchainData.attendanceRefundComplete) {
       return 'Event cancellation refunds are still in progress. The prize pool can be cancelled after those refunds complete.';
     }
     return 'This prize pool is locked for winner claims. You can reclaim any unclaimed prize funds after the claim window closes.';
-  }, [isCreator, onchainData, onchainPending, onchainVerificationError]);
+  }, [isCreator, noTicketsExitReady, onchainData, onchainPending, onchainVerificationError]);
 
   const assignBlockedReason = useMemo(() => {
     if (!canManageWinners) return null;
@@ -335,7 +343,7 @@ export function RewardPoolCard({ pool, viewerAddress, isTicketHolder, eventEndsA
     if (ok) setDisputeOpen(false);
   };
 
-  const cancelReadyLabel = onchainData?.ticketSupply === 0n
+  const cancelReadyLabel = noTicketsExitReady
     ? 'Ready: no tickets issued'
     : onchainData?.attendanceEarlyExitReady
       ? 'Ready: event cancelled and refunds complete'

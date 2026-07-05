@@ -42,6 +42,8 @@ import GamingBundleDetails from "./pages/GamingBundleDetails";
 import GamingBundleClaim from "./pages/GamingBundleClaim";
 import GamingBundles from "./pages/GamingBundles";
 import VendorGamingBundleOrders from "./pages/VendorGamingBundleOrders";
+import MyCircuits from "./pages/MyCircuits";
+import CircuitStandings from "./pages/CircuitStandings";
 import TicketPasses from "./pages/TicketPasses";
 import TicketPassDetails from "./pages/TicketPassDetails";
 import MyTicketPasses from "./pages/MyTicketPasses";
@@ -97,6 +99,8 @@ const App = () => {
                 <Route path="/vendor/bundles-orders" element={<VendorRoute><VendorGamingBundleOrders /></VendorRoute>} />
                 <Route path="/gaming-bundles/claim" element={<GamingBundleClaim />} />
                 <Route path="/gaming-bundles/:id" element={<GamingBundleDetails />} />
+                <Route path="/my-circuits" element={<MyCircuits />} />
+                <Route path="/circuits/:boardId" element={<CircuitStandings />} />
                 <Route path="/event/:id" element={<EventDetails />} />
                 <Route path="/event/:id/discussions" element={<EventDiscussions />} />
                 {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}

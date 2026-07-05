@@ -4,6 +4,7 @@ import { corsHeaders, buildPreflightHeaders } from "../_shared/cors.ts";
 import { verifyPrivyToken, validateUserWallet } from "../_shared/privy.ts";
 import { handleError } from "../_shared/error-handler.ts";
 import { getEventPurchaseMessageSnapshot } from "../_shared/purchase-message.ts";
+import { notifyTicketIssuedTelegram } from "../_shared/telegram-dispatch.ts";
 import {
     getPublishedPurchaseFormSchema,
     validatePurchaseFormResponse,
@@ -106,6 +107,14 @@ serve(async (req: Request) => {
             }
             throw error;
         }
+
+        notifyTicketIssuedTelegram(supabase, {
+            eventId: event_id,
+            ownerWallet: normalizedOwner,
+            txHash: grant_tx_hash,
+        }).catch((err) => {
+            console.error("[register-ticket] Failed to trigger Telegram ticket notification:", err?.message || err);
+        });
 
         return new Response(
             JSON.stringify({

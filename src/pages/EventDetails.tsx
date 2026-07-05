@@ -25,6 +25,7 @@ import {
   AlertCircle,
   Zap,
   CheckCircle2,
+  Bell,
 } from "lucide-react";
 import { getPublishedEventById } from "@/utils/eventUtils";
 import type { PublishedEvent } from "@/types/event";
@@ -44,7 +45,7 @@ import { PaymentMethodDialog } from "@/components/events/PaymentMethodDialog";
 import { WaitlistDialog } from "@/components/events/WaitlistDialog";
 // import { AttestationButton } from "@/components/attestations/AttestationButton";
 import { supabase } from "@/integrations/supabase/client";
-import { callEdgeFunction } from "@/lib/edgeFunctions";
+import { callEdgeFunction, EdgeFunctionError } from "@/lib/edgeFunctions";
 import { base, baseSepolia } from "wagmi/chains";
 import { EventAttestationCard } from "@/components/attestations/EventAttestationCard";
 import { AttendeesList } from "@/components/attestations/AttendeesList";
@@ -67,6 +68,7 @@ import { useTicketBalance } from "@/hooks/useTicketBalance";
 import { useUserAddresses } from "@/hooks/useUserAddresses";
 import { useRefundableEventStatus } from "@/hooks/useRefundableEventStatus";
 import { useRefundableEventActions } from "@/hooks/useRefundableEventActions";
+import { useTelegramNotifications } from "@/hooks/useTelegramNotifications";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -90,7 +92,7 @@ const EventDetailsContent = () => {
   const { refreshToken, triggerRefresh } = useEventDetailsRefresh();
   const navigate = useNavigate();
   const { toast } = useToast();
-  const { authenticated, getAccessToken, login } = usePrivy();
+  const { authenticated, getAccessToken, login, user } = usePrivy();
   const { wallets } = useWallets();
   const wallet = authenticated ? wallets[0] : undefined;
   const userAddresses = useUserAddresses();
@@ -107,6 +109,7 @@ const EventDetailsContent = () => {
   const [transferFeeBps, setTransferFeeBps] = useState<number | null>(null);
   const [vendorHasPayoutAccount, setVendorHasPayoutAccount] = useState<boolean>(true); // Default to true for backwards compatibility
   const [nowMs, setNowMs] = useState(() => Date.now());
+  const telegramNotifications = useTelegramNotifications(event?.creator_id);
 
   // Real-time ticket count subscription
   const { ticketsSold: keysSold } = useEventTicketRealtime({
@@ -136,6 +139,39 @@ const EventDetailsContent = () => {
 
     return () => window.clearInterval(intervalId);
   }, []);
+
+  const handleOrganizerSubscription = useCallback(async () => {
+    if (!authenticated) {
+      login();
+      return;
+    }
+    if (!event?.creator_id) return;
+
+    if (!telegramNotifications.status?.linked || !telegramNotifications.status?.enabled) {
+      toast({
+        title: 'Link Telegram first',
+        description: 'Enable Telegram notifications from your profile before following organizers.',
+      });
+      navigate('/profile');
+      return;
+    }
+
+    try {
+      if (telegramNotifications.status?.subscribed) {
+        await telegramNotifications.unsubscribeOrganizer.mutateAsync(event.creator_id);
+        toast({ title: 'Organizer notifications stopped' });
+      } else {
+        await telegramNotifications.subscribeOrganizer.mutateAsync(event.creator_id);
+        toast({ title: 'Organizer notifications enabled' });
+      }
+    } catch (error) {
+      toast({
+        title: 'Could not update organizer notifications',
+        description: error instanceof EdgeFunctionError ? error.message : 'Please try again.',
+        variant: 'destructive',
+      });
+    }
+  }, [authenticated, event?.creator_id, login, navigate, telegramNotifications, toast]);
 
   // On-chain transferability status
   useEffect(() => {
@@ -1512,6 +1548,25 @@ const EventDetailsContent = () => {
 
                   {/* Fiat→crypto onramp: shown only when an active Ticket Pass is linked to this event. */}
                   <EventPassOnramp event={event} />
+                  {event.creator_id && user?.id !== event.creator_id && (
+                    <Button
+                      variant="outline"
+                      className="w-full"
+                      onClick={handleOrganizerSubscription}
+                      disabled={
+                        telegramNotifications.subscribeOrganizer.isPending ||
+                        telegramNotifications.unsubscribeOrganizer.isPending
+                      }
+                    >
+                      {(telegramNotifications.subscribeOrganizer.isPending ||
+                        telegramNotifications.unsubscribeOrganizer.isPending) ? (
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      ) : (
+                        <Bell className="mr-2 h-4 w-4" />
+                      )}
+                      {telegramNotifications.status?.subscribed ? 'Unfollow organizer alerts' : 'Follow organizer alerts'}
+                    </Button>
+                  )}
                 </CardContent>
               </Card>
 

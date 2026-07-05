@@ -9,7 +9,7 @@ import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from '@/components/ui/dialog';
 import { toast } from '@/hooks/use-toast';
-import { Loader2, Plus, Edit, Gamepad2, RefreshCw } from 'lucide-react';
+import { Loader2, Plus, Edit, Gamepad2, RefreshCw, RotateCcw, Search, ShieldOff, Wrench } from 'lucide-react';
 import { usePrivy } from '@privy-io/react-auth';
 import type { ScoringProfile } from '@/hooks/useGames';
 
@@ -39,6 +39,47 @@ interface GameFormData {
   curveFloor: number;
   participation: number;
   reviewWindowHours: number;
+}
+
+interface AdminOperationResponse {
+  boards_recomputed?: number;
+  standings_rows?: number;
+  game_backfilled_events?: number;
+  players_resolved?: number;
+  recompute_error?: string;
+}
+
+interface AdminEventResultRow {
+  id: string;
+  event_id: string;
+  game_id: string | null;
+  reward_pool_id: string | null;
+  wallet_address: string;
+  player_id: string | null;
+  placement: number | null;
+  participant_count: number | null;
+  result_kind: string;
+  source: string;
+  status: string;
+  occurred_at: string | null;
+  hold_until: string | null;
+  finalized_at: string | null;
+  voided_at: string | null;
+  void_reason: string | null;
+  label: string | null;
+}
+
+interface AdminEventResultsResponse {
+  event: {
+    id: string;
+    title: string;
+    lock_address: string;
+    chain_id: number;
+    creator_id: string;
+    game_id: string | null;
+  };
+  game: { id: string; slug: string; name: string } | null;
+  results: AdminEventResultRow[];
 }
 
 const SCORING_PRESETS: Record<string, Partial<GameFormData>> = {
@@ -76,6 +117,8 @@ const previewPoints = (form: GameFormData): string => {
   return parts.join(' · ');
 };
 
+const shortAddress = (address: string) => `${address.slice(0, 6)}...${address.slice(-4)}`;
+
 const AdminGames: React.FC = () => {
   const { user, getAccessToken } = usePrivy();
   const [games, setGames] = useState<AdminGame[]>([]);
@@ -85,8 +128,23 @@ const AdminGames: React.FC = () => {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingGame, setEditingGame] = useState<AdminGame | null>(null);
   const [formData, setFormData] = useState<GameFormData>(defaultFormData);
+  const [operationBusy, setOperationBusy] = useState<string | null>(null);
+  const [boardId, setBoardId] = useState('');
+  const [eventLockQuery, setEventLockQuery] = useState('');
+  const [eventResults, setEventResults] = useState<AdminEventResultsResponse | null>(null);
+  const [voidReason, setVoidReason] = useState('');
 
   const preview = useMemo(() => previewPoints(formData), [formData]);
+
+  const operationDescription = (data: AdminOperationResponse) => {
+    const parts: string[] = [];
+    if (typeof data.boards_recomputed === 'number') parts.push(`${data.boards_recomputed} board${data.boards_recomputed === 1 ? '' : 's'} recomputed`);
+    if (typeof data.standings_rows === 'number') parts.push(`${data.standings_rows} standing row${data.standings_rows === 1 ? '' : 's'} written`);
+    if (typeof data.game_backfilled_events === 'number') parts.push(`${data.game_backfilled_events} event${data.game_backfilled_events === 1 ? '' : 's'} backfilled`);
+    if (typeof data.players_resolved === 'number') parts.push(`${data.players_resolved} player${data.players_resolved === 1 ? '' : 's'} resolved`);
+    if (data.recompute_error) parts.push(`Recompute warning: ${data.recompute_error}`);
+    return parts.join(' · ') || 'Operation completed.';
+  };
 
   const loadGames = useCallback(async (opts?: { background?: boolean }) => {
     try {
@@ -124,7 +182,7 @@ const AdminGames: React.FC = () => {
     try {
       setIsSaving(true);
       const token = await getAccessToken?.();
-      await callEdgeFunction('admin-leaderboards', {
+      const data = await callEdgeFunction<AdminOperationResponse>('admin-leaderboards', {
         route: 'upsert-game',
         slug: formData.slug,
         name: formData.name,
@@ -136,7 +194,9 @@ const AdminGames: React.FC = () => {
 
       toast({
         title: editingGame ? 'Game Updated' : 'Game Added',
-        description: `${formData.name} has been saved.`,
+        description: data.recompute_error
+          ? `${formData.name} has been saved. ${operationDescription(data)}`
+          : `${formData.name} has been saved.${data.boards_recomputed ? ` ${data.boards_recomputed} board${data.boards_recomputed === 1 ? '' : 's'} recomputed.` : ''}`,
       });
       setDialogOpen(false);
       setEditingGame(null);
@@ -208,6 +268,93 @@ const AdminGames: React.FC = () => {
     setEditingGame(null);
     setFormData(defaultFormData());
     setDialogOpen(true);
+  };
+
+  const loadEventResults = useCallback(async (value: string, opts?: { background?: boolean }) => {
+    const trimmed = value.trim();
+    if (!trimmed) {
+      toast({
+        title: 'Event lock required',
+        description: 'Paste the event lock address or the event URL.',
+        variant: 'destructive',
+      });
+      return null;
+    }
+
+    try {
+      if (!opts?.background) {
+        setEventResults(null);
+        setOperationBusy('lookup-results');
+      }
+      const token = await getAccessToken?.();
+      const data = await callEdgeFunction<AdminEventResultsResponse>(
+        'admin-leaderboards',
+        { route: 'event-results', lock_address: trimmed },
+        { privyToken: token, withAnonKey: true },
+      );
+      setEventResults(data);
+      setEventLockQuery(data.event.lock_address);
+      return data;
+    } catch (error: unknown) {
+      toast({
+        title: 'Lookup failed',
+        description: error instanceof Error ? error.message : 'There was an error loading event results.',
+        variant: 'destructive',
+      });
+      return null;
+    } finally {
+      if (!opts?.background) setOperationBusy(null);
+    }
+  }, [getAccessToken]);
+
+  const runAdminOperation = async (
+    busyKey: string,
+    body: Record<string, unknown>,
+    successTitle: string,
+  ) => {
+    try {
+      setOperationBusy(busyKey);
+      const token = await getAccessToken?.();
+      const data = await callEdgeFunction<AdminOperationResponse>(
+        'admin-leaderboards',
+        body,
+        { privyToken: token, withAnonKey: true },
+      );
+      toast({ title: successTitle, description: operationDescription(data) });
+      loadGames({ background: true });
+      if (eventResults?.event.lock_address) {
+        await loadEventResults(eventResults.event.lock_address, { background: true });
+      }
+    } catch (error: unknown) {
+      toast({
+        title: 'Operation failed',
+        description: error instanceof Error ? error.message : 'There was an error running this leaderboard operation.',
+        variant: 'destructive',
+      });
+    } finally {
+      setOperationBusy(null);
+    }
+  };
+
+  const recomputeAll = () => runAdminOperation('recompute-all', { route: 'recompute' }, 'Leaderboards recomputed');
+  const recomputeOneBoard = () => {
+    const trimmed = boardId.trim();
+    if (!trimmed) {
+      toast({ title: 'Board ID required', description: 'Enter the leaderboard board ID to recompute.', variant: 'destructive' });
+      return;
+    }
+    void runAdminOperation('recompute-board', { route: 'recompute-board', board_id: trimmed }, 'Board recomputed');
+  };
+  const voidResult = (row: AdminEventResultRow) => {
+    const reason = voidReason.trim();
+    if (!reason) {
+      toast({ title: 'Void reason required', description: 'Enter a reason before voiding this result.', variant: 'destructive' });
+      return;
+    }
+    void runAdminOperation(`void-result:${row.id}`, { route: 'void-result', result_id: row.id, reason }, 'Result voided');
+  };
+  const unvoidResult = (row: AdminEventResultRow) => {
+    void runAdminOperation(`unvoid-result:${row.id}`, { route: 'unvoid-result', result_id: row.id }, 'Result restored to provisional');
   };
 
   if (!user) {
@@ -398,6 +545,162 @@ const AdminGames: React.FC = () => {
             </DialogContent>
           </Dialog>
         </div>
+
+        <Card className="mb-8 border-0 shadow-lg bg-card/80">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-lg">
+              <Wrench className="h-5 w-5 text-primary" /> Leaderboard operations
+            </CardTitle>
+            <CardDescription>
+              Recompute materialized boards or correct a specific result row without leaving the games catalog.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="grid gap-5 lg:grid-cols-2">
+            <div className="space-y-3">
+              <div className="space-y-1">
+                <Label htmlFor="board-id">Board ID</Label>
+                <Input
+                  id="board-id"
+                  value={boardId}
+                  onChange={(event) => setBoardId(event.target.value)}
+                  placeholder="Optional board UUID"
+                />
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => void recomputeAll()}
+                  disabled={operationBusy !== null}
+                >
+                  {operationBusy === 'recompute-all' ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <RefreshCw className="h-4 w-4 mr-2" />}
+                  Recompute all
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={recomputeOneBoard}
+                  disabled={operationBusy !== null}
+                >
+                  {operationBusy === 'recompute-board' ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <RotateCcw className="h-4 w-4 mr-2" />}
+                  Recompute board
+                </Button>
+              </div>
+            </div>
+
+            <div className="space-y-3">
+              <div className="space-y-1">
+                <Label htmlFor="event-lock">Event lock or URL</Label>
+                <div className="flex gap-2">
+                  <Input
+                    id="event-lock"
+                    value={eventLockQuery}
+                    onChange={(event) => setEventLockQuery(event.target.value)}
+                    placeholder="/event/0x... or 0x..."
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => void loadEventResults(eventLockQuery)}
+                    disabled={operationBusy !== null}
+                  >
+                    {operationBusy === 'lookup-results' ? (
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    ) : (
+                      <Search className="h-4 w-4 mr-2" />
+                    )}
+                    Lookup
+                  </Button>
+                </div>
+              </div>
+
+              <div className="space-y-1">
+                <Label htmlFor="void-reason">Void reason</Label>
+                <Input
+                  id="void-reason"
+                  value={voidReason}
+                  onChange={(event) => setVoidReason(event.target.value)}
+                  placeholder="Required before voiding a row"
+                  maxLength={500}
+                />
+              </div>
+
+              {eventResults && (
+                <div className="space-y-3 rounded-md border bg-muted/20 p-3">
+                  <div>
+                    <p className="text-sm font-medium">{eventResults.event.title}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {eventResults.game?.name ?? 'No game selected'} · {eventResults.results.length} result row{eventResults.results.length === 1 ? '' : 's'}
+                    </p>
+                  </div>
+
+                  {eventResults.results.length === 0 ? (
+                    <p className="text-sm text-muted-foreground">No leaderboard results have been recorded for this event yet.</p>
+                  ) : (
+                    <div className="space-y-2">
+                      {eventResults.results.map((row) => {
+                        const displayName = row.label || shortAddress(row.wallet_address);
+                        const isVoided = row.status === 'voided';
+                        return (
+                          <div key={row.id} className="rounded-md border bg-background p-3">
+                            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                              <div className="min-w-0 space-y-1">
+                                <div className="flex flex-wrap items-center gap-2 text-sm font-medium">
+                                  <span>#{row.placement ?? 'T'}</span>
+                                  <Badge variant={isVoided ? 'destructive' : row.status === 'final' ? 'default' : 'secondary'}>
+                                    {row.status}
+                                  </Badge>
+                                  <Badge variant="outline">{row.source.replace('_', ' ')}</Badge>
+                                  <Badge variant="outline">{row.result_kind}</Badge>
+                                </div>
+                                <p className="truncate text-sm">{displayName}</p>
+                                <p className="font-mono text-xs text-muted-foreground">{shortAddress(row.wallet_address)}</p>
+                                {row.void_reason && (
+                                  <p className="text-xs text-destructive">{row.void_reason}</p>
+                                )}
+                              </div>
+                              {isVoided ? (
+                                <Button
+                                  type="button"
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() => unvoidResult(row)}
+                                  disabled={operationBusy !== null}
+                                >
+                                  {operationBusy === `unvoid-result:${row.id}` ? (
+                                    <Loader2 className="h-3 w-3 mr-2 animate-spin" />
+                                  ) : (
+                                    <RotateCcw className="h-3 w-3 mr-2" />
+                                  )}
+                                  Restore
+                                </Button>
+                              ) : (
+                                <Button
+                                  type="button"
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() => voidResult(row)}
+                                  disabled={operationBusy !== null}
+                                >
+                                  {operationBusy === `void-result:${row.id}` ? (
+                                    <Loader2 className="h-3 w-3 mr-2 animate-spin" />
+                                  ) : (
+                                    <ShieldOff className="h-3 w-3 mr-2" />
+                                  )}
+                                  Void
+                                </Button>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          </CardContent>
+        </Card>
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {isLoading ? (

@@ -9,6 +9,8 @@ import { TransferTokenCard } from '@/components/profile/TransferTokenCard';
 import { TransactionHistoryCard } from '@/components/profile/TransactionHistoryCard';
 import { UserPayoutAccountCard } from '@/components/profile/UserPayoutAccountCard';
 import { DgRedemptionCard } from '@/components/profile/DgRedemptionCard';
+import { PlayerNameCard } from '@/components/profile/PlayerNameCard';
+import { TelegramNotificationsCard } from '@/components/profile/TelegramNotificationsCard';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Loader2, User } from 'lucide-react';
@@ -191,6 +193,15 @@ const Profile: React.FC = () => {
             </div>
             <div className="flex flex-col h-full">
               <DgRedemptionCard address={primaryAddress} chainId={selectedChainId} />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 lg:gap-8 lg:items-start">
+            <div className="flex flex-col h-full">
+              <PlayerNameCard />
+            </div>
+            <div className="flex flex-col h-full">
+              <TelegramNotificationsCard />
             </div>
           </div>
 

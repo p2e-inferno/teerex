@@ -1,13 +1,16 @@
 import { useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { usePrivy, useWallets } from '@privy-io/react-auth';
-import { HelpCircle, ListOrdered, Medal, ShieldAlert } from 'lucide-react';
+import { ExternalLink, HelpCircle, ListOrdered, Medal, ShieldAlert } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { cn } from '@/lib/utils';
 import { EdgeFunctionError } from '@/lib/edgeFunctions';
 import { useEventManagerPermissions } from '@/hooks/useEventManagerPermissions';
 import { useEventStandings, useReportStandingsIssue, type StandingRow } from '@/hooks/useEventStandings';
+import { useGameCircuits, type Circuit } from '@/hooks/useCircuits';
 import { useRewardPools } from '@/hooks/useRewardPools';
 import { useTicketBalance } from '@/hooks/useTicketBalance';
 import { useToast } from '@/hooks/use-toast';
@@ -35,7 +38,7 @@ function statusBadge(row: StandingRow) {
   );
 }
 
-function PointsRules({ profile }: { profile: ScoringProfile }) {
+export function PointsRules({ profile }: { profile: ScoringProfile }) {
   const podium = Object.entries(profile.podium ?? {})
     .map(([place, pts]) => ({ place: Number(place), pts }))
     .sort((a, b) => a.place - b.place);
@@ -93,6 +96,25 @@ function StandingsRow({ row, rank }: { row: StandingRow; rank: string }) {
   );
 }
 
+function CircuitRow({ circuit }: { circuit: Circuit }) {
+  return (
+    <div className="flex items-center gap-3 rounded-md bg-slate-50/80 px-3 py-2 text-sm">
+      <div className="min-w-0 flex-1">
+        <div className="truncate font-medium text-slate-950">{circuit.name}</div>
+        <div className="truncate text-xs text-slate-500">
+          {circuit.season_label || 'All-time circuit'}
+          {circuit.last_recomputed_at ? ` · Updated ${new Date(circuit.last_recomputed_at).toLocaleString()}` : ''}
+        </div>
+      </div>
+      <Button size="sm" variant="ghost" asChild>
+        <Link to={`/circuits/${circuit.id}`}>
+          View <ExternalLink className="ml-1 h-3.5 w-3.5" />
+        </Link>
+      </Button>
+    </div>
+  );
+}
+
 interface Props {
   event: {
     id: string;
@@ -114,6 +136,7 @@ export function EventStandings({ event }: Props) {
   const viewerAddress = authenticated ? wallet?.address ?? null : null;
 
   const { data } = useEventStandings(event.id);
+  const { data: circuits = [] } = useGameCircuits(data?.game?.id);
   const { data: pools = [] } = useRewardPools(event.lock_address, event.chain_id);
   const permissions = useEventManagerPermissions(event.id);
   const { data: balance = 0 } = useTicketBalance({
@@ -143,7 +166,8 @@ export function EventStandings({ event }: Props) {
   if (!data || !data.game) return null;
 
   const hasRows = data.standings.length > 0;
-  if (!hasRows && !canManage) return null;
+  const hasCircuits = circuits.length > 0;
+  if (!hasRows && !canManage && !hasCircuits) return null;
 
   const organizerReviewOpen = bands.organizer.some((r) => r.display_status === 'review_open');
   const reportPool = pools[0] ?? null;
@@ -169,26 +193,8 @@ export function EventStandings({ event }: Props) {
     }
   };
 
-  return (
-    <section className="space-y-3">
-      <div className="flex items-center justify-between gap-2">
-        <h3 className="font-semibold flex items-center gap-2">
-          <ListOrdered className="w-5 h-5 text-blue-600" />
-          Event Standings
-          {data.game && <span className="text-sm font-normal text-slate-500">· {data.game.name}</span>}
-        </h3>
-        <Popover>
-          <PopoverTrigger asChild>
-            <button className="inline-flex items-center gap-1 text-xs text-slate-500 hover:text-slate-900" aria-label="How points work">
-              <HelpCircle className="h-3.5 w-3.5" /> How points work
-            </button>
-          </PopoverTrigger>
-          <PopoverContent align="end" className="w-80">
-            <PointsRules profile={data.scoring_profile} />
-          </PopoverContent>
-        </Popover>
-      </div>
-
+  const standingsContent = (
+    <>
       {!hasRows ? (
         <p className="text-sm text-muted-foreground">
           Standings are generated from declared prize winners. Create a prize pool and assign
@@ -240,6 +246,53 @@ export function EventStandings({ event }: Props) {
             </Button>
           )}
         </div>
+      )}
+    </>
+  );
+
+  const circuitsContent = (
+    <div className="space-y-2">
+      {circuits.map((circuit) => (
+        <CircuitRow key={circuit.id} circuit={circuit} />
+      ))}
+    </div>
+  );
+
+  return (
+    <section className="space-y-3">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h3 className="font-semibold flex items-center gap-2">
+          <ListOrdered className="w-5 h-5 text-blue-600" />
+          Event Standings
+          {data.game && <span className="text-sm font-normal text-slate-500">· {data.game.name}</span>}
+        </h3>
+        <Popover>
+          <PopoverTrigger asChild>
+            <button className="inline-flex items-center gap-1 text-xs text-slate-500 hover:text-slate-900" aria-label="How points work">
+              <HelpCircle className="h-3.5 w-3.5" /> How points work
+            </button>
+          </PopoverTrigger>
+          <PopoverContent align="end" className="w-80">
+            <PointsRules profile={data.scoring_profile} />
+          </PopoverContent>
+        </Popover>
+      </div>
+
+      {hasCircuits ? (
+        <Tabs defaultValue={hasRows || canManage ? 'standings' : 'circuits'} className="space-y-3">
+          <TabsList>
+            <TabsTrigger value="standings">Standings</TabsTrigger>
+            <TabsTrigger value="circuits">Circuits</TabsTrigger>
+          </TabsList>
+          <TabsContent value="standings" className="space-y-3">
+            {standingsContent}
+          </TabsContent>
+          <TabsContent value="circuits">
+            {circuitsContent}
+          </TabsContent>
+        </Tabs>
+      ) : (
+        <div className="space-y-3">{standingsContent}</div>
       )}
 
       {canManage && (

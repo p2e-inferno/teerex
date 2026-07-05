@@ -12,7 +12,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { Ticket, Plus, ChevronDown, FileText, Calendar, LogOut, User, Settings, Building2, Gamepad2, ScanLine, ClipboardList, Lock, Shield, UserCircle, Coins } from 'lucide-react';
+import { Ticket, Plus, ChevronDown, FileText, Calendar, LogOut, User, Settings, Building2, Gamepad2, ScanLine, ClipboardList, Lock, Shield, UserCircle, Coins, Trophy } from 'lucide-react';
 import { useIsAdmin } from '@/hooks/useIsAdmin';
 import { useIsVendor } from '@/hooks/useIsVendor';
 
@@ -116,6 +116,12 @@ export const Header: React.FC = () => {
                         <Link to="/drafts" className="flex items-center cursor-pointer py-2 px-2 hover:bg-gray-50 rounded-md transition-colors">
                           <FileText className="h-4 w-4 mr-2 text-gray-500" />
                           Drafts
+                        </Link>
+                      </DropdownMenuItem>
+                      <DropdownMenuItem asChild>
+                        <Link to="/my-circuits" className="flex items-center cursor-pointer py-2 px-2 hover:bg-gray-50 rounded-md transition-colors">
+                          <Trophy className="h-4 w-4 mr-2 text-gray-500" />
+                          My Circuits
                         </Link>
                       </DropdownMenuItem>
                     </DropdownMenuGroup>

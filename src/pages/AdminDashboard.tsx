@@ -17,6 +17,7 @@ import {
   Building2,
   Gift,
   Banknote,
+  Gamepad2,
   Trophy
 } from 'lucide-react';
 
@@ -88,6 +89,14 @@ const AdminDashboard: React.FC = () => {
       color: "bg-rose-500/10 border-rose-500/20",
       iconColor: "text-rose-600",
       path: "/admin/ticket-pass-orders"
+    },
+    {
+      title: "Games Catalog",
+      description: "Curate supported tournament games and standings scoring profiles",
+      icon: Gamepad2,
+      color: "bg-cyan-500/10 border-cyan-500/20",
+      iconColor: "text-cyan-600",
+      path: "/admin/games"
     },
     {
       title: "Reward Disputes",

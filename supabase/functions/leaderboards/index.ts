@@ -9,6 +9,7 @@ import {
   DEFAULT_SCORING_PROFILE,
   computeStandings,
   pointsForPlacement,
+  recomputeBoard,
   resolvePlayerIds,
   type ScoringProfile,
 } from "../_shared/leaderboards.ts";
@@ -70,6 +71,23 @@ async function loadScoringProfile(supabase: any, gameId: string | null) {
   return { game: data, profile: (data.scoring_profile ?? DEFAULT_SCORING_PROFILE) as ScoringProfile };
 }
 
+// Public player names only — app_user_profiles.email is PII and must never leave the server.
+// Chunked: a full 500-row board would otherwise put ~20KB of DIDs in one in() query string.
+async function loadDisplayNames(supabase: any, playerIds: string[]): Promise<Map<string, string>> {
+  const names = new Map<string, string>();
+  const unique = Array.from(new Set(playerIds)).filter(Boolean);
+  const chunkSize = 200;
+  for (let i = 0; i < unique.length; i += chunkSize) {
+    const { data } = await supabase
+      .from("app_user_profiles")
+      .select("privy_user_id, display_name")
+      .in("privy_user_id", unique.slice(i, i + chunkSize))
+      .not("display_name", "is", null);
+    for (const p of data ?? []) names.set(p.privy_user_id, p.display_name);
+  }
+  return names;
+}
+
 async function handleEventStandings(supabase: any, body: any) {
   const event = await findEvent(supabase, body);
   if (!event) return json({ ok: false, error: "event_not_found" }, 404);
@@ -126,11 +144,17 @@ async function handleEventStandings(supabase: any, body: any) {
   const resultById = new Map(results.map((r: any) => [r.id, r]));
   const nowMs = Date.now();
 
+  const displayNames = await loadDisplayNames(
+    supabase,
+    entries.map((e) => e.player_id).filter(Boolean) as string[],
+  );
+
   const standings = entries.map((entry) => {
     const row = resultById.get(entry.result_id);
-    const alias = row?.reward_pool_id
+    const poolAlias = row?.reward_pool_id
       ? aliasByPoolPlacement.get(`${row.reward_pool_id}:${row.placement}`) ?? null
       : null;
+    const alias = poolAlias ?? (entry.player_id ? displayNames.get(entry.player_id) ?? null : null);
     const disputed = row?.reward_pool_id
       ? disputedPlacements.has(`${row.reward_pool_id}:${row.placement}`) || sheetDisputed
       : entry.source === "organizer" && entry.placement != null && sheetDisputed;
@@ -296,7 +320,6 @@ async function handleSubmitExtendedPlacements(supabase: any, req: Request, body:
     wallet: String(e?.wallet || "").trim().toLowerCase(),
     placement: Number(e?.placement),
   }));
-  if (entries.length === 0) return json({ ok: false, error: "entries_required" }, 400);
   if (entries.some((e: any) => !isAddr(e.wallet) || !Number.isInteger(e.placement) || e.placement < 1)) {
     return json({ ok: false, error: "invalid_entries" }, 400);
   }
@@ -316,6 +339,235 @@ async function handleSubmitExtendedPlacements(supabase: any, req: Request, body:
   return json({ ok: true, submitted: count ?? enriched.length }, 200);
 }
 
+const BOARD_SELECT =
+  "id, scope, game_id, organizer_id, name, season_label, starts_at, ends_at, scoring_profile, is_active, last_recomputed_at, created_at";
+
+const isIsoDate = (v: unknown) => typeof v === "string" && Number.isFinite(new Date(v).getTime());
+
+function parseCircuitFields(body: any): { fields: Record<string, unknown>; error?: string } {
+  const fields: Record<string, unknown> = {};
+
+  if (body.name !== undefined) {
+    const name = String(body.name || "").trim();
+    if (name.length < 2 || name.length > 80) return { fields, error: "invalid_name" };
+    fields.name = name;
+  }
+  if (body.season_label !== undefined) {
+    const label = String(body.season_label || "").trim();
+    fields.season_label = label || null;
+  }
+  for (const key of ["starts_at", "ends_at"] as const) {
+    if (body[key] === undefined) continue;
+    if (body[key] === null || body[key] === "") fields[key] = null;
+    else if (isIsoDate(body[key])) fields[key] = new Date(body[key]).toISOString();
+    else return { fields, error: `invalid_${key}` };
+  }
+  if (fields.starts_at && fields.ends_at && String(fields.starts_at) >= String(fields.ends_at)) {
+    return { fields, error: "invalid_season_window" };
+  }
+  if (body.scoring_profile !== undefined) {
+    const profile = body.scoring_profile;
+    if (profile === null) fields.scoring_profile = null;
+    else if (typeof profile === "object" && !Array.isArray(profile) && typeof profile.type === "string") {
+      fields.scoring_profile = profile;
+    } else return { fields, error: "invalid_scoring_profile" };
+  }
+  if (body.is_active !== undefined) fields.is_active = Boolean(body.is_active);
+
+  return { fields };
+}
+
+async function handleCircuits(supabase: any, body: any) {
+  let query = supabase
+    .from("leaderboard_boards")
+    .select(BOARD_SELECT)
+    .eq("scope", "organizer_circuit")
+    .eq("is_active", true)
+    .order("created_at", { ascending: false })
+    .limit(100);
+  if (body.organizer_id) query = query.eq("organizer_id", String(body.organizer_id).trim());
+  if (body.game_id) query = query.eq("game_id", String(body.game_id).trim());
+
+  const { data, error } = await query;
+  if (error) return json({ ok: false, error: error.message }, 400);
+  return json({ ok: true, circuits: data ?? [] }, 200);
+}
+
+async function handleCircuitStandings(supabase: any, body: any) {
+  const boardId = String(body.board_id || "").trim();
+  if (!boardId) return json({ ok: false, error: "board_id_required" }, 400);
+
+  const { data: board, error: boardErr } = await supabase
+    .from("leaderboard_boards")
+    .select(BOARD_SELECT)
+    .eq("id", boardId)
+    .maybeSingle();
+  if (boardErr) return json({ ok: false, error: boardErr.message }, 400);
+  if (!board) return json({ ok: false, error: "board_not_found" }, 404);
+
+  const [{ game, profile }, { data: rows, error: rowsErr }] = await Promise.all([
+    loadScoringProfile(supabase, board.game_id),
+    supabase
+      .from("leaderboard_standings")
+      .select("player_key, player_id, wallet_address, rank, points, events_played, wins, computed_at")
+      .eq("board_id", boardId)
+      .order("rank", { ascending: true })
+      .order("wins", { ascending: false })
+      .limit(500),
+  ]);
+  if (rowsErr) return json({ ok: false, error: rowsErr.message }, 400);
+
+  const displayNames = await loadDisplayNames(
+    supabase,
+    (rows ?? []).map((r: any) => r.player_id).filter(Boolean),
+  );
+  const standings = (rows ?? []).map((r: any) => ({
+    ...r,
+    display_name: r.player_id ? displayNames.get(r.player_id) ?? null : null,
+  }));
+
+  return json({
+    ok: true,
+    board,
+    game,
+    scoring_profile: (board.scoring_profile as ScoringProfile) ?? profile,
+    standings,
+  }, 200);
+}
+
+async function handleMyCircuits(supabase: any, req: Request) {
+  const privyUserId = await verifyPrivyToken(req.headers.get("X-Privy-Authorization"));
+
+  const { data, error } = await supabase
+    .from("leaderboard_boards")
+    .select(BOARD_SELECT)
+    .eq("scope", "organizer_circuit")
+    .eq("organizer_id", privyUserId)
+    .order("created_at", { ascending: false });
+  if (error) return json({ ok: false, error: error.message }, 400);
+  return json({ ok: true, circuits: data ?? [] }, 200);
+}
+
+async function handleCreateCircuit(supabase: any, req: Request, body: any) {
+  const privyUserId = await verifyPrivyToken(req.headers.get("X-Privy-Authorization"));
+
+  const gameId = String(body.game_id || "").trim();
+  if (!gameId) return json({ ok: false, error: "game_id_required" }, 400);
+  const { data: game } = await supabase
+    .from("games")
+    .select("id")
+    .eq("id", gameId)
+    .eq("is_active", true)
+    .maybeSingle();
+  if (!game) return json({ ok: false, error: "game_not_found" }, 404);
+
+  const { fields, error: fieldErr } = parseCircuitFields(body);
+  if (fieldErr) return json({ ok: false, error: fieldErr }, 400);
+  if (!fields.name) return json({ ok: false, error: "invalid_name" }, 400);
+
+  const { data: board, error } = await supabase
+    .from("leaderboard_boards")
+    .insert({ ...fields, scope: "organizer_circuit", game_id: gameId, organizer_id: privyUserId })
+    .select(BOARD_SELECT)
+    .single();
+  if (error) {
+    const status = String(error.code) === "23505" ? 409 : 400;
+    const message = status === 409 ? "circuit_name_already_exists" : error.message;
+    return json({ ok: false, error: message }, status);
+  }
+
+  // Populate from already-final results; a recompute failure must not undo the creation.
+  try {
+    await recomputeBoard(supabase, board);
+  } catch (err: any) {
+    console.error(`[leaderboards] initial recompute failed for board ${board.id} (swallowed):`, err?.message || err);
+  }
+
+  return json({ ok: true, circuit: board }, 200);
+}
+
+async function handleUpdateCircuit(supabase: any, req: Request, body: any) {
+  const privyUserId = await verifyPrivyToken(req.headers.get("X-Privy-Authorization"));
+
+  const boardId = String(body.board_id || "").trim();
+  if (!boardId) return json({ ok: false, error: "board_id_required" }, 400);
+
+  const { data: existing } = await supabase
+    .from("leaderboard_boards")
+    .select("id, organizer_id, scope")
+    .eq("id", boardId)
+    .maybeSingle();
+  if (!existing || existing.scope !== "organizer_circuit") {
+    return json({ ok: false, error: "board_not_found" }, 404);
+  }
+  if (existing.organizer_id !== privyUserId) {
+    return json({ ok: false, error: "not_authorized_to_manage_circuit" }, 403);
+  }
+
+  const { fields, error: fieldErr } = parseCircuitFields(body);
+  if (fieldErr) return json({ ok: false, error: fieldErr }, 400);
+  if (Object.keys(fields).length === 0) return json({ ok: false, error: "no_fields_to_update" }, 400);
+
+  const { data: board, error } = await supabase
+    .from("leaderboard_boards")
+    .update(fields)
+    .eq("id", boardId)
+    .select(BOARD_SELECT)
+    .single();
+  if (error) {
+    const status = String(error.code) === "23505" ? 409 : 400;
+    const message = status === 409 ? "circuit_name_already_exists" : error.message;
+    return json({ ok: false, error: message }, status);
+  }
+
+  // Reactivation also recomputes: the board may have gone stale while inactive.
+  const needsRecompute =
+    "starts_at" in fields || "ends_at" in fields || "scoring_profile" in fields ||
+    fields.is_active === true;
+  if (needsRecompute && board.is_active) {
+    try {
+      await recomputeBoard(supabase, board);
+    } catch (err: any) {
+      console.error(`[leaderboards] recompute failed for board ${board.id} (swallowed):`, err?.message || err);
+    }
+  }
+
+  return json({ ok: true, circuit: board }, 200);
+}
+
+async function handleMyDisplayName(supabase: any, req: Request) {
+  const privyUserId = await verifyPrivyToken(req.headers.get("X-Privy-Authorization"));
+
+  const { data, error } = await supabase
+    .from("app_user_profiles")
+    .select("display_name")
+    .eq("privy_user_id", privyUserId)
+    .maybeSingle();
+  if (error) return json({ ok: false, error: error.message }, 400);
+
+  return json({ ok: true, display_name: data?.display_name ?? null }, 200);
+}
+
+async function handleSetDisplayName(supabase: any, req: Request, body: any) {
+  const privyUserId = await verifyPrivyToken(req.headers.get("X-Privy-Authorization"));
+
+  const raw = body.display_name;
+  const displayName = raw == null ? null : String(raw).trim();
+  if (displayName !== null && (displayName.length < 2 || displayName.length > 40)) {
+    return json({ ok: false, error: "display_name_must_be_2_to_40_chars" }, 400);
+  }
+
+  const { error } = await supabase
+    .from("app_user_profiles")
+    .upsert(
+      { privy_user_id: privyUserId, display_name: displayName },
+      { onConflict: "privy_user_id" },
+    );
+  if (error) return json({ ok: false, error: error.message }, 400);
+
+  return json({ ok: true, display_name: displayName }, 200);
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: buildPreflightHeaders(req) });
 
@@ -327,7 +579,7 @@ serve(async (req) => {
     const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
     // Read routes are public: standings mirror on-chain winners and organizer-published results.
-    // The single write route authenticates and authorizes per event inside its handler.
+    // Write routes authenticate the Privy caller and authorize per event/board inside their handlers.
     switch (route) {
       case "games":
         return await handleGames(supabase);
@@ -339,6 +591,20 @@ serve(async (req) => {
         return await handleTicketHolders(supabase, req, body);
       case "submit-extended-placements":
         return await handleSubmitExtendedPlacements(supabase, req, body);
+      case "circuits":
+        return await handleCircuits(supabase, body);
+      case "circuit-standings":
+        return await handleCircuitStandings(supabase, body);
+      case "my-circuits":
+        return await handleMyCircuits(supabase, req);
+      case "create-circuit":
+        return await handleCreateCircuit(supabase, req, body);
+      case "update-circuit":
+        return await handleUpdateCircuit(supabase, req, body);
+      case "my-display-name":
+        return await handleMyDisplayName(supabase, req);
+      case "set-display-name":
+        return await handleSetDisplayName(supabase, req, body);
       default:
         return json({ ok: false, error: `Unknown route: ${route || "(missing)"}` }, 400);
     }

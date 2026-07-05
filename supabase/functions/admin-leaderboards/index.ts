@@ -4,7 +4,12 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.50.0";
 import { ensureAdmin } from "../_shared/admin-check.ts";
 import { corsHeaders, buildPreflightHeaders } from "../_shared/cors.ts";
 import { SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY } from "../_shared/constants.ts";
-import { resolvePlayerIds } from "../_shared/leaderboards.ts";
+import {
+  recomputeActiveBoards,
+  recomputeBoard,
+  recomputeBoardsForResultChange,
+  resolvePlayerIds,
+} from "../_shared/leaderboards.ts";
 
 function json(data: any, status = 200) {
   return new Response(JSON.stringify(data), {
@@ -14,6 +19,29 @@ function json(data: any, status = 200) {
 }
 
 const SLUG_RE = /^[a-z0-9][a-z0-9-]{1,48}$/;
+const ADDRESS_RE = /0x[a-fA-F0-9]{40}/;
+const BOARD_RECOMPUTE_SELECT = "id, scope, game_id, organizer_id, starts_at, ends_at, scoring_profile";
+
+function extractAddress(value: unknown): string | null {
+  const match = String(value || "").match(ADDRESS_RE);
+  return match ? match[0].toLowerCase() : null;
+}
+
+async function recomputeActiveBoardsForGame(supabase: any, gameId: string): Promise<number> {
+  const { data: boards, error } = await supabase
+    .from("leaderboard_boards")
+    .select(BOARD_RECOMPUTE_SELECT)
+    .eq("game_id", gameId)
+    .eq("is_active", true);
+  if (error) throw new Error(error.message);
+
+  let recomputed = 0;
+  for (const board of boards ?? []) {
+    await recomputeBoard(supabase, board);
+    recomputed++;
+  }
+  return recomputed;
+}
 
 async function handleListGames(supabase: any) {
   const { data, error } = await supabase
@@ -48,7 +76,19 @@ async function handleUpsertGame(supabase: any, body: any) {
     .select("*")
     .single();
   if (error) return json({ ok: false, error: error.message }, 400);
-  return json({ ok: true, game: data }, 200);
+
+  let boardsRecomputed = 0;
+  let recomputeError: string | undefined;
+  if (row.scoring_profile) {
+    try {
+      boardsRecomputed = await recomputeActiveBoardsForGame(supabase, data.id);
+    } catch (err: any) {
+      recomputeError = err?.message || "board_recompute_failed";
+      console.error(`[admin-leaderboards] game ${data.id} board recompute failed:`, recomputeError);
+    }
+  }
+
+  return json({ ok: true, game: data, boards_recomputed: boardsRecomputed, recompute_error: recomputeError }, 200);
 }
 
 async function handleSetGameActive(supabase: any, body: any) {
@@ -63,6 +103,100 @@ async function handleSetGameActive(supabase: any, body: any) {
     .single();
   if (error) return json({ ok: false, error: error.message }, 400);
   return json({ ok: true, game: data }, 200);
+}
+
+async function handleEventResults(supabase: any, body: any) {
+  const lockAddress = extractAddress(body.lock_address || body.event_url);
+  if (!lockAddress) return json({ ok: false, error: "valid_lock_address_required" }, 400);
+
+  const { data: event, error: eventErr } = await supabase
+    .from("events")
+    .select("id, title, lock_address, chain_id, creator_id, game_id")
+    .ilike("lock_address", lockAddress)
+    .maybeSingle();
+  if (eventErr) return json({ ok: false, error: eventErr.message }, 400);
+  if (!event) return json({ ok: false, error: "event_not_found" }, 404);
+
+  const [{ data: results, error: resultsErr }, { data: game }] = await Promise.all([
+    supabase
+      .from("game_results")
+      .select(
+        "id, event_id, game_id, reward_pool_id, wallet_address, player_id, placement, participant_count, " +
+        "result_kind, source, status, occurred_at, hold_until, finalized_at, voided_at, void_reason, metadata",
+      )
+      .eq("event_id", event.id)
+      .order("created_at", { ascending: true }),
+    event.game_id
+      ? supabase.from("games").select("id, slug, name").eq("id", event.game_id).maybeSingle()
+      : Promise.resolve({ data: null }),
+  ]);
+  if (resultsErr) return json({ ok: false, error: resultsErr.message }, 400);
+
+  const rows = results ?? [];
+  const poolIds = Array.from(new Set(rows.map((r: any) => r.reward_pool_id).filter(Boolean)));
+  const playerIds = Array.from(new Set(rows.map((r: any) => r.player_id).filter(Boolean)));
+
+  const aliasByPoolPlacement = new Map<string, string>();
+  const displayNames = new Map<string, string>();
+  await Promise.all([
+    (async () => {
+      if (poolIds.length === 0) return;
+      const { data } = await supabase
+        .from("reward_pool_positions")
+        .select("reward_pool_id, placement, winner_alias")
+        .in("reward_pool_id", poolIds)
+        .not("winner_alias", "is", null);
+      for (const pos of data ?? []) {
+        aliasByPoolPlacement.set(`${pos.reward_pool_id}:${pos.placement}`, pos.winner_alias);
+      }
+    })(),
+    (async () => {
+      if (playerIds.length === 0) return;
+      const { data } = await supabase
+        .from("app_user_profiles")
+        .select("privy_user_id, display_name")
+        .in("privy_user_id", playerIds)
+        .not("display_name", "is", null);
+      for (const profile of data ?? []) {
+        displayNames.set(profile.privy_user_id, profile.display_name);
+      }
+    })(),
+  ]);
+
+  const sorted = [...rows].sort((a: any, b: any) => {
+    const aPlacement = a.placement == null ? Number.MAX_SAFE_INTEGER : Number(a.placement);
+    const bPlacement = b.placement == null ? Number.MAX_SAFE_INTEGER : Number(b.placement);
+    if (aPlacement !== bPlacement) return aPlacement - bPlacement;
+    return String(a.source).localeCompare(String(b.source)) || String(a.wallet_address).localeCompare(String(b.wallet_address));
+  });
+
+  const resultRows = sorted.map((row: any) => {
+    const poolAlias = row.reward_pool_id
+      ? aliasByPoolPlacement.get(`${row.reward_pool_id}:${row.placement}`) ?? null
+      : null;
+    const displayName = row.player_id ? displayNames.get(row.player_id) ?? null : null;
+    return {
+      id: row.id,
+      event_id: row.event_id,
+      game_id: row.game_id,
+      reward_pool_id: row.reward_pool_id,
+      wallet_address: row.wallet_address,
+      player_id: row.player_id,
+      placement: row.placement,
+      participant_count: row.participant_count,
+      result_kind: row.result_kind,
+      source: row.source,
+      status: row.status,
+      occurred_at: row.occurred_at,
+      hold_until: row.hold_until,
+      finalized_at: row.finalized_at,
+      voided_at: row.voided_at,
+      void_reason: row.void_reason,
+      label: poolAlias ?? displayName ?? null,
+    };
+  });
+
+  return json({ ok: true, event, game: game ?? null, results: resultRows }, 200);
 }
 
 async function handleVoidResult(supabase: any, body: any, adminId: string) {
@@ -80,10 +214,12 @@ async function handleVoidResult(supabase: any, body: any, adminId: string) {
       voided_at: new Date().toISOString(),
     })
     .eq("id", resultId)
-    .select("id, status")
+    .select("id, event_id, game_id, organizer_id, status")
     .single();
   if (error) return json({ ok: false, error: error.message }, 400);
-  return json({ ok: true, result: data }, 200);
+
+  const boardsRecomputed = await recomputeBoardsForResultChange(supabase, data);
+  return json({ ok: true, result: data, boards_recomputed: boardsRecomputed }, 200);
 }
 
 async function handleUnvoidResult(supabase: any, body: any) {
@@ -96,10 +232,12 @@ async function handleUnvoidResult(supabase: any, body: any) {
     .update({ status: "provisional", void_reason: null, voided_at: null, finalized_at: null })
     .eq("id", resultId)
     .eq("status", "voided")
-    .select("id, status")
+    .select("id, event_id, game_id, organizer_id, status")
     .single();
   if (error) return json({ ok: false, error: error.message }, 400);
-  return json({ ok: true, result: data }, 200);
+
+  const boardsRecomputed = await recomputeBoardsForResultChange(supabase, data);
+  return json({ ok: true, result: data, boards_recomputed: boardsRecomputed }, 200);
 }
 
 const RECOMPUTE_BATCH = 500;
@@ -154,13 +292,34 @@ async function handleRecompute(supabase: any) {
 
   const { data: counts, error: finalizeErr } = await supabase.rpc("finalize_game_results");
   if (finalizeErr) return json({ ok: false, error: finalizeErr.message }, 500);
+  const boardsRecomputed = await recomputeActiveBoards(supabase);
 
   return json({
     ok: true,
     game_backfilled_events: gameBackfills,
     players_resolved: resolved,
+    boards_recomputed: boardsRecomputed,
     ...(counts ?? {}),
   }, 200);
+}
+
+async function handleRecomputeBoard(supabase: any, body: any) {
+  const boardId = String(body.board_id || "").trim();
+  if (!boardId) {
+    const recomputed = await recomputeActiveBoards(supabase);
+    return json({ ok: true, boards_recomputed: recomputed }, 200);
+  }
+
+  const { data: board, error } = await supabase
+    .from("leaderboard_boards")
+    .select(BOARD_RECOMPUTE_SELECT)
+    .eq("id", boardId)
+    .maybeSingle();
+  if (error) return json({ ok: false, error: error.message }, 400);
+  if (!board) return json({ ok: false, error: "board_not_found" }, 404);
+
+  const standings = await recomputeBoard(supabase, board);
+  return json({ ok: true, board_id: boardId, standings_rows: standings }, 200);
 }
 
 serve(async (req) => {
@@ -181,12 +340,16 @@ serve(async (req) => {
         return await handleUpsertGame(supabase, body);
       case "set-game-active":
         return await handleSetGameActive(supabase, body);
+      case "event-results":
+        return await handleEventResults(supabase, body);
       case "void-result":
         return await handleVoidResult(supabase, body, adminId);
       case "unvoid-result":
         return await handleUnvoidResult(supabase, body);
       case "recompute":
         return await handleRecompute(supabase);
+      case "recompute-board":
+        return await handleRecomputeBoard(supabase, body);
       default:
         return json({ ok: false, error: `Unknown route: ${route || "(missing)"}` }, 400);
     }
