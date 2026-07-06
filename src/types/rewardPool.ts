@@ -13,6 +13,7 @@ export type RewardDisputeCategory =
   | 'rules_breach'
   | 'collusion'
   | 'not_paid'
+  | 'standings'
   | 'other';
 
 export interface RewardPoolPosition {

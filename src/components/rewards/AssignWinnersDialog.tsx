@@ -23,6 +23,7 @@ interface Props {
   positions: RewardPoolOnchainPosition[];
   canAssignUnassignedPlacements: boolean;
   canReplaceDeclaredWinners: boolean;
+  aliasNudge?: boolean;
   busy?: boolean;
   onSubmit: (payload: SubmitPayload) => void;
 }
@@ -43,6 +44,7 @@ export function AssignWinnersDialog({
   positions,
   canAssignUnassignedPlacements,
   canReplaceDeclaredWinners,
+  aliasNudge = false,
   busy,
   onSubmit,
 }: Props) {
@@ -91,6 +93,12 @@ export function AssignWinnersDialog({
           <DialogDescription>
             Enter the winning wallet for each placement. Each address must hold a ticket for this
             event, and one address can win only one placement.
+            {aliasNudge && (
+              <>
+                {' '}This event feeds game standings — add each winner&apos;s player name so the
+                standings show names instead of wallet addresses.
+              </>
+            )}
           </DialogDescription>
         </DialogHeader>
 

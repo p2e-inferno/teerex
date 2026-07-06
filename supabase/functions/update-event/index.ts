@@ -33,6 +33,7 @@ const SAFE_METADATA_FIELDS = new Set([
   "location",
   "eventType",
   "category",
+  "gameId",
   "imageUrl",
   "imageCropX",
   "imageCropY",
@@ -152,7 +153,7 @@ serve(async (req) => {
     );
     const { data: event, error: fetchError } = await serviceRoleClient
       .from("events")
-      .select("creator_id, lock_address, chain_id, is_public, date, end_date, time, starts_at, ends_at, registration_cutoff, refund_protection_enabled")
+      .select("creator_id, lock_address, chain_id, is_public, date, end_date, time, starts_at, ends_at, registration_cutoff, refund_protection_enabled, category")
       .eq("id", eventId)
       .single();
 
@@ -387,6 +388,28 @@ serve(async (req) => {
 
       if ("eventType" in formData) eventData.event_type = formData.eventType;
       if ("category" in formData) eventData.category = formData.category;
+      const effectiveCategory = "category" in formData ? formData.category : event.category;
+      if (effectiveCategory !== "Tournament") {
+        if ("category" in formData || "gameId" in formData) eventData.game_id = null;
+      } else if ("gameId" in formData) {
+        if (formData.gameId) {
+          const { data: game } = await serviceRoleClient
+            .from("games")
+            .select("id")
+            .eq("id", String(formData.gameId))
+            .eq("is_active", true)
+            .maybeSingle();
+          if (!game) {
+            return new Response(
+              JSON.stringify({ error: "Invalid or inactive game_id" }),
+              { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+            );
+          }
+          eventData.game_id = game.id;
+        } else {
+          eventData.game_id = null;
+        }
+      }
       if ("imageUrl" in formData) {
         // Only touch image_url if imageUrl was provided explicitly
         eventData.image_url = formData.imageUrl || null;

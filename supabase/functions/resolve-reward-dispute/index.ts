@@ -4,6 +4,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.50.0";
 import { corsHeaders, buildPreflightHeaders } from "../_shared/cors.ts";
 import { SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY } from "../_shared/constants.ts";
 import { ensureAdmin } from "../_shared/admin-check.ts";
+import { voidResultsForUpheldDispute } from "../_shared/leaderboards.ts";
 
 function json(data: any, status = 200) {
   return new Response(JSON.stringify(data), {
@@ -55,6 +56,12 @@ serve(async (req) => {
 
     if (error) return json({ ok: false, error: error.message }, 400);
     if (!data) return json({ ok: false, error: "dispute_not_found" }, 404);
+
+    // Post-success side effect: reflect the upheld dispute on leaderboard standings immediately
+    // (the finalize cron is the backstop). Logs and swallows internally.
+    if (status === "upheld") {
+      await voidResultsForUpheldDispute(supabase, data);
+    }
 
     return json({ ok: true, dispute: data }, 200);
   } catch (err: any) {

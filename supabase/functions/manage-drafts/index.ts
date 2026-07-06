@@ -29,6 +29,7 @@ const ALLOWED_DRAFT_FIELDS = [
     'payment_methods',
     'paystack_public_key',
     'category',
+    'game_id',
     'image_url',
     'image_crop_x',
     'image_crop_y',

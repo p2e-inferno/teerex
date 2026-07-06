@@ -16,6 +16,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
+import { IdentityName } from '@/components/identity/IdentityName';
 
 interface AdminPassOrder {
   id: string;
@@ -275,7 +276,9 @@ const AdminTicketPassOrders: React.FC = () => {
                           {o.amount_fiat != null ? `${o.fiat_symbol || 'NGN'} ${o.amount_fiat}` : '—'}
                         </TableCell>
                         <TableCell className="max-w-[180px] truncate" title={o.buyer_email || o.buyer_address || ''}>
-                          {o.buyer_email || o.buyer_address || '—'}
+                          {o.buyer_email || (
+                            o.buyer_address ? <IdentityName address={o.buyer_address} /> : '—'
+                          )}
                         </TableCell>
                         <TableCell className="max-w-[160px] truncate" title={o.payment_reference || ''}>
                           {o.payment_reference || '—'}

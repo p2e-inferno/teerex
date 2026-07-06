@@ -6,6 +6,7 @@ import { getUserWalletAddresses, verifyPrivyToken } from "../_shared/privy.ts";
 import { isAnyUserWalletHasValidKeyParallel, isAnyUserWalletIsLockManagerParallel } from "../_shared/unlock.ts";
 import { validateChain } from "../_shared/network-helpers.ts";
 import { getEventAuthorization } from "../_shared/event-auth.ts";
+import { notifyCommentTelegram } from "../_shared/telegram-dispatch.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -76,7 +77,7 @@ serve(async (req) => {
     // 5. Get event details
     const { data: event, error: eventError } = await supabase
       .from("events")
-      .select("id, lock_address, chain_id, creator_id")
+      .select("id, title, lock_address, chain_id, creator_id")
       .eq("id", post.event_id)
       .maybeSingle();
 
@@ -159,6 +160,15 @@ serve(async (req) => {
     if (insertError) {
       throw new Error(`Failed to create comment: ${insertError.message}`);
     }
+
+    notifyCommentTelegram(supabase, {
+      event,
+      postId,
+      comment: newComment,
+      commenterPrivyUserId: privyUserId,
+    }).catch((err) => {
+      console.error("[create-comment] Failed to trigger Telegram comment notification:", err?.message || err);
+    });
 
     return new Response(
       JSON.stringify({ ok: true, commentId: newComment.id, comment: newComment }),

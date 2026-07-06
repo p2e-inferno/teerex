@@ -199,6 +199,9 @@ e2e/screenshots/
 # Claude local agent artifacts
 .claude/
 
+# Temporary wallet generator (local use only)
+generate-wallet.mjs
+
 # Foundry
 /lib
 /out

@@ -14,6 +14,8 @@ import {
   deriveRewardPoolStatus,
   epochToIso,
 } from "../_shared/reward-pools.ts";
+import { ingestRewardPoolResults } from "../_shared/leaderboards.ts";
+import { notifyRewardWinnersDeclaredTelegram } from "../_shared/telegram-dispatch.ts";
 
 function json(data: any, status = 200) {
   return new Response(JSON.stringify(data), {
@@ -37,7 +39,7 @@ serve(async (req) => {
     if (id) {
       const { data } = await supabase
         .from("reward_pools")
-        .select("id, chain_id, controller_address, pool_id")
+        .select("id, chain_id, controller_address, pool_id, event_lock_address")
         .eq("id", id)
         .maybeSingle();
       row = data;
@@ -47,7 +49,7 @@ serve(async (req) => {
       const poolId = Number(body.pool_id);
       const { data } = await supabase
         .from("reward_pools")
-        .select("id, chain_id, controller_address, pool_id")
+        .select("id, chain_id, controller_address, pool_id, event_lock_address")
         .eq("chain_id", chainId)
         .eq("controller_address", controllerAddress)
         .eq("pool_id", poolId)
@@ -83,6 +85,25 @@ serve(async (req) => {
     if (poolErr) return json({ ok: false, error: poolErr.message }, 400);
 
     if (positions.length > 0) {
+      const { data: existingPositions, error: existingPositionsErr } = await supabase
+        .from("reward_pool_positions")
+        .select("placement, winner_address")
+        .eq("reward_pool_id", row.id);
+      if (existingPositionsErr) return json({ ok: false, error: existingPositionsErr.message }, 400);
+
+      const existingWinnerByPlacement = new Map(
+        (existingPositions || []).map((position: any) => [
+          Number(position.placement),
+          String(position.winner_address || "").toLowerCase(),
+        ]),
+      );
+      const newlyDeclaredWinner = positions.some((position) => {
+        const nextWinner = String(position.winner || "").toLowerCase();
+        if (!nextWinner || nextWinner === ethers.ZeroAddress.toLowerCase()) return false;
+        const previousWinner = existingWinnerByPlacement.get(Number(position.placement));
+        return !previousWinner || previousWinner === ethers.ZeroAddress.toLowerCase();
+      });
+
       const { error: posErr } = await supabase
         .from("reward_pool_positions")
         .upsert(
@@ -100,6 +121,29 @@ serve(async (req) => {
           { onConflict: "reward_pool_id,placement" },
         );
       if (posErr) return json({ ok: false, error: posErr.message }, 400);
+
+      // Post-success side effect: mirrors assigned winners into leaderboard results.
+      // Logs and swallows internally — must never fail the sync.
+      await ingestRewardPoolResults(
+        supabase,
+        {
+          poolDbId: row.id,
+          eventLock: pool.eventLock,
+          claimStart: pool.claimStart,
+          challengeWindowSecs: pool.challengeWindow,
+        },
+        positions,
+      );
+
+      if (newlyDeclaredWinner) {
+        notifyRewardWinnersDeclaredTelegram(supabase, {
+          rewardPoolId: row.id,
+          eventLockAddress: row.event_lock_address || pool.eventLock,
+          chainId: row.chain_id,
+        }).catch((err) => {
+          console.error("[sync-reward-pool] Failed to trigger Telegram winners notification:", err?.message || err);
+        });
+      }
     }
 
     return json({ ok: true, pool_id: row.id, status: deriveRewardPoolStatus(pool, nowSecs) }, 200);

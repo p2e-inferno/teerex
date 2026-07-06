@@ -14,6 +14,7 @@ import {
   deriveRewardPoolStatus,
   epochToIso,
 } from "../_shared/reward-pools.ts";
+import { ingestRewardPoolResults } from "../_shared/leaderboards.ts";
 
 function json(data: any, status = 200) {
   return new Response(JSON.stringify(data), {
@@ -171,6 +172,19 @@ serve(async (req) => {
       }
       return json({ ok: false, error: error.message }, 400);
     }
+
+    // Covers late mirrors of pools whose winners were already assigned on-chain.
+    // Logs and swallows internally — must never fail the create.
+    await ingestRewardPoolResults(
+      supabase,
+      {
+        poolDbId: data.id,
+        eventLock: pool.eventLock,
+        claimStart: pool.claimStart,
+        challengeWindowSecs: pool.challengeWindow,
+      },
+      positions,
+    );
 
     return json({ ok: true, pool: data }, 200);
   } catch (err: any) {

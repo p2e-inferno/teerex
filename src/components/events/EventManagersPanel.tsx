@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Clock, Info, Loader2, MessageSquare, MoreHorizontal, Plus, RefreshCw, Trash2, UserCheck, Users } from 'lucide-react';
+import { Clock, Info, ListOrdered, Loader2, MessageSquare, MoreHorizontal, Plus, RefreshCw, Trash2, UserCheck, Users } from 'lucide-react';
 import type { PublishedEvent } from '@/types/event';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -17,6 +17,8 @@ import {
 } from '@/components/ui/alert-dialog';
 import { useToast } from '@/hooks/use-toast';
 import { EventManager, EventManagerPermissions, useEventManagers } from '@/hooks/useEventManagers';
+import { IdentityName } from '@/components/identity/IdentityName';
+import { shortAddress } from '@/lib/identity';
 
 interface EventManagersPanelProps {
   event: PublishedEvent;
@@ -47,9 +49,13 @@ const PERMISSION_LABELS: Array<{
     description: 'Create, edit, and moderate posts and comments in event discussions.',
     icon: MessageSquare,
   },
+  {
+    key: 'manage_results',
+    label: 'Manage Results',
+    description: 'Submit and edit organizer-reported tournament standings.',
+    icon: ListOrdered,
+  },
 ];
-
-const shortAddress = (address: string) => `${address.slice(0, 6)}...${address.slice(-4)}`;
 
 export const EventManagersPanel: React.FC<EventManagersPanelProps> = ({ event, enabled }) => {
   const { toast } = useToast();
@@ -276,8 +282,8 @@ export const EventManagersPanel: React.FC<EventManagersPanelProps> = ({ event, e
                     )}
                     {manager.label && <div className="text-xs text-muted-foreground truncate mt-0.5">{manager.label}</div>}
                   </div>
-                  <div className="font-mono text-xs pt-0.5 text-gray-600" title={manager.wallet_address}>
-                    {shortAddress(manager.wallet_address)}
+                  <div className="text-xs pt-0.5 text-gray-600" title={manager.wallet_address}>
+                    <IdentityName address={manager.wallet_address} displayName={manager.label} />
                   </div>
                   <div className="grid gap-2">
                     {PERMISSION_LABELS.map((item) => {
@@ -322,7 +328,14 @@ export const EventManagersPanel: React.FC<EventManagersPanelProps> = ({ event, e
             <AlertDialogTitle>Remove manager?</AlertDialogTitle>
             <AlertDialogDescription>
               This revokes delegated access for{' '}
-              {managerToRemove?.email || managerToRemove?.label || shortAddress(managerToRemove?.wallet_address || '')}.
+              {managerToRemove?.email || (
+                <IdentityName
+                  address={managerToRemove?.wallet_address}
+                  displayName={managerToRemove?.label}
+                  fallback={managerToRemove?.wallet_address ? shortAddress(managerToRemove.wallet_address) : 'this manager'}
+                />
+              )}
+              .
               They will lose access immediately.
             </AlertDialogDescription>
           </AlertDialogHeader>

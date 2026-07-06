@@ -4,6 +4,10 @@ import { Contract, JsonRpcProvider } from "https://esm.sh/ethers@6.14.4";
 import { corsHeaders, buildPreflightHeaders } from "../_shared/cors.ts";
 import { handleError } from "../_shared/error-handler.ts";
 import { validateChain } from "../_shared/network-helpers.ts";
+import {
+  notifyProtectedEventFailedTelegram,
+  notifyProtectedEventRefundedTelegram,
+} from "../_shared/telegram-dispatch.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -196,6 +200,22 @@ serve(async (req: Request) => {
         .from("tickets")
         .update({ status: "refunded" })
         .eq("event_id", event.id);
+    }
+
+    const previousStatus = event.refund_status;
+    const enteredFailureState =
+      (status === "refund_available" || status === "creator_only_refund_window") &&
+      previousStatus !== "refund_available" &&
+      previousStatus !== "creator_only_refund_window";
+    if (enteredFailureState) {
+      notifyProtectedEventFailedTelegram(supabase, { ...event, refund_status: status }).catch((err) => {
+        console.error("[sync-refundable-event-status] Failed to trigger Telegram failure notification:", err?.message || err);
+      });
+    }
+    if (cfg.refundComplete && previousStatus !== "refunded") {
+      notifyProtectedEventRefundedTelegram(supabase, { ...event, refund_status: status }).catch((err) => {
+        console.error("[sync-refundable-event-status] Failed to trigger Telegram refund notification:", err?.message || err);
+      });
     }
 
     return new Response(

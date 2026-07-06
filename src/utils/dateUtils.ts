@@ -98,6 +98,20 @@ export function formatEventDateRange(options: DateDisplayOptions): string {
     : `${format(startDate, 'MMM d')} - ${format(endDate, 'd, yyyy')}`;
 }
 
+export function formatEventCompactDateRange(options: DateDisplayOptions): string {
+  const { startDate, endDate } = options;
+
+  if (!endDate || isSameDay(startDate, endDate)) {
+    return format(startDate, 'EEE MMM d, yyyy');
+  }
+
+  if (startDate.getFullYear() !== endDate.getFullYear()) {
+    return `${format(startDate, 'EEE MMM d, yyyy')} - ${format(endDate, 'EEE MMM d, yyyy')}`;
+  }
+
+  return `${format(startDate, 'EEE MMM d')} - ${format(endDate, 'EEE MMM d, yyyy')}`;
+}
+
 /**
  * Checks if event is currently ongoing (between start and end dates inclusive)
  *

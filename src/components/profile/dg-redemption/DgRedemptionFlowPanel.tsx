@@ -7,6 +7,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
+import { IdentityName } from '@/components/identity/IdentityName';
 import { formatNairaFromKobo, formatUsdcFromMicro } from '@/lib/currency';
 import { getExplorerTxUrl } from '@/lib/config/network-config';
 import { UsdcDestinationSelect } from './UsdcDestinationSelect';
@@ -120,7 +121,7 @@ export const DgRedemptionFlowPanel: React.FC<DgRedemptionFlowPanelProps> = ({
       quote && !interactive ? (
         <div className="rounded-md bg-muted/50 p-3">
           <div className="text-muted-foreground">USDC sent to</div>
-          <div className="font-mono font-medium">{shortAddress(String(quote.payout_wallet_address || payoutWalletAddress))}</div>
+          <IdentityName address={String(quote.payout_wallet_address || payoutWalletAddress)} className="font-medium" />
         </div>
       ) : (
         <UsdcDestinationSelect
@@ -282,9 +283,9 @@ export const DgRedemptionFlowPanel: React.FC<DgRedemptionFlowPanelProps> = ({
                   </div>
                   <div className="text-blue-700/80 dark:text-blue-300/80 leading-relaxed pl-[22px]">
                     Send only from this address:{" "}
-                    <code className="px-1.5 py-0.5 rounded bg-blue-100/50 dark:bg-blue-900/30 font-mono font-bold text-blue-900 dark:text-blue-200 text-[10px]">
-                      {shortAddress(address)}
-                    </code>
+                    <span className="px-1.5 py-0.5 rounded bg-blue-100/50 dark:bg-blue-900/30 font-bold text-blue-900 dark:text-blue-200 text-[10px]">
+                      <IdentityName address={address} />
+                    </span>
                     , then submit the transaction hash below.
                   </div>
                   <div className="text-blue-800/90 dark:text-blue-300/90 font-medium pl-[22px]">

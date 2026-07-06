@@ -15,6 +15,7 @@ const EMPTY_PERMISSIONS: EventManagerPermissions = {
   manage_access: false,
   manage_waitlist: false,
   manage_discussions: false,
+  manage_results: false,
 };
 
 export function useEventManagerPermissions(eventId: string | null) {
@@ -66,5 +67,6 @@ export function useEventManagerPermissions(eventId: string | null) {
     canManageAccess: state.isCreator || state.isOnchainManager || state.permissions.manage_access,
     canManageWaitlist: state.isCreator || state.isOnchainManager || state.permissions.manage_waitlist,
     canManageDiscussions: state.isCreator || state.isOnchainManager || state.permissions.manage_discussions,
+    canManageResults: state.isCreator || state.isOnchainManager || state.permissions.manage_results,
   };
 }

@@ -21,6 +21,7 @@ import { cn } from '@/lib/utils';
 import { formatCountdownLabelFromMs } from '@/utils/dateUtils';
 import { useRewardPoolOnchainState } from '@/hooks/useRewardPoolOnchainState';
 import { useRewardControllerActions } from '@/hooks/useRewardControllerActions';
+import { IdentityName } from '@/components/identity/IdentityName';
 import { RewardPoolBadge } from './RewardPoolBadge';
 import { RewardDisputesList } from './RewardDisputesList';
 import { AssignWinnersDialog } from './AssignWinnersDialog';
@@ -31,7 +32,6 @@ import type {
   RewardPoolOnchainPosition,
 } from '@/types/rewardPool';
 
-const short = (a?: string | null) => (a ? `${a.slice(0, 6)}...${a.slice(-6)}` : '-');
 const fmtDate = (iso?: string | null) => (iso ? new Date(iso).toLocaleString() : '-');
 
 const isoToSecs = (iso?: string | null): number | null => {
@@ -100,9 +100,10 @@ interface Props {
   viewerAddress?: string | null;
   isTicketHolder: boolean;
   eventEndsAt?: string | null;
+  promptWinnerAliases?: boolean;
 }
 
-export function RewardPoolCard({ pool, viewerAddress, isTicketHolder, eventEndsAt }: Props) {
+export function RewardPoolCard({ pool, viewerAddress, isTicketHolder, eventEndsAt, promptWinnerAliases = false }: Props) {
   const { wallets } = useWallets();
   const wallet = wallets?.[0];
   const onchain = useRewardPoolOnchainState(pool.controller_address, pool.pool_id, pool.chain_id);
@@ -131,6 +132,11 @@ export function RewardPoolCard({ pool, viewerAddress, isTicketHolder, eventEndsA
   const claimEndSecs = onchainData?.claimEnd ?? isoToSecs(pool.claim_end);
   const poolEndSecs = claimEndSecs != null ? claimEndSecs + (onchainData?.frozenAccrued ?? 0) : null;
   const eventEnded = eventEndSecs == null || nowSecs >= eventEndSecs;
+  // Mirrors closePool()'s on-chain `noTickets` gate: the zero-ticket fast exit only exists before
+  // claimStart. Once the claim window opens, the creator must use reclaim() after claimEnd instead.
+  const noTicketsExitReady = onchainData?.ticketSupply === 0n
+    && claimStartSecs != null
+    && nowSecs < claimStartSecs;
 
   // Winner names are off-chain metadata; merge them in by placement regardless of whether the rest
   // of the row comes from the on-chain read or the DB mirror.
@@ -247,6 +253,14 @@ export function RewardPoolCard({ pool, viewerAddress, isTicketHolder, eventEndsA
       ))
   );
 
+  const canDisputePosition = (position: DisplayPosition) => (
+    Boolean(position.winner) &&
+    !position.claimed &&
+    !position.reclaimed &&
+    Boolean(position.opensAt) &&
+    nowSecs < position.opensAt
+  );
+
   const closeBlockedReason = useMemo(() => {
     if (!isCreator) return 'Only the prize pool creator can cancel it.';
     if (onchainVerificationError) return 'Unable to verify this prize pool on-chain. If this event still points to an older rewards controller, refresh after the controller and network config are updated.';
@@ -258,13 +272,16 @@ export function RewardPoolCard({ pool, viewerAddress, isTicketHolder, eventEndsA
       return 'Winners are already declared. Prize pool cannot be closed while claims are in progress. Unclaimed prize funds can be reclaimed after the claim window closes.';
     }
     if (onchainData.ticketSupply === null) return 'Checking ticket supply before cancellation...';
-    if (onchainData.ticketSupply === 0n) return null;
+    if (noTicketsExitReady) return null;
     if (onchainData.attendanceEarlyExitReady) return null;
+    if (onchainData.ticketSupply === 0n) {
+      return 'The claim window has already started, so the no-tickets cancellation is no longer available. You can reclaim any unclaimed prize funds after the claim window closes.';
+    }
     if (onchainData.attendanceCancelInitiated && !onchainData.attendanceRefundComplete) {
       return 'Event cancellation refunds are still in progress. The prize pool can be cancelled after those refunds complete.';
     }
     return 'This prize pool is locked for winner claims. You can reclaim any unclaimed prize funds after the claim window closes.';
-  }, [isCreator, onchainData, onchainPending, onchainVerificationError]);
+  }, [isCreator, noTicketsExitReady, onchainData, onchainPending, onchainVerificationError]);
 
   const assignBlockedReason = useMemo(() => {
     if (!canManageWinners) return null;
@@ -298,12 +315,13 @@ export function RewardPoolCard({ pool, viewerAddress, isTicketHolder, eventEndsA
   const canReclaim = isCreator && onchainData
     ? !onchainData.closed && !freezeBlocksNow && nowSecs > onchainData.claimEnd + onchainData.frozenAccrued
     : false;
+  const canDisputeAnyPosition = positions.some(canDisputePosition);
   const canClose = isCreator && !closeBlockedReason;
   const canOpenAssign = canManageWinners && !assignBlockedReason;
   const showAssignAction = canManageWinners;
   const showCloseAction = isCreator;
   const showReclaimAction = isCreator && canReclaim;
-  const showDisputeAction = isTicketHolder && !isCreator;
+  const showDisputeAction = isTicketHolder && !isCreator && canDisputeAnyPosition;
 
   const openTx = async () => {
     if (!pool.tx_hash) return;
@@ -325,7 +343,7 @@ export function RewardPoolCard({ pool, viewerAddress, isTicketHolder, eventEndsA
     if (ok) setDisputeOpen(false);
   };
 
-  const cancelReadyLabel = onchainData?.ticketSupply === 0n
+  const cancelReadyLabel = noTicketsExitReady
     ? 'Ready: no tickets issued'
     : onchainData?.attendanceEarlyExitReady
       ? 'Ready: event cancelled and refunds complete'
@@ -442,14 +460,15 @@ export function RewardPoolCard({ pool, viewerAddress, isTicketHolder, eventEndsA
                   {winnerAddress ? (
                     <div className="space-y-1.5">
                       <div className="font-medium text-slate-600">#{p.placement} · {fmt(p.amountWei)}</div>
-                      {p.winnerAlias && (
-                        <div className="font-semibold text-slate-950 break-words">{p.winnerAlias}</div>
-                      )}
                       <div className={cn(
                         'flex flex-wrap items-center gap-2',
-                        p.winnerAlias ? 'font-mono text-xs text-slate-500' : 'text-slate-950',
+                        p.winnerAlias ? 'text-xs text-slate-500' : 'text-slate-950',
                       )}>
-                        <span className="font-medium">{short(winnerAddress)}</span>
+                        <IdentityName
+                          address={winnerAddress}
+                          displayName={p.winnerAlias}
+                          className="font-medium"
+                        />
                         <button
                           type="button"
                           onClick={() => copyWinnerAddress(winnerAddress)}
@@ -466,7 +485,7 @@ export function RewardPoolCard({ pool, viewerAddress, isTicketHolder, eventEndsA
                         {claimable && (
                           <span className="text-xs font-medium text-blue-600">claimable</span>
                         )}
-                        {isTicketHolder && !isCreator && !p.claimed && !p.reclaimed && (
+                        {isTicketHolder && !isCreator && canDisputePosition(p) && (
                           <button
                             onClick={() => { setDisputePlacement(p.placement); setDisputeOpen(true); }}
                             className="text-xs font-medium text-red-600 hover:underline"
@@ -703,6 +722,7 @@ export function RewardPoolCard({ pool, viewerAddress, isTicketHolder, eventEndsA
         positions={positions}
         canAssignUnassignedPlacements={canAssignUnassignedPlacements}
         canReplaceDeclaredWinners={canReplaceDeclaredWinners}
+        aliasNudge={promptWinnerAliases}
         busy={actions.isBusy}
         onSubmit={async ({ batch, aliasUpdates }) => { const ok = await actions.assign(pool, batch, aliasUpdates); if (ok) setAssignOpen(false); }}
       />

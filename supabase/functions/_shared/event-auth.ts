@@ -7,6 +7,7 @@ export const EVENT_MANAGER_PERMISSIONS = [
   "manage_access",
   "manage_waitlist",
   "manage_discussions",
+  "manage_results",
 ] as const;
 
 export type EventManagerPermission = typeof EVENT_MANAGER_PERMISSIONS[number];

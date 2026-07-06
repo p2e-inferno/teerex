@@ -9,6 +9,7 @@ import { Contract, JsonRpcProvider, Wallet } from "https://esm.sh/ethers@6.14.4"
 import { buildStartsAtUtcIso, toDateOnly } from "../_shared/datetime.ts";
 import { sanitizePurchaseMessage } from "../_shared/purchase-message.ts";
 import { validatePurchaseFormSchema } from "../_shared/purchase-form.ts";
+import { notifyOrganizerEventCreatedTelegram } from "../_shared/telegram-dispatch.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -83,9 +84,11 @@ serve(async (req: Request) => {
             payout_destination,
             payment_methods,
             category,
+            game_id,
             image_url,
             image_crop_x,
             image_crop_y,
+            creator_address,
             lock_address,
             transaction_hash,
             chain_id,
@@ -123,6 +126,16 @@ serve(async (req: Request) => {
         const userWalletAddresses = await getUserWalletAddresses(privyUserId);
         if (!userWalletAddresses || userWalletAddresses.length === 0) {
             throw new Error("No wallets linked to authenticated user");
+        }
+        let resolvedCreatorAddress = creator_address
+            ? String(creator_address).trim().toLowerCase()
+            : null;
+        if (
+            resolvedCreatorAddress &&
+            (!/^0x[a-fA-F0-9]{40}$/.test(resolvedCreatorAddress) ||
+                !userWalletAddresses.includes(resolvedCreatorAddress))
+        ) {
+            throw new Error("creator_address_not_authorized_for_user");
         }
 
         // Validate chain and get network config
@@ -254,6 +267,7 @@ serve(async (req: Request) => {
             }
 
             resolvedServiceManagerAdded = false;
+            resolvedCreatorAddress = String(cfg.creator).toLowerCase();
             resolvedRefundControllerAddress = controllerAddress;
             resolvedRefundReserveBond = cfg.reserveBond.toString();
             resolvedRefundStatus = "protected";
@@ -268,6 +282,20 @@ serve(async (req: Request) => {
             if (!isAuthorized) {
                 throw new Error("Unauthorized: You are not a manager of this lock contract");
             }
+        }
+
+        let resolvedGameId: string | null = null;
+        if (category === "Tournament" && game_id) {
+            const { data: game } = await supabase
+                .from("games")
+                .select("id")
+                .eq("id", String(game_id))
+                .eq("is_active", true)
+                .maybeSingle();
+            if (!game) {
+                throw new Error("Invalid or inactive game_id");
+            }
+            resolvedGameId = game.id;
         }
 
         let sanitizedPurchaseMessage: string | null = null;
@@ -320,9 +348,11 @@ serve(async (req: Request) => {
             payment_methods,
             paystack_public_key: resolvedPaystackPublicKey,
             category,
+            game_id: resolvedGameId,
             image_url,
             image_crop_x,
             image_crop_y,
+            creator_address: resolvedCreatorAddress,
             lock_address,
             transaction_hash,
             chain_id,
@@ -440,6 +470,10 @@ serve(async (req: Request) => {
                 purchaseFormSaved = false;
             }
         }
+
+        notifyOrganizerEventCreatedTelegram(supabase, newEvent).catch((err) => {
+            console.error("[create-event] Failed to trigger Telegram organizer subscriber notification:", err?.message || err);
+        });
 
         return new Response(
             JSON.stringify({
