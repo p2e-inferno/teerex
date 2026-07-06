@@ -50,6 +50,9 @@ function renderPreview(o: { title: string; description: string; image: string; u
 <meta name="twitter:description" content="${d}" />
 <meta name="twitter:image" content="${img}" />
 <link rel="canonical" href="${u}" />
+<link rel="icon" href="/favicon.ico" sizes="any" />
+<link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+<link rel="apple-touch-icon" href="/favicon.ico" />
 <script>location.replace(${redirect})</script>
 </head>
 <body>

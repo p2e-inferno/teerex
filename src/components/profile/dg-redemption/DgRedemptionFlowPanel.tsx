@@ -104,6 +104,12 @@ export const DgRedemptionFlowPanel: React.FC<DgRedemptionFlowPanelProps> = ({
     toast.success('Address copied');
   };
 
+  const copyAmount = async () => {
+    if (quote?.amount_dg == null) return;
+    await navigator.clipboard.writeText(String(quote.amount_dg));
+    toast.success('Amount copied');
+  };
+
   const openPayoutTxExplorer = async () => {
     const payoutTxHash = redemptionStatus?.payout_tx_hash;
     if (!payoutTxHash) return;
@@ -267,9 +273,22 @@ export const DgRedemptionFlowPanel: React.FC<DgRedemptionFlowPanelProps> = ({
           {!expired ? (
             <>
               <div className="space-y-2">
-                <Label className="text-sm font-semibold text-violet-700 dark:text-violet-300 bg-violet-50/50 dark:bg-violet-950/20 px-2.5 py-1 rounded-md border border-violet-100 dark:border-violet-900/30 inline-block">
-                  Send exactly {quote.amount_dg} DG to
-                </Label>
+                <div className="flex flex-wrap items-center gap-2">
+                  <Label className="text-sm font-semibold text-violet-700 dark:text-violet-300 bg-violet-50/50 dark:bg-violet-950/20 px-2.5 py-1 rounded-md border border-violet-100 dark:border-violet-900/30 inline-block">
+                    Send exactly {quote.amount_dg} DG to
+                  </Label>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={copyAmount}
+                    type="button"
+                    className="h-7 gap-1.5 text-xs"
+                    title="Copy amount"
+                  >
+                    <Copy className="h-3.5 w-3.5" />
+                    Copy amount
+                  </Button>
+                </div>
                 <div className="flex gap-2">
                   <Input readOnly value={quote.redemption_wallet_address} className="font-mono text-xs font-bold" />
                   <Button variant="outline" size="icon" onClick={copyAddress} type="button">
