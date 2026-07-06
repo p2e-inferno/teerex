@@ -37,6 +37,23 @@ Prefer focused verification for the files changed. If a broad command fails beca
 - Use existing hooks, helpers, config readers, and type definitions before adding parallel abstractions.
 - Generate explorer links through existing helpers such as `getExplorerTxUrl(chainId, txHash)`; do not hardcode Basescan URLs inline.
 
+## Wallet Identity Display
+
+User-facing wallet identities must use the shared identity primitives instead of local `shortAddress`, `formatAddress`, or `displayName || address` fallbacks.
+
+- Use `IdentityName` from `src/components/identity/IdentityName.tsx` in React UI when showing a person/player/host/attendee/manager/reporter wallet.
+- Use `useIdentityLabel` from `src/hooks/useIdentityLabel.ts` when a component needs the resolved label as a string, for example avatar initials or conditional layout.
+- Use `resolveIdentityLabel` and `shortAddress` from `src/lib/identity.ts` for pure non-React formatting.
+- The required priority is: ENS reverse name first, app `display_name` second, shortened wallet address last.
+- Pass both `address` and any available `displayName` into the shared primitive. Do not pre-resolve the fallback in feature code.
+- Public `display_name` values are unique handles and must stay protected by both edge validation and database constraints for uniqueness and reserved names.
+- Keep contract addresses, lock addresses, transaction hashes, and explorer-only technical identifiers as explicit hex displays; ENS identity formatting is for people-facing wallets.
+
+Example:
+```tsx
+<IdentityName address={row.wallet_address} displayName={row.display_name} />
+```
+
 ## Calling Edge Functions from the Frontend
 
 **Always use `callEdgeFunction` from `src/lib/edgeFunctions.ts`. Never call `supabase.functions.invoke` directly from components or hooks.**
@@ -83,6 +100,12 @@ Design Edge Functions around product capabilities and authorization boundaries, 
 
 The default rule is: **one Edge Function per cohesive domain boundary; multiple handlers/routes inside it when operations share the same security model.**
 
+Boundary nuance:
+- HTTP methods or route/action names are organization tools, not authorization boundaries. A `GET` and `POST` can live in the same Edge Function only when their caller type, secrets, and authorization model remain easy to audit together.
+- Split public reads, authenticated user actions, manager/organizer actions, admin-only operations, webhooks, and cron/system jobs when combining them would require materially different auth checks, secrets, or failure handling.
+- Do not create one function per button click or CRUD verb. First look for the cohesive product domain, then split only at real trust, runtime, or ownership boundaries.
+- If a domain needs mixed access, prefer a small public/read function plus a separate management/admin/webhook function over a single router that contains unrelated trust models.
+
 Preserve these existing conventions when grouping or adding endpoints:
 - Use `callEdgeFunction` from the frontend and keep the standard `{ ok: true, ...payload }` / `{ ok: false, error }` response contract.
 - Keep Privy as the user identity boundary; verify `X-Privy-Authorization` with existing helpers such as `verifyPrivyToken`.
@@ -107,6 +130,21 @@ Prefer adding a route/handler to an existing domain function when operations sha
 - Frontend workflow and deployment cadence.
 
 Use a small router in `index.ts` and keep business logic in typed handler functions. HTTP methods are preferred for resource operations when practical; a typed `action` field is acceptable for command-style operations within one domain. Do not create a global catch-all `api` function.
+
+Example target shape for mixed-access leaderboards:
+```text
+leaderboards
+  GET/POST public games, standings, and player summaries
+  Boundary: public or low-risk read-only data, plus reads that do not require manager/admin authority.
+
+leaderboard-management
+  POST/PATCH organizer or manager series setup and result submission
+  Boundary: Privy-authenticated event owners/managers; uses event authorization and manager permissions.
+
+admin-leaderboards
+  POST/PATCH admin game setup, moderation, recompute, and finalization
+  Boundary: platform admin only; uses admin authorization and may run broad service-role maintenance.
+```
 
 Example target shape for discussions:
 ```text

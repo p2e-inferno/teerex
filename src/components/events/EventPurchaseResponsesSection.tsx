@@ -18,6 +18,7 @@ import {
   PurchaseFormSchema,
   PurchaseFormResponseValues,
 } from '@/types/purchaseForm';
+import { IdentityName } from '@/components/identity/IdentityName';
 
 interface EventPurchaseResponsesSectionProps {
   event: PublishedEvent;
@@ -35,10 +36,6 @@ interface ResponseRow {
 }
 
 const PAGE_SIZE = 25;
-
-const formatAddress = (address: string): string => {
-  return `${address.slice(0, 6)}...${address.slice(-4)}`;
-};
 
 const CopyButton: React.FC<{ text: string }> = ({ text }) => {
   const { toast } = useToast();
@@ -221,8 +218,8 @@ export const EventPurchaseResponsesSection: React.FC<EventPurchaseResponsesSecti
               <TableBody>
                 {rows.map((row) => (
                   <TableRow key={row.ticket_id}>
-                    <TableCell className="font-mono text-xs whitespace-nowrap">
-                      {formatAddress(row.owner_wallet)}
+                    <TableCell className="text-xs whitespace-nowrap">
+                      <IdentityName address={row.owner_wallet} />
                       <CopyButton text={row.owner_wallet} />
                     </TableCell>
                     <TableCell className="text-sm whitespace-nowrap">

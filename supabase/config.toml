@@ -31,6 +31,30 @@ enabled = true
 [functions.expire-dg-redemption-intents]
   verify_jwt = false
 
+[functions.finalize-game-results]
+  # Cron endpoint: bearer LEADERBOARDS_CRON_SECRET or admin Privy token.
+  verify_jwt = false
+
+[functions.leaderboards]
+  # Public reads plus Privy-authenticated writes; the function validates Privy tokens per route.
+  verify_jwt = false
+
+[functions.event-host]
+  # Public reads: host attribution, ticket-holder social proof, and host event discovery.
+  verify_jwt = false
+
+[functions.get-public-event-og]
+  # Crawler-facing preview metadata; called server-side by api/event-og.ts without a user session.
+  verify_jwt = false
+
+[functions.contact-host]
+  # Browser sends Privy JWT; the function verifies it and rate-limits per sender.
+  verify_jwt = false
+
+[functions.report-event]
+  # Browser sends Privy JWT for submissions; admin routes verify admin status internally.
+  verify_jwt = false
+
 [functions.csp-report]
   # Public browser endpoint for CSP violation reports.
   verify_jwt = false
@@ -52,6 +76,14 @@ enabled = true
 
 [functions.send-post-notification]
   verify_jwt = true
+
+[functions.telegram-notifications]
+  # Browser sends Privy JWT; the function performs identity checks itself.
+  verify_jwt = false
+
+[functions.telegram-webhook]
+  # Telegram calls this endpoint with X-Telegram-Bot-Api-Secret-Token.
+  verify_jwt = false
 
 [functions.nft-metadata]
   # Public endpoint - NFT marketplaces and wallets need unauthenticated access

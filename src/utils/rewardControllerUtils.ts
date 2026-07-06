@@ -634,9 +634,14 @@ export async function preflightCloseRewardPool(
   wallet: any,
   chainId: number,
 ): Promise<void> {
+  if (!wallet?.address) throw new Error('No wallet provided. Please connect your wallet first.');
   try {
-    const controller = await getControllerWithSigner(controllerAddress, wallet, chainId);
-    await controller.closePool.staticCall(poolId);
+    // A plain read-only provider for this simulate-only call, not the wallet's injected EIP-1193
+    // provider: some embedded-wallet providers reshape eth_call revert responses in a way ethers
+    // cannot decode, surfacing a raw internal error instead of the contract's named revert reason.
+    const provider = await getReadProvider(chainId);
+    const controller = new ethers.Contract(controllerAddress, REWARDS_CONTROLLER_ABI, provider);
+    await controller.closePool.staticCall(poolId, { from: wallet.address });
   } catch (error) {
     debugRewardPoolError('close-preflight:static-call-failed', error, {
       controllerAddress,

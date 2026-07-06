@@ -30,7 +30,7 @@ export function EventRewardPools({
 }: {
   event: Pick<
     PublishedEvent,
-    'lock_address' | 'chain_id' | 'creator_id' | 'creator_address' | 'refund_protection_enabled' | 'refund_controller_address' | 'ends_at'
+    'lock_address' | 'chain_id' | 'creator_id' | 'creator_address' | 'refund_protection_enabled' | 'refund_controller_address' | 'ends_at' | 'game_id'
   >;
   creationGate?: RewardPoolCreationGate;
   protectedActionBusy?: boolean;
@@ -105,6 +105,7 @@ export function EventRewardPools({
               viewerAddress={viewerAddress}
               isTicketHolder={isTicketHolder}
               eventEndsAt={event.ends_at ?? null}
+              promptWinnerAliases={Boolean(event.game_id)}
             />
           ))}
         </div>

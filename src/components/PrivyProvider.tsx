@@ -16,6 +16,7 @@ import { wagmiConfig as fallbackWagmiConfig, buildWagmiConfig } from '@/utils/wa
 import { getPrivyConfig, onCacheClear } from '@/lib/config/network-config';
 import { PrivySetupInstructions, SupabaseAuthSync } from '@/components/privy-config';
 import {
+  getPrivyExternalWalletLoginAccount,
   getPreferredPrivyLinkedConnectedWallet,
   isPrivyEmailAccount,
   isPrivyEmbeddedWallet,
@@ -73,14 +74,18 @@ const getExternalConnectedWallet = (wallets: PrivyWalletIdentitySource[]) =>
 const getPrivySessionDebugSnapshot = ({
   activeWallet,
   activeWalletLinked,
+  connectedExternalWallet,
   authenticated,
+  externalWalletLoginAccount,
   preferredLinkedConnectedWallet,
   user,
   wallets,
 }: {
   activeWallet: PrivyWalletIdentitySource | null;
   activeWalletLinked: boolean;
+  connectedExternalWallet: PrivyWalletIdentitySource | null;
   authenticated: boolean;
+  externalWalletLoginAccount: PrivyWalletIdentitySource | null;
   preferredLinkedConnectedWallet: PrivyWalletIdentitySource | null;
   user: User | null;
   wallets: PrivyWalletIdentitySource[];
@@ -103,8 +108,9 @@ const getPrivySessionDebugSnapshot = ({
       : null,
     activeWalletLinked,
     connectedWallets: wallets.map(getWalletDebugSnapshot),
-    embeddedWallet: formatDebugAddress(user?.wallet?.address),
-    externalConnectedWallet: getWalletDebugSnapshot(getExternalConnectedWallet(wallets)),
+    connectedExternalWallet: getWalletDebugSnapshot(connectedExternalWallet),
+    externalWalletLoginAccount: getWalletDebugSnapshot(externalWalletLoginAccount),
+    firstVerifiedWallet: getWalletDebugSnapshot(user?.wallet),
     linkedAccountTypes: linkedAccounts.map((account) => account.type).sort(),
     linkedEmails,
     linkedWallets,
@@ -116,7 +122,7 @@ const getPrivySessionDebugSnapshot = ({
 
 const WalletSessionGuard: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { ready, authenticated, logout, user } = usePrivy();
-  const { wallets } = useWallets();
+  const { wallets, ready: walletsReady } = useWallets();
   const { wallet: activeWallet, setActiveWallet } = useActiveWallet();
   const externalWalletRef = useRef<string | null>(null);
   const logoutInProgressRef = useRef(false);
@@ -124,10 +130,19 @@ const WalletSessionGuard: React.FC<{ children: React.ReactNode }> = ({ children 
   const lastReconciledActiveWalletRef = useRef<string | null>(null);
 
   useEffect(() => {
-    if (!ready) return;
+    if (!ready || !walletsReady) return;
 
     const connectedWallets = (wallets ?? []) as BaseConnectedWalletType[];
     const activeWalletSource = (activeWallet ?? null) as PrivyWalletIdentitySource | null;
+    const connectedExternalWallet = getExternalConnectedWallet(connectedWallets);
+    const externalWalletLoginAccount = authenticated
+      ? getPrivyExternalWalletLoginAccount(user?.linkedAccounts)
+      : null;
+    const externalWalletLoginAddress = normalizeWalletAddress(externalWalletLoginAccount?.address);
+    const currentExternalWallet = isPrivyExternalWallet(activeWalletSource)
+      ? activeWalletSource
+      : connectedExternalWallet;
+    const currentExternalWalletAddress = normalizeWalletAddress(currentExternalWallet?.address);
     const preferredLinkedConnectedWallet = authenticated
       ? getPreferredPrivyLinkedConnectedWallet(user?.linkedAccounts, connectedWallets)
       : null;
@@ -137,22 +152,15 @@ const WalletSessionGuard: React.FC<{ children: React.ReactNode }> = ({ children 
     const activeWalletLinked = authenticated
       ? isPrivyWalletAddressLinked(user?.linkedAccounts, activeWalletSource?.address)
       : false;
-    const activeExternalWallet = activeWalletLinked && isPrivyExternalWallet(activeWalletSource)
-      ? activeWalletSource
-      : null;
     const activeEmbeddedWallet = activeWalletLinked && isPrivyEmbeddedWallet(activeWalletSource)
       ? activeWalletSource
-      : null;
-    const unlinkedExternalWallet = authenticated && isPrivyExternalWallet(activeWalletSource) && !activeWalletLinked
-      ? activeWalletSource
-      : null;
-    const externalWalletAddress = authenticated
-      ? normalizeWalletAddress(activeExternalWallet?.address)
       : null;
     const snapshot = getPrivySessionDebugSnapshot({
       activeWallet: activeWalletSource,
       activeWalletLinked,
+      connectedExternalWallet,
       authenticated,
+      externalWalletLoginAccount,
       preferredLinkedConnectedWallet,
       user,
       wallets: connectedWallets,
@@ -197,17 +205,28 @@ const WalletSessionGuard: React.FC<{ children: React.ReactNode }> = ({ children 
 
     lastReconciledActiveWalletRef.current = null;
 
-    if (unlinkedExternalWallet) {
-      if (externalWalletRef.current) {
+    if (externalWalletLoginAddress) {
+      if (!externalWalletRef.current) {
+        externalWalletRef.current = externalWalletLoginAddress;
+        if (debugEnabled) {
+          console.info('[privy-session-debug] anchored external wallet login', {
+            address: formatDebugAddress(externalWalletLoginAddress),
+            wallet: getWalletDebugSnapshot(externalWalletLoginAccount),
+          });
+        }
+      }
+
+      if (currentExternalWalletAddress && currentExternalWalletAddress !== externalWalletLoginAddress) {
         logoutInProgressRef.current = true;
-        console.warn('[privy-session-debug] active external wallet is unlinked; logging out', {
-          anchored: formatDebugAddress(externalWalletRef.current),
-          activeWallet: getWalletDebugSnapshot(unlinkedExternalWallet),
+        console.warn('[privy-session-debug] connected external wallet differs from wallet login; logging out', {
+          from: formatDebugAddress(externalWalletLoginAddress),
+          to: formatDebugAddress(currentExternalWalletAddress),
+          currentWallet: getWalletDebugSnapshot(currentExternalWallet),
           snapshot,
         });
         queryClient.clear();
         void logout().catch((error) => {
-          console.error('Failed to log out after unlinked external wallet became active:', error);
+          console.error('Failed to log out after external wallet switch:', error);
           logoutInProgressRef.current = false;
         });
       }
@@ -215,44 +234,11 @@ const WalletSessionGuard: React.FC<{ children: React.ReactNode }> = ({ children 
       return;
     }
 
-    if (activeEmbeddedWallet) {
+    if (activeEmbeddedWallet || externalWalletRef.current) {
       externalWalletRef.current = null;
-      lastSnapshotRef.current = serializedSnapshot;
-      return;
-    }
-
-    if (!externalWalletAddress) {
-      lastSnapshotRef.current = serializedSnapshot;
-      return;
-    }
-
-    if (!externalWalletRef.current) {
-      externalWalletRef.current = externalWalletAddress;
-      if (debugEnabled) {
-        console.info('[privy-session-debug] anchored external wallet', {
-          address: formatDebugAddress(externalWalletAddress),
-          wallet: getWalletDebugSnapshot(activeExternalWallet ?? {}),
-        });
-      }
-      lastSnapshotRef.current = serializedSnapshot;
-      return;
-    }
-
-    if (externalWalletRef.current !== externalWalletAddress) {
-      logoutInProgressRef.current = true;
-      console.warn('[privy-session-debug] external wallet changed; logging out', {
-        from: formatDebugAddress(externalWalletRef.current),
-        to: formatDebugAddress(externalWalletAddress),
-        snapshot,
-      });
-      queryClient.clear();
-      void logout().catch((error) => {
-        console.error('Failed to log out after external wallet switch:', error);
-        logoutInProgressRef.current = false;
-      });
     }
     lastSnapshotRef.current = serializedSnapshot;
-  }, [activeWallet, authenticated, logout, ready, setActiveWallet, user, wallets]);
+  }, [activeWallet, authenticated, logout, ready, setActiveWallet, user, wallets, walletsReady]);
 
   return <>{children}</>;
 };

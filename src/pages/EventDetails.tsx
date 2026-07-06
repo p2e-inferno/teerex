@@ -3,12 +3,11 @@ import { useParams, useNavigate } from "react-router-dom";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Separator } from "@/components/ui/separator";
+
 import {
   Calendar,
-  Clock,
-  MapPin,
   Globe,
+  MapPin,
   ExternalLink,
   Users,
   Share2,
@@ -25,6 +24,7 @@ import {
   AlertCircle,
   Zap,
   CheckCircle2,
+  Bell,
 } from "lucide-react";
 import { getPublishedEventById } from "@/utils/eventUtils";
 import type { PublishedEvent } from "@/types/event";
@@ -37,28 +37,33 @@ import { isEventRegistrationClosed } from "@/lib/events/registration";
 import { EventPurchaseDialog } from "@/components/events/EventPurchaseDialog";
 import { EventPassOnramp } from "@/components/ticket-pass/EventPassOnramp";
 import { EventRewardPools } from "@/components/rewards/EventRewardPools";
+import { EventStandings } from "@/components/leaderboards/EventStandings";
 import { PaystackPaymentDialog } from "@/components/events/PaystackPaymentDialog";
 import { TicketProcessingDialog } from "@/components/events/TicketProcessingDialog";
 import { PaymentMethodDialog } from "@/components/events/PaymentMethodDialog";
 import { WaitlistDialog } from "@/components/events/WaitlistDialog";
 // import { AttestationButton } from "@/components/attestations/AttestationButton";
 import { supabase } from "@/integrations/supabase/client";
-import { callEdgeFunction } from "@/lib/edgeFunctions";
+import { callEdgeFunction, EdgeFunctionError } from "@/lib/edgeFunctions";
 import { base, baseSepolia } from "wagmi/chains";
 import { EventAttestationCard } from "@/components/attestations/EventAttestationCard";
 import { AttendeesList } from "@/components/attestations/AttendeesList";
+import { EventHostCard } from "@/components/events/EventHostCard";
+import { EventGoingStrip } from "@/components/events/EventGoingStrip";
+import { EventLocationMap } from "@/components/events/EventLocationMap";
+import { MoreFromHost } from "@/components/events/MoreFromHost";
 import { EventInteractionsCard } from "@/components/interactions/core/EventInteractionsCard";
 import { usePrivy, useWallets } from "@privy-io/react-auth";
 import { useToast } from "@/hooks/use-toast";
-import { getAttestationSchemas, isValidAttestationUid, isAttestationRevocableOnChain } from "@/utils/attestationUtils";
+import { isValidAttestationUid, isAttestationRevocableOnChain } from "@/utils/attestationUtils";
 import { useEventAttestationState } from "@/hooks/useEventAttestationState";
 import { getDisableMessage } from "@/utils/attestationMessages";
 import { getBatchAttestationAddress } from "@/lib/config/contract-config";
 import { useAttestations } from "@/hooks/useAttestations";
 import { useTeeRexDelegatedAttestation } from "@/hooks/useTeeRexDelegatedAttestation";
 import { useAttestationEncoding } from "@/hooks/useAttestationEncoding";
-import { formatEventDateRange } from "@/utils/dateUtils";
-import { formatEventLocalDateTime, formatEventLocalTime } from "@/utils/eventTime";
+import { formatEventCompactDateRange, formatEventDateRange } from "@/utils/dateUtils";
+import { formatEventLocalTimeRange } from "@/utils/eventTime";
 import { useEventTicketRealtime } from "@/hooks/useEventTicketRealtime";
 import { useNetworkConfigs } from "@/hooks/useNetworkConfigs";
 import { useRewardPools } from "@/hooks/useRewardPools";
@@ -66,6 +71,7 @@ import { useTicketBalance } from "@/hooks/useTicketBalance";
 import { useUserAddresses } from "@/hooks/useUserAddresses";
 import { useRefundableEventStatus } from "@/hooks/useRefundableEventStatus";
 import { useRefundableEventActions } from "@/hooks/useRefundableEventActions";
+import { useTelegramNotifications } from "@/hooks/useTelegramNotifications";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -89,7 +95,7 @@ const EventDetailsContent = () => {
   const { refreshToken, triggerRefresh } = useEventDetailsRefresh();
   const navigate = useNavigate();
   const { toast } = useToast();
-  const { authenticated, getAccessToken, login } = usePrivy();
+  const { authenticated, getAccessToken, login, user } = usePrivy();
   const { wallets } = useWallets();
   const wallet = authenticated ? wallets[0] : undefined;
   const userAddresses = useUserAddresses();
@@ -106,6 +112,7 @@ const EventDetailsContent = () => {
   const [transferFeeBps, setTransferFeeBps] = useState<number | null>(null);
   const [vendorHasPayoutAccount, setVendorHasPayoutAccount] = useState<boolean>(true); // Default to true for backwards compatibility
   const [nowMs, setNowMs] = useState(() => Date.now());
+  const telegramNotifications = useTelegramNotifications(event?.creator_id);
 
   // Real-time ticket count subscription
   const { ticketsSold: keysSold } = useEventTicketRealtime({
@@ -135,6 +142,39 @@ const EventDetailsContent = () => {
 
     return () => window.clearInterval(intervalId);
   }, []);
+
+  const handleOrganizerSubscription = useCallback(async () => {
+    if (!authenticated) {
+      login();
+      return;
+    }
+    if (!event?.creator_id) return;
+
+    if (!telegramNotifications.status?.linked || !telegramNotifications.status?.enabled) {
+      toast({
+        title: 'Link Telegram first',
+        description: 'Enable Telegram notifications from your profile before following organizers.',
+      });
+      navigate('/profile');
+      return;
+    }
+
+    try {
+      if (telegramNotifications.status?.subscribed) {
+        await telegramNotifications.unsubscribeOrganizer.mutateAsync(event.creator_id);
+        toast({ title: 'Organizer notifications stopped' });
+      } else {
+        await telegramNotifications.subscribeOrganizer.mutateAsync(event.creator_id);
+        toast({ title: 'Organizer notifications enabled' });
+      }
+    } catch (error) {
+      toast({
+        title: 'Could not update organizer notifications',
+        description: error instanceof EdgeFunctionError ? error.message : 'Please try again.',
+        variant: 'destructive',
+      });
+    }
+  }, [authenticated, event?.creator_id, login, navigate, telegramNotifications, toast]);
 
   // On-chain transferability status
   useEffect(() => {
@@ -350,14 +390,13 @@ const EventDetailsContent = () => {
   const refundWindowEndLabel = protectedEventSucceeded ? 'Event Ends' : 'Public Refund Window Closes';
   const refundWindowCountdown = formatCountdownLabel(event?.refund_trigger_at, nowMs);
   const refundWindowClosesCountdown = formatCountdownLabel(event?.refund_event_end_at || event?.ends_at, nowMs);
-  const eventDisplayTime = formatEventLocalTime(event?.starts_at, event?.time || '');
-  const isMultiDayEvent = Boolean(
-    event?.date &&
-    event?.end_date &&
-    event.date.toDateString() !== event.end_date.toDateString()
-  );
-  const eventStartDateTimeLabel = formatEventLocalDateTime(event?.starts_at, { month: 'short', day: 'numeric', year: 'numeric' });
-  const eventEndDateTimeLabel = formatEventLocalDateTime(event?.ends_at, { month: 'short', day: 'numeric', year: 'numeric' });
+  const eventDisplayTime = formatEventLocalTimeRange(event?.starts_at, event?.ends_at, event?.time || '');
+  const compactEventDateLabel = event?.date
+    ? formatEventCompactDateRange({ startDate: event.date, endDate: event.end_date })
+    : '';
+  const fullEventDateLabel = event?.date
+    ? formatEventDateRange({ startDate: event.date, endDate: event.end_date, formatStyle: 'long' })
+    : undefined;
 
   const networkConfig = event ? networks.find(n => n.chain_id === event.chain_id) : undefined;
   const networkLabel = networkConfig?.chain_name
@@ -373,6 +412,12 @@ const EventDetailsContent = () => {
     (uid?: string | null) => !!uid && uid.startsWith('0x') && uid.length === 66 && /^0x[0-9a-f]{64}$/i.test(uid),
     []
   );
+  const eventAttendanceSchemaUid =
+    event?.attendance_schema_uid && isValidSchemaUid(event.attendance_schema_uid)
+      ? event.attendance_schema_uid
+      : null;
+  const showAttestationSections = Boolean(eventAttendanceSchemaUid);
+  const attestationSectionSchemaUid = attendanceSchemaUid || eventAttendanceSchemaUid || undefined;
 
   const refreshLikes = useCallback(async (ev: PublishedEvent) => {
     try {
@@ -711,24 +756,8 @@ const EventDetailsContent = () => {
           return;
         }
 
-        // Otherwise, fetch attendance schemas from database
-        const schemas = await getAttestationSchemas("attendance");
-
-        // Filter out invalid schema UIDs (must be 66 characters and valid hex)
-        const validSchemas = schemas.filter((schema) => {
-          const isValid =
-            schema.schema_uid.startsWith("0x") &&
-            schema.schema_uid.length === 66 &&
-            /^0x[0-9a-f]{64}$/i.test(schema.schema_uid);
-          return isValid;
-        });
-
-        if (validSchemas.length > 0) {
-          setAttendanceSchemaUid(validSchemas[0].schema_uid);
-          setAttendanceSchemaRevocable(Boolean((validSchemas[0] as any).revocable));
-        } else {
-          setAttendanceSchemaRevocable(null);
-        }
+        setAttendanceSchemaUid(null);
+        setAttendanceSchemaRevocable(null);
       } catch (error) {
         console.error("Error loading attendance schema:", error);
       }
@@ -966,58 +995,69 @@ const EventDetailsContent = () => {
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 lg:items-start">
             {/* Main Content */}
             <div className="lg:col-start-1 lg:col-span-2 space-y-6">
-              {/* Event Image */}
-              {event.image_url && (
-                <div className="aspect-square rounded-lg overflow-hidden bg-gray-100">
-                  <img
-                    src={`${event.image_url}${event.image_url.includes("?") ? "&" : "?"
-                      }t=${event.updated_at?.getTime?.() ?? Date.now()}`}
-                    alt={event.title}
-                    onError={(e) => {
-                      console.warn("EventDetails image failed to load:", {
-                        eventId: event.id,
-                        src: (e.currentTarget as HTMLImageElement).src,
-                      });
-                    }}
-                    style={{
-                      objectFit: 'cover',
-                      objectPosition: `${event.image_crop_x || 50}% ${event.image_crop_y || 50}%`
-                    }}
-                    className="w-full h-full"
-                  />
-                </div>
-              )}
+              {/* Responsive Sub-grid for Event Header info */}
+              <div className="grid grid-cols-1 md:grid-cols-12 gap-8">
 
-              {/* Event Info */}
-              <div>
-                <div className="mb-4">
-                  <div className="mb-3 flex items-start justify-between gap-3">
+                {/* Left Column: Event Image + Host Card (Desktop) */}
+                <div className="md:col-span-5 space-y-6">
+                  {/* Event Image */}
+                  {event.image_url && (
+                    <div className="w-full aspect-square rounded-2xl overflow-hidden bg-slate-100 shadow-sm border border-slate-100">
+                      <img
+                        src={`${event.image_url}${event.image_url.includes("?") ? "&" : "?"
+                          }t=${event.updated_at?.getTime?.() ?? Date.now()}`}
+                        alt={event.title}
+                        onError={(e) => {
+                          console.warn("EventDetails image failed to load:", {
+                            eventId: event.id,
+                            src: (e.currentTarget as HTMLImageElement).src,
+                          });
+                        }}
+                        style={{
+                          objectFit: 'cover',
+                          objectPosition: `${event.image_crop_x || 50}% ${event.image_crop_y || 50}%`
+                        }}
+                        className="w-full h-full object-cover transition-transform duration-500 hover:scale-[1.02]"
+                      />
+                    </div>
+                  )}
+                  {/* Desktop Host Card */}
+                  <div className="hidden md:block border border-slate-100 rounded-2xl bg-white p-4 shadow-sm">
+                    <EventHostCard event={event} layout="vertical" />
+                  </div>
+                </div>
+
+                {/* Right Column: Title, Metadata, Description + Host Card (Mobile) */}
+                <div className="md:col-span-7 space-y-6 flex flex-col">
+
+                  {/* Category Badges, Likes and Share Buttons */}
+                  <div className="flex items-start justify-between gap-3">
                     <div className="flex min-w-0 flex-wrap items-center gap-2">
-                      <Badge variant="secondary">
+                      <Badge variant="secondary" className="bg-slate-100 text-slate-800 border-none px-2.5 py-1 text-xs font-semibold rounded-full">
                         {event.category}
                       </Badge>
                       {isProtectedRefundEvent && (
                         refundBadges.map((badge) => (
-                          <Badge key={badge.label} variant="outline" className={`text-xs ${badge.className}`}>
+                          <Badge key={badge.label} variant="outline" className={`text-xs font-medium rounded-full px-2.5 py-1 ${badge.className}`}>
                             {badge.label}
                           </Badge>
                         ))
                       )}
                       {eventRewardPoolBadge && (
-                        <Badge variant="outline" className={`text-xs ${eventRewardPoolBadge.className}`}>
+                        <Badge variant="outline" className={`text-xs font-medium rounded-full px-2.5 py-1 ${eventRewardPoolBadge.className}`}>
                           {eventRewardPoolBadge.label}
                         </Badge>
                       )}
                     </div>
-                    <div className="flex shrink-0 items-center space-x-2">
+                    <div className="flex shrink-0 items-center space-x-1.5">
                       <TooltipProvider>
                         <Tooltip>
                           <TooltipTrigger asChild>
                             <span>
-                              <Button variant="outline" size="sm" onClick={handleToggleLike} disabled={isLikeLoading || (!likeSchemaUid) || (Boolean(userLikeUid) && state.like.flags && !state.like.flags.canRevoke)}>
-                                <div className="flex items-center gap-1">
-                                  <Heart className={`w-4 h-4 ${userLikeUid ? 'fill-red-500 text-red-500' : ''}`} />
-                                  <span className="text-xs">{likeCount}</span>
+                              <Button variant="outline" size="sm" className="h-9 w-14 bg-white hover:bg-slate-50 border-slate-200 text-slate-700 rounded-full transition-all duration-200" onClick={handleToggleLike} disabled={isLikeLoading || (!likeSchemaUid) || (Boolean(userLikeUid) && state.like.flags && !state.like.flags.canRevoke)}>
+                                <div className="flex items-center justify-center gap-1.5">
+                                  <Heart className={`w-3.5 h-3.5 ${userLikeUid ? 'fill-red-500 text-red-500' : 'text-slate-500'}`} />
+                                  <span className="text-xs font-semibold text-slate-600">{likeCount}</span>
                                 </div>
                               </Button>
                             </span>
@@ -1034,174 +1074,204 @@ const EventDetailsContent = () => {
                       <Button
                         variant="outline"
                         size="sm"
+                        className="h-9 w-9 p-0 bg-white hover:bg-slate-50 border-slate-200 text-slate-500 hover:text-slate-800 rounded-full transition-all duration-200"
                         onClick={handleAddToCalendar}
                       >
-                        <CalendarPlus className="w-4 h-4" />
+                        <CalendarPlus className="w-3.5 h-3.5" />
                       </Button>
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
-                          <Button variant="outline" size="sm">
-                            <Share2 className="w-4 h-4" />
+                          <Button variant="outline" size="sm" className="h-9 w-9 p-0 bg-white hover:bg-slate-50 border-slate-200 text-slate-500 hover:text-slate-800 rounded-full transition-all duration-200">
+                            <Share2 className="w-3.5 h-3.5" />
                           </Button>
                         </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end">
-                          <DropdownMenuItem onClick={() => handleShare("facebook")}>
-                            <Facebook className="w-4 h-4 mr-2" />
+                        <DropdownMenuContent align="end" className="rounded-xl border border-slate-100 shadow-lg">
+                          <DropdownMenuItem onClick={() => handleShare("facebook")} className="rounded-lg">
+                            <Facebook className="w-4 h-4 mr-2 text-slate-500" />
                             Facebook
                           </DropdownMenuItem>
-                          <DropdownMenuItem onClick={() => handleShare("twitter")}>
-                            <Twitter className="w-4 h-4 mr-2" />
+                          <DropdownMenuItem onClick={() => handleShare("twitter")} className="rounded-lg">
+                            <Twitter className="w-4 h-4 mr-2 text-slate-500" />
                             Twitter
                           </DropdownMenuItem>
-                          <DropdownMenuItem onClick={() => handleShare("linkedin")}>
-                            <Linkedin className="w-4 h-4 mr-2" />
+                          <DropdownMenuItem onClick={() => handleShare("linkedin")} className="rounded-lg">
+                            <Linkedin className="w-4 h-4 mr-2 text-slate-500" />
                             LinkedIn
                           </DropdownMenuItem>
-                          <DropdownMenuItem onClick={() => handleShare("copy")}>
-                            <Copy className="w-4 h-4 mr-2" />
+                          <DropdownMenuItem onClick={() => handleShare("copy")} className="rounded-lg">
+                            <Copy className="w-4 h-4 mr-2 text-slate-500" />
                             Copy Link
                           </DropdownMenuItem>
                         </DropdownMenuContent>
                       </DropdownMenu>
                     </div>
                   </div>
-                  <div className="w-full">
-                    <h1 className="text-3xl font-bold text-gray-900 mb-2">
+
+                  {/* Title and Network Badges */}
+                  <div>
+                    <h1 className="text-3xl font-extrabold tracking-tight text-slate-900 mb-3 leading-tight">
                       {event.title}
                     </h1>
-                    <div className="mb-3 flex flex-wrap items-center gap-2">
+                    <div className="flex flex-wrap items-center gap-2">
                       {networkLabel && (
-                        <Badge variant="outline" className="text-xs">{networkLabel}</Badge>
+                        <Badge variant="outline" className="text-xs bg-blue-50/80 text-blue-700 border-blue-100 font-semibold rounded-full px-2.5 py-0.5">{networkLabel}</Badge>
                       )}
                       {isTransferableOnChain !== null && (
                         isTransferableOnChain ? (
-                          <Badge variant="outline" className="text-xs text-green-700 border-green-200">
+                          <Badge variant="outline" className="text-xs bg-emerald-50 text-emerald-700 border-emerald-100 font-semibold rounded-full px-2.5 py-0.5">
                             {transferFeeBps && transferFeeBps > 0
                               ? `Transferable (fee ${transferFeeBps / 100}% )`
                               : 'Transferable'}
                           </Badge>
                         ) : (
-                          <Badge variant="outline" className="text-xs text-purple-700 border-purple-200">
+                          <Badge variant="outline" className="text-xs bg-purple-50 text-purple-700 border-purple-100 font-semibold rounded-full px-2.5 py-0.5">
                             Soul-bound (non-transferable)
                           </Badge>
                         )
                       )}
                     </div>
-                    <div className="flex flex-col gap-2 text-gray-600">
-                      {event.date && isMultiDayEvent && eventStartDateTimeLabel ? (
-                        <>
-                          <div className="flex items-center space-x-1">
-                            <Calendar className="w-4 h-4" />
-                            <span>Starts: {eventStartDateTimeLabel}</span>
-                          </div>
-                          <div className="flex items-center space-x-1">
-                            <Clock className="w-4 h-4" />
-                            <span>Ends: {eventEndDateTimeLabel || formatEventDateRange({ startDate: event.date, endDate: event.end_date, formatStyle: 'long' })}</span>
-                          </div>
-                        </>
-                      ) : (
-                        <div className="flex flex-col gap-1">
-                          {event.date && (
-                            <div className="flex items-center space-x-1">
-                              <Calendar className="w-4 h-4" />
-                              <span>{formatEventDateRange({ startDate: event.date, endDate: event.end_date, formatStyle: 'long' })}</span>
+                  </div>
+
+                  {/* Metadata Grid Container */}
+                  <div className="bg-slate-50/50 border border-slate-100/85 rounded-2xl p-5 md:p-6 space-y-5">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+
+                      {/* Date and Time block */}
+                      <div className="flex items-start gap-3">
+                        <div className="p-2.5 rounded-xl bg-white border border-slate-200/50 shadow-sm shrink-0">
+                          <Calendar className="w-4 h-4 text-slate-600" />
+                        </div>
+                        <div className="min-w-0">
+                          <div className="font-semibold text-sm text-slate-900 leading-none mb-1">Date & Time</div>
+                          <div className="text-xs text-slate-500 leading-relaxed">
+                            {compactEventDateLabel && (
+                              <div className="truncate whitespace-nowrap font-medium text-slate-700" title={fullEventDateLabel}>
+                                {compactEventDateLabel}
+                              </div>
+                            )}
+                            <div className="mt-0.5 truncate whitespace-nowrap text-slate-500" title={eventDisplayTime}>
+                              {eventDisplayTime}
                             </div>
-                          )}
-                          <div className="flex items-center space-x-1">
-                            <Clock className="w-4 h-4" />
-                            <span>{eventDisplayTime}</span>
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                    <div className="mt-4 space-y-3 text-sm text-gray-600">
-                      {event.location && (
-                        <div className="flex items-start gap-2">
-                          {event.event_type === 'virtual' ? (
-                            <>
-                              <Globe className="mt-0.5 h-4 w-4 shrink-0" />
-                              <div className="min-w-0">
-                                <div className="font-medium text-gray-900">Location</div>
-                                <a
-                                  href={event.location}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="inline-flex max-w-full items-center gap-1 text-blue-600 underline-offset-2 hover:text-blue-800 hover:underline"
-                                >
-                                  <span className="truncate">Virtual Event Link</span>
-                                  <ExternalLink className="h-3 w-3 shrink-0" />
-                                </a>
-                              </div>
-                            </>
-                          ) : (
-                            <>
-                              <MapPin className="mt-0.5 h-4 w-4 shrink-0" />
-                              <div className="min-w-0">
-                                <div className="font-medium text-gray-900">Location</div>
-                                <div className="truncate">{event.location}</div>
-                              </div>
-                            </>
-                          )}
-                        </div>
-                      )}
-                      <div className="grid grid-cols-[max-content_max-content] gap-x-8 gap-y-3">
-                        <div className="flex items-start gap-2">
-                          <Users className="mt-0.5 h-4 w-4 shrink-0" />
-                          <div>
-                            <div className="font-medium text-gray-900">Capacity</div>
-                            <div>{event.capacity} attendees</div>
-                          </div>
-                        </div>
-                        <div className="flex min-w-0 items-start gap-2">
-                          <div className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-blue-500 shadow-[0_0_8px_rgba(59,130,246,0.45)]" />
-                          <div className="min-w-0">
-                            <div className="font-medium text-gray-900">Contract</div>
-                            <a
-                              href={explorerUrl}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="inline-flex max-w-full items-center gap-1.5 text-blue-600 hover:text-blue-700"
-                            >
-                              <span className="rounded border border-blue-100/60 bg-blue-50 px-2 py-0.5 font-mono text-xs">
-                                {event.lock_address.slice(0, 6)}...{event.lock_address.slice(-4)}
-                              </span>
-                              <ExternalLink className="h-3 w-3 shrink-0 opacity-70" />
-                            </a>
                           </div>
                         </div>
                       </div>
-                    </div>
-                    {showMobileHeaderTicketCta && (
-                      <div className="mt-4 space-y-2 lg:hidden">
-                        <Button
-                          className="w-full"
-                          onClick={handleGetTicket}
-                          disabled={primaryTicketCtaDisabled}
-                        >
-                          {primaryTicketCtaLabel}
-                        </Button>
-                        {showWaitlistButton && (
-                          <Button
-                            variant="outline"
-                            className="w-full"
-                            onClick={() => setActiveModal("waitlist")}
+
+                      {/* Location block */}
+                      {event.location && (
+                        <div className="flex items-start gap-3">
+                          <div className="p-2.5 rounded-xl bg-white border border-slate-200/50 shadow-sm shrink-0">
+                            {event.event_type === 'virtual' ? (
+                              <Globe className="w-4 h-4 text-slate-600" />
+                            ) : (
+                              <MapPin className="w-4 h-4 text-slate-600" />
+                            )}
+                          </div>
+                          <div className="min-w-0">
+                            <div className="font-semibold text-sm text-slate-900 leading-none mb-1">Location</div>
+                            {event.event_type === 'virtual' ? (
+                              <a
+                                href={event.location}
+                                target="_blank"
+                                  rel="noopener noreferrer"
+                                className="inline-flex max-w-full items-center gap-1 text-xs text-blue-600 hover:text-blue-700 transition-colors font-medium hover:underline"
+                              >
+                                <span className="truncate">Virtual Event Link</span>
+                                <ExternalLink className="h-3 w-3 shrink-0" />
+                              </a>
+                            ) : (
+                              <div className="text-xs text-slate-600 leading-relaxed break-words font-medium">
+                                {event.location}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Capacity block */}
+                      <div className="flex items-start gap-3">
+                        <div className="p-2.5 rounded-xl bg-white border border-slate-200/50 shadow-sm shrink-0">
+                          <Users className="w-4 h-4 text-slate-600" />
+                        </div>
+                        <div className="min-w-0">
+                          <div className="font-semibold text-sm text-slate-900 leading-none mb-1">Capacity</div>
+                          <div className="whitespace-nowrap text-xs text-slate-600 font-medium">
+                            {event.capacity} attendees max
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Contract block */}
+                      <div className="flex items-start gap-3">
+                        <div className="p-2.5 rounded-xl bg-white border border-slate-200/50 shadow-sm shrink-0">
+                          <Globe className="w-4 h-4 text-slate-600" />
+                        </div>
+                        <div className="min-w-0">
+                          <div className="font-semibold text-sm text-slate-900 leading-none mb-1">Contract</div>
+                          <a
+                            href={explorerUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex max-w-full items-center gap-1.5 text-xs text-slate-600 hover:text-blue-600 transition-colors font-mono font-medium"
                           >
-                            Join Waitlist
-                          </Button>
-                        )}
+                            <span>
+                              {event.lock_address.slice(0, 6)}...{event.lock_address.slice(-4)}
+                            </span>
+                            <ExternalLink className="h-3 w-3 shrink-0 opacity-60" />
+                          </a>
+                        </div>
+                      </div>
+
+                    </div>
+
+                    {/* Going Strip */}
+                    <div className="pt-4 border-t border-slate-200/60">
+                      <EventGoingStrip eventId={event.id} ticketsSold={keysSold} />
+                    </div>
+
+                    {/* Map display for physical events */}
+                    {event.location && event.event_type !== 'virtual' && (
+                      <div className="pt-2">
+                        <EventLocationMap location={event.location} />
                       </div>
                     )}
+
                   </div>
-                </div>
 
-                <Separator className="my-6" />
+                  {/* Mobile Host Card (inline, only shown on mobile) */}
+                  <div className="block md:hidden border border-slate-100 rounded-2xl bg-white p-4 shadow-sm">
+                    <EventHostCard event={event} layout="horizontal" />
+                  </div>
 
-                {/* Description */}
-                <div>
-                  <h2 className="text-xl font-semibold text-gray-900 mb-4">
-                    About this event
-                  </h2>
-                  <RichTextDisplay content={event.description} />
+                  {/* Mobile CTA (only shown on mobile) */}
+                  {showMobileHeaderTicketCta && (
+                    <div className="space-y-2 lg:hidden">
+                      <Button
+                        className="w-full"
+                        onClick={handleGetTicket}
+                        disabled={primaryTicketCtaDisabled}
+                      >
+                        {primaryTicketCtaLabel}
+                      </Button>
+                      {showWaitlistButton && (
+                        <Button
+                          variant="outline"
+                          className="w-full"
+                          onClick={() => setActiveModal("waitlist")}
+                        >
+                          Join Waitlist
+                        </Button>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Description */}
+                  <div className="pt-6 border-t border-slate-100 mt-2">
+                    <h2 className="text-xl font-bold text-slate-900 mb-4">
+                      About this event
+                    </h2>
+                    <RichTextDisplay content={event.description} />
+                  </div>
+
                 </div>
               </div>
 
@@ -1213,32 +1283,39 @@ const EventDetailsContent = () => {
                 onRefundProtectedEvent={() => refundActions.cancelAndRefundThenMaybeRelease(50)}
               />
 
-              {/* Attendees List */}
-              <AttendeesList
-                eventId={event.id}
-                eventTitle={event.title}
-                attendanceSchemaUid={attendanceSchemaUid || undefined}
-                refreshToken={refreshToken}
-              />
+              <EventStandings event={event} />
 
-              {/* Enhanced Attestation Card */}
-              <EventAttestationCard
-                eventId={event.id}
-                eventTitle={event.title}
-                eventDate={(event.date ? event.date : new Date()).toISOString()}
-                eventTime={event.time}
-                startsAt={event.starts_at}
-                endsAt={event.ends_at}
-                lockAddress={event.lock_address}
-                userHasTicket={authenticated && userTicketCount > 0}
-                attendanceSchemaUid={attendanceSchemaUid || undefined}
-                chainId={event.chain_id}
-                canRevokeAttendanceOverride={myAttendanceUidTop ? !((attendanceSchemaRevocable === false)) : undefined}
-                attendanceDisableReason={myAttendanceUidTop && attendanceSchemaRevocable === false ? 'Attendance records for this event are permanent.' : undefined}
-                canRevokeGoingOverride={myGoingUid ? !((goingSchemaRevocable === false || goingInstanceRevocable === false)) : undefined}
-                goingDisableReason={myGoingUid && (goingSchemaRevocable === false || goingInstanceRevocable === false) ? "This going status cannot be revoked." : undefined}
-                refreshToken={refreshToken}
-              />
+              {showAttestationSections && (
+                <>
+                  {/* Attendees List */}
+                  <AttendeesList
+                    eventId={event.id}
+                    eventTitle={event.title}
+                    attendanceSchemaUid={attestationSectionSchemaUid}
+                    refreshToken={refreshToken}
+                  />
+
+                  {/* Enhanced Attestation Card */}
+                  <EventAttestationCard
+                    eventId={event.id}
+                    eventTitle={event.title}
+                    eventDate={(event.date ? event.date : new Date()).toISOString()}
+                    eventTime={event.time}
+                    startsAt={event.starts_at}
+                    endsAt={event.ends_at}
+                    lockAddress={event.lock_address}
+                    userHasTicket={authenticated && userTicketCount > 0}
+                    attendanceSchemaUid={attestationSectionSchemaUid}
+                    chainId={event.chain_id}
+                    canRevokeAttendanceOverride={myAttendanceUidTop ? !((attendanceSchemaRevocable === false)) : undefined}
+                    attendanceDisableReason={myAttendanceUidTop && attendanceSchemaRevocable === false ? 'Attendance records for this event are permanent.' : undefined}
+                    canRevokeGoingOverride={myGoingUid ? !((goingSchemaRevocable === false || goingInstanceRevocable === false)) : undefined}
+                    goingDisableReason={myGoingUid && (goingSchemaRevocable === false || goingInstanceRevocable === false) ? "This going status cannot be revoked." : undefined}
+                    refreshToken={refreshToken}
+                  />
+                </>
+              )}
+
             </div>
 
             {/* Sidebar: sticky action column (tickets and discussions) */}
@@ -1509,6 +1586,25 @@ const EventDetailsContent = () => {
 
                   {/* Fiat→crypto onramp: shown only when an active Ticket Pass is linked to this event. */}
                   <EventPassOnramp event={event} />
+                  {event.creator_id && user?.id !== event.creator_id && (
+                    <Button
+                      variant="outline"
+                      className="w-full"
+                      onClick={handleOrganizerSubscription}
+                      disabled={
+                        telegramNotifications.subscribeOrganizer.isPending ||
+                        telegramNotifications.unsubscribeOrganizer.isPending
+                      }
+                    >
+                      {(telegramNotifications.subscribeOrganizer.isPending ||
+                        telegramNotifications.unsubscribeOrganizer.isPending) ? (
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      ) : (
+                        <Bell className="mr-2 h-4 w-4" />
+                      )}
+                      {telegramNotifications.status?.subscribed ? 'Unsubscribe from organizer alerts' : 'Subscribe for organizer alerts'}
+                    </Button>
+                  )}
                 </CardContent>
               </Card>
 
@@ -1524,6 +1620,9 @@ const EventDetailsContent = () => {
             </div>
 
           </div>
+
+          {/* More from this host — placed after the grid so it appears below the ticket sidebar on mobile */}
+          <MoreFromHost eventId={event.id} />
         </div>
 
         {/* Payment Method Selection Dialog */}

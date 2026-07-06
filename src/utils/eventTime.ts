@@ -1,3 +1,7 @@
+import { format, isSameDay } from 'date-fns';
+
+const DEFAULT_TIME_OPTIONS: Intl.DateTimeFormatOptions = { hour: '2-digit', minute: '2-digit' };
+
 function formatDateOnlyFromUtcMs(utcMs: number): string {
   const dt = new Date(utcMs);
   const year = dt.getUTCFullYear();
@@ -77,16 +81,40 @@ export function getDefaultRefundTriggerIso(startsAtIso: string | null): string |
 export function formatEventLocalTime(
   startsAtIso: string | null | undefined,
   fallbackTime: string,
-  options: Intl.DateTimeFormatOptions = { hour: '2-digit', minute: '2-digit' }
+  options: Intl.DateTimeFormatOptions = DEFAULT_TIME_OPTIONS
 ): string {
-  if (startsAtIso) {
-    const startsAt = new Date(startsAtIso);
-    if (Number.isFinite(startsAt.getTime())) {
-      return startsAt.toLocaleTimeString(undefined, options);
-    }
+  const startsAt = parseValidDate(startsAtIso);
+  if (startsAt) {
+    return startsAt.toLocaleTimeString(undefined, options);
   }
 
   return fallbackTime;
+}
+
+export function formatEventLocalTimeRange(
+  startsAtIso: string | null | undefined,
+  endsAtIso: string | null | undefined,
+  fallbackStartTime: string,
+  options: Intl.DateTimeFormatOptions = DEFAULT_TIME_OPTIONS
+): string {
+  const startsAt = parseValidDate(startsAtIso);
+  const endsAt = parseValidDate(endsAtIso);
+  const startLabel = startsAt
+    ? startsAt.toLocaleTimeString(undefined, options)
+    : fallbackStartTime;
+
+  if (!endsAt) return startLabel;
+
+  const endLabel = endsAt.toLocaleTimeString(undefined, options);
+  if (!startLabel) return endLabel;
+
+  const timeZone = typeof options.timeZone === 'string' ? options.timeZone : undefined;
+  if (startsAt && isSameDisplayDay(startsAt, endsAt, timeZone)) {
+    return `${startLabel} - ${endLabel}`;
+  }
+
+  const sameDisplayYear = startsAt && getDisplayYear(startsAt, timeZone) === getDisplayYear(endsAt, timeZone);
+  return `${startLabel} - ${formatDisplayEndDate(endsAt, Boolean(!sameDisplayYear), timeZone)}, ${endLabel}`;
 }
 
 export function formatEventLocalDateTime(
@@ -94,9 +122,46 @@ export function formatEventLocalDateTime(
   dateOptions: Intl.DateTimeFormatOptions = { month: 'short', day: 'numeric', year: 'numeric' },
   timeOptions: Intl.DateTimeFormatOptions = { hour: '2-digit', minute: '2-digit' }
 ): string | null {
-  if (!isoValue) return null;
-  const value = new Date(isoValue);
-  if (!Number.isFinite(value.getTime())) return null;
+  const value = parseValidDate(isoValue);
+  if (!value) return null;
 
   return `${value.toLocaleDateString(undefined, dateOptions)} at ${value.toLocaleTimeString(undefined, timeOptions)}`;
+}
+
+function parseValidDate(isoValue: string | null | undefined): Date | null {
+  if (!isoValue) return null;
+  const value = new Date(isoValue);
+  return Number.isFinite(value.getTime()) ? value : null;
+}
+
+function isSameDisplayDay(left: Date, right: Date, timeZone?: string): boolean {
+  if (!timeZone) return isSameDay(left, right);
+  return getDisplayDateKey(left, timeZone) === getDisplayDateKey(right, timeZone);
+}
+
+function getDisplayDateKey(value: Date, timeZone: string): string {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(value);
+}
+
+function getDisplayYear(value: Date, timeZone?: string): number {
+  if (!timeZone) return value.getFullYear();
+  return Number(new Intl.DateTimeFormat('en', { timeZone, year: 'numeric' }).format(value));
+}
+
+function formatDisplayEndDate(value: Date, includeYear: boolean, timeZone?: string): string {
+  if (!timeZone) {
+    return format(value, includeYear ? 'd MMMM yyyy' : 'd MMMM');
+  }
+
+  return new Intl.DateTimeFormat('en-GB', {
+    timeZone,
+    day: 'numeric',
+    month: 'long',
+    ...(includeYear ? { year: 'numeric' } : {}),
+  }).format(value);
 }

@@ -19,6 +19,7 @@ import { Badge } from '@/components/ui/badge';
 import { useMyEventsList } from '@/hooks/useMyEventsList';
 import { useEventWaitlist, WaitlistFilter } from '@/hooks/useEventWaitlist';
 import { usePrivy } from '@privy-io/react-auth';
+import { IdentityName } from '@/components/identity/IdentityName';
 
 interface WaitlistManagerProps {
   event: PublishedEvent | null;
@@ -240,8 +241,8 @@ export const WaitlistManager: React.FC<WaitlistManagerProps> = ({ event, isOpen,
                             {entry.user_email}
                           </p>
                           {entry.wallet_address && (
-                            <p className="text-xs text-muted-foreground font-mono break-all mt-1">
-                              {entry.wallet_address}
+                            <p className="text-xs text-muted-foreground break-all mt-1" title={entry.wallet_address}>
+                              <IdentityName address={entry.wallet_address} />
                             </p>
                           )}
                           <p className="text-xs text-muted-foreground mt-1">

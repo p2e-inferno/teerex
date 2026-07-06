@@ -1,5 +1,5 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { describe, expect, it, vi, beforeEach } from "vitest";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi, beforeEach } from "vitest";
 import * as React from "react";
 
 import EventDetails from "@/pages/EventDetails";
@@ -38,6 +38,8 @@ vi.mock("@/utils/eventUtils", () => ({
     creator_id: "creator",
     creator_address: "0x2222222222222222222222222222222222222222",
     payment_methods: ["free"],
+    attestation_enabled: true,
+    attendance_schema_uid: "0x8234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef",
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
   })),
@@ -65,12 +67,24 @@ vi.mock("@/hooks/useTicketBalance", () => ({
   }),
 }));
 
+vi.mock("@/hooks/useRewardPools", () => ({
+  useRewardPools: () => ({ data: [] }),
+}));
+
 vi.mock("@/hooks/useUserAddresses", () => ({
   useUserAddresses: () => ["0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"],
 }));
 
 vi.mock("@/hooks/useNetworkConfigs", () => ({
   useNetworkConfigs: () => ({ networks: [] }),
+}));
+
+vi.mock("@/hooks/useTelegramNotifications", () => ({
+  useTelegramNotifications: () => ({
+    status: { ok: true, linked: true, enabled: true, subscribed: false },
+    subscribeOrganizer: { isPending: false, mutateAsync: vi.fn() },
+    unsubscribeOrganizer: { isPending: false, mutateAsync: vi.fn() },
+  }),
 }));
 
 vi.mock("@/hooks/useEventAttestationState", () => ({
@@ -122,6 +136,30 @@ vi.mock("@/components/MetaTags", () => ({
 
 vi.mock("@/components/ui/rich-text/RichTextDisplay", () => ({
   RichTextDisplay: ({ content }: { content: string }) => <div>{content}</div>,
+}));
+
+vi.mock("@/components/rewards/EventRewardPools", () => ({
+  EventRewardPools: () => null,
+}));
+
+vi.mock("@/components/leaderboards/EventStandings", () => ({
+  EventStandings: () => null,
+}));
+
+vi.mock("@/components/events/MoreFromHost", () => ({
+  MoreFromHost: () => null,
+}));
+
+vi.mock("@/components/events/EventHostCard", () => ({
+  EventHostCard: () => null,
+}));
+
+vi.mock("@/components/events/EventGoingStrip", () => ({
+  EventGoingStrip: () => null,
+}));
+
+vi.mock("@/components/ticket-pass/EventPassOnramp", () => ({
+  EventPassOnramp: () => null,
 }));
 
 // Capture props passed down for refreshToken wiring assertions.
@@ -182,6 +220,10 @@ describe("EventDetails refreshToken wiring (TDD)", () => {
     mockToast.mockClear();
   });
 
+  afterEach(() => {
+    cleanup();
+  });
+
   it("passes refreshToken to EventInteractionsCard on initial render", async () => {
     mockUseParams.mockReturnValue({ id: "event-1" });
 
@@ -228,7 +270,7 @@ describe("EventDetails refreshToken wiring (TDD)", () => {
       expect(screen.getByText("Get tickets")).toBeInTheDocument();
     });
 
-    fireEvent.click(screen.getByRole("button", { name: "Get Ticket" }));
+    fireEvent.click(screen.getAllByRole("button", { name: "Get Ticket" })[0]);
     fireEvent.click(screen.getByRole("button", { name: "simulate purchase success" }));
 
     // This should be invoked by the purchase-success handler.
@@ -270,7 +312,7 @@ describe("EventDetails refreshToken wiring (TDD)", () => {
     expect(attestationCard).toHaveAttribute("data-refresh", "0");
 
     // Trigger purchase success
-    fireEvent.click(screen.getByRole("button", { name: "Get Ticket" }));
+    fireEvent.click(screen.getAllByRole("button", { name: "Get Ticket" })[0]);
     fireEvent.click(screen.getByRole("button", { name: "simulate purchase success" }));
 
     // After purchase, refreshToken should be 1

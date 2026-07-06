@@ -4,24 +4,19 @@ import { Copy, ExternalLink, Check } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { getExplorerTxUrl } from '@/lib/config/network-config';
 import { cn } from '@/lib/utils';
+import { shortAddress } from '@/lib/identity';
+import { useIdentityLabel } from '@/hooks/useIdentityLabel';
 
 interface AddressDisplayProps {
   address: string;
   chainId?: number;
   label?: string;
+  displayName?: string | null;
+  preferIdentity?: boolean;
   showCopy?: boolean;
   showExplorer?: boolean;
   className?: string;
 }
-
-/**
- * Truncates an Ethereum address for display
- * @param address - Full address
- * @returns Truncated address (0x1234...5678)
- */
-const formatAddress = (address: string): string => {
-  return `${address.slice(0, 6)}...${address.slice(-4)}`;
-};
 
 /**
  * Address display component with copy and explorer link functionality
@@ -29,6 +24,8 @@ const formatAddress = (address: string): string => {
  * @param address - The Ethereum address to display
  * @param chainId - Optional chain ID for block explorer link
  * @param label - Optional label to show before address
+ * @param displayName - User-controlled fallback name when no ENS name is available
+ * @param preferIdentity - Resolve ENS/display name for user-facing wallet addresses
  * @param showCopy - Show copy button (default: true)
  * @param showExplorer - Show explorer link button (default: true if chainId provided)
  * @param className - Additional CSS classes
@@ -37,12 +34,21 @@ export const AddressDisplay: React.FC<AddressDisplayProps> = ({
   address,
   chainId,
   label,
+  displayName,
+  preferIdentity = true,
   showCopy = true,
   showExplorer = !!chainId,
   className = '',
 }) => {
   const { toast } = useToast();
   const [copied, setCopied] = React.useState(false);
+  const identity = useIdentityLabel({
+    address,
+    displayName: preferIdentity ? displayName : null,
+    enabled: preferIdentity,
+  });
+  const visibleLabel = preferIdentity ? identity.label : shortAddress(address);
+  const isAddressLabel = !preferIdentity || identity.source === 'address';
 
   const handleCopy = async () => {
     try {
@@ -93,8 +99,11 @@ export const AddressDisplay: React.FC<AddressDisplayProps> = ({
 
       <Tooltip>
         <TooltipTrigger asChild>
-          <span className="font-mono text-slate-700 dark:text-slate-200 cursor-help tracking-tight">
-            {formatAddress(address)}
+          <span className={cn(
+            'text-slate-700 dark:text-slate-200 cursor-help tracking-tight',
+            isAddressLabel && 'font-mono',
+          )}>
+            {visibleLabel}
           </span>
         </TooltipTrigger>
         <TooltipContent className="bg-slate-900 text-white border-0">

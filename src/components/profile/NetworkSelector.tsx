@@ -18,13 +18,13 @@ export const NetworkSelector: React.FC<NetworkSelectorProps> = ({
     if (chainIds.length === 0) return null;
 
     return (
-        <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4 p-1">
-            <div className="flex items-center gap-2 text-slate-500 dark:text-slate-400 px-1">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4 p-1 min-w-0">
+            <div className="flex items-center gap-2 text-slate-500 dark:text-slate-400 px-1 shrink-0">
                 <Network className="w-4 h-4" />
                 <span className="text-sm font-medium">Network</span>
             </div>
 
-            <div className="flex flex-wrap gap-2">
+            <div className="flex flex-nowrap gap-2 overflow-x-auto max-w-full pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
                 {chainIds.map((chainId) => {
                     const networkConfig = activeNetworks.find((n) => n.chain_id === chainId);
                     const isActive = selectedChainId === chainId;
@@ -34,7 +34,7 @@ export const NetworkSelector: React.FC<NetworkSelectorProps> = ({
                             key={chainId}
                             onClick={() => onSelectChain(chainId)}
                             className={cn(
-                                'px-4 py-2 rounded-xl text-sm font-medium transition-all duration-200 border',
+                                'px-4 py-2 rounded-xl text-sm font-medium transition-all duration-200 border shrink-0 whitespace-nowrap',
                                 isActive
                                     ? 'bg-slate-900 text-white border-slate-900 dark:bg-white dark:text-slate-900 dark:border-white shadow-md'
                                     : 'bg-white text-slate-600 border-slate-200 hover:border-slate-300 hover:bg-slate-50 dark:bg-slate-900 dark:text-slate-400 dark:border-slate-800 dark:hover:bg-slate-800'

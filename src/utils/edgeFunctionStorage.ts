@@ -13,6 +13,10 @@ import { normalizePurchaseMessage } from '@/utils/purchaseMessage';
 import { isPurchaseFormSchemaEmpty } from '@/types/purchaseForm';
 import { callEdgeFunction } from '@/lib/edgeFunctions';
 
+const getSubmittedGameId = (formData: EventFormData) => (
+  formData.category === 'Tournament' ? formData.gameId || null : null
+);
+
 /**
  * Save a new draft using the manage-drafts edge function
  */
@@ -51,6 +55,7 @@ export const saveDraftViaEdge = async (
       ngn_price: isFiat ? formData.ngnPrice : 0,
       payment_methods: [formData.paymentMethod],
       category: formData.category,
+      game_id: getSubmittedGameId(formData),
       image_url: formData.imageUrl || null,
       image_crop_x: formData.imageCropX || null,
       image_crop_y: formData.imageCropY || null,
@@ -125,6 +130,7 @@ export const updateDraftViaEdge = async (
       ngn_price: isFiat ? formData.ngnPrice : 0,
       payment_methods: [formData.paymentMethod],
       category: formData.category,
+      game_id: getSubmittedGameId(formData),
       image_url: formData.imageUrl || null,
       image_crop_x: formData.imageCropX || null,
       image_crop_y: formData.imageCropY || null,
@@ -289,6 +295,7 @@ export const savePublishedEventViaEdge = async (
   creatorId: string,
   privyToken: string,
   serviceManagerAdded: boolean = false,
+  creatorAddress?: string | null,
   deploymentMeta?: {
     startsAt?: string | null;
     endsAt?: string | null;
@@ -344,11 +351,13 @@ export const savePublishedEventViaEdge = async (
       payment_methods: [formData.paymentMethod],
       paystack_public_key: paystackPublicKey,
       category: formData.category,
+      game_id: getSubmittedGameId(formData),
       image_url: formData.imageUrl || null,
       image_crop_x: formData.imageCropX || null,
       image_crop_y: formData.imageCropY || null,
       lock_address: lockAddress,
       transaction_hash: transactionHash,
+      creator_address: creatorAddress?.toLowerCase() ?? null,
       chain_id: (formData as any).chainId,
       service_manager_added: serviceManagerAdded,
       idempotency_hash: idempotencyHash,

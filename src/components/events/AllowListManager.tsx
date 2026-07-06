@@ -17,6 +17,7 @@ import { callEdgeFunction } from '@/lib/edgeFunctions';
 import { Card, CardContent } from '@/components/ui/card';
 import { usePrivy } from '@privy-io/react-auth';
 import { normalizeEmail } from '@/utils/emailUtils';
+import { IdentityName } from '@/components/identity/IdentityName';
 
 interface AllowListManagerProps {
   event: PublishedEvent | null;
@@ -457,9 +458,9 @@ export const AllowListManager: React.FC<AllowListManagerProps> = ({ event, isOpe
                   <Card key={entry.id}>
                     <CardContent className="py-3 flex items-center justify-between">
                       <div className="flex-1 mr-2">
-                        <code className="text-sm break-all block">
-                          {entry.wallet_address}
-                        </code>
+                        <div className="text-sm break-all" title={entry.wallet_address}>
+                          <IdentityName address={entry.wallet_address} />
+                        </div>
                         {entry.user_email && (
                           <span className="text-xs text-muted-foreground break-all">
                             {entry.user_email}
@@ -512,8 +513,8 @@ export const AllowListManager: React.FC<AllowListManagerProps> = ({ event, isOpe
                     <CardContent className="py-3">
                       <div className="flex justify-between items-start gap-2">
                         <div className="flex-1">
-                          <p className="text-sm font-mono break-all">
-                            {req.wallet_address}
+                          <p className="text-sm break-all" title={req.wallet_address}>
+                            <IdentityName address={req.wallet_address} />
                           </p>
                           <p className="text-xs text-muted-foreground break-all">
                             {req.user_email}

@@ -58,6 +58,7 @@ const getDefaultFormData = (): EventFormData => ({
   payoutDestination: 'seller',
   paymentMethod: 'free',
   category: '',
+  gameId: null,
   imageUrl: '',
   chainId: getDefaultChainId(),
   ticketDuration: 'event',
@@ -101,6 +102,7 @@ const buildEventUpdatePatch = (
   assignIfChanged("location");
   assignIfChanged("eventType");
   assignIfChanged("category");
+  assignIfChanged("gameId", value => value ?? null);
   assignIfChanged("imageUrl");
   assignIfChanged("imageCropX", value => value ?? null);
   assignIfChanged("imageCropY", value => value ?? null);
@@ -131,6 +133,8 @@ export interface EventFormData {
   // Single, mutually exclusive payment method
   paymentMethod: 'free' | 'crypto' | 'fiat';
   category: string;
+  // Supported game (Tournament events only); opts the event into game standings.
+  gameId?: string | null;
   imageUrl: string;
   imageCropX?: number;
   imageCropY?: number;
@@ -225,6 +229,7 @@ const CreateEvent = () => {
               : 'ETH',
             ngnPrice: draft.ngn_price || 0,
             category: draft.category,
+            gameId: (draft as any).game_id ?? null,
             imageUrl: draft.image_url || '',
             ticketDuration: (draft.ticket_duration as 'event' | '30' | '365' | 'unlimited' | 'custom') || 'event',
             customDurationDays: draft.custom_duration_days,
@@ -281,6 +286,7 @@ const CreateEvent = () => {
               : 'ETH',
             ngnPrice: event.ngn_price || 0,
             category: event.category,
+            gameId: (event as any).game_id ?? null,
             imageUrl: event.image_url || '',
             chainId: event.chain_id || getDefaultChainId(),
             ticketDuration: (event.ticket_duration as 'event' | '30' | '365' | 'unlimited' | 'custom') || 'event',
