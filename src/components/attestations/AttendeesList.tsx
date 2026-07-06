@@ -111,10 +111,6 @@ export const AttendeesList: React.FC<AttendeesListProps> = ({
     }
   };
 
-  // No attendance schema means this event can't have verified attendees yet —
-  // hide the card entirely rather than showing a misleading empty/loading state.
-  if (!attendanceSchemaUid) return null;
-
   if (isLoading) {
     return (
       <Card className="border-0 shadow-sm">

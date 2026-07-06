@@ -55,7 +55,7 @@ import { MoreFromHost } from "@/components/events/MoreFromHost";
 import { EventInteractionsCard } from "@/components/interactions/core/EventInteractionsCard";
 import { usePrivy, useWallets } from "@privy-io/react-auth";
 import { useToast } from "@/hooks/use-toast";
-import { getAttestationSchemas, isValidAttestationUid, isAttestationRevocableOnChain } from "@/utils/attestationUtils";
+import { isValidAttestationUid, isAttestationRevocableOnChain } from "@/utils/attestationUtils";
 import { useEventAttestationState } from "@/hooks/useEventAttestationState";
 import { getDisableMessage } from "@/utils/attestationMessages";
 import { getBatchAttestationAddress } from "@/lib/config/contract-config";
@@ -412,6 +412,12 @@ const EventDetailsContent = () => {
     (uid?: string | null) => !!uid && uid.startsWith('0x') && uid.length === 66 && /^0x[0-9a-f]{64}$/i.test(uid),
     []
   );
+  const eventAttendanceSchemaUid =
+    event?.attendance_schema_uid && isValidSchemaUid(event.attendance_schema_uid)
+      ? event.attendance_schema_uid
+      : null;
+  const showAttestationSections = Boolean(eventAttendanceSchemaUid);
+  const attestationSectionSchemaUid = attendanceSchemaUid || eventAttendanceSchemaUid || undefined;
 
   const refreshLikes = useCallback(async (ev: PublishedEvent) => {
     try {
@@ -750,24 +756,8 @@ const EventDetailsContent = () => {
           return;
         }
 
-        // Otherwise, fetch attendance schemas from database
-        const schemas = await getAttestationSchemas("attendance");
-
-        // Filter out invalid schema UIDs (must be 66 characters and valid hex)
-        const validSchemas = schemas.filter((schema) => {
-          const isValid =
-            schema.schema_uid.startsWith("0x") &&
-            schema.schema_uid.length === 66 &&
-            /^0x[0-9a-f]{64}$/i.test(schema.schema_uid);
-          return isValid;
-        });
-
-        if (validSchemas.length > 0) {
-          setAttendanceSchemaUid(validSchemas[0].schema_uid);
-          setAttendanceSchemaRevocable(Boolean((validSchemas[0] as any).revocable));
-        } else {
-          setAttendanceSchemaRevocable(null);
-        }
+        setAttendanceSchemaUid(null);
+        setAttendanceSchemaRevocable(null);
       } catch (error) {
         console.error("Error loading attendance schema:", error);
       }
@@ -1295,32 +1285,36 @@ const EventDetailsContent = () => {
 
               <EventStandings event={event} />
 
-              {/* Attendees List */}
-              <AttendeesList
-                eventId={event.id}
-                eventTitle={event.title}
-                attendanceSchemaUid={attendanceSchemaUid || undefined}
-                refreshToken={refreshToken}
-              />
+              {showAttestationSections && (
+                <>
+                  {/* Attendees List */}
+                  <AttendeesList
+                    eventId={event.id}
+                    eventTitle={event.title}
+                    attendanceSchemaUid={attestationSectionSchemaUid}
+                    refreshToken={refreshToken}
+                  />
 
-              {/* Enhanced Attestation Card */}
-              <EventAttestationCard
-                eventId={event.id}
-                eventTitle={event.title}
-                eventDate={(event.date ? event.date : new Date()).toISOString()}
-                eventTime={event.time}
-                startsAt={event.starts_at}
-                endsAt={event.ends_at}
-                lockAddress={event.lock_address}
-                userHasTicket={authenticated && userTicketCount > 0}
-                attendanceSchemaUid={attendanceSchemaUid || undefined}
-                chainId={event.chain_id}
-                canRevokeAttendanceOverride={myAttendanceUidTop ? !((attendanceSchemaRevocable === false)) : undefined}
-                attendanceDisableReason={myAttendanceUidTop && attendanceSchemaRevocable === false ? 'Attendance records for this event are permanent.' : undefined}
-                canRevokeGoingOverride={myGoingUid ? !((goingSchemaRevocable === false || goingInstanceRevocable === false)) : undefined}
-                goingDisableReason={myGoingUid && (goingSchemaRevocable === false || goingInstanceRevocable === false) ? "This going status cannot be revoked." : undefined}
-                refreshToken={refreshToken}
-              />
+                  {/* Enhanced Attestation Card */}
+                  <EventAttestationCard
+                    eventId={event.id}
+                    eventTitle={event.title}
+                    eventDate={(event.date ? event.date : new Date()).toISOString()}
+                    eventTime={event.time}
+                    startsAt={event.starts_at}
+                    endsAt={event.ends_at}
+                    lockAddress={event.lock_address}
+                    userHasTicket={authenticated && userTicketCount > 0}
+                    attendanceSchemaUid={attestationSectionSchemaUid}
+                    chainId={event.chain_id}
+                    canRevokeAttendanceOverride={myAttendanceUidTop ? !((attendanceSchemaRevocable === false)) : undefined}
+                    attendanceDisableReason={myAttendanceUidTop && attendanceSchemaRevocable === false ? 'Attendance records for this event are permanent.' : undefined}
+                    canRevokeGoingOverride={myGoingUid ? !((goingSchemaRevocable === false || goingInstanceRevocable === false)) : undefined}
+                    goingDisableReason={myGoingUid && (goingSchemaRevocable === false || goingInstanceRevocable === false) ? "This going status cannot be revoked." : undefined}
+                    refreshToken={refreshToken}
+                  />
+                </>
+              )}
 
             </div>
 
