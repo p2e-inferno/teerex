@@ -6,7 +6,21 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
 import { EdgeFunctionError } from '@/lib/edgeFunctions';
-import { useMyDisplayName, useSetDisplayName } from '@/hooks/useCircuits';
+import { useMyDisplayName, useSetDisplayName } from '@/hooks/useSeries';
+
+function displayNameErrorMessage(error: unknown): string {
+  if (!(error instanceof EdgeFunctionError)) return 'Please try again.';
+  if (error.message === 'display_name_taken') return 'That display name is already taken.';
+  if (error.message === 'display_name_reserved') return 'That display name is reserved.';
+  if (error.message === 'display_name_unsafe_characters') {
+    return 'Display names cannot include hidden characters.';
+  }
+  if (error.message === 'display_name_must_be_2_to_40_chars') {
+    return 'Use 2-40 characters, or clear it entirely.';
+  }
+  if (error.message === 'display_name_invalid') return 'That display name is not allowed.';
+  return error.message;
+}
 
 export function PlayerNameCard() {
   const { toast } = useToast();
@@ -29,12 +43,12 @@ export function PlayerNameCard() {
         title: trimmed === '' ? 'Player name cleared' : 'Player name saved',
         description: trimmed === ''
           ? 'Standings will show your wallet address instead.'
-          : `You will appear as "${trimmed}" on standings and circuits.`,
+          : `You will appear as "${trimmed}" on standings and series.`,
       });
     } catch (err) {
       toast({
         title: 'Could not save player name',
-        description: err instanceof EdgeFunctionError ? err.message : 'Please try again.',
+        description: displayNameErrorMessage(err),
         variant: 'destructive',
       });
     }
@@ -44,10 +58,10 @@ export function PlayerNameCard() {
     <Card className="h-full">
       <CardHeader>
         <CardTitle className="flex items-center gap-2 text-lg">
-          <Gamepad2 className="h-5 w-5 text-primary" /> Player name
+          <Gamepad2 className="h-5 w-5 text-primary" /> Display name
         </CardTitle>
         <CardDescription>
-          Shown publicly on event standings and circuit leaderboards instead of your wallet address.
+          Shown publicly on event and series standings instead of your wallet address.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-3">

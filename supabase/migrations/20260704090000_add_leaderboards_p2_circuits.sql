@@ -82,6 +82,59 @@ CREATE INDEX idx_leaderboard_standings_player_id
 ALTER TABLE public.app_user_profiles ADD COLUMN display_name TEXT
   CHECK (display_name IS NULL OR length(trim(display_name)) BETWEEN 2 AND 40);
 
+ALTER TABLE public.app_user_profiles
+  ADD CONSTRAINT app_user_profiles_display_name_valid
+  CHECK (
+    display_name IS NULL OR (
+      display_name !~ '[[:cntrl:]]'
+      AND translate(
+        display_name,
+        chr(173) || chr(847) || chr(1564) || chr(4447) || chr(4448) ||
+        chr(6068) || chr(6069) || chr(6158) || chr(8203) || chr(8204) ||
+        chr(8205) || chr(8206) || chr(8207) || chr(8234) || chr(8235) ||
+        chr(8236) || chr(8237) || chr(8238) || chr(8288) || chr(8289) ||
+        chr(8290) || chr(8291) || chr(8292) || chr(8293) || chr(8294) ||
+        chr(8295) || chr(8296) || chr(8297) || chr(8298) || chr(8299) ||
+        chr(8300) || chr(8301) || chr(8302) || chr(8303) || chr(12644) ||
+        chr(65279) || chr(65440),
+        ''
+      ) = display_name
+      AND lower(regexp_replace(trim(display_name), '[^a-zA-Z0-9]+', '', 'g')) NOT IN (
+        'admin',
+        'administrator',
+        'base',
+        'ethereum',
+        'founder',
+        'help',
+        'host',
+        'mod',
+        'moderator',
+        'official',
+        'organizer',
+        'owner',
+        'paystack',
+        'privy',
+        'security',
+        'staff',
+        'support',
+        'system',
+        'team',
+        'teerex',
+        'teerexadmin',
+        'teerexofficial',
+        'teerexsupport',
+        'teerexteam',
+        'unlock',
+        'verification',
+        'verified'
+      )
+    )
+  );
+
+CREATE UNIQUE INDEX uq_app_user_profiles_display_name_normalized
+  ON public.app_user_profiles (lower(regexp_replace(trim(display_name), '[[:space:]]+', ' ', 'g')))
+  WHERE display_name IS NOT NULL;
+
 -- =============================================================================================
 -- RPC: replace_board_standings
 -- Atomic delete-then-insert of a board's standings set (computed by the edge function); a

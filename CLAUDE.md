@@ -201,6 +201,19 @@ Migration guidance:
 - **USDC Addresses**: Chain-specific, retrieved from `getUsdcAddress()` in `src/lib/config/network-config.ts`
 - **Explorer Links**: Always generate via `getExplorerTxUrl(chainId, txHash)` — never hardcode `basescan.org` / `sepolia.basescan.org` or build `/tx/${hash}` strings inline
 
+### Wallet Identity Display
+- User-facing wallet identities must use `IdentityName` (`src/components/identity/IdentityName.tsx`) or `useIdentityLabel` (`src/hooks/useIdentityLabel.ts`) instead of local `shortAddress`, `formatAddress`, or `displayName || address` logic.
+- The display priority is ENS reverse name first, app `display_name` second, shortened wallet address last.
+- Pass the raw wallet `address` plus any available `displayName`; let the shared primitive resolve the final label.
+- Use pure helpers from `src/lib/identity.ts` only for non-React code or explicit secondary raw-address context.
+- Public `display_name` values are unique handles and must stay protected by both edge validation and database constraints for uniqueness and reserved names.
+- Do not apply ENS identity formatting to contract addresses, lock addresses, transaction hashes, or explorer-only technical identifiers.
+
+Example:
+```tsx
+<IdentityName address={row.wallet_address} displayName={row.display_name} />
+```
+
 ### Admin Features
 - Admin access controlled via `is_admin` edge function (checks Privy user ID against allowlist)
 - Protected routes use `AdminRoute` component wrapper

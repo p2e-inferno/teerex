@@ -18,7 +18,8 @@ import {
   Gift,
   Banknote,
   Gamepad2,
-  Trophy
+  Trophy,
+  Flag
 } from 'lucide-react';
 
 const AdminDashboard: React.FC = () => {
@@ -105,6 +106,14 @@ const AdminDashboard: React.FC = () => {
       color: "bg-amber-500/10 border-amber-500/20",
       iconColor: "text-amber-600",
       path: "/admin/reward-disputes"
+    },
+    {
+      title: "Event Reports",
+      description: "Triage abuse reports filed against events; mark reviewing, resolve, or dismiss",
+      icon: Flag,
+      color: "bg-red-500/10 border-red-500/20",
+      iconColor: "text-red-600",
+      path: "/admin/event-reports"
     }
   ];
 

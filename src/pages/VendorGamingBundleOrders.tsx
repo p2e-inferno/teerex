@@ -13,6 +13,7 @@ import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { IdentityName } from '@/components/identity/IdentityName';
 
 type ReissueReceipt = {
   order_id: string;
@@ -256,14 +257,22 @@ const VendorGamingBundleOrders = () => {
                         <TableCell className="py-6 px-4 align-top">
                           <div className="space-y-1">
                             <div className="text-sm font-medium text-gray-900 leading-none whitespace-nowrap">
-                              {order.buyer_display_name || 'Guest User'}
+                              <IdentityName
+                                address={order.buyer_address}
+                                displayName={order.buyer_display_name}
+                                fallback="Guest User"
+                              />
                             </div>
                             <div className="text-[10px] text-gray-500 tabular-nums whitespace-nowrap">
                               {order.buyer_phone || order.buyer_address ? (
                                 <span className="flex items-center gap-1.5 mt-1">
                                   {order.buyer_phone || ''}
                                   {order.buyer_phone && order.buyer_address && <span className="w-1 h-1 rounded-full bg-gray-300" />}
-                                  {order.buyer_address ? shorten(order.buyer_address, 4, 4) : ''}
+                                  {order.buyer_address ? (
+                                    <span className="font-mono" title={order.buyer_address}>
+                                      {shorten(order.buyer_address, 4, 4)}
+                                    </span>
+                                  ) : ''}
                                 </span>
                               ) : (
                                 <span className="italic opacity-60">No contact info</span>

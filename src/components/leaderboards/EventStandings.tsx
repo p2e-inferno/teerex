@@ -10,16 +10,27 @@ import { cn } from '@/lib/utils';
 import { EdgeFunctionError } from '@/lib/edgeFunctions';
 import { useEventManagerPermissions } from '@/hooks/useEventManagerPermissions';
 import { useEventStandings, useReportStandingsIssue, type StandingRow } from '@/hooks/useEventStandings';
-import { useGameCircuits, type Circuit } from '@/hooks/useCircuits';
+import { useGameSeries, type Series } from '@/hooks/useSeries';
+import { useIdentityLabel } from '@/hooks/useIdentityLabel';
 import { useRewardPools } from '@/hooks/useRewardPools';
 import { useTicketBalance } from '@/hooks/useTicketBalance';
 import { useToast } from '@/hooks/use-toast';
 import { RaiseDisputeDialog } from '@/components/rewards/RaiseDisputeDialog';
 import { ExtendedPlacementsDialog } from './ExtendedPlacementsDialog';
+import { shortAddress } from '@/lib/identity';
 import type { ScoringProfile } from '@/hooks/useGames';
 import type { RewardDisputeCategory } from '@/types/rewardPool';
 
-const short = (a: string) => `${a.slice(0, 6)}...${a.slice(-4)}`;
+function ordinal(n: number) {
+  const v = n % 100;
+  if (v >= 11 && v <= 13) return `${n}th`;
+  switch (n % 10) {
+    case 1: return `${n}st`;
+    case 2: return `${n}nd`;
+    case 3: return `${n}rd`;
+    default: return `${n}th`;
+  }
+}
 
 function statusBadge(row: StandingRow) {
   if (row.display_status === 'final') {
@@ -50,7 +61,7 @@ export function PointsRules({ profile }: { profile: ScoringProfile }) {
       <div className="font-semibold text-slate-900">How points work</div>
       {podium.length > 0 && (
         <p>
-          Podium: {podium.map((p) => `#${p.place} = ${p.pts}`).join(' · ')} points.
+          Podium: {podium.map((p) => `${ordinal(p.place)} place earns ${p.pts} pts`).join(', ')}.
         </p>
       )}
       {Number(curve.from ?? 0) > 0 && (
@@ -76,14 +87,24 @@ export function PointsRules({ profile }: { profile: ScoringProfile }) {
 }
 
 function StandingsRow({ row, rank }: { row: StandingRow; rank: string }) {
+  const identity = useIdentityLabel({
+    address: row.wallet_address,
+    displayName: row.alias,
+  });
+  const showAddress = identity.source !== 'address';
+
   return (
     <div className="flex items-center gap-3 rounded-md bg-slate-50/80 px-3 py-2 text-sm">
       <span className="w-10 shrink-0 font-semibold text-slate-700">{rank}</span>
       <div className="min-w-0 flex-1">
-        {row.alias && <div className="truncate font-medium text-slate-950">{row.alias}</div>}
-        <div className={cn('truncate font-mono text-xs', row.alias ? 'text-slate-500' : 'text-slate-900')}>
-          {short(row.wallet_address)}
+        <div className={cn('truncate', showAddress ? 'font-medium text-slate-950' : 'font-mono text-xs text-slate-900')}>
+          {identity.label}
         </div>
+        {showAddress && (
+          <div className="truncate font-mono text-xs text-slate-500">
+            {shortAddress(row.wallet_address)}
+          </div>
+        )}
       </div>
       <span className={cn(
         'shrink-0 font-semibold tabular-nums',
@@ -96,18 +117,18 @@ function StandingsRow({ row, rank }: { row: StandingRow; rank: string }) {
   );
 }
 
-function CircuitRow({ circuit }: { circuit: Circuit }) {
+function SeriesRow({ series }: { series: Series }) {
   return (
     <div className="flex items-center gap-3 rounded-md bg-slate-50/80 px-3 py-2 text-sm">
       <div className="min-w-0 flex-1">
-        <div className="truncate font-medium text-slate-950">{circuit.name}</div>
+        <div className="truncate font-medium text-slate-950">{series.name}</div>
         <div className="truncate text-xs text-slate-500">
-          {circuit.season_label || 'All-time circuit'}
-          {circuit.last_recomputed_at ? ` · Updated ${new Date(circuit.last_recomputed_at).toLocaleString()}` : ''}
+          {series.season_label || 'All-time series'}
+          {series.last_recomputed_at ? ` · Updated ${new Date(series.last_recomputed_at).toLocaleString()}` : ''}
         </div>
       </div>
       <Button size="sm" variant="ghost" asChild>
-        <Link to={`/circuits/${circuit.id}`}>
+        <Link to={`/series/${series.id}`}>
           View <ExternalLink className="ml-1 h-3.5 w-3.5" />
         </Link>
       </Button>
@@ -136,7 +157,7 @@ export function EventStandings({ event }: Props) {
   const viewerAddress = authenticated ? wallet?.address ?? null : null;
 
   const { data } = useEventStandings(event.id);
-  const { data: circuits = [] } = useGameCircuits(data?.game?.id);
+  const { data: series = [] } = useGameSeries(data?.game?.id);
   const { data: pools = [] } = useRewardPools(event.lock_address, event.chain_id);
   const permissions = useEventManagerPermissions(event.id);
   const { data: balance = 0 } = useTicketBalance({
@@ -166,8 +187,8 @@ export function EventStandings({ event }: Props) {
   if (!data || !data.game) return null;
 
   const hasRows = data.standings.length > 0;
-  const hasCircuits = circuits.length > 0;
-  if (!hasRows && !canManage && !hasCircuits) return null;
+  const hasSeries = series.length > 0;
+  if (!hasRows && !canManage && !hasSeries) return null;
 
   const organizerReviewOpen = bands.organizer.some((r) => r.display_status === 'review_open');
   const reportPool = pools[0] ?? null;
@@ -196,10 +217,15 @@ export function EventStandings({ event }: Props) {
   const standingsContent = (
     <>
       {!hasRows ? (
-        <p className="text-sm text-muted-foreground">
-          Standings are generated from declared prize winners. Create a prize pool and assign
-          winners after your tournament ends to publish standings.
-        </p>
+        pools.length === 0 ? (
+          <p className="text-sm text-muted-foreground">
+            Standings publish once you&apos;ve assigned prize winners. Create a reward pool to get started.
+          </p>
+        ) : (
+          <p className="text-sm text-muted-foreground">
+            Standings publish once winners are assigned. Assign winners to your prize pool to get started.
+          </p>
+        )
       ) : (
         <div className="space-y-4">
           {bands.prize.length > 0 && (
@@ -215,7 +241,7 @@ export function EventStandings({ event }: Props) {
 
           {bands.organizer.length > 0 && (
             <div className="space-y-1.5">
-              <div className="text-xs font-bold uppercase text-slate-500">Honorable mentions</div>
+              <div className="text-xs font-bold uppercase text-slate-500">Additional placements</div>
               {bands.organizer.map((r) => (
                 <StandingsRow key={r.result_id} row={r} rank={`#${r.placement}`} />
               ))}
@@ -224,9 +250,11 @@ export function EventStandings({ event }: Props) {
 
           {bands.participated.length > 0 && (
             <div className="space-y-1.5">
-              <div className="text-xs font-bold uppercase text-slate-400">Participated</div>
+              <div className="text-xs font-bold uppercase text-slate-400">
+                Participated{bands.participated[0]?.tied_rank ? ` — tied from #${bands.participated[0].tied_rank}` : ''}
+              </div>
               {bands.participated.map((r) => (
-                <StandingsRow key={r.result_id} row={r} rank={`T-${r.tied_rank ?? '-'}`} />
+                <StandingsRow key={r.result_id} row={r} rank="—" />
               ))}
             </div>
           )}
@@ -237,7 +265,7 @@ export function EventStandings({ event }: Props) {
         <div className="flex flex-wrap items-center gap-2">
           {showExtend && (
             <Button size="sm" variant="outline" onClick={() => setEditorOpen(true)}>
-              {bands.organizer.length > 0 ? 'Edit extended standings' : 'Rank remaining players'}
+              {bands.organizer.length > 0 ? 'Edit placements' : 'Rank remaining players'}
             </Button>
           )}
           {showReport && (
@@ -250,10 +278,10 @@ export function EventStandings({ event }: Props) {
     </>
   );
 
-  const circuitsContent = (
+  const seriesContent = (
     <div className="space-y-2">
-      {circuits.map((circuit) => (
-        <CircuitRow key={circuit.id} circuit={circuit} />
+      {series.map((s) => (
+        <SeriesRow key={s.id} series={s} />
       ))}
     </div>
   );
@@ -278,17 +306,17 @@ export function EventStandings({ event }: Props) {
         </Popover>
       </div>
 
-      {hasCircuits ? (
-        <Tabs defaultValue={hasRows || canManage ? 'standings' : 'circuits'} className="space-y-3">
+      {hasSeries ? (
+        <Tabs defaultValue={hasRows || canManage ? 'standings' : 'series'} className="space-y-3">
           <TabsList>
             <TabsTrigger value="standings">Standings</TabsTrigger>
-            <TabsTrigger value="circuits">Circuits</TabsTrigger>
+            <TabsTrigger value="series">Series</TabsTrigger>
           </TabsList>
           <TabsContent value="standings" className="space-y-3">
             {standingsContent}
           </TabsContent>
-          <TabsContent value="circuits">
-            {circuitsContent}
+          <TabsContent value="series">
+            {seriesContent}
           </TabsContent>
         </Tabs>
       ) : (

@@ -88,6 +88,7 @@ serve(async (req: Request) => {
             image_url,
             image_crop_x,
             image_crop_y,
+            creator_address,
             lock_address,
             transaction_hash,
             chain_id,
@@ -125,6 +126,16 @@ serve(async (req: Request) => {
         const userWalletAddresses = await getUserWalletAddresses(privyUserId);
         if (!userWalletAddresses || userWalletAddresses.length === 0) {
             throw new Error("No wallets linked to authenticated user");
+        }
+        let resolvedCreatorAddress = creator_address
+            ? String(creator_address).trim().toLowerCase()
+            : null;
+        if (
+            resolvedCreatorAddress &&
+            (!/^0x[a-fA-F0-9]{40}$/.test(resolvedCreatorAddress) ||
+                !userWalletAddresses.includes(resolvedCreatorAddress))
+        ) {
+            throw new Error("creator_address_not_authorized_for_user");
         }
 
         // Validate chain and get network config
@@ -256,6 +267,7 @@ serve(async (req: Request) => {
             }
 
             resolvedServiceManagerAdded = false;
+            resolvedCreatorAddress = String(cfg.creator).toLowerCase();
             resolvedRefundControllerAddress = controllerAddress;
             resolvedRefundReserveBond = cfg.reserveBond.toString();
             resolvedRefundStatus = "protected";
@@ -340,6 +352,7 @@ serve(async (req: Request) => {
             image_url,
             image_crop_x,
             image_crop_y,
+            creator_address: resolvedCreatorAddress,
             lock_address,
             transaction_hash,
             chain_id,

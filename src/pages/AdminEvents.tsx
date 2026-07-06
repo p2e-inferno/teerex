@@ -33,6 +33,7 @@ import {
 import { Link } from "react-router-dom";
 import { baseSepolia } from "wagmi/chains";
 import { useBatchAttestation } from "@/hooks/useBatchAttestation";
+import { IdentityName } from "@/components/identity/IdentityName";
 import { useAttestationEncoding } from "@/hooks/useAttestationEncoding";
 import { useTeeRexDelegatedAttestation } from "@/hooks/useTeeRexDelegatedAttestation";
 import { useSSE } from "@/hooks/useSSE";
@@ -943,7 +944,7 @@ const AdminEvents: React.FC = () => {
                         }
                         toast({
                           title: "Signed",
-                          description: `Signature collected for ${sa.recipient}`,
+                          description: <>Signature collected for <IdentityName address={sa.recipient} /></>,
                         });
                       } catch (err: any) {
                         toast({
@@ -1199,8 +1200,8 @@ const AdminEvents: React.FC = () => {
                         <div className="text-xs text-muted-foreground">
                           Recipient
                         </div>
-                        <div className="font-mono text-xs truncate">
-                          {s.recipient}
+                        <div className="text-xs truncate" title={s.recipient}>
+                          <IdentityName address={s.recipient} />
                         </div>
                         <div className="mt-1 text-xs text-muted-foreground">
                           Schema UID

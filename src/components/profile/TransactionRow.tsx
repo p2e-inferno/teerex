@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button';
 import { ArrowUpRight, ArrowDownLeft, ExternalLink, Copy, Check } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useToast } from '@/hooks/use-toast';
+import { IdentityName } from '@/components/identity/IdentityName';
 import type { TransactionRecord } from '@/hooks/useTransactionHistory';
 
 interface TransactionRowProps {
@@ -115,7 +116,7 @@ export const TransactionRow: React.FC<TransactionRowProps> = ({ transaction }) =
               </div>
               <div className="text-xs text-slate-500 mt-0.5">
                 {isSent ? 'Sent to' : 'Received from'}{' '}
-                <span className="font-mono">{truncateAddress(otherAddress)}</span>
+                <IdentityName address={otherAddress} />
               </div>
             </div>
 

@@ -133,7 +133,7 @@ export interface EventFormData {
   // Single, mutually exclusive payment method
   paymentMethod: 'free' | 'crypto' | 'fiat';
   category: string;
-  // Supported game (Tournament events only); opts the event into leaderboard standings.
+  // Supported game (Tournament events only); opts the event into game standings.
   gameId?: string | null;
   imageUrl: string;
   imageCropX?: number;

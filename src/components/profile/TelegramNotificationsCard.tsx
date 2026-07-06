@@ -13,6 +13,7 @@ export function TelegramNotificationsCard() {
   const [blockedDeepLink, setBlockedDeepLink] = useState<string | null>(null);
   const linked = telegram.status?.linked === true;
   const enabled = telegram.status?.enabled === true;
+  const waitingForTelegram = telegram.isPollingForLink && !linked;
   const busy = telegram.startLink.isPending || telegram.disable.isPending || telegram.isLoading;
 
   const handleLink = async () => {
@@ -94,8 +95,12 @@ export function TelegramNotificationsCard() {
       <CardContent className="space-y-4">
         <div className="flex flex-wrap items-center gap-2">
           <Badge variant={enabled ? 'default' : 'secondary'} className="gap-1">
-            {telegram.isLoading ? <Loader2 className="h-3 w-3 animate-spin" /> : <Bell className="h-3 w-3" />}
-            {enabled ? 'Enabled' : linked ? 'Linked, disabled' : 'Not linked'}
+            {telegram.isLoading || waitingForTelegram ? (
+              <Loader2 className="h-3 w-3 animate-spin" />
+            ) : (
+              <Bell className="h-3 w-3" />
+            )}
+            {enabled ? 'Enabled' : linked ? 'Linked, disabled' : waitingForTelegram ? 'Waiting for Start' : 'Not linked'}
           </Badge>
           {linked && (
             <Badge variant="outline" className="gap-1">
@@ -106,7 +111,9 @@ export function TelegramNotificationsCard() {
         </div>
 
         <p className="text-sm text-muted-foreground">
-          Disabling stops Telegram alerts but keeps the Telegram account reserved to this profile.
+          {waitingForTelegram
+            ? 'Waiting for Telegram confirmation. This will update after you tap Start in the bot chat.'
+            : 'Disabling stops Telegram alerts but keeps the Telegram account reserved to this profile.'}
         </p>
 
         <div className="flex flex-col gap-2 sm:flex-row">

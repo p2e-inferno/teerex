@@ -3,7 +3,7 @@ import { usePrivy } from '@privy-io/react-auth';
 import { callEdgeFunction } from '@/lib/edgeFunctions';
 import type { Game, ScoringProfile } from '@/hooks/useGames';
 
-export interface Circuit {
+export interface Series {
   id: string;
   scope: string;
   game_id: string;
@@ -18,7 +18,7 @@ export interface Circuit {
   created_at: string;
 }
 
-export interface CircuitStandingRow {
+export interface SeriesStandingRow {
   player_key: string;
   player_id: string | null;
   wallet_address: string | null;
@@ -30,55 +30,55 @@ export interface CircuitStandingRow {
   display_name: string | null;
 }
 
-export interface CircuitStandingsData {
-  board: Circuit;
+export interface SeriesStandingsData {
+  board: Series;
   game: Game | null;
   scoring_profile: ScoringProfile;
-  standings: CircuitStandingRow[];
+  standings: SeriesStandingRow[];
 }
 
-export function useGameCircuits(gameId?: string | null) {
-  return useQuery<Circuit[]>({
-    queryKey: ['game-circuits', gameId ?? null],
+export function useGameSeries(gameId?: string | null) {
+  return useQuery<Series[]>({
+    queryKey: ['game-series', gameId ?? null],
     enabled: Boolean(gameId),
     queryFn: async () => {
-      const data = await callEdgeFunction<{ circuits: Circuit[] }>('leaderboards', {
-        route: 'circuits',
+      const data = await callEdgeFunction<{ series: Series[] }>('leaderboards', {
+        route: 'series',
         game_id: gameId,
       }, {});
-      return data.circuits ?? [];
+      return data.series ?? [];
     },
   });
 }
 
-export function useCircuitStandings(boardId?: string | null) {
-  return useQuery<CircuitStandingsData>({
-    queryKey: ['circuit-standings', boardId ?? null],
+export function useSeriesStandings(boardId?: string | null) {
+  return useQuery<SeriesStandingsData>({
+    queryKey: ['series-standings', boardId ?? null],
     enabled: Boolean(boardId),
     queryFn: () =>
-      callEdgeFunction<CircuitStandingsData>('leaderboards', {
-        route: 'circuit-standings',
+      callEdgeFunction<SeriesStandingsData>('leaderboards', {
+        route: 'series-standings',
         board_id: boardId,
       }, {}),
   });
 }
 
-export function useMyCircuits(enabled = true) {
+export function useMySeries(enabled = true) {
   const { getAccessToken, authenticated } = usePrivy();
-  return useQuery<Circuit[]>({
-    queryKey: ['my-circuits'],
+  return useQuery<Series[]>({
+    queryKey: ['my-series'],
     enabled: enabled && authenticated,
     queryFn: async () => {
       const token = await getAccessToken();
-      const data = await callEdgeFunction<{ circuits: Circuit[] }>('leaderboards', {
-        route: 'my-circuits',
+      const data = await callEdgeFunction<{ series: Series[] }>('leaderboards', {
+        route: 'my-series',
       }, { privyToken: token });
-      return data.circuits ?? [];
+      return data.series ?? [];
     },
   });
 }
 
-export interface CircuitInput {
+export interface SeriesInput {
   game_id?: string;
   name?: string;
   season_label?: string | null;
@@ -87,42 +87,42 @@ export interface CircuitInput {
   is_active?: boolean;
 }
 
-export function useCreateCircuit() {
+export function useCreateSeries() {
   const { getAccessToken } = usePrivy();
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async (input: CircuitInput) => {
+    mutationFn: async (input: SeriesInput) => {
       const token = await getAccessToken();
-      const data = await callEdgeFunction<{ circuit: Circuit }>('leaderboards', {
-        route: 'create-circuit',
+      const data = await callEdgeFunction<{ series: Series }>('leaderboards', {
+        route: 'create-series',
         ...input,
       }, { privyToken: token });
-      return data.circuit;
+      return data.series;
     },
-    onSuccess: (circuit) => {
-      void queryClient.invalidateQueries({ queryKey: ['my-circuits'] });
-      void queryClient.invalidateQueries({ queryKey: ['game-circuits', circuit.game_id] });
+    onSuccess: (series) => {
+      void queryClient.invalidateQueries({ queryKey: ['my-series'] });
+      void queryClient.invalidateQueries({ queryKey: ['game-series', series.game_id] });
     },
   });
 }
 
-export function useUpdateCircuit() {
+export function useUpdateSeries() {
   const { getAccessToken } = usePrivy();
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async ({ board_id, ...patch }: CircuitInput & { board_id: string }) => {
+    mutationFn: async ({ board_id, ...patch }: SeriesInput & { board_id: string }) => {
       const token = await getAccessToken();
-      const data = await callEdgeFunction<{ circuit: Circuit }>('leaderboards', {
-        route: 'update-circuit',
+      const data = await callEdgeFunction<{ series: Series }>('leaderboards', {
+        route: 'update-series',
         board_id,
         ...patch,
       }, { privyToken: token });
-      return data.circuit;
+      return data.series;
     },
-    onSuccess: (circuit) => {
-      void queryClient.invalidateQueries({ queryKey: ['my-circuits'] });
-      void queryClient.invalidateQueries({ queryKey: ['game-circuits', circuit.game_id] });
-      void queryClient.invalidateQueries({ queryKey: ['circuit-standings', circuit.id] });
+    onSuccess: (series) => {
+      void queryClient.invalidateQueries({ queryKey: ['my-series'] });
+      void queryClient.invalidateQueries({ queryKey: ['game-series', series.game_id] });
+      void queryClient.invalidateQueries({ queryKey: ['series-standings', series.id] });
     },
   });
 }
@@ -157,7 +157,7 @@ export function useSetDisplayName() {
       // Names surface in every standings read; refresh whatever is on screen.
       void queryClient.invalidateQueries({ queryKey: ['my-display-name'] });
       void queryClient.invalidateQueries({ queryKey: ['event-standings'] });
-      void queryClient.invalidateQueries({ queryKey: ['circuit-standings'] });
+      void queryClient.invalidateQueries({ queryKey: ['series-standings'] });
     },
   });
 }

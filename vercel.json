@@ -5,7 +5,7 @@
       "headers": [
         {
           "key": "Content-Security-Policy",
-          "value": "default-src 'self'; base-uri 'self'; object-src 'none'; form-action 'self'; frame-ancestors 'self'; script-src 'self' 'unsafe-inline' blob: chrome-extension: moz-extension: safari-extension: https://challenges.cloudflare.com https://js.paystack.co https://*.paystack.co https://*.paystack.com https://www.googletagmanager.com https://tagmanager.google.com https://connect.facebook.net https://auth.privy.io https://privy.teerex.live https://assets.calendly.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://assets.calendly.com; font-src 'self' data: https://fonts.gstatic.com; img-src 'self' data: blob: https: https://*.public.blob.vercel-storage.com https://*.supabase.co https://www.facebook.com; connect-src 'self' https://teerex.live https://vercel.com https://*.vercel.com https://blob.vercel-storage.com https://*.public.blob.vercel-storage.com https://auth.privy.io https://privy.teerex.live wss://relay.walletconnect.com wss://relay.walletconnect.org wss://www.walletlink.org https://*.rpc.privy.systems https://explorer-api.walletconnect.com https://*.supabase.co wss://*.supabase.co https://api.paystack.co https://checkout.paystack.com https://js.paystack.co https://*.paystack.com https://paystack.com https://*.paystack.co https://pulse.walletconnect.org https://api.web3modal.org https://sepolia.base.org https://mainnet.base.org https://*.alchemy.com https://*.g.alchemy.com wss://*.alchemy.com wss://*.g.alchemy.com https://*.infura.io wss://*.infura.io https://forno.celo.org https://ethereum-rpc.publicnode.com https://rpc.flashbots.net https://1rpc.io https://www.googletagmanager.com https://tagmanager.google.com https://www.google-analytics.com https://analytics.google.com https://www.google.com https://www.facebook.com https://fonts.googleapis.com https://fonts.gstatic.com; child-src https://auth.privy.io https://privy.teerex.live https://verify.walletconnect.com https://verify.walletconnect.org https://oauth.telegram.org; frame-src https://auth.privy.io https://privy.teerex.live https://verify.walletconnect.com https://verify.walletconnect.org https://challenges.cloudflare.com https://checkout.paystack.com https://js.paystack.co https://*.paystack.com https://paystack.com https://*.paystack.co https://oauth.telegram.org https://www.googletagmanager.com https://tagmanager.google.com https://calendly.com; worker-src 'self' blob:; manifest-src 'self'; media-src 'self' blob: https://*.public.blob.vercel-storage.com https://*.supabase.co; report-uri https://nclavsvzjzegqvkjezyz.supabase.co/functions/v1/csp-report; report-to default"
+          "value": "default-src 'self'; base-uri 'self'; object-src 'none'; form-action 'self'; frame-ancestors 'self'; script-src 'self' 'unsafe-inline' blob: chrome-extension: moz-extension: safari-extension: https://challenges.cloudflare.com https://js.paystack.co https://*.paystack.co https://*.paystack.com https://www.googletagmanager.com https://tagmanager.google.com https://connect.facebook.net https://auth.privy.io https://privy.teerex.live https://assets.calendly.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://assets.calendly.com; font-src 'self' data: https://fonts.gstatic.com; img-src 'self' data: blob: https: https://*.public.blob.vercel-storage.com https://*.supabase.co https://www.facebook.com; connect-src 'self' https://teerex.live https://vercel.com https://*.vercel.com https://blob.vercel-storage.com https://*.public.blob.vercel-storage.com https://auth.privy.io https://privy.teerex.live wss://relay.walletconnect.com wss://relay.walletconnect.org wss://www.walletlink.org https://*.rpc.privy.systems https://explorer-api.walletconnect.com https://*.supabase.co wss://*.supabase.co https://api.paystack.co https://checkout.paystack.com https://js.paystack.co https://*.paystack.com https://paystack.com https://*.paystack.co https://pulse.walletconnect.org https://api.web3modal.org https://sepolia.base.org https://mainnet.base.org https://*.alchemy.com https://*.g.alchemy.com wss://*.alchemy.com wss://*.g.alchemy.com https://*.infura.io wss://*.infura.io https://forno.celo.org https://ethereum-rpc.publicnode.com https://rpc.flashbots.net https://1rpc.io https://www.googletagmanager.com https://tagmanager.google.com https://www.google-analytics.com https://analytics.google.com https://www.google.com https://www.facebook.com https://fonts.googleapis.com https://fonts.gstatic.com; child-src https://auth.privy.io https://privy.teerex.live https://verify.walletconnect.com https://verify.walletconnect.org https://oauth.telegram.org; frame-src https://auth.privy.io https://privy.teerex.live https://verify.walletconnect.com https://verify.walletconnect.org https://challenges.cloudflare.com https://checkout.paystack.com https://js.paystack.co https://*.paystack.com https://paystack.com https://*.paystack.co https://oauth.telegram.org https://www.googletagmanager.com https://tagmanager.google.com https://www.google.com https://maps.google.com https://calendly.com; worker-src 'self' blob:; manifest-src 'self'; media-src 'self' blob: https://*.public.blob.vercel-storage.com https://*.supabase.co; report-uri https://nclavsvzjzegqvkjezyz.supabase.co/functions/v1/csp-report; report-to default"
         },
         {
           "key": "X-Content-Type-Options",
@@ -40,7 +40,24 @@
   ],
   "rewrites": [
     {
-      "source": "/((?!api|_next/static|_next/image|favicon.ico|robots.txt|logo.svg|favicon.svg).*)",
+      "source": "/event/:id",
+      "has": [
+        {
+          "type": "header",
+          "key": "user-agent",
+          "value": ".*(facebookexternalhit|Facebot|Twitterbot|WhatsApp|Slackbot|Slack-ImgProxy|Discordbot|TelegramBot|LinkedInBot|Pinterest|redditbot|Embedly|Iframely|SkypeUriPreview|vkShare|W3C_Validator|Discourse|Mastodon|Nuzzel).*"
+        }
+      ],
+      "missing": [
+        {
+          "type": "query",
+          "key": "_ssr"
+        }
+      ],
+      "destination": "/api/event-og?id=:id"
+    },
+    {
+      "source": "/((?!api|_next/static|_next/image|favicon.ico|robots.txt|logo.svg|favicon.svg|og-default.png).*)",
       "destination": "/index.html"
     }
   ]

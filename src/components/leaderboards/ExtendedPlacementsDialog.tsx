@@ -11,8 +11,7 @@ import {
   useStandingsTicketHolders,
   useSubmitExtendedPlacements,
 } from '@/hooks/useEventStandings';
-
-const short = (a: string) => `${a.slice(0, 6)}...${a.slice(-6)}`;
+import { IdentityName } from '@/components/identity/IdentityName';
 
 interface Props {
   open: boolean;
@@ -100,8 +99,8 @@ export function ExtendedPlacementsDialog({ open, onOpenChange, eventId }: Props)
           <p className="py-4 text-sm text-muted-foreground">Loading ticket holders…</p>
         ) : !data || prizeFloor === 0 ? (
           <p className="py-4 text-sm text-muted-foreground">
-            Standings extend the declared prize winners. Create a prize pool and assign winners
-            first, then rank the remaining players here.
+            Ranking opens once prize winners are assigned. Assign winners first, then rank the
+            remaining ticket holders here.
           </p>
         ) : locked ? (
           <p className="py-4 text-sm text-muted-foreground">
@@ -111,7 +110,7 @@ export function ExtendedPlacementsDialog({ open, onOpenChange, eventId }: Props)
           <div className="space-y-4">
             <div>
               <div className="mb-2 text-sm font-medium">
-                Ranked (from #{prizeFloor + 1}, after {prizeFloor} prize placement{prizeFloor === 1 ? '' : 's'})
+                Ranked (starting at #{prizeFloor + 1})
               </div>
               {ranked.length === 0 ? (
                 <p className="rounded-md border border-dashed p-3 text-xs text-muted-foreground">
@@ -123,7 +122,7 @@ export function ExtendedPlacementsDialog({ open, onOpenChange, eventId }: Props)
                     {ranked.map((wallet, i) => (
                       <div key={wallet} className="flex items-center gap-2 rounded-md bg-slate-50 px-2 py-1.5 text-sm">
                         <span className="w-10 shrink-0 font-medium text-slate-600">#{prizeFloor + i + 1}</span>
-                        <span className="min-w-0 flex-1 truncate font-mono text-xs">{short(wallet)}</span>
+                        <IdentityName address={wallet} className="min-w-0 flex-1 truncate text-xs" />
                         <Button variant="ghost" size="icon" className="h-6 w-6" disabled={i === 0} onClick={() => move(i, -1)} aria-label="Move up">
                           <ArrowUp className="h-3.5 w-3.5" />
                         </Button>
@@ -161,7 +160,7 @@ export function ExtendedPlacementsDialog({ open, onOpenChange, eventId }: Props)
                   <div className="space-y-1 pr-2">
                     {unranked.map((h) => (
                       <div key={h.wallet} className="flex items-center gap-2 rounded-md px-2 py-1 text-sm">
-                        <span className="min-w-0 flex-1 truncate font-mono text-xs">{short(h.wallet)}</span>
+                        <IdentityName address={h.wallet} className="min-w-0 flex-1 truncate text-xs" />
                         <Button
                           variant="outline"
                           size="sm"

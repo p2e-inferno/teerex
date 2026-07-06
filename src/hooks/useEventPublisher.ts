@@ -354,6 +354,7 @@ export function useEventPublisher() {
         user.id,
         accessToken,
         serviceManagerAdded,
+        wallet.address ?? null,
         {
           startsAt,
           endsAt,

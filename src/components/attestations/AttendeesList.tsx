@@ -15,6 +15,7 @@ import {
   Clock,
   Award
 } from 'lucide-react';
+import { IdentityName } from '@/components/identity/IdentityName';
 
 interface Attendee {
   id: string;
@@ -110,10 +111,6 @@ export const AttendeesList: React.FC<AttendeesListProps> = ({
     }
   };
 
-  const formatAddress = (address: string) => {
-    return `${address.slice(0, 6)}...${address.slice(-4)}`;
-  };
-
   // No attendance schema means this event can't have verified attendees yet —
   // hide the card entirely rather than showing a misleading empty/loading state.
   if (!attendanceSchemaUid) return null;
@@ -189,7 +186,7 @@ export const AttendeesList: React.FC<AttendeesListProps> = ({
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2 mb-1 flex-wrap">
                   <span className="font-medium text-sm">
-                    {formatAddress(attendee.recipient)}
+                    <IdentityName address={attendee.recipient} />
                   </span>
                   <ReputationBadge score={attendee.reputation_score} size="sm" />
                 </div>

@@ -10,8 +10,8 @@ import { ShareButton } from '@/components/interactions/ShareButton';
 import { RichTextDisplay } from '@/components/ui/rich-text/RichTextDisplay';
 import { stripHtml } from '@/utils/textUtils';
 import { WaitlistDialog } from './WaitlistDialog';
-import { formatEventDateRange } from '@/utils/dateUtils';
-import { formatEventLocalDateTime, formatEventLocalTime } from '@/utils/eventTime';
+import { formatEventCompactDateRange } from '@/utils/dateUtils';
+import { formatEventLocalTimeRange } from '@/utils/eventTime';
 import { hasMethod, isFreeEvent } from '@/lib/events/paymentMethods';
 import { isEventRegistrationClosed } from '@/lib/events/registration';
 import {
@@ -32,6 +32,7 @@ interface EventCardProps {
   authenticated?: boolean;
   onConnectWallet?: () => void;
   isUserTicketOwner?: boolean;
+  aspectRatio?: 'square' | 'video';
 }
 
 export const EventCard: React.FC<EventCardProps> = ({
@@ -46,7 +47,8 @@ export const EventCard: React.FC<EventCardProps> = ({
   isTicketView = false,
   authenticated = false,
   onConnectWallet,
-  isUserTicketOwner = false
+  isUserTicketOwner = false,
+  aspectRatio = 'square'
 }) => {
   const [imgError, setImgError] = useState(false);
   const [waitlistDialogOpen, setWaitlistDialogOpen] = useState(false);
@@ -73,14 +75,7 @@ export const EventCard: React.FC<EventCardProps> = ({
     Date.now() >= new Date(event.refund_trigger_at).getTime()
   );
   const refundBadges = getRefundProtectionBadges(event.refund_status, refundBadgeAudience, managerReleased);
-  const eventDisplayTime = formatEventLocalTime(event.starts_at, event.time);
-  const isMultiDayEvent = Boolean(
-    event.date &&
-    event.end_date &&
-    event.date.toDateString() !== event.end_date.toDateString()
-  );
-  const startDateTimeLabel = formatEventLocalDateTime(event.starts_at);
-  const endDateTimeLabel = formatEventLocalDateTime(event.ends_at);
+  const eventDisplayTime = formatEventLocalTimeRange(event.starts_at, event.ends_at, event.time);
 
   const handleCardClick = () => {
     if (!isTicketView) {
@@ -166,7 +161,7 @@ export const EventCard: React.FC<EventCardProps> = ({
               </div>
             </ImageModal>
           ) : (
-            <div className="aspect-square rounded-t-lg overflow-hidden bg-gray-100">
+            <div className={`${aspectRatio === 'video' ? 'aspect-[16/9]' : 'aspect-square'} rounded-t-lg overflow-hidden bg-gray-100`}>
               <img
                 src={imageSrc}
                 alt={event.title}
@@ -186,8 +181,8 @@ export const EventCard: React.FC<EventCardProps> = ({
             </div>
           )
         ) : (
-          <div className="aspect-square rounded-t-lg bg-gradient-to-br from-blue-100 to-purple-100 flex items-center justify-center">
-            <Calendar className="w-12 h-12 text-gray-400" />
+          <div className={`${aspectRatio === 'video' ? 'aspect-[16/9] bg-gradient-to-br from-slate-50 via-slate-100/60 to-slate-200/40 border-b border-slate-100' : 'aspect-square bg-gradient-to-br from-blue-100 to-purple-100'} rounded-t-lg flex items-center justify-center`}>
+            <Calendar className={aspectRatio === 'video' ? 'w-8 h-8 text-slate-400/80 stroke-[1.5]' : 'w-12 h-12 text-gray-400'} />
           </div>
         )}
       </CardHeader>
@@ -230,64 +225,52 @@ export const EventCard: React.FC<EventCardProps> = ({
           />
         </div>
 
-        <div className="space-y-3 mb-4">
+        <div className="mb-4 space-y-3">
           {(event.date || event.time || event.location) && (
-            <div className="flex flex-col gap-2 text-sm text-gray-600">
+            <div className="space-y-2 text-sm text-gray-600">
               {event.date && (
-                isMultiDayEvent && startDateTimeLabel ? (
-                  <div className="flex items-start">
-                    <Calendar className="w-4 h-4 mr-2 mt-0.5 flex-shrink-0" />
-                    <div className="min-w-0 space-y-0.5">
-                      <div className="whitespace-nowrap font-medium text-gray-700">Starts: {startDateTimeLabel}</div>
-                      <div className="whitespace-nowrap text-gray-500">
-                        Ends: {endDateTimeLabel || formatEventDateRange({ startDate: event.date, endDate: event.end_date })}
-                      </div>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="flex items-center">
-                    <Calendar className="w-4 h-4 mr-2 flex-shrink-0" />
-                    <span className="whitespace-nowrap">{formatEventDateRange({ startDate: event.date, endDate: event.end_date })}</span>
-                  </div>
-                )
+                <div className="flex items-center gap-2">
+                  <Calendar className="h-4 w-4 shrink-0" />
+                  <span className="truncate whitespace-nowrap">
+                    {formatEventCompactDateRange({ startDate: event.date, endDate: event.end_date })}
+                  </span>
+                </div>
               )}
-              {(event.time || event.location) && (
-                <div className="flex flex-wrap items-center gap-4">
-                  {event.time && (
-                    <div className="flex items-center">
-                      <Clock className="w-4 h-4 mr-2 flex-shrink-0" />
-                      <span className="whitespace-nowrap">{eventDisplayTime}</span>
-                    </div>
+              {event.time && (
+                <div className="flex items-center gap-2">
+                  <Clock className="h-4 w-4 shrink-0" />
+                  <span className="truncate whitespace-nowrap">{eventDisplayTime}</span>
+                </div>
+              )}
+              {(event.event_type === 'virtual' || event.location) && (
+                <div className="flex items-center gap-2">
+                  {event.event_type === 'virtual' ? (
+                    <>
+                      <Globe className="h-4 w-4 shrink-0" />
+                      <span className="truncate">Virtual Event</span>
+                    </>
+                  ) : (
+                    <>
+                      <MapPin className="h-4 w-4 shrink-0" />
+                      <span className="truncate">{event.location || 'Metaverse'}</span>
+                    </>
                   )}
-                  <div className="flex items-center min-w-0">
-                    {event.event_type === 'virtual' ? (
-                      <>
-                        <Globe className="w-4 h-4 mr-2 flex-shrink-0" />
-                        <span className="truncate">Virtual Event</span>
-                      </>
-                    ) : (
-                      <>
-                        <MapPin className="w-4 h-4 mr-2 flex-shrink-0" />
-                        <span className="truncate">{event.location || 'Metaverse'}</span>
-                      </>
-                    )}
-                  </div>
                 </div>
               )}
             </div>
           )}
 
-          <div className="flex items-center justify-between text-sm">
-            <div className="flex items-center text-gray-600">
-              <Users className="w-4 h-4 mr-2" />
-              <span>{keysSold}/{event.capacity} registered</span>
+          <div className="flex items-center justify-between gap-3 text-sm">
+            <div className="flex min-w-0 items-center gap-2 text-gray-600">
+              <Users className="h-4 w-4 shrink-0" />
+              <span className="truncate whitespace-nowrap">{keysSold}/{event.capacity} registered</span>
             </div>
             {isSoldOut ? (
-              <Badge variant="destructive" className="text-xs">
+              <Badge variant="destructive" className="shrink-0 text-xs">
                 Sold Out
               </Badge>
             ) : spotsLeft <= 10 ? (
-              <Badge variant="outline" className="text-xs text-orange-600 border-orange-200">
+              <Badge variant="outline" className="shrink-0 text-xs text-orange-600 border-orange-200">
                 {spotsLeft} left
               </Badge>
             ) : null}

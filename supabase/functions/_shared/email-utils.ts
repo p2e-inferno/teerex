@@ -33,6 +33,7 @@ export interface EmailOptions {
   html?: string;
   tags?: string[];
   testMode?: boolean;
+  replyTo?: string;
 }
 
 export interface EmailResult {
@@ -47,7 +48,7 @@ export interface EmailResult {
  * @returns Result with ok status and messageId or error
  */
 export async function sendEmail(options: EmailOptions): Promise<EmailResult> {
-  const { to, subject, text, html, tags = [], testMode } = options;
+  const { to, subject, text, html, tags = [], testMode, replyTo } = options;
 
   // Validate email format
   if (!EMAIL_REGEX.test(to)) {
@@ -76,6 +77,10 @@ export async function sendEmail(options: EmailOptions): Promise<EmailResult> {
 
   if (html) {
     formData.append('html', html);
+  }
+
+  if (replyTo && EMAIL_REGEX.test(replyTo)) {
+    formData.append('h:Reply-To', replyTo);
   }
 
   // Add tags for filtering/analytics
@@ -663,5 +668,44 @@ export function getPostNotificationEmail(
     // Text version now includes the preview and the specific poster info
     text: `New update for ${eventTitle}.\n\n"${preview}"\n\nRead more: ${eventUrl}`,
     html: wrapHtmlContent(`New update for ${eventTitle}`, bodyHtml),
+  };
+}
+
+// Attendee-to-host message relayed from the event page. The sender's address is set as
+// Reply-To so the host can respond directly; escape the body to keep it injection-safe.
+export function getContactHostEmail(params: {
+  eventTitle: string;
+  eventUrl: string;
+  message: string;
+  senderName?: string | null;
+  senderEmail?: string | null;
+}) {
+  const { eventTitle, eventUrl, message, senderName, senderEmail } = params;
+  const escape = (s: string) =>
+    s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  const safeMessage = escape(message).replace(/\n/g, '<br>');
+  const from = senderName || senderEmail || 'An attendee';
+
+  const bodyHtml = `
+    <h1 style="margin: 0 0 16px; font-size: 24px; font-weight: 700; color: ${TEXT_COLOR}; text-align: center;">New message 📬</h1>
+    <p style="margin: 0 0 24px; font-size: 16px; color: ${TEXT_COLOR}; text-align: center;">
+      <strong>${escape(from)}</strong> sent you a message about <strong>${escape(eventTitle)}</strong>.
+    </p>
+    <div style="background-color: #F9FAFB; border-radius: 8px; padding: 24px; margin-bottom: 24px; text-align: left;">
+      <p style="margin: 0; font-size: 15px; line-height: 24px; color: ${TEXT_COLOR};">${safeMessage}</p>
+    </div>
+    ${senderEmail ? `<p style="margin: 0 0 24px; font-size: 14px; color: #6B7280; text-align: center;">Reply directly to this email to reach ${escape(senderEmail)}.</p>` : ''}
+    <div style="text-align: center; margin: 32px 0;">
+      <a href="${eventUrl}" style="background-color: ${BRAND_COLOR}; color: #ffffff; padding: 14px 32px; text-decoration: none; border-radius: 6px; font-weight: 600; font-size: 16px; display: inline-block;">
+        View Event
+      </a>
+    </div>
+  `;
+
+  const replyLine = senderEmail ? `\n\nReply to: ${senderEmail}` : '';
+  return {
+    subject: `Message about ${eventTitle}`,
+    text: `${from} sent you a message about ${eventTitle}:\n\n"${message}"${replyLine}\n\nView event: ${eventUrl}`,
+    html: wrapHtmlContent(`New message about ${eventTitle}`, bodyHtml),
   };
 }

@@ -17,6 +17,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { InputOTP, InputOTPGroup, InputOTPSlot } from '@/components/ui/input-otp';
 import { formatNairaFromKobo, formatUsdcFromMicro, nairaInputValueFromKobo, nairaToKobo, usdcFromMicro, usdcToMicro } from '@/lib/currency';
 import { formatERC20Balance } from '@/utils/balanceHelpers';
+import { IdentityName } from '@/components/identity/IdentityName';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   Dialog,
@@ -1027,7 +1028,9 @@ const AdminDgRedemption: React.FC = () => {
                                 <div>
                                   <div className="text-xs text-muted-foreground">Wallet</div>
                                   <div className="flex items-start gap-2">
-                                    <div className="break-all font-mono text-xs">{row.wallet_address}</div>
+                                    <div className="break-all text-xs" title={row.wallet_address}>
+                                      <IdentityName address={row.wallet_address} />
+                                    </div>
                                     <ActionButton label="Copy wallet address" size="icon" variant="ghost" className="h-7 w-7 shrink-0" onClick={() => copyValue('Wallet address', row.wallet_address)}>
                                       <Copy className="h-3.5 w-3.5" />
                                     </ActionButton>
@@ -1049,7 +1052,11 @@ const AdminDgRedemption: React.FC = () => {
                                     <div>
                                       <div className="text-xs text-muted-foreground">Payout destination</div>
                                       <div className="flex items-start gap-2">
-                                        <div className="break-all font-mono text-xs">{row.payout_wallet_address || 'Unavailable'}</div>
+                                        <div className="break-all text-xs" title={row.payout_wallet_address || undefined}>
+                                          {row.payout_wallet_address ? (
+                                            <IdentityName address={row.payout_wallet_address} />
+                                          ) : 'Unavailable'}
+                                        </div>
                                         {row.payout_wallet_address && (
                                           <ActionButton label="Copy payout destination" size="icon" variant="ghost" className="h-7 w-7 shrink-0" onClick={() => copyValue('Payout destination', row.payout_wallet_address)}>
                                             <Copy className="h-3.5 w-3.5" />

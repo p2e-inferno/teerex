@@ -8,7 +8,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { shortAddress } from './types';
+import { IdentityName } from '@/components/identity/IdentityName';
 
 interface UsdcDestinationSelectProps {
   value: string;
@@ -49,13 +49,13 @@ export const UsdcDestinationSelect: React.FC<UsdcDestinationSelectProps> = ({
           }}
           disabled={disabled}
         >
-          <SelectTrigger className="mt-1 h-8 font-mono text-xs">
+          <SelectTrigger className="mt-1 h-8 text-xs">
             <SelectValue placeholder="Choose a linked wallet" />
           </SelectTrigger>
           <SelectContent>
             {linkedAddresses.map((address) => (
-              <SelectItem key={address} value={address} className="font-mono text-xs">
-                {shortAddress(address)}
+              <SelectItem key={address} value={address} className="text-xs">
+                <IdentityName address={address} />
                 {address === defaultAddress.toLowerCase() ? ' (active wallet)' : ''}
               </SelectItem>
             ))}
@@ -63,7 +63,7 @@ export const UsdcDestinationSelect: React.FC<UsdcDestinationSelectProps> = ({
         </Select>
       ) : (
         <div className="flex items-center justify-between gap-2">
-          <div className="font-mono font-medium">{shortAddress(selected)}</div>
+          <IdentityName address={selected} className="font-medium" />
           {canChange && (
             <Button
               type="button"

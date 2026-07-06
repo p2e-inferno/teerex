@@ -295,6 +295,7 @@ export const savePublishedEventViaEdge = async (
   creatorId: string,
   privyToken: string,
   serviceManagerAdded: boolean = false,
+  creatorAddress?: string | null,
   deploymentMeta?: {
     startsAt?: string | null;
     endsAt?: string | null;
@@ -356,6 +357,7 @@ export const savePublishedEventViaEdge = async (
       image_crop_y: formData.imageCropY || null,
       lock_address: lockAddress,
       transaction_hash: transactionHash,
+      creator_address: creatorAddress?.toLowerCase() ?? null,
       chain_id: (formData as any).chainId,
       service_manager_added: serviceManagerAdded,
       idempotency_hash: idempotencyHash,

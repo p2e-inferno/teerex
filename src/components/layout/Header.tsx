@@ -119,9 +119,9 @@ export const Header: React.FC = () => {
                         </Link>
                       </DropdownMenuItem>
                       <DropdownMenuItem asChild>
-                        <Link to="/my-circuits" className="flex items-center cursor-pointer py-2 px-2 hover:bg-gray-50 rounded-md transition-colors">
+                        <Link to="/my-series" className="flex items-center cursor-pointer py-2 px-2 hover:bg-gray-50 rounded-md transition-colors">
                           <Trophy className="h-4 w-4 mr-2 text-gray-500" />
-                          My Circuits
+                          My Series
                         </Link>
                       </DropdownMenuItem>
                     </DropdownMenuGroup>

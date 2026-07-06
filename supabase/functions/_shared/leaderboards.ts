@@ -3,7 +3,7 @@ import { epochToIso, type OnchainPosition } from "./reward-pools.ts";
 
 // Leaderboards domain helpers shared by the reward-pool ingestion hooks, the `leaderboards`
 // read function, and the finalize cron. Result rows never store points; boards persist derived
-// totals so read-heavy circuit pages do not aggregate on every request.
+// totals so read-heavy series pages do not aggregate on every request.
 
 export interface ScoringProfile {
   type?: string;

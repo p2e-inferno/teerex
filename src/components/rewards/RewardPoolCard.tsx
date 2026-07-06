@@ -21,6 +21,7 @@ import { cn } from '@/lib/utils';
 import { formatCountdownLabelFromMs } from '@/utils/dateUtils';
 import { useRewardPoolOnchainState } from '@/hooks/useRewardPoolOnchainState';
 import { useRewardControllerActions } from '@/hooks/useRewardControllerActions';
+import { IdentityName } from '@/components/identity/IdentityName';
 import { RewardPoolBadge } from './RewardPoolBadge';
 import { RewardDisputesList } from './RewardDisputesList';
 import { AssignWinnersDialog } from './AssignWinnersDialog';
@@ -31,7 +32,6 @@ import type {
   RewardPoolOnchainPosition,
 } from '@/types/rewardPool';
 
-const short = (a?: string | null) => (a ? `${a.slice(0, 6)}...${a.slice(-6)}` : '-');
 const fmtDate = (iso?: string | null) => (iso ? new Date(iso).toLocaleString() : '-');
 
 const isoToSecs = (iso?: string | null): number | null => {
@@ -460,14 +460,15 @@ export function RewardPoolCard({ pool, viewerAddress, isTicketHolder, eventEndsA
                   {winnerAddress ? (
                     <div className="space-y-1.5">
                       <div className="font-medium text-slate-600">#{p.placement} · {fmt(p.amountWei)}</div>
-                      {p.winnerAlias && (
-                        <div className="font-semibold text-slate-950 break-words">{p.winnerAlias}</div>
-                      )}
                       <div className={cn(
                         'flex flex-wrap items-center gap-2',
-                        p.winnerAlias ? 'font-mono text-xs text-slate-500' : 'text-slate-950',
+                        p.winnerAlias ? 'text-xs text-slate-500' : 'text-slate-950',
                       )}>
-                        <span className="font-medium">{short(winnerAddress)}</span>
+                        <IdentityName
+                          address={winnerAddress}
+                          displayName={p.winnerAlias}
+                          className="font-medium"
+                        />
                         <button
                           type="button"
                           onClick={() => copyWinnerAddress(winnerAddress)}

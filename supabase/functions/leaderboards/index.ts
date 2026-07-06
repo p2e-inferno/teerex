@@ -13,6 +13,7 @@ import {
   resolvePlayerIds,
   type ScoringProfile,
 } from "../_shared/leaderboards.ts";
+import { loadDisplayNames, validateDisplayName } from "../_shared/profiles.ts";
 
 function json(data: any, status = 200) {
   return new Response(JSON.stringify(data), {
@@ -69,23 +70,6 @@ async function loadScoringProfile(supabase: any, gameId: string | null) {
     .maybeSingle();
   if (!data) return { game: null, profile: DEFAULT_SCORING_PROFILE };
   return { game: data, profile: (data.scoring_profile ?? DEFAULT_SCORING_PROFILE) as ScoringProfile };
-}
-
-// Public player names only — app_user_profiles.email is PII and must never leave the server.
-// Chunked: a full 500-row board would otherwise put ~20KB of DIDs in one in() query string.
-async function loadDisplayNames(supabase: any, playerIds: string[]): Promise<Map<string, string>> {
-  const names = new Map<string, string>();
-  const unique = Array.from(new Set(playerIds)).filter(Boolean);
-  const chunkSize = 200;
-  for (let i = 0; i < unique.length; i += chunkSize) {
-    const { data } = await supabase
-      .from("app_user_profiles")
-      .select("privy_user_id, display_name")
-      .in("privy_user_id", unique.slice(i, i + chunkSize))
-      .not("display_name", "is", null);
-    for (const p of data ?? []) names.set(p.privy_user_id, p.display_name);
-  }
-  return names;
 }
 
 async function handleEventStandings(supabase: any, body: any) {
@@ -344,7 +328,7 @@ const BOARD_SELECT =
 
 const isIsoDate = (v: unknown) => typeof v === "string" && Number.isFinite(new Date(v).getTime());
 
-function parseCircuitFields(body: any): { fields: Record<string, unknown>; error?: string } {
+function parseSeriesFields(body: any): { fields: Record<string, unknown>; error?: string } {
   const fields: Record<string, unknown> = {};
 
   if (body.name !== undefined) {
@@ -377,7 +361,7 @@ function parseCircuitFields(body: any): { fields: Record<string, unknown>; error
   return { fields };
 }
 
-async function handleCircuits(supabase: any, body: any) {
+async function handleSeries(supabase: any, body: any) {
   let query = supabase
     .from("leaderboard_boards")
     .select(BOARD_SELECT)
@@ -390,10 +374,10 @@ async function handleCircuits(supabase: any, body: any) {
 
   const { data, error } = await query;
   if (error) return json({ ok: false, error: error.message }, 400);
-  return json({ ok: true, circuits: data ?? [] }, 200);
+  return json({ ok: true, series: data ?? [] }, 200);
 }
 
-async function handleCircuitStandings(supabase: any, body: any) {
+async function handleSeriesStandings(supabase: any, body: any) {
   const boardId = String(body.board_id || "").trim();
   if (!boardId) return json({ ok: false, error: "board_id_required" }, 400);
 
@@ -435,7 +419,7 @@ async function handleCircuitStandings(supabase: any, body: any) {
   }, 200);
 }
 
-async function handleMyCircuits(supabase: any, req: Request) {
+async function handleMySeries(supabase: any, req: Request) {
   const privyUserId = await verifyPrivyToken(req.headers.get("X-Privy-Authorization"));
 
   const { data, error } = await supabase
@@ -445,10 +429,10 @@ async function handleMyCircuits(supabase: any, req: Request) {
     .eq("organizer_id", privyUserId)
     .order("created_at", { ascending: false });
   if (error) return json({ ok: false, error: error.message }, 400);
-  return json({ ok: true, circuits: data ?? [] }, 200);
+  return json({ ok: true, series: data ?? [] }, 200);
 }
 
-async function handleCreateCircuit(supabase: any, req: Request, body: any) {
+async function handleCreateSeries(supabase: any, req: Request, body: any) {
   const privyUserId = await verifyPrivyToken(req.headers.get("X-Privy-Authorization"));
 
   const gameId = String(body.game_id || "").trim();
@@ -461,7 +445,7 @@ async function handleCreateCircuit(supabase: any, req: Request, body: any) {
     .maybeSingle();
   if (!game) return json({ ok: false, error: "game_not_found" }, 404);
 
-  const { fields, error: fieldErr } = parseCircuitFields(body);
+  const { fields, error: fieldErr } = parseSeriesFields(body);
   if (fieldErr) return json({ ok: false, error: fieldErr }, 400);
   if (!fields.name) return json({ ok: false, error: "invalid_name" }, 400);
 
@@ -472,7 +456,7 @@ async function handleCreateCircuit(supabase: any, req: Request, body: any) {
     .single();
   if (error) {
     const status = String(error.code) === "23505" ? 409 : 400;
-    const message = status === 409 ? "circuit_name_already_exists" : error.message;
+    const message = status === 409 ? "A series with this name already exists." : error.message;
     return json({ ok: false, error: message }, status);
   }
 
@@ -483,10 +467,10 @@ async function handleCreateCircuit(supabase: any, req: Request, body: any) {
     console.error(`[leaderboards] initial recompute failed for board ${board.id} (swallowed):`, err?.message || err);
   }
 
-  return json({ ok: true, circuit: board }, 200);
+  return json({ ok: true, series: board }, 200);
 }
 
-async function handleUpdateCircuit(supabase: any, req: Request, body: any) {
+async function handleUpdateSeries(supabase: any, req: Request, body: any) {
   const privyUserId = await verifyPrivyToken(req.headers.get("X-Privy-Authorization"));
 
   const boardId = String(body.board_id || "").trim();
@@ -501,10 +485,10 @@ async function handleUpdateCircuit(supabase: any, req: Request, body: any) {
     return json({ ok: false, error: "board_not_found" }, 404);
   }
   if (existing.organizer_id !== privyUserId) {
-    return json({ ok: false, error: "not_authorized_to_manage_circuit" }, 403);
+    return json({ ok: false, error: "You don't have permission to manage this series." }, 403);
   }
 
-  const { fields, error: fieldErr } = parseCircuitFields(body);
+  const { fields, error: fieldErr } = parseSeriesFields(body);
   if (fieldErr) return json({ ok: false, error: fieldErr }, 400);
   if (Object.keys(fields).length === 0) return json({ ok: false, error: "no_fields_to_update" }, 400);
 
@@ -516,7 +500,7 @@ async function handleUpdateCircuit(supabase: any, req: Request, body: any) {
     .single();
   if (error) {
     const status = String(error.code) === "23505" ? 409 : 400;
-    const message = status === 409 ? "circuit_name_already_exists" : error.message;
+    const message = status === 409 ? "A series with this name already exists." : error.message;
     return json({ ok: false, error: message }, status);
   }
 
@@ -532,7 +516,7 @@ async function handleUpdateCircuit(supabase: any, req: Request, body: any) {
     }
   }
 
-  return json({ ok: true, circuit: board }, 200);
+  return json({ ok: true, series: board }, 200);
 }
 
 async function handleMyDisplayName(supabase: any, req: Request) {
@@ -553,8 +537,9 @@ async function handleSetDisplayName(supabase: any, req: Request, body: any) {
 
   const raw = body.display_name;
   const displayName = raw == null ? null : String(raw).trim();
-  if (displayName !== null && (displayName.length < 2 || displayName.length > 40)) {
-    return json({ ok: false, error: "display_name_must_be_2_to_40_chars" }, 400);
+  const validationError = validateDisplayName(displayName);
+  if (validationError) {
+    return json({ ok: false, error: validationError }, 400);
   }
 
   const { error } = await supabase
@@ -563,7 +548,15 @@ async function handleSetDisplayName(supabase: any, req: Request, body: any) {
       { privy_user_id: privyUserId, display_name: displayName },
       { onConflict: "privy_user_id" },
     );
-  if (error) return json({ ok: false, error: error.message }, 400);
+  if (error) {
+    if (String(error.code) === "23505") {
+      return json({ ok: false, error: "display_name_taken" }, 409);
+    }
+    if (String(error.code) === "23514") {
+      return json({ ok: false, error: "display_name_invalid" }, 400);
+    }
+    return json({ ok: false, error: error.message }, 400);
+  }
 
   return json({ ok: true, display_name: displayName }, 200);
 }
@@ -591,16 +584,16 @@ serve(async (req) => {
         return await handleTicketHolders(supabase, req, body);
       case "submit-extended-placements":
         return await handleSubmitExtendedPlacements(supabase, req, body);
-      case "circuits":
-        return await handleCircuits(supabase, body);
-      case "circuit-standings":
-        return await handleCircuitStandings(supabase, body);
-      case "my-circuits":
-        return await handleMyCircuits(supabase, req);
-      case "create-circuit":
-        return await handleCreateCircuit(supabase, req, body);
-      case "update-circuit":
-        return await handleUpdateCircuit(supabase, req, body);
+      case "series":
+        return await handleSeries(supabase, body);
+      case "series-standings":
+        return await handleSeriesStandings(supabase, body);
+      case "my-series":
+        return await handleMySeries(supabase, req);
+      case "create-series":
+        return await handleCreateSeries(supabase, req, body);
+      case "update-series":
+        return await handleUpdateSeries(supabase, req, body);
       case "my-display-name":
         return await handleMyDisplayName(supabase, req);
       case "set-display-name":

@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { usePrivy } from '@privy-io/react-auth';
 import { callEdgeFunction } from '@/lib/edgeFunctions';
@@ -18,14 +19,21 @@ export type TelegramStartLinkResponse = {
 };
 
 const key = (organizerPrivyUserId?: string | null) => ['telegram-notifications', organizerPrivyUserId || null] as const;
+const POLL_INTERVAL_MS = 3_000;
+const LINK_POLL_WINDOW_MS = 5 * 60 * 1000;
 
 export function useTelegramNotifications(organizerPrivyUserId?: string | null) {
   const { authenticated, getAccessToken } = usePrivy();
   const queryClient = useQueryClient();
+  const [linkPollingUntil, setLinkPollingUntil] = useState<number | null>(null);
+
+  const shouldPollForLink = Boolean(linkPollingUntil && Date.now() < linkPollingUntil);
 
   const query = useQuery({
     queryKey: key(organizerPrivyUserId),
     enabled: authenticated,
+    refetchInterval: shouldPollForLink ? POLL_INTERVAL_MS : false,
+    refetchIntervalInBackground: true,
     queryFn: async () => {
       const token = await getAccessToken();
       return callEdgeFunction<TelegramNotificationStatus>(
@@ -39,7 +47,23 @@ export function useTelegramNotifications(organizerPrivyUserId?: string | null) {
     },
   });
 
-  const invalidate = () => queryClient.invalidateQueries({ queryKey: key(organizerPrivyUserId) });
+  const isPollingForLink = shouldPollForLink && query.data?.linked !== true;
+
+  const invalidate = () => queryClient.invalidateQueries({ queryKey: ['telegram-notifications'] });
+
+  useEffect(() => {
+    if (!linkPollingUntil) return;
+
+    const delay = Math.max(linkPollingUntil - Date.now(), 0);
+    const timeoutId = window.setTimeout(() => setLinkPollingUntil(null), delay);
+    return () => window.clearTimeout(timeoutId);
+  }, [linkPollingUntil]);
+
+  useEffect(() => {
+    if (query.data?.linked === true) {
+      setLinkPollingUntil(null);
+    }
+  }, [query.data?.linked]);
 
   const startLink = useMutation({
     mutationFn: async () => {
@@ -49,6 +73,15 @@ export function useTelegramNotifications(organizerPrivyUserId?: string | null) {
         { action: 'start_link' },
         { privyToken: token },
       );
+    },
+    onSuccess: (response) => {
+      const expiresAt = Date.parse(response.expires_at);
+      const pollUntil = Math.min(
+        Date.now() + LINK_POLL_WINDOW_MS,
+        Number.isFinite(expiresAt) ? expiresAt : Date.now() + LINK_POLL_WINDOW_MS,
+      );
+      setLinkPollingUntil(pollUntil);
+      void invalidate();
     },
   });
 
@@ -92,6 +125,7 @@ export function useTelegramNotifications(organizerPrivyUserId?: string | null) {
     status: query.data,
     isLoading: query.isLoading,
     isFetching: query.isFetching,
+    isPollingForLink,
     error: query.error,
     refresh: query.refetch,
     startLink,

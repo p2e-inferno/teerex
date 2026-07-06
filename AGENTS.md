@@ -37,6 +37,23 @@ Prefer focused verification for the files changed. If a broad command fails beca
 - Use existing hooks, helpers, config readers, and type definitions before adding parallel abstractions.
 - Generate explorer links through existing helpers such as `getExplorerTxUrl(chainId, txHash)`; do not hardcode Basescan URLs inline.
 
+## Wallet Identity Display
+
+User-facing wallet identities must use the shared identity primitives instead of local `shortAddress`, `formatAddress`, or `displayName || address` fallbacks.
+
+- Use `IdentityName` from `src/components/identity/IdentityName.tsx` in React UI when showing a person/player/host/attendee/manager/reporter wallet.
+- Use `useIdentityLabel` from `src/hooks/useIdentityLabel.ts` when a component needs the resolved label as a string, for example avatar initials or conditional layout.
+- Use `resolveIdentityLabel` and `shortAddress` from `src/lib/identity.ts` for pure non-React formatting.
+- The required priority is: ENS reverse name first, app `display_name` second, shortened wallet address last.
+- Pass both `address` and any available `displayName` into the shared primitive. Do not pre-resolve the fallback in feature code.
+- Public `display_name` values are unique handles and must stay protected by both edge validation and database constraints for uniqueness and reserved names.
+- Keep contract addresses, lock addresses, transaction hashes, and explorer-only technical identifiers as explicit hex displays; ENS identity formatting is for people-facing wallets.
+
+Example:
+```tsx
+<IdentityName address={row.wallet_address} displayName={row.display_name} />
+```
+
 ## Calling Edge Functions from the Frontend
 
 **Always use `callEdgeFunction` from `src/lib/edgeFunctions.ts`. Never call `supabase.functions.invoke` directly from components or hooks.**

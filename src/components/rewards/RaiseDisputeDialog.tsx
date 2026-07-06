@@ -44,7 +44,7 @@ export function RaiseDisputeDialog({ open, onOpenChange, placement, defaultCateg
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Raise a dispute</DialogTitle>
+          <DialogTitle>{isStandings ? 'Report a ranking issue' : 'Raise a dispute'}</DialogTitle>
           <DialogDescription>
             {placement ? `Disputing placement #${placement}. ` : ''}
             {isStandings
@@ -93,7 +93,7 @@ export function RaiseDisputeDialog({ open, onOpenChange, placement, defaultCateg
         <DialogFooter>
           <Button variant="ghost" onClick={() => onOpenChange(false)} disabled={busy}>Cancel</Button>
           <Button onClick={() => onSubmit({ category, reasonText, holdDurationSecs: isStandings ? 0 : Number(holdDurationSecs) })} disabled={busy}>
-            {busy ? 'Submitting…' : 'Submit dispute'}
+            {busy ? 'Submitting…' : isStandings ? 'Submit report' : 'Submit dispute'}
           </Button>
         </DialogFooter>
       </DialogContent>

@@ -17,6 +17,7 @@ import Drafts from "./pages/Drafts";
 import Profile from "./pages/Profile";
 import EventDetails from "./pages/EventDetails";
 import EventDiscussions from "./pages/EventDiscussions";
+import HostProfile from "./pages/HostProfile";
 import Admin from "./pages/Admin";
 import AdminDashboard from "./pages/AdminDashboard";
 import AdminEvents from "./pages/AdminEvents";
@@ -29,6 +30,7 @@ import AdminPayoutAccounts from "./pages/AdminPayoutAccounts";
 import AdminDgRedemption from "./pages/AdminDgRedemption";
 import AdminTicketPassOrders from "./pages/AdminTicketPassOrders";
 import AdminRewardDisputes from "./pages/AdminRewardDisputes";
+import AdminEventReports from "./pages/AdminEventReports";
 import AdminGames from "./pages/AdminGames";
 import AdminRoute from "./components/routes/AdminRoute";
 import VendorRoute from "./components/routes/VendorRoute";
@@ -42,8 +44,8 @@ import GamingBundleDetails from "./pages/GamingBundleDetails";
 import GamingBundleClaim from "./pages/GamingBundleClaim";
 import GamingBundles from "./pages/GamingBundles";
 import VendorGamingBundleOrders from "./pages/VendorGamingBundleOrders";
-import MyCircuits from "./pages/MyCircuits";
-import CircuitStandings from "./pages/CircuitStandings";
+import MySeries from "./pages/MySeries";
+import SeriesStandings from "./pages/SeriesStandings";
 import TicketPasses from "./pages/TicketPasses";
 import TicketPassDetails from "./pages/TicketPassDetails";
 import MyTicketPasses from "./pages/MyTicketPasses";
@@ -87,6 +89,7 @@ const App = () => {
                 <Route path="/admin/dg-redemption" element={<AdminRoute><AdminDgRedemption /></AdminRoute>} />
                 <Route path="/admin/ticket-pass-orders" element={<AdminRoute><AdminTicketPassOrders /></AdminRoute>} />
                 <Route path="/admin/reward-disputes" element={<AdminRoute><AdminRewardDisputes /></AdminRoute>} />
+                <Route path="/admin/event-reports" element={<AdminRoute><AdminEventReports /></AdminRoute>} />
                 <Route path="/admin/vendor-lock" element={<AdminRoute><AdminVendorLock /></AdminRoute>} />
                 <Route path="/admin/games" element={<AdminRoute><AdminGames /></AdminRoute>} />
                 <Route path="/become-vendor" element={<BecomeVendor />} />
@@ -99,10 +102,11 @@ const App = () => {
                 <Route path="/vendor/bundles-orders" element={<VendorRoute><VendorGamingBundleOrders /></VendorRoute>} />
                 <Route path="/gaming-bundles/claim" element={<GamingBundleClaim />} />
                 <Route path="/gaming-bundles/:id" element={<GamingBundleDetails />} />
-                <Route path="/my-circuits" element={<MyCircuits />} />
-                <Route path="/circuits/:boardId" element={<CircuitStandings />} />
+                <Route path="/my-series" element={<MySeries />} />
+                <Route path="/series/:boardId" element={<SeriesStandings />} />
                 <Route path="/event/:id" element={<EventDetails />} />
                 <Route path="/event/:id/discussions" element={<EventDiscussions />} />
+                <Route path="/host/:address" element={<HostProfile />} />
                 {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
                 <Route path="*" element={<NotFound />} />
               </Routes>

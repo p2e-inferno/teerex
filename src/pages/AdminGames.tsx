@@ -11,6 +11,8 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, Di
 import { toast } from '@/hooks/use-toast';
 import { Loader2, Plus, Edit, Gamepad2, RefreshCw, RotateCcw, Search, ShieldOff, Wrench } from 'lucide-react';
 import { usePrivy } from '@privy-io/react-auth';
+import { IdentityName } from '@/components/identity/IdentityName';
+import { shortAddress } from '@/lib/identity';
 import type { ScoringProfile } from '@/hooks/useGames';
 
 interface AdminGame {
@@ -113,11 +115,9 @@ const previewPoints = (form: GameFormData): string => {
     parts.push(`${p}th ${Math.max(form.curveFloor, form.curveFrom - (p - 4) * form.curveStep)}`);
   }
   parts.push('…');
-  parts.push(`participants ${form.participation}`);
+  parts.push(`Participated ${form.participation}`);
   return parts.join(' · ');
 };
-
-const shortAddress = (address: string) => `${address.slice(0, 6)}...${address.slice(-4)}`;
 
 const AdminGames: React.FC = () => {
   const { user, getAccessToken } = usePrivy();
@@ -328,7 +328,7 @@ const AdminGames: React.FC = () => {
     } catch (error: unknown) {
       toast({
         title: 'Operation failed',
-        description: error instanceof Error ? error.message : 'There was an error running this leaderboard operation.',
+        description: error instanceof Error ? error.message : 'There was an error running this standings operation.',
         variant: 'destructive',
       });
     } finally {
@@ -336,11 +336,11 @@ const AdminGames: React.FC = () => {
     }
   };
 
-  const recomputeAll = () => runAdminOperation('recompute-all', { route: 'recompute' }, 'Leaderboards recomputed');
+  const recomputeAll = () => runAdminOperation('recompute-all', { route: 'recompute' }, 'Standings recomputed');
   const recomputeOneBoard = () => {
     const trimmed = boardId.trim();
     if (!trimmed) {
-      toast({ title: 'Board ID required', description: 'Enter the leaderboard board ID to recompute.', variant: 'destructive' });
+      toast({ title: 'Board ID required', description: 'Enter a standings board ID to recompute.', variant: 'destructive' });
       return;
     }
     void runAdminOperation('recompute-board', { route: 'recompute-board', board_id: trimmed }, 'Board recomputed');
@@ -463,7 +463,7 @@ const AdminGames: React.FC = () => {
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="standard">Standard tournament</SelectItem>
-                      <SelectItem value="battle_royale">Battle royale (shallow decay)</SelectItem>
+                      <SelectItem value="battle_royale">Battle royale (points reach further down the field)</SelectItem>
                       <SelectItem value="winner_takes_most">Winner takes most</SelectItem>
                     </SelectContent>
                   </Select>
@@ -549,7 +549,7 @@ const AdminGames: React.FC = () => {
         <Card className="mb-8 border-0 shadow-lg bg-card/80">
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-lg">
-              <Wrench className="h-5 w-5 text-primary" /> Leaderboard operations
+              <Wrench className="h-5 w-5 text-primary" /> Standings operations
             </CardTitle>
             <CardDescription>
               Recompute materialized boards or correct a specific result row without leaving the games catalog.
@@ -558,13 +558,16 @@ const AdminGames: React.FC = () => {
           <CardContent className="grid gap-5 lg:grid-cols-2">
             <div className="space-y-3">
               <div className="space-y-1">
-                <Label htmlFor="board-id">Board ID</Label>
+                <Label htmlFor="board-id">Standings board ID</Label>
                 <Input
                   id="board-id"
                   value={boardId}
                   onChange={(event) => setBoardId(event.target.value)}
-                  placeholder="Optional board UUID"
+                  placeholder="e.g. a Series's ID"
                 />
+                <p className="text-xs text-muted-foreground">
+                  Recomputes one aggregated board (like a Series), not a single event — copy the ID from that board&apos;s own page URL.
+                </p>
               </div>
               <div className="flex flex-wrap gap-2">
                 <Button
@@ -635,11 +638,10 @@ const AdminGames: React.FC = () => {
                   </div>
 
                   {eventResults.results.length === 0 ? (
-                    <p className="text-sm text-muted-foreground">No leaderboard results have been recorded for this event yet.</p>
+                    <p className="text-sm text-muted-foreground">No results have been recorded for this event yet.</p>
                   ) : (
                     <div className="space-y-2">
                       {eventResults.results.map((row) => {
-                        const displayName = row.label || shortAddress(row.wallet_address);
                         const isVoided = row.status === 'voided';
                         return (
                           <div key={row.id} className="rounded-md border bg-background p-3">
@@ -653,7 +655,9 @@ const AdminGames: React.FC = () => {
                                   <Badge variant="outline">{row.source.replace('_', ' ')}</Badge>
                                   <Badge variant="outline">{row.result_kind}</Badge>
                                 </div>
-                                <p className="truncate text-sm">{displayName}</p>
+                                <p className="truncate text-sm">
+                                  <IdentityName address={row.wallet_address} displayName={row.label} />
+                                </p>
                                 <p className="font-mono text-xs text-muted-foreground">{shortAddress(row.wallet_address)}</p>
                                 {row.void_reason && (
                                   <p className="text-xs text-destructive">{row.void_reason}</p>
@@ -736,7 +740,7 @@ const AdminGames: React.FC = () => {
                     {(() => {
                       const podium = game.scoring_profile?.podium || {};
                       const participation = game.scoring_profile?.participation ?? 0;
-                      return `1st ${podium['1'] ?? '—'} · 2nd ${podium['2'] ?? '—'} · 3rd ${podium['3'] ?? '—'} · participants ${participation}`;
+                      return `1st ${podium['1'] ?? '—'} · 2nd ${podium['2'] ?? '—'} · 3rd ${podium['3'] ?? '—'} · Participated ${participation}`;
                     })()}
                   </p>
 

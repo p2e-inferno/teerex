@@ -13,9 +13,10 @@ import { PlayerNameCard } from '@/components/profile/PlayerNameCard';
 import { TelegramNotificationsCard } from '@/components/profile/TelegramNotificationsCard';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
-import { Loader2, User } from 'lucide-react';
+import { Loader2, User, Wallet, Settings } from 'lucide-react';
 import { usePrivy } from '@privy-io/react-auth';
 import { NetworkSelector } from '@/components/profile/NetworkSelector';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 
 /**
  * Profile page - User wallet identity, token balances, and transfers
@@ -128,86 +129,102 @@ const Profile: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-slate-100 dark:from-slate-950 dark:via-slate-900 dark:to-slate-950">
-      <div className="container mx-auto px-4 sm:px-6 py-8 sm:py-12">
+      <div className="container mx-auto px-4 sm:px-6 py-8 sm:py-12 max-w-7xl">
 
         {/* Page Header */}
         <div className="mb-8">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-6">
-            <div className="flex items-center gap-4">
-              <div className="p-3 rounded-2xl bg-gradient-to-br from-violet-500 to-purple-600 shadow-xl shadow-violet-500/20">
-                <User className="h-7 w-7 text-white" />
-              </div>
-              <div>
-                <h1 className="text-2xl sm:text-3xl font-bold text-slate-900 dark:text-white">
-                  My Profile
-                </h1>
-                <p className="text-slate-500 mt-1">
-                  Manage your wallet, view balances, send tokens, and redeem DG
-                </p>
-              </div>
+          <div className="flex items-center gap-4">
+            <div className="p-3 rounded-2xl bg-gradient-to-br from-violet-500 to-purple-600 shadow-xl shadow-violet-500/20">
+              <User className="h-7 w-7 text-white" />
             </div>
-          </div>
-
-          <div className="mt-8">
-            <NetworkSelector
-              selectedChainId={selectedChainId}
-              onSelectChain={setSelectedChainId}
-            />
+            <div>
+              <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-slate-900 dark:text-white">
+                My Profile
+              </h1>
+              <p className="text-slate-500 mt-1">
+                Manage your wallet, view balances, send tokens, and redeem DG
+              </p>
+            </div>
           </div>
         </div>
 
-        {/* Main Content */}
-        <div className="space-y-6 sm:space-y-8">
-          {/* Top Section - 3-Column Grid */}
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 lg:gap-8 lg:items-start">
-            {/* Left Column - Wallet Identity */}
-            <div className="flex flex-col h-full">
-              <WalletIdentityCard
-                address={primaryAddress}
-                walletType={walletType as 'embedded' | 'connected'}
-                allAddresses={allAddresses}
-                chainId={primaryChainId}
+        {/* Tabs Control */}
+        <Tabs defaultValue="portfolio" className="space-y-8">
+          <TabsList className="bg-slate-100/80 dark:bg-slate-800/80 p-1 rounded-xl h-11 border border-slate-200/40 dark:border-slate-700/40">
+            <TabsTrigger value="portfolio" className="rounded-lg px-4 py-2 text-sm font-semibold flex items-center gap-2 transition-all duration-200 data-[state=active]:bg-white dark:data-[state=active]:bg-slate-950 data-[state=active]:shadow-sm">
+              <Wallet className="h-4 w-4" />
+              Wallet & Tokens
+            </TabsTrigger>
+            <TabsTrigger value="settings" className="rounded-lg px-4 py-2 text-sm font-semibold flex items-center gap-2 transition-all duration-200 data-[state=active]:bg-white dark:data-[state=active]:bg-slate-950 data-[state=active]:shadow-sm">
+              <Settings className="h-4 w-4" />
+              Account Settings
+            </TabsTrigger>
+          </TabsList>
+
+          <TabsContent value="portfolio" className="space-y-6 focus-visible:outline-none">
+            {/* Network Selector Row */}
+            <div className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800/50 rounded-2xl p-4 shadow-sm">
+              <NetworkSelector
+                selectedChainId={selectedChainId}
+                onSelectChain={setSelectedChainId}
               />
             </div>
 
-            {/* Middle Column - Token Balances */}
-            <div className="flex flex-col h-full">
-              <TokenBalancesCard
-                address={primaryAddress}
-                selectedChain={selectedChainId}
-              />
+            {/* Top Section - 3-Column Grid */}
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 lg:gap-8 lg:items-start">
+              {/* Left Column - Wallet Identity */}
+              <div className="flex flex-col h-full">
+                <WalletIdentityCard
+                  address={primaryAddress}
+                  walletType={walletType as 'embedded' | 'connected'}
+                  allAddresses={allAddresses}
+                  chainId={primaryChainId}
+                />
+              </div>
+
+              {/* Middle Column - Token Balances */}
+              <div className="flex flex-col h-full">
+                <TokenBalancesCard
+                  address={primaryAddress}
+                  selectedChain={selectedChainId}
+                />
+              </div>
+
+              {/* Right Column - Send Tokens */}
+              <div className="flex flex-col h-full">
+                <TransferTokenCard
+                  address={primaryAddress}
+                  chainId={selectedChainId}
+                />
+              </div>
             </div>
 
-            {/* Right Column - Send Tokens */}
-            <div className="flex flex-col h-full">
-              <TransferTokenCard
-                address={primaryAddress}
-                chainId={selectedChainId}
-              />
+            {/* DG Redemption Card */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 lg:gap-8">
+              <div className="flex flex-col h-full">
+                <DgRedemptionCard address={primaryAddress} chainId={selectedChainId} />
+              </div>
             </div>
-          </div>
 
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 lg:gap-8 lg:items-start">
-            <div id="bank-details" className="flex flex-col h-full scroll-mt-24">
-              <UserPayoutAccountCard />
-            </div>
-            <div className="flex flex-col h-full">
-              <DgRedemptionCard address={primaryAddress} chainId={selectedChainId} />
-            </div>
-          </div>
+            {/* Bottom Section - Full-Width Transaction History */}
+            <TransactionHistoryCard address={primaryAddress} chainId={selectedChainId} />
+          </TabsContent>
 
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 lg:gap-8 lg:items-start">
-            <div className="flex flex-col h-full">
-              <PlayerNameCard />
-            </div>
-            <div className="flex flex-col h-full">
-              <TelegramNotificationsCard />
-            </div>
-          </div>
+          <TabsContent value="settings" className="space-y-6 focus-visible:outline-none">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 lg:gap-8 lg:items-start">
+              {/* Left Column: Player Name & Telegram Notifications */}
+              <div className="space-y-6 lg:space-y-8 flex flex-col h-full">
+                <PlayerNameCard />
+                <TelegramNotificationsCard />
+              </div>
 
-          {/* Bottom Section - Full-Width Transaction History */}
-          <TransactionHistoryCard address={primaryAddress} chainId={selectedChainId} />
-        </div>
+              {/* Right Column: Bank Details */}
+              <div id="bank-details" className="flex flex-col h-full scroll-mt-24">
+                <UserPayoutAccountCard />
+              </div>
+            </div>
+          </TabsContent>
+        </Tabs>
       </div>
     </div>
   );

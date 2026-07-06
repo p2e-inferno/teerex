@@ -37,25 +37,40 @@ export type Database = {
       app_user_profiles: {
         Row: {
           created_at: string
+          display_name: string | null
           email: string | null
           primary_wallet_address: string | null
           privy_user_id: string
+          telegram_chat_id: number | null
+          telegram_disabled_at: string | null
+          telegram_linked_at: string | null
+          telegram_notifications_enabled: boolean
           updated_at: string
           wallet_addresses: string[]
         }
         Insert: {
           created_at?: string
+          display_name?: string | null
           email?: string | null
           primary_wallet_address?: string | null
           privy_user_id: string
+          telegram_chat_id?: number | null
+          telegram_disabled_at?: string | null
+          telegram_linked_at?: string | null
+          telegram_notifications_enabled?: boolean
           updated_at?: string
           wallet_addresses?: string[]
         }
         Update: {
           created_at?: string
+          display_name?: string | null
           email?: string | null
           primary_wallet_address?: string | null
           privy_user_id?: string
+          telegram_chat_id?: number | null
+          telegram_disabled_at?: string | null
+          telegram_linked_at?: string | null
+          telegram_notifications_enabled?: boolean
           updated_at?: string
           wallet_addresses?: string[]
         }
@@ -883,6 +898,44 @@ export type Database = {
           },
         ]
       }
+      event_host_contact_messages: {
+        Row: {
+          created_at: string
+          event_id: string | null
+          id: string
+          message: string
+          sender_email: string | null
+          sender_id: string
+          sender_wallet: string | null
+        }
+        Insert: {
+          created_at?: string
+          event_id?: string | null
+          id?: string
+          message: string
+          sender_email?: string | null
+          sender_id: string
+          sender_wallet?: string | null
+        }
+        Update: {
+          created_at?: string
+          event_id?: string | null
+          id?: string
+          message?: string
+          sender_email?: string | null
+          sender_id?: string
+          sender_wallet?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "event_host_contact_messages_event_id_fkey"
+            columns: ["event_id"]
+            isOneToOne: false
+            referencedRelation: "events"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       event_managers: {
         Row: {
           added_by: string
@@ -1065,6 +1118,59 @@ export type Database = {
           },
         ]
       }
+      event_reports: {
+        Row: {
+          created_at: string
+          details: string | null
+          event_id: string | null
+          id: string
+          reason: string
+          reporter_id: string
+          reporter_wallet: string | null
+          resolution_note: string | null
+          resolved_at: string | null
+          resolved_by: string | null
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          details?: string | null
+          event_id?: string | null
+          id?: string
+          reason: string
+          reporter_id: string
+          reporter_wallet?: string | null
+          resolution_note?: string | null
+          resolved_at?: string | null
+          resolved_by?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          details?: string | null
+          event_id?: string | null
+          id?: string
+          reason?: string
+          reporter_id?: string
+          reporter_wallet?: string | null
+          resolution_note?: string | null
+          resolved_at?: string | null
+          resolved_by?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "event_reports_event_id_fkey"
+            columns: ["event_id"]
+            isOneToOne: false
+            referencedRelation: "events"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       event_waitlist: {
         Row: {
           confirmation_sent: boolean | null
@@ -1115,6 +1221,7 @@ export type Database = {
           category: string
           chain_id: number
           created_at: string
+          creator_address: string | null
           creator_id: string
           currency: string
           custom_duration_days: number | null
@@ -1173,6 +1280,7 @@ export type Database = {
           category: string
           chain_id?: number
           created_at?: string
+          creator_address?: string | null
           creator_id: string
           currency?: string
           custom_duration_days?: number | null
@@ -1231,6 +1339,7 @@ export type Database = {
           category?: string
           chain_id?: number
           created_at?: string
+          creator_address?: string | null
           creator_id?: string
           currency?: string
           custom_duration_days?: number | null
@@ -2035,6 +2144,118 @@ export type Database = {
           },
         ]
       }
+      leaderboard_boards: {
+        Row: {
+          created_at: string
+          ends_at: string | null
+          game_id: string
+          id: string
+          is_active: boolean
+          last_recomputed_at: string | null
+          metadata: Json
+          name: string
+          organizer_id: string | null
+          scope: string
+          scoring_profile: Json | null
+          season_label: string | null
+          starts_at: string | null
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          ends_at?: string | null
+          game_id: string
+          id?: string
+          is_active?: boolean
+          last_recomputed_at?: string | null
+          metadata?: Json
+          name: string
+          organizer_id?: string | null
+          scope?: string
+          scoring_profile?: Json | null
+          season_label?: string | null
+          starts_at?: string | null
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          ends_at?: string | null
+          game_id?: string
+          id?: string
+          is_active?: boolean
+          last_recomputed_at?: string | null
+          metadata?: Json
+          name?: string
+          organizer_id?: string | null
+          scope?: string
+          scoring_profile?: Json | null
+          season_label?: string | null
+          starts_at?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "leaderboard_boards_game_id_fkey"
+            columns: ["game_id"]
+            isOneToOne: false
+            referencedRelation: "games"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      leaderboard_standings: {
+        Row: {
+          board_id: string
+          computed_at: string
+          created_at: string
+          events_played: number
+          id: string
+          player_id: string | null
+          player_key: string
+          points: number
+          rank: number
+          updated_at: string
+          wallet_address: string | null
+          wins: number
+        }
+        Insert: {
+          board_id: string
+          computed_at?: string
+          created_at?: string
+          events_played?: number
+          id?: string
+          player_id?: string | null
+          player_key: string
+          points?: number
+          rank: number
+          updated_at?: string
+          wallet_address?: string | null
+          wins?: number
+        }
+        Update: {
+          board_id?: string
+          computed_at?: string
+          created_at?: string
+          events_played?: number
+          id?: string
+          player_id?: string | null
+          player_key?: string
+          points?: number
+          rank?: number
+          updated_at?: string
+          wallet_address?: string | null
+          wins?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "leaderboard_standings_board_id_fkey"
+            columns: ["board_id"]
+            isOneToOne: false
+            referencedRelation: "leaderboard_boards"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       network_configs: {
         Row: {
           block_explorer_url: string | null
@@ -2618,6 +2839,167 @@ export type Database = {
           total_funded_wei?: string
           tx_hash?: string | null
           updated_at?: string
+        }
+        Relationships: []
+      }
+      social_link_conflict_attempts: {
+        Row: {
+          account_key: string
+          attempted_privy_user_id: string
+          bound_privy_user_id: string | null
+          created_at: string
+          id: string
+          provider: string
+          source: string
+        }
+        Insert: {
+          account_key: string
+          attempted_privy_user_id: string
+          bound_privy_user_id?: string | null
+          created_at?: string
+          id?: string
+          provider: string
+          source?: string
+        }
+        Update: {
+          account_key?: string
+          attempted_privy_user_id?: string
+          bound_privy_user_id?: string | null
+          created_at?: string
+          id?: string
+          provider?: string
+          source?: string
+        }
+        Relationships: []
+      }
+      social_link_map: {
+        Row: {
+          account_key: string
+          created_at: string
+          privy_user_id: string
+          provider: string
+          released_at: string | null
+          released_by: string | null
+          source: string
+          updated_at: string
+        }
+        Insert: {
+          account_key: string
+          created_at?: string
+          privy_user_id: string
+          provider: string
+          released_at?: string | null
+          released_by?: string | null
+          source?: string
+          updated_at?: string
+        }
+        Update: {
+          account_key?: string
+          created_at?: string
+          privy_user_id?: string
+          provider?: string
+          released_at?: string | null
+          released_by?: string | null
+          source?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      telegram_activation_tokens: {
+        Row: {
+          created_at: string
+          expires_at: string
+          id: string
+          privy_user_id: string
+          token: string
+          used_at: string | null
+        }
+        Insert: {
+          created_at?: string
+          expires_at: string
+          id?: string
+          privy_user_id: string
+          token: string
+          used_at?: string | null
+        }
+        Update: {
+          created_at?: string
+          expires_at?: string
+          id?: string
+          privy_user_id?: string
+          token?: string
+          used_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "telegram_activation_tokens_privy_user_id_fkey"
+            columns: ["privy_user_id"]
+            isOneToOne: false
+            referencedRelation: "app_user_profiles"
+            referencedColumns: ["privy_user_id"]
+          },
+        ]
+      }
+      telegram_notification_deliveries: {
+        Row: {
+          chat_id: number
+          created_at: string
+          error: string | null
+          id: string
+          notification_key: string
+          recipient_privy_user_id: string | null
+          sent_at: string | null
+          status: string
+          type: string
+          updated_at: string
+        }
+        Insert: {
+          chat_id: number
+          created_at?: string
+          error?: string | null
+          id?: string
+          notification_key: string
+          recipient_privy_user_id?: string | null
+          sent_at?: string | null
+          status?: string
+          type: string
+          updated_at?: string
+        }
+        Update: {
+          chat_id?: number
+          created_at?: string
+          error?: string | null
+          id?: string
+          notification_key?: string
+          recipient_privy_user_id?: string | null
+          sent_at?: string | null
+          status?: string
+          type?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      telegram_organizer_subscriptions: {
+        Row: {
+          created_at: string
+          id: string
+          organizer_privy_user_id: string
+          subscriber_privy_user_id: string
+          unsubscribed_at: string | null
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          organizer_privy_user_id: string
+          subscriber_privy_user_id: string
+          unsubscribed_at?: string | null
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          organizer_privy_user_id?: string
+          subscriber_privy_user_id?: string
+          unsubscribed_at?: string | null
         }
         Relationships: []
       }
@@ -3442,6 +3824,19 @@ export type Database = {
         Args: { p_schema_uid: string; p_user_id: string }
         Returns: Record<string, unknown>
       }
+      claim_social_link: {
+        Args: {
+          p_account_key: string
+          p_privy_user_id: string
+          p_provider: string
+          p_source?: string
+        }
+        Returns: {
+          bound_privy_user_id: string
+          claimed: boolean
+          conflict: boolean
+        }[]
+      }
       create_dg_redemption_intent: {
         Args: {
           p_amount_dg_raw: string
@@ -3599,6 +3994,18 @@ export type Database = {
       }
       get_waitlist_count: { Args: { p_event_id: string }; Returns: number }
       ingest_reward_pool_results: { Args: { p_rows: Json }; Returns: number }
+      release_social_link: {
+        Args: {
+          p_account_key: string
+          p_provider: string
+          p_released_by: string
+        }
+        Returns: boolean
+      }
+      replace_board_standings: {
+        Args: { p_board_id: string; p_rows: Json }
+        Returns: number
+      }
       replace_user_payout_account: {
         Args: {
           p_account_holder_name: string

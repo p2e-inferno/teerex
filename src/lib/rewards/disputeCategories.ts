@@ -5,7 +5,7 @@ export const REWARD_DISPUTE_CATEGORY_LABELS: Record<RewardDisputeCategory, strin
   rules_breach: 'Rules breach',
   collusion: 'Suspected collusion',
   not_paid: "Couldn't claim",
-  standings: 'Standings / ranking issue',
+  standings: 'Ranking issue',
   other: 'Other',
 };
 
