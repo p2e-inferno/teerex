@@ -14,6 +14,7 @@ import { formatEventDate } from '../_shared/date-utils.ts';
 import { appendDivviTagToCalldataAsync, submitDivviReferralBestEffort } from '../_shared/divvi.ts';
 import { isLockFreeOnchain } from '../_shared/unlock.ts';
 import { getEventPurchaseMessageSnapshot } from '../_shared/purchase-message.ts';
+import { notifyTicketIssuedTelegram } from '../_shared/telegram-dispatch.ts';
 import {
   getPublishedPurchaseFormSchema,
   validatePurchaseFormResponse,
@@ -337,6 +338,16 @@ serve(async (req) => {
             purchaseMessageSnapshot
           );
 
+          if (isNew) {
+            notifyTicketIssuedTelegram(supabase, {
+              eventId: event_id,
+              ownerWallet: normalizedRecipient,
+              txHash: ticket.grant_tx_hash,
+            }).catch((err) => {
+              console.error('[gasless-purchase] Failed to trigger Telegram ticket notification:', err?.message || err);
+            });
+          }
+
           return new Response(
             JSON.stringify({
               ok: true,
@@ -377,6 +388,14 @@ serve(async (req) => {
     if (ticketInsertError) {
       console.error('Failed to persist ticket after successful on-chain purchase:', ticketInsertError);
       dbSyncStatus = 'partial';
+    } else {
+      notifyTicketIssuedTelegram(supabase, {
+        eventId: event_id,
+        ownerWallet: normalizedRecipient,
+        txHash: receipt.transactionHash,
+      }).catch((err) => {
+        console.error('[gasless-purchase] Failed to trigger Telegram ticket notification:', err?.message || err);
+      });
     }
 
     const dbOperations = await Promise.allSettled([
