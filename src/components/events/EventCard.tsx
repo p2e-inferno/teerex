@@ -40,7 +40,7 @@ export const EventCard: React.FC<EventCardProps> = ({
   onViewDetails,
   onEdit,
   onManage,
-  keysSold = 0,
+  keysSold,
   actionType,
   showActions = true,
   showShareButton = false,
@@ -62,7 +62,8 @@ export const EventCard: React.FC<EventCardProps> = ({
     return `${event.image_url}${sep}t=${ts}`;
   }, [event.image_url, eventUpdatedAt]);
   const navigate = useNavigate();
-  const spotsLeft = event.capacity - keysSold;
+  const resolvedKeysSold = keysSold ?? event.keys_sold ?? 0;
+  const spotsLeft = event.capacity - resolvedKeysSold;
   const isSoldOut = spotsLeft <= 0;
   const refundBadgeAudience = (onEdit || onManage) ? 'creator' : 'public';
   const managerReleased = Boolean(event.refund_manager_released || event.refund_status === 'released');
@@ -263,7 +264,7 @@ export const EventCard: React.FC<EventCardProps> = ({
           <div className="flex items-center justify-between gap-3 text-sm">
             <div className="flex min-w-0 items-center gap-2 text-gray-600">
               <Users className="h-4 w-4 shrink-0" />
-              <span className="truncate whitespace-nowrap">{keysSold}/{event.capacity} registered</span>
+              <span className="truncate whitespace-nowrap">{resolvedKeysSold}/{event.capacity} registered</span>
             </div>
             {isSoldOut ? (
               <Badge variant="destructive" className="shrink-0 text-xs">

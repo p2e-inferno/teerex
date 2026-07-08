@@ -57,7 +57,7 @@
       "destination": "/api/event-og?id=:id"
     },
     {
-      "source": "/((?!api|_next/static|_next/image|favicon.ico|robots.txt|logo.svg|favicon.svg|og-default.png).*)",
+      "source": "/((?!api|_next/static|_next/image|favicon.ico|favicon-32.png|apple-touch-icon.png|robots.txt|logo.svg|favicon.svg|og-default.png).*)",
       "destination": "/index.html"
     }
   ]

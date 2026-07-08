@@ -10,6 +10,7 @@ import { formatEventDate } from "../_shared/date-utils.ts";
 import { validateChain } from "../_shared/network-helpers.ts";
 import { appendDivviTagToCalldataAsync, submitDivviReferralBestEffort } from "../_shared/divvi.ts";
 import { getEventPurchaseMessageSnapshot } from "../_shared/purchase-message.ts";
+import { notifyTicketIssuedTelegram } from "../_shared/telegram-dispatch.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -146,10 +147,20 @@ serve(async (req) => {
     });
 
     let dbSyncStatus = 'complete';
+    if (!ticketInsertError) {
+      notifyTicketIssuedTelegram(supabase, {
+        eventId: event.id,
+        ownerWallet: recipient.toLowerCase(),
+        reference: transactionReference,
+        txHash: receipt.transactionHash,
+      }).catch((err) => {
+        console.error('[paystack-grant-keys] Failed to trigger Telegram ticket notification:', err?.message || err);
+      });
+    }
     if (ticketInsertError) {
       console.error('Failed to persist ticket after successful on-chain purchase:', ticketInsertError);
       dbSyncStatus = 'partial';
-      
+
       // Store purchase_message_snapshot into paystack_transactions.gateway_response as fallback
       if (purchaseMessageSnapshot) {
         const updatedGatewayResponse = {

@@ -24,11 +24,12 @@ const escapeHtml = (value: string): string =>
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#39;');
 
-function renderPreview(o: { title: string; description: string; image: string; url: string }): string {
+function renderPreview(o: { title: string; description: string; image: string; url: string; origin: string }): string {
   const t = escapeHtml(o.title);
   const d = escapeHtml(o.description);
   const img = escapeHtml(o.image);
   const u = escapeHtml(o.url);
+  const base = escapeHtml(o.origin);
   // Social crawlers stop at these <head> tags (they do not run JS). A real browser wrongly
   // matched by the crawler UA rule runs this redirect and recovers into the SPA; the _ssr
   // marker makes vercel.json skip this function on the second hit, so there is no loop.
@@ -50,9 +51,10 @@ function renderPreview(o: { title: string; description: string; image: string; u
 <meta name="twitter:description" content="${d}" />
 <meta name="twitter:image" content="${img}" />
 <link rel="canonical" href="${u}" />
-<link rel="icon" href="/favicon.ico" sizes="any" />
-<link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-<link rel="apple-touch-icon" href="/favicon.ico" />
+<link rel="icon" href="${base}/favicon.ico" sizes="any" />
+<link rel="icon" type="image/png" sizes="32x32" href="${base}/favicon-32.png" />
+<link rel="icon" type="image/svg+xml" href="${base}/favicon.svg" />
+<link rel="apple-touch-icon" href="${base}/apple-touch-icon.png" />
 <script>location.replace(${redirect})</script>
 </head>
 <body>
@@ -94,6 +96,7 @@ async function handler(req: Request): Promise<Response> {
         description: DEFAULT_DESC,
         image: `${origin}/og-default.png`,
         url: id ? `${origin}/event/${id}` : origin,
+        origin,
       }),
       'public, max-age=0, s-maxage=60',
     );
@@ -122,6 +125,7 @@ async function handler(req: Request): Promise<Response> {
         description: event.description,
         image,
         url: `${origin}/event/${id}`,
+        origin,
       }),
       'public, max-age=0, s-maxage=300, stale-while-revalidate=600',
     );

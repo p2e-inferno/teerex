@@ -102,4 +102,5 @@ export interface PublishedEvent {
   refund_last_tx_hash?: string | null;
   refund_last_synced_at?: string | null;
   game_id?: string | null;
+  keys_sold?: number;
 }

@@ -77,6 +77,32 @@ async function countPublicEventsByCreator(supabase: any, creatorId: string): Pro
   return count ?? 0;
 }
 
+async function attachActiveTicketCounts(supabase: any, events: any[]): Promise<{ events: any[]; error: any | null }> {
+  const eventIds = Array.from(new Set((events ?? []).map((event) => String(event.id || "")).filter(Boolean)));
+  if (eventIds.length === 0) return { events: events ?? [], error: null };
+
+  const { data, error } = await supabase
+    .from("tickets")
+    .select("event_id")
+    .in("event_id", eventIds)
+    .eq("status", "active");
+  if (error) return { events, error };
+
+  const counts = new Map<string, number>(eventIds.map((id) => [id, 0]));
+  for (const ticket of data ?? []) {
+    const eventId = String(ticket.event_id || "");
+    if (eventId) counts.set(eventId, (counts.get(eventId) ?? 0) + 1);
+  }
+
+  return {
+    events: (events ?? []).map((event) => ({
+      ...event,
+      keys_sold: counts.get(String(event.id)) ?? 0,
+    })),
+    error: null,
+  };
+}
+
 // Best-effort resolution of holder wallets to public display names via their primary wallet.
 async function loadNamesByWallet(supabase: any, wallets: string[]): Promise<Map<string, string>> {
   const byWallet = new Map<string, string>();
@@ -172,9 +198,12 @@ async function handleOtherEvents(supabase: any, body: any) {
   if (error) return json({ ok: false, error: error.message }, 400);
 
   const totalCount = count ?? (events?.length || 0);
+  const counted = await attachActiveTicketCounts(supabase, events ?? []);
+  if (counted.error) return json({ ok: false, error: counted.error.message }, 400);
+
   return json({
     ok: true,
-    events: events ?? [],
+    events: counted.events,
     total_count: totalCount,
     has_more: offset + (events?.length || 0) < totalCount,
   }, 200);
@@ -207,6 +236,9 @@ async function handleProfile(supabase: any, body: any) {
   ]);
   if (error) return json({ ok: false, error: error.message }, 400);
 
+  const counted = await attachActiveTicketCounts(supabase, events ?? []);
+  if (counted.error) return json({ ok: false, error: counted.error.message }, 400);
+
   return json({
     ok: true,
     host: {
@@ -214,7 +246,7 @@ async function handleProfile(supabase: any, body: any) {
       creator_address: address,
       hosted_public_count: hostedCount,
     },
-    events: events ?? [],
+    events: counted.events,
   }, 200);
 }
 
