@@ -340,7 +340,7 @@ serve(async (req) => {
         amount: Number(intent.net_payout_kobo),
         recipient: payoutAccount.provider_recipient_code,
         reference,
-        reason: "Redeem DG reward",
+        reason: "Event participant payout",
         currency: "NGN",
       });
       const updated = await updateLockedIntent(
