@@ -1,3 +1,4 @@
+import { useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -6,12 +7,15 @@ import { EventCard } from '@/components/events/EventCard';
 import { useHostProfile } from '@/hooks/useEventHost';
 import { useIdentityLabel } from '@/hooks/useIdentityLabel';
 import { initialsFrom } from '@/lib/avatar';
+import { useMultiEventTicketRealtime } from '@/hooks/useMultiEventTicketRealtime';
 
 export default function HostProfile() {
   const { address } = useParams<{ address: string }>();
   const navigate = useNavigate();
   const { data, isLoading, isError } = useHostProfile(address);
   const host = data?.host;
+  const events = useMemo(() => data?.events ?? [], [data?.events]);
+  const { keysSoldMap } = useMultiEventTicketRealtime(events);
   const displayAddress = host?.creator_address || address || '';
   const identityLabel = useIdentityLabel({
     address: displayAddress,
@@ -51,7 +55,7 @@ export default function HostProfile() {
     );
   }
 
-  const { host: loadedHost, events } = data;
+  const { host: loadedHost } = data;
   const name = identityLabel.label;
 
   return (
@@ -79,7 +83,12 @@ export default function HostProfile() {
       ) : (
         <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
           {events.map((event) => (
-            <EventCard key={event.id} event={event} onViewDetails={(ev) => navigate(`/event/${ev.id}`)} />
+            <EventCard
+              key={event.id}
+              event={event}
+              keysSold={keysSoldMap[event.id]}
+              onViewDetails={(ev) => navigate(`/event/${ev.id}`)}
+            />
           ))}
         </div>
       )}

@@ -43,6 +43,10 @@ enabled = true
   # Public reads: host attribution, ticket-holder social proof, and host event discovery.
   verify_jwt = false
 
+[functions.public-events]
+  # Public event discovery; only explicit public fields are returned.
+  verify_jwt = false
+
 [functions.get-public-event-og]
   # Crawler-facing preview metadata; called server-side by api/event-og.ts without a user session.
   verify_jwt = false

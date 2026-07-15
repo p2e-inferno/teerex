@@ -1,9 +1,7 @@
-import { supabase } from '@/integrations/supabase/client';
-import { fetchKeysSoldForEvents } from '@/lib/home/homeData';
-import { mapEventRow, MappedEvent } from '@/lib/events/eventMapping';
-import type { PublishedEvent } from '@/types/event';
+import type { MappedEvent } from '@/lib/events/eventMapping';
+import { fetchPublicEvents, type PublicEventSort } from '@/lib/events/publicEvents';
 
-export type SortBy = 'upcoming' | 'newest' | 'price-asc' | 'price-desc' | 'date-desc';
+export type SortBy = PublicEventSort;
 
 export interface ExploreFilters {
   query?: string;
@@ -23,82 +21,19 @@ export interface ExplorePageResult {
 export async function fetchEventsPage(
   page: number,
   pageSize: number,
-  filters: ExploreFilters = {},
-  opts: { publicOnly?: boolean } = { publicOnly: true }
+  filters: ExploreFilters = {}
 ): Promise<ExplorePageResult> {
-  const from = (page - 1) * pageSize;
-  const to = from + pageSize - 1;
+  const result = await fetchPublicEvents({
+    query: filters.query,
+    category: filters.category,
+    isFree: filters.isFree,
+    dateFrom: filters.dateFrom,
+    dateTo: filters.dateTo,
+    sort: filters.sortBy,
+    upcomingOnly: filters.sortBy === 'upcoming',
+    limit: pageSize,
+    offset: (page - 1) * pageSize,
+  });
 
-  let query = supabase
-    .from('events')
-    .select('*', { count: 'exact' });
-
-  if (opts.publicOnly !== false) {
-    query = query.eq('is_public', true);
-  }
-
-  // Server-side search across multiple columns
-  if (filters.query && filters.query.trim() !== '') {
-    const q = `%${filters.query.trim()}%`;
-    query = query.or(
-      `title.ilike.${q},description.ilike.${q},location.ilike.${q},category.ilike.${q}`
-    );
-  }
-
-  if (filters.category && filters.category.trim() !== '') {
-    query = query.eq('category', filters.category.trim());
-  }
-
-  if (filters.isFree === true) {
-    query = query.contains('payment_methods', ['free']);
-  } else if (filters.isFree === false) {
-    query = query.not('payment_methods', 'cs', '{free}');
-  }
-
-  if (filters.dateFrom) {
-    query = query.gte('date', filters.dateFrom.toISOString());
-  }
-  if (filters.dateTo) {
-    query = query.lte('date', filters.dateTo.toISOString());
-  }
-
-  // Sorting
-  switch (filters.sortBy) {
-    case 'newest':
-      query = query.order('created_at', { ascending: false });
-      break;
-    case 'price-asc':
-      query = query.order('price', { ascending: true });
-      break;
-    case 'price-desc':
-      query = query.order('price', { ascending: false });
-      break;
-    case 'upcoming':
-      // Upcoming by date asc, nulls last so undated events don't dominate
-      query = query.order('date', { ascending: true, nullsFirst: false });
-      break;
-    case 'date-desc':
-    default:
-      // Most recent event dates first (no default date filter)
-      query = query.order('date', { ascending: false, nullsFirst: false });
-      break;
-  }
-
-  query = query.range(from, to);
-
-  const { data, error, count } = await query;
-  if (error) {
-    console.error('Error fetching events page:', error);
-    return { events: [], totalCount: 0, hasMore: false };
-  }
-
-  const events = (data || []).map(mapEventRow);
-  const totalCount = count ?? events.length;
-  const hasMore = to + 1 < totalCount;
-
-  return { events, totalCount, hasMore };
-}
-
-export async function fetchKeysForPage(events: PublishedEvent[]): Promise<Record<string, number>> {
-  return fetchKeysSoldForEvents(events);
+  return { events: result.events, totalCount: result.totalCount, hasMore: result.hasMore };
 }

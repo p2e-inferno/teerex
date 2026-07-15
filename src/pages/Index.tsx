@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, useRef } from "react";
+import { useEffect, useState, useRef } from "react";
 import { usePrivy } from "@privy-io/react-auth";
 import { GetStartedSteps } from "@/components/GetStartedSteps";
 import { Button } from "@/components/ui/button";
@@ -13,57 +13,59 @@ import { Badge } from "@/components/ui/badge";
 import { Shield, Users, Zap, ArrowRight, Calendar, MapPin, Clock } from "lucide-react";
 import { Link } from "react-router-dom";
 import { format } from "date-fns";
-import { getPublicEvents } from "@/utils/eventUtils";
 import type { PublishedEvent } from "@/types/event";
-import {
-  selectFeaturedEvents,
-  selectUpcomingEvents,
-  fetchKeysSoldForEvents,
-  computeHomeStats,
-  getTotalTicketsSold,
-} from "@/lib/home/homeData";
+import { fetchKeysSoldForEvents, selectFeaturedEvents, type HomeStats } from "@/lib/home/homeData";
+import { fetchPublicEvents } from "@/lib/events/publicEvents";
+import { resolveEventStart } from "@/utils/eventTime";
 import MetaTags from "@/components/MetaTags";
 import { isFreeEvent } from "@/lib/events/paymentMethods";
+
+const formatEventStartDate = (event: PublishedEvent) => {
+  const start = resolveEventStart(event);
+  return start ? format(start.value, 'MMM d, yyyy') : 'TBA';
+};
 
 const Index = () => {
   const { authenticated, ready } = usePrivy();
   const [isLoading, setIsLoading] = useState(true);
-  const [events, setEvents] = useState<PublishedEvent[]>([]);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [reloadKey, setReloadKey] = useState(0);
   const [featured, setFeatured] = useState<PublishedEvent[]>([]);
   const [currentSlide, setCurrentSlide] = useState(0);
   const [upcoming, setUpcoming] = useState<PublishedEvent[]>([]);
   const [keysSold, setKeysSold] = useState<Record<string, number>>({});
-  const [totalTickets, setTotalTickets] = useState(0);
+  const [stats, setStats] = useState<HomeStats>({ eventsCount: 0, ticketsSold: 0, creatorCount: 0, chainsCount: 0 });
   const [isCarouselHovered, setIsCarouselHovered] = useState(false);
   const carouselTimerRef = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
     let mounted = true;
     (async () => {
+      setIsLoading(true);
+      setLoadError(null);
       try {
-        // Fetch public events only (UI-level gating)
-        const all = await getPublicEvents();
+        const [featuredUpcoming, featuredRecent, upcomingResult] = await Promise.all([
+          fetchPublicEvents({ sort: 'upcoming', upcomingOnly: true, hasImage: true, limit: 3, includeStats: true }),
+          fetchPublicEvents({ sort: 'date-desc', hasImage: true, limit: 3 }),
+          fetchPublicEvents({ sort: 'upcoming', upcomingOnly: true, limit: 3 }),
+        ]);
         if (!mounted) return;
-        setEvents(all);
 
-        // Select featured and upcoming events for display
-        const feat = selectFeaturedEvents(all, 3);
-        const upc = selectUpcomingEvents(all, 3);
-        setFeatured(feat);
-        setUpcoming(upc);
-
-        // Fetch per-event ticket counts for featured/upcoming cards
-        const subset = [...feat, ...upc].filter(Boolean) as PublishedEvent[];
-        const sold = await fetchKeysSoldForEvents(subset);
+        const featuredCandidates = Array.from(new Map(
+          [...featuredUpcoming.events, ...featuredRecent.events].map((event) => [event.id, event]),
+        ).values());
+        const nextFeatured = selectFeaturedEvents(featuredCandidates, 3);
+        const visibleEvents = [...nextFeatured, ...upcomingResult.events];
+        const nextKeysSold = await fetchKeysSoldForEvents(visibleEvents);
         if (!mounted) return;
-        setKeysSold(sold);
 
-        // Fetch total platform-wide ticket count for stats
-        const total = await getTotalTicketsSold();
-        if (!mounted) return;
-        setTotalTickets(total);
+        setFeatured(nextFeatured);
+        setUpcoming(upcomingResult.events);
+        setKeysSold(nextKeysSold);
+        if (featuredUpcoming.stats) setStats(featuredUpcoming.stats);
       } catch (e) {
         console.error("Error loading home data:", e);
+        if (mounted) setLoadError(e instanceof Error ? e.message : 'Could not load events.');
       } finally {
         if (mounted) setIsLoading(false);
       }
@@ -71,7 +73,7 @@ const Index = () => {
     return () => {
       mounted = false;
     };
-  }, []);
+  }, [reloadKey]);
 
   // Auto-cycling carousel logic with hover pause
   useEffect(() => {
@@ -115,8 +117,6 @@ const Index = () => {
       }, 5000);
     }
   };
-
-  const stats = useMemo(() => computeHomeStats(events, totalTickets), [events, totalTickets]);
 
   if (!ready) {
     return (
@@ -208,12 +208,10 @@ const Index = () => {
                                 {event.title}
                               </h3>
                               <div className="flex flex-wrap items-center gap-4 text-white/90">
-                                {event.date && (
-                                  <div className="flex items-center gap-2">
-                                    <Calendar className="w-4 h-4" />
-                                    <span>{format(event.date, 'MMM d, yyyy')}</span>
-                                  </div>
-                                )}
+                                <div className="flex items-center gap-2">
+                                  <Calendar className="w-4 h-4" />
+                                  <span>{formatEventStartDate(event)}</span>
+                                </div>
                                 <div className="flex items-center gap-2">
                                   <MapPin className="w-4 h-4" />
                                   <span>{event.location}</span>
@@ -383,7 +381,22 @@ const Index = () => {
           </div>
 
           <div className="space-y-4">
-            {upcoming.map((e) => (
+            {isLoading ? (
+              Array.from({ length: 3 }).map((_, index) => (
+                <div key={index} className="h-28 rounded-lg bg-white animate-pulse" />
+              ))
+            ) : loadError ? (
+              <Card className="border-0 shadow-sm bg-white">
+                <CardContent className="p-8 text-center">
+                  <p className="text-gray-700 mb-4">We couldn't load upcoming events.</p>
+                  <Button variant="outline" onClick={() => setReloadKey((value) => value + 1)}>Retry</Button>
+                </CardContent>
+              </Card>
+            ) : upcoming.length === 0 ? (
+              <Card className="border-0 shadow-sm bg-white">
+                <CardContent className="p-8 text-center text-gray-600">No upcoming events right now.</CardContent>
+              </Card>
+            ) : upcoming.map((e) => (
               <Link key={e.id} to={`/event/${e.lock_address}`} className="block group">
                 <Card className="border-0 shadow-sm hover:shadow-md transition-shadow duration-200 bg-white">
                   <CardContent className="p-6">
@@ -399,7 +412,7 @@ const Index = () => {
                           <div className="flex items-center gap-4 text-sm text-gray-600">
                             <div className="flex items-center gap-1">
                               <Clock className="w-4 h-4" />
-                              <span>{e.date ? format(e.date, 'MMM d, yyyy') : 'TBA'}</span>
+                              <span>{formatEventStartDate(e)}</span>
                             </div>
                             <div className="flex items-center gap-1">
                               <MapPin className="w-4 h-4" />

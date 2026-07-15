@@ -2,6 +2,34 @@ import { format, isSameDay } from 'date-fns';
 
 const DEFAULT_TIME_OPTIONS: Intl.DateTimeFormatOptions = { hour: '2-digit', minute: '2-digit' };
 
+export interface EventStartInput {
+  starts_at?: string | null;
+  date?: Date | string | null;
+}
+
+export interface ResolvedEventStart {
+  value: Date;
+  precision: 'timestamp' | 'day';
+}
+
+export function resolveEventStart(event: EventStartInput): ResolvedEventStart | null {
+  const startsAt = parseValidDate(event.starts_at);
+  if (startsAt) return { value: startsAt, precision: 'timestamp' };
+
+  const legacyDate = event.date instanceof Date ? event.date : parseValidDate(event.date);
+  if (!legacyDate || !Number.isFinite(legacyDate.getTime())) return null;
+  return { value: legacyDate, precision: 'day' };
+}
+
+export function isUpcomingEvent(event: EventStartInput, now: Date = new Date()): boolean {
+  const start = resolveEventStart(event);
+  if (!start) return false;
+  if (start.precision === 'timestamp') return start.value >= now;
+
+  return new Date(start.value.getFullYear(), start.value.getMonth(), start.value.getDate())
+    >= new Date(now.getFullYear(), now.getMonth(), now.getDate());
+}
+
 function formatDateOnlyFromUtcMs(utcMs: number): string {
   const dt = new Date(utcMs);
   const year = dt.getUTCFullYear();
