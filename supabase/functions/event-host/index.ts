@@ -4,6 +4,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.50.0";
 import { corsHeaders, buildPreflightHeaders } from "../_shared/cors.ts";
 import { SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY } from "../_shared/constants.ts";
 import { resolveDisplayName } from "../_shared/profiles.ts";
+import { PUBLIC_EVENT_SELECT } from "../_shared/public-events.ts";
 
 function json(data: any, status = 200) {
   return new Response(JSON.stringify(data), {
@@ -14,59 +15,6 @@ function json(data: any, status = 200) {
 
 const isAddr = (v: unknown) => typeof v === "string" && /^0x[a-fA-F0-9]{40}$/.test(v);
 const RECENT_HOLDER_LIMIT = 8;
-const PUBLIC_EVENT_SELECT = [
-  "id",
-  "title",
-  "description",
-  "date",
-  "end_date",
-  "starts_at",
-  "ends_at",
-  "registration_cutoff",
-  "time",
-  "location",
-  "event_type",
-  "capacity",
-  "price",
-  "currency",
-  "ngn_price",
-  "ngn_price_kobo",
-  "payment_methods",
-  "category",
-  "image_url",
-  "image_crop_x",
-  "image_crop_y",
-  "lock_address",
-  "transaction_hash",
-  "chain_id",
-  "created_at",
-  "updated_at",
-  "attestation_enabled",
-  "attendance_schema_uid",
-  "review_schema_uid",
-  "max_keys_per_address",
-  "transferable",
-  "requires_approval",
-  "service_manager_added",
-  "is_public",
-  "allow_waitlist",
-  "has_allow_list",
-  "nft_metadata_set",
-  "nft_base_uri",
-  "refund_protection_enabled",
-  "refund_min_attendees",
-  "refund_trigger_at",
-  "refund_event_end_at",
-  "refund_controller_address",
-  "refund_reserve_bond",
-  "refund_status",
-  "refund_manager_released",
-  "refund_manager_released_at",
-  "refund_last_tx_hash",
-  "refund_last_synced_at",
-  "game_id",
-  "creator_address",
-].join(", ");
 
 async function countPublicEventsByCreator(supabase: any, creatorId: string): Promise<number> {
   const { count } = await supabase
@@ -75,32 +23,6 @@ async function countPublicEventsByCreator(supabase: any, creatorId: string): Pro
     .eq("creator_id", creatorId)
     .eq("is_public", true);
   return count ?? 0;
-}
-
-async function attachActiveTicketCounts(supabase: any, events: any[]): Promise<{ events: any[]; error: any | null }> {
-  const eventIds = Array.from(new Set((events ?? []).map((event) => String(event.id || "")).filter(Boolean)));
-  if (eventIds.length === 0) return { events: events ?? [], error: null };
-
-  const { data, error } = await supabase
-    .from("tickets")
-    .select("event_id")
-    .in("event_id", eventIds)
-    .eq("status", "active");
-  if (error) return { events, error };
-
-  const counts = new Map<string, number>(eventIds.map((id) => [id, 0]));
-  for (const ticket of data ?? []) {
-    const eventId = String(ticket.event_id || "");
-    if (eventId) counts.set(eventId, (counts.get(eventId) ?? 0) + 1);
-  }
-
-  return {
-    events: (events ?? []).map((event) => ({
-      ...event,
-      keys_sold: counts.get(String(event.id)) ?? 0,
-    })),
-    error: null,
-  };
 }
 
 // Best-effort resolution of holder wallets to public display names via their primary wallet.
@@ -198,12 +120,9 @@ async function handleOtherEvents(supabase: any, body: any) {
   if (error) return json({ ok: false, error: error.message }, 400);
 
   const totalCount = count ?? (events?.length || 0);
-  const counted = await attachActiveTicketCounts(supabase, events ?? []);
-  if (counted.error) return json({ ok: false, error: counted.error.message }, 400);
-
   return json({
     ok: true,
-    events: counted.events,
+    events: events ?? [],
     total_count: totalCount,
     has_more: offset + (events?.length || 0) < totalCount,
   }, 200);
@@ -236,9 +155,6 @@ async function handleProfile(supabase: any, body: any) {
   ]);
   if (error) return json({ ok: false, error: error.message }, 400);
 
-  const counted = await attachActiveTicketCounts(supabase, events ?? []);
-  if (counted.error) return json({ ok: false, error: counted.error.message }, 400);
-
   return json({
     ok: true,
     host: {
@@ -246,7 +162,7 @@ async function handleProfile(supabase: any, body: any) {
       creator_address: address,
       hosted_public_count: hostedCount,
     },
-    events: counted.events,
+    events: events ?? [],
   }, 200);
 }
 

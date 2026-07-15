@@ -1,11 +1,8 @@
 import type { PublishedEvent } from '@/types/event';
+import { resolveEventStart } from '@/utils/eventTime';
 
 type RegistrationCheckInput = Pick<PublishedEvent, 'registration_cutoff' | 'starts_at' | 'date'>;
 export type RegistrationStatusReason = 'open' | 'cutoff_passed' | 'event_started' | 'legacy_date_passed';
-
-function startOfToday(now: Date): Date {
-  return new Date(now.getFullYear(), now.getMonth(), now.getDate());
-}
 
 /**
  * Checks if an event's registration is closed based on cutoff, start time, or (legacy) date.
@@ -33,14 +30,16 @@ export function getEventRegistrationStatus(
     }
     return { isClosed: true, reason: 'cutoff_passed' };
   }
-  if (event.starts_at) {
-    return now > new Date(event.starts_at)
+  const start = resolveEventStart(event);
+  if (start?.precision === 'timestamp') {
+    return now > start.value
       ? { isClosed: true, reason: 'event_started' }
       : { isClosed: false, reason: 'open' };
   }
-  if (event.date) {
-    // Legacy fallback: compare by local day to avoid same-day appearing closed
-    return new Date(event.date) < startOfToday(now)
+  if (start) {
+    const eventDay = new Date(start.value.getFullYear(), start.value.getMonth(), start.value.getDate());
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    return eventDay < today
       ? { isClosed: true, reason: 'legacy_date_passed' }
       : { isClosed: false, reason: 'open' };
   }

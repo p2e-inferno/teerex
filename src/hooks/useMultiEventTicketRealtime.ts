@@ -21,8 +21,7 @@ export function useMultiEventTicketRealtime(events: PublishedEvent[]) {
     }
 
     try {
-      const keys = await fetchKeysSoldForEvents(events);
-      setKeysSoldMap(keys);
+      setKeysSoldMap(await fetchKeysSoldForEvents(events));
     } catch (error) {
       console.error('Failed to fetch ticket counts:', error);
     } finally {
@@ -36,8 +35,8 @@ export function useMultiEventTicketRealtime(events: PublishedEvent[]) {
     if (!event) return;
 
     try {
-      const keys = await fetchKeysSoldForEvents([event]);
-      setKeysSoldMap(prev => ({ ...prev, ...keys }));
+      const refreshed = await fetchKeysSoldForEvents([event]);
+      setKeysSoldMap((prev) => ({ ...prev, ...refreshed }));
     } catch (error) {
       console.error(`Failed to refresh ticket count for event ${eventId}:`, error);
     }
@@ -70,13 +69,15 @@ export function useMultiEventTicketRealtime(events: PublishedEvent[]) {
           table: 'tickets',
         },
         (payload) => {
-          const ticketData = payload.new as any;
+          const ticketData = (Object.keys(payload.new ?? {}).length > 0 ? payload.new : payload.old) as any;
           const eventId = ticketData?.event_id;
 
           // Only refresh if this ticket belongs to one of our displayed events
           if (eventId && eventIds.includes(eventId)) {
             console.log(`[Realtime] Ticket change for event ${eventId}`);
             refreshEventTicketCount(eventId);
+          } else if (payload.eventType === 'DELETE') {
+            refreshAllTicketCounts();
           }
         }
       )
@@ -93,7 +94,7 @@ export function useMultiEventTicketRealtime(events: PublishedEvent[]) {
       console.log('[Realtime] Unsubscribing from multi-event tickets');
       channel.unsubscribe();
     };
-  }, [events, refreshEventTicketCount]);
+  }, [events, refreshAllTicketCounts, refreshEventTicketCount]);
 
   return {
     keysSoldMap,

@@ -1,9 +1,10 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Loader2 } from 'lucide-react';
 import { EventCard } from '@/components/events/EventCard';
 import { useHostOtherEventsInfinite } from '@/hooks/useEventHost';
 import { Skeleton } from '@/components/ui/skeleton';
+import { useMultiEventTicketRealtime } from '@/hooks/useMultiEventTicketRealtime';
 
 export function MoreFromHost({ eventId }: { eventId: string }) {
   const navigate = useNavigate();
@@ -14,6 +15,8 @@ export function MoreFromHost({ eventId }: { eventId: string }) {
     hasNextPage,
     fetchNextPage,
   } = useHostOtherEventsInfinite(eventId, 6);
+  const events = useMemo(() => data?.pages.flatMap((page) => page.events) ?? [], [data?.pages]);
+  const { keysSoldMap } = useMultiEventTicketRealtime(events);
 
   const observerRef = useRef<HTMLDivElement>(null);
 
@@ -59,8 +62,6 @@ export function MoreFromHost({ eventId }: { eventId: string }) {
     );
   }
 
-  const events = data?.pages.flatMap((page) => page.events) || [];
-
   if (events.length === 0) return null;
 
   return (
@@ -78,6 +79,7 @@ export function MoreFromHost({ eventId }: { eventId: string }) {
           <div key={event.id} className="flex-shrink-0 w-[290px] snap-start transition-all duration-300 hover:-translate-y-0.5">
             <EventCard
               event={event}
+              keysSold={keysSoldMap[event.id]}
               onViewDetails={(ev) => navigate(`/event/${ev.id}`)}
               showActions={false}
               aspectRatio="square"

@@ -429,7 +429,7 @@ serve(async (req) => {
         amount: Number(lockedIntent.net_payout_kobo),
         recipient: payoutAccount.provider_recipient_code,
         reference: lockedIntent.paystack_reference,
-        reason: "Redeem DG reward",
+        reason: "Event participant payout",
         currency: "NGN",
       });
       const transferValues = paystackTransferUpdateValues({ transfer: transfer.data, failedStatus: "manual_review" });

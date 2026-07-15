@@ -18,6 +18,7 @@ import { Loader2, CreditCard } from 'lucide-react';
 import type { TicketPass } from '@/types/ticketPass';
 import { formatFiatPrice, formatNetworkName, formatPassValidity, formatPayoutSummary } from '@/lib/ticketPass/display';
 import { useNetworkConfigs } from '@/hooks/useNetworkConfigs';
+import { getFiatCheckoutConfig } from '@/lib/payments/fiatCheckout';
 
 export interface TicketPassPaymentData {
   reference: string;
@@ -52,12 +53,9 @@ export const TicketPassPaystackDialog: React.FC<TicketPassPaystackDialogProps> =
   const [shouldLaunchPaystack, setShouldLaunchPaystack] = useState(false);
   const [amountKobo, setAmountKobo] = useState<number | null>(null);
 
-  const paystackPublicKey = (import.meta as any).env?.VITE_PAYSTACK_PUBLIC_KEY as string | undefined;
-  const fiatEnabled = useMemo(() => {
-    const raw = (import.meta as any).env?.VITE_ENABLE_FIAT;
-    if (raw === undefined || raw === null || raw === '') return false;
-    return String(raw).toLowerCase() === 'true';
-  }, []);
+  const fiatCheckout = useMemo(() => getFiatCheckoutConfig(), []);
+  const paystackPublicKey = fiatCheckout.publicKey;
+  const fiatEnabled = fiatCheckout.enabled;
 
   useEffect(() => {
     if (isOpen) return;
@@ -219,7 +217,7 @@ export const TicketPassPaystackDialog: React.FC<TicketPassPaystackDialogProps> =
 
         <DialogFooter className="gap-3 sm:gap-2">
           <Button variant="outline" onClick={onClose} disabled={isLoading} className="w-full sm:w-auto">Cancel</Button>
-          <Button onClick={handlePayment} disabled={isLoading || !fiatEnabled} className="w-full sm:w-32">
+          <Button onClick={handlePayment} disabled={isLoading || !fiatCheckout.available} className="w-full sm:w-32">
             {isLoading ? <Loader2 className="animate-spin" /> : 'Pay Now'}
           </Button>
         </DialogFooter>

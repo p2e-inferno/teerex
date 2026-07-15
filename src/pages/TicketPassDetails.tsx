@@ -21,6 +21,7 @@ import {
   formatPayoutSummary,
   TICKET_PASS_STATUS_BADGE,
 } from '@/lib/ticketPass/display';
+import { getFiatCheckoutConfig } from '@/lib/payments/fiatCheckout';
 
 const TicketPassDetails = () => {
   const { id } = useParams<{ id: string }>();
@@ -59,7 +60,9 @@ const TicketPassDetails = () => {
   const remaining = onchain ? Number(onchain.remaining) : null;
   const soldOut = remaining !== null && remaining <= 0;
   const buyerLimitReached = typeof buyerKeyBalance === 'number' && buyerKeyBalance >= pass.max_per_buyer;
-  const purchasable = authenticated && pass.status === 'ACTIVE' && pass.issuance_enabled && !soldOut && !buyerLimitReached && !isCheckingBuyerLimit;
+  const fiatCheckout = getFiatCheckoutConfig();
+  const purchasable = authenticated && fiatCheckout.available && pass.status === 'ACTIVE' && pass.issuance_enabled
+    && !soldOut && !buyerLimitReached && !isCheckingBuyerLimit;
 
   const onPaid = (data: TicketPassPaymentData) => {
     setPayOpen(false);
@@ -118,15 +121,19 @@ const TicketPassDetails = () => {
               <Button className="w-full" disabled>
                 {!authenticated
                   ? 'Sign in to buy'
-                  : isCheckingBuyerLimit
-                    ? 'Checking eligibility...'
-                    : buyerLimitReached
-                      ? 'Limit reached'
-                      : soldOut
-                        ? 'Sold out'
-                        : pass.status !== 'ACTIVE'
-                          ? 'Not available'
-                          : 'Issuance paused'}
+                  : !fiatCheckout.enabled
+                    ? 'Fiat payments disabled'
+                    : !fiatCheckout.configured
+                      ? 'Payment unavailable'
+                      : isCheckingBuyerLimit
+                        ? 'Checking eligibility...'
+                        : buyerLimitReached
+                          ? 'Limit reached'
+                          : soldOut
+                            ? 'Sold out'
+                            : pass.status !== 'ACTIVE'
+                              ? 'Not available'
+                              : 'Issuance paused'}
               </Button>
             )}
           </CardContent>

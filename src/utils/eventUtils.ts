@@ -186,26 +186,6 @@ export const getPublishedEvents = async (): Promise<MappedEvent[]> => {
   }
 };
 
-export const getPublicEvents = async (): Promise<MappedEvent[]> => {
-  try {
-    const { data, error } = await supabase
-      .from('events')
-      .select('*')
-      .eq('is_public', true)
-      .order('created_at', { ascending: false });
-
-    if (error) {
-      console.error('Error fetching public events:', error);
-      return [];
-    }
-
-    return (data || []).map(mapEventRow);
-  } catch (error) {
-    console.error('Error fetching public events:', error);
-    return [];
-  }
-};
-
 /**
  * Fetches an event by its lock address (case-insensitive)
  * This enables Web3-native URLs like /event/0x1234...abcd
