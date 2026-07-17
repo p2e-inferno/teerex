@@ -5,10 +5,38 @@ import { useNetworkConfigs } from './useNetworkConfigs';
 import type { NetworkConfig as DbNetworkConfig } from '@/lib/config/network-config';
 
 const PAGE_BLOCK_SIZE = 500;
-const LOG_CHUNK_SIZE = 10;
-const THROTTLE_MS = 20; // 20ms delay between chunks (50 calls = 1s per page)
+export const TRANSACTION_LOG_CHUNK_SIZE = 10;
+const THROTTLE_MS = 200;
+const RATE_LIMIT_RETRY_MS = 1_000;
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+function isRateLimitError(error: any): boolean {
+  const code = error?.code ?? error?.error?.code ?? error?.info?.error?.code;
+  const message = String(error?.message || error?.error?.message || error?.info?.error?.message || '').toLowerCase();
+  return code === 429 || message.includes('429') || message.includes('compute units per second');
+}
+
+export function getTransactionLogRanges(fromBlock: number, toBlock: number): Array<{ start: number; end: number }> {
+  const ranges: Array<{ start: number; end: number }> = [];
+  for (let start = fromBlock; start <= toBlock; start += TRANSACTION_LOG_CHUNK_SIZE) {
+    ranges.push({ start, end: Math.min(start + TRANSACTION_LOG_CHUNK_SIZE - 1, toBlock) });
+  }
+  return ranges;
+}
+
+export async function queryWithRateLimitRetry<T>(
+  query: () => Promise<T>,
+  wait: (ms: number) => Promise<unknown> = sleep,
+): Promise<T> {
+  try {
+    return await query();
+  } catch (error) {
+    if (!isRateLimitError(error)) throw error;
+    await wait(RATE_LIMIT_RETRY_MS);
+    return query();
+  }
+}
 
 export type TransactionRange = '1h' | '12h' | '1d' | '7d' | '30d';
 
@@ -215,18 +243,19 @@ async function fetchERC20Transfers(
     const sentEvents: EventLog[] = [];
     const receivedEvents: EventLog[] = [];
 
-    for (let start = fromBlock; start <= toBlock; start += LOG_CHUNK_SIZE) {
-      const end = Math.min(start + LOG_CHUNK_SIZE - 1, toBlock);
+    const ranges = getTransactionLogRanges(fromBlock, toBlock);
+    for (let index = 0; index < ranges.length; index += 1) {
+      const { start, end } = ranges[index];
+      if (index > 0) await sleep(THROTTLE_MS);
 
       try {
-        if (start > fromBlock) {
-          await sleep(THROTTLE_MS);
-        }
-
-        const [sentChunk, receivedChunk] = await Promise.all([
-          contract.queryFilter(sentFilter, start, end),
-          contract.queryFilter(receivedFilter, start, end),
-        ]);
+        const sentChunk = await queryWithRateLimitRetry(
+          () => contract.queryFilter(sentFilter, start, end),
+        );
+        await sleep(THROTTLE_MS);
+        const receivedChunk = await queryWithRateLimitRetry(
+          () => contract.queryFilter(receivedFilter, start, end),
+        );
 
         sentEvents.push(...(sentChunk.filter((log): log is EventLog => log instanceof EventLog)));
         receivedEvents.push(...(receivedChunk.filter((log): log is EventLog => log instanceof EventLog)));
@@ -248,6 +277,7 @@ async function fetchERC20Transfers(
           `Error fetching ${tokenConfig.symbol} transfers for ${network.chainName} (blocks ${start}-${end}):`,
           chunkError
         );
+        if (isRateLimitError(chunkError)) break;
       }
     }
 

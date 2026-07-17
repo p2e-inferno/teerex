@@ -20,12 +20,13 @@ import {
   computeRulesHash,
   fundRewardPool,
   preflightCreateRewardPool,
+  REWARD_MIN_CLAIM_DURATION_SECS,
   type CreateRewardPoolConfig,
 } from '@/utils/rewardControllerUtils';
 
 const MIN_CHALLENGE_HOURS = 30;
-const MIN_CLAIM_DURATION_DAYS = 7;
-const MIN_CLAIM_DURATION_HOURS = MIN_CLAIM_DURATION_DAYS * 24;
+const MIN_CLAIM_DURATION_HOURS = REWARD_MIN_CLAIM_DURATION_SECS / (60 * 60);
+const MIN_CLAIM_DURATION_DAYS = MIN_CLAIM_DURATION_HOURS / 24;
 const MAX_POSITIONS = 200; // mirrors the contract's MAX_POSITIONS cap.
 const PENDING_POOL_VERSION = 1;
 const REWARD_POOL_DIALOG_DEBUG = true;

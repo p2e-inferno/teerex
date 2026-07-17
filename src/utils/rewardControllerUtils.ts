@@ -12,11 +12,13 @@ import type {
 
 const ZERO_ADDRESS = '0x0000000000000000000000000000000000000000';
 const REWARD_POOL_DEBUG = true;
+export const REWARD_MIN_CLAIM_DURATION_SECS = 7 * 24 * 60 * 60;
 
 // Sourced from the compiled Foundry artifact so function selectors, struct field order, and custom
 // error fragments always match the deployed contract — a hand-maintained ABI drifting from the
 // struct order is a silent estimation-revert risk.
 export const REWARDS_CONTROLLER_ABI = REWARDS_CONTROLLER_V1_ABI;
+const REWARDS_CONTROLLER_INTERFACE = new ethers.Interface(REWARDS_CONTROLLER_ABI);
 
 const ERC20_ABI = [
   'function allowance(address owner, address spender) view returns (uint256)',
@@ -91,10 +93,37 @@ const PRE_FUNDING_VALIDATION_REVERTS = new Set([
   'UnexpectedNativeValue',
 ]);
 
-function decodeRewardError(err: any, fallback: string): string {
-  const code = err?.code ?? err?.error?.code;
-  const name: string | undefined = err?.revert?.name;
-  const revertMessage = Array.isArray(err?.revert?.args) ? String(err.revert.args[0] ?? '') : '';
+function parseRewardError(err: any): ethers.ErrorDescription | null {
+  if (err?.revert?.name) return err.revert as ethers.ErrorDescription;
+
+  const candidates = [
+    err?.data,
+    err?.error?.data,
+    err?.error?.error?.data,
+    err?.info?.error?.data,
+    err?.info?.error?.data?.data,
+    err?.info?.error?.data?.originalError?.data,
+  ];
+  const message = String(err?.shortMessage || err?.message || '');
+  candidates.push(...(message.match(/0x[0-9a-fA-F]{8,}/g) ?? []));
+
+  for (const candidate of candidates) {
+    if (typeof candidate !== 'string') continue;
+    try {
+      const parsed = REWARDS_CONTROLLER_INTERFACE.parseError(candidate);
+      if (parsed) return parsed;
+    } catch {
+      continue;
+    }
+  }
+  return null;
+}
+
+export function decodeRewardError(err: any, fallback: string): string {
+  const code = err?.code ?? err?.error?.code ?? err?.info?.error?.code;
+  const revert = parseRewardError(err);
+  const name = revert?.name;
+  const revertMessage = name === 'Error' && revert?.args.length ? String(revert.args[0] ?? '') : '';
   if (name === 'Error' && revertMessage) {
     if (revertMessage.toLowerCase().includes('transfer amount exceeds balance')) {
       return 'Insufficient token balance for the prize escrow. Lower the prize total or add more funds to this wallet.';
@@ -134,8 +163,23 @@ export interface RewardActionResult {
 
 /** The contract custom-error name behind a revert, when ethers could decode one. */
 export function rewardErrorName(err: any): string | undefined {
-  const name: string | undefined = err?.revert?.name;
+  const name = parseRewardError(err)?.name;
   return name && name !== 'Error' ? name : undefined;
+}
+
+export function hasReclaimableRewardPosition(
+  positions: Array<Pick<RewardPoolOnchainPosition, 'claimed' | 'reclaimed' | 'closesAt'>>,
+  nowSecs: number,
+): boolean {
+  return positions.some((position) => (
+    !position.claimed &&
+    !position.reclaimed &&
+    nowSecs > position.closesAt
+  ));
+}
+
+export function isLegacyRewardPositionShapeError(error: any): boolean {
+  return error?.code === 'BAD_DATA';
 }
 
 export class RewardActionGasError extends Error {
@@ -703,27 +747,11 @@ export const getRewardPoolOnchainState = async (
   const poolEnd = Number(p.claimEnd) + Number(p.frozenAccrued);
   const positions: RewardPoolOnchainPosition[] = [];
   for (let placement = 1; placement <= positionCount; placement++) {
+    let pos: any;
     try {
-      const [pos, claim, closesAt] = await Promise.all([
-        controller.positions(poolId, placement),
-        controller.claimable(poolId, placement),
-        controller.positionClaimEnd(poolId, placement),
-      ]);
-      const winner = String(pos.winner);
-      positions.push({
-        placement,
-        amountWei: pos.amount,
-        winner: winner === ZERO_ADDRESS ? null : winner,
-        assignedAt: Number(pos.assignedAt),
-        holdUntil: Number(pos.holdUntil),
-        claimed: Boolean(pos.claimed),
-        reclaimed: Boolean(pos.reclaimed),
-        claimedAt: Number(pos.claimedAt),
-        opensAt: Number(claim.opensAt),
-        closesAt: Number(closesAt),
-        canClaim: Boolean(claim.canClaim),
-      });
-    } catch {
+      pos = await controller.positions(poolId, placement);
+    } catch (error) {
+      if (!isLegacyRewardPositionShapeError(error)) throw error;
       const [pos, claim] = await Promise.all([
         legacyController.positions(poolId, placement),
         controller.claimable(poolId, placement),
@@ -742,7 +770,27 @@ export const getRewardPoolOnchainState = async (
         closesAt: poolEnd,
         canClaim: Boolean(claim.canClaim),
       });
+      continue;
     }
+
+    const [claim, closesAt] = await Promise.all([
+      controller.claimable(poolId, placement),
+      controller.positionClaimEnd(poolId, placement),
+    ]);
+    const winner = String(pos.winner);
+    positions.push({
+      placement,
+      amountWei: pos.amount,
+      winner: winner === ZERO_ADDRESS ? null : winner,
+      assignedAt: Number(pos.assignedAt),
+      holdUntil: Number(pos.holdUntil),
+      claimed: Boolean(pos.claimed),
+      reclaimed: Boolean(pos.reclaimed),
+      claimedAt: Number(pos.claimedAt),
+      opensAt: Number(claim.opensAt),
+      closesAt: Number(closesAt),
+      canClaim: Boolean(claim.canClaim),
+    });
   }
 
   const attendance = String(p.attendanceController);
