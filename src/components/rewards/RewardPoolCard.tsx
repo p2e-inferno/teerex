@@ -19,6 +19,10 @@ import { FieldHelp } from '@/components/ui/field-help';
 import { getExplorerTxUrl } from '@/lib/config/network-config';
 import { cn } from '@/lib/utils';
 import { formatCountdownLabelFromMs } from '@/utils/dateUtils';
+import {
+  hasReclaimableRewardPosition,
+  REWARD_MIN_CLAIM_DURATION_SECS,
+} from '@/utils/rewardControllerUtils';
 import { useRewardPoolOnchainState } from '@/hooks/useRewardPoolOnchainState';
 import { useRewardControllerActions } from '@/hooks/useRewardControllerActions';
 import { IdentityName } from '@/components/identity/IdentityName';
@@ -48,7 +52,6 @@ const formatDateFromSecs = (secs: number | null | undefined): string => (
   secs ? new Date(secs * 1000).toLocaleString() : '-'
 );
 
-const MIN_CLAIM_DURATION_SECS = 3 * 24 * 60 * 60;
 const FREEZE_BACKSTOP_SECS = 30 * 24 * 60 * 60; // MAX_FREEZE_BACKSTOP in TeeRexRewardsControllerV1.
 
 type DisplayPosition = RewardPoolOnchainPosition;
@@ -171,7 +174,7 @@ export function RewardPoolCard({ pool, viewerAddress, isTicketHolder, eventEndsA
         reclaimed: p.reclaimed ?? false,
         canClaim: false,
         opensAt,
-        closesAt: Math.max(poolEndSecs ?? 0, opensAt + MIN_CLAIM_DURATION_SECS),
+        closesAt: Math.max(poolEndSecs ?? 0, opensAt + REWARD_MIN_CLAIM_DURATION_SECS),
         assignedAt,
         holdUntil,
         claimedAt: p.claimed_at ? Math.floor(new Date(p.claimed_at).getTime() / 1000) : 0,
@@ -313,7 +316,9 @@ export function RewardPoolCard({ pool, viewerAddress, isTicketHolder, eventEndsA
   ]);
 
   const canReclaim = isCreator && onchainData
-    ? !onchainData.closed && !freezeBlocksNow && nowSecs > onchainData.claimEnd + onchainData.frozenAccrued
+    ? !onchainData.closed &&
+      !freezeBlocksNow &&
+      hasReclaimableRewardPosition(positions, nowSecs)
     : false;
   const canDisputeAnyPosition = positions.some(canDisputePosition);
   const canClose = isCreator && !closeBlockedReason;

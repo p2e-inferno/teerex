@@ -399,17 +399,17 @@ const Index = () => {
             ) : upcoming.map((e) => (
               <Link key={e.id} to={`/event/${e.lock_address}`} className="block group">
                 <Card className="border-0 shadow-sm hover:shadow-md transition-shadow duration-200 bg-white">
-                  <CardContent className="p-6">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-4">
-                        <div className="w-16 h-16 bg-gradient-to-br from-purple-400 to-pink-400 rounded-xl flex items-center justify-center">
+                  <CardContent className="p-4 sm:p-6">
+                    <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                      <div className="flex min-w-0 items-center gap-4">
+                        <div className="w-16 h-16 shrink-0 bg-gradient-to-br from-purple-400 to-pink-400 rounded-xl flex items-center justify-center">
                           <Calendar className="w-8 h-8 text-white" />
                         </div>
-                        <div>
+                        <div className="min-w-0">
                           <h3 className="font-semibold text-gray-900 mb-1 group-hover:text-blue-600">
                             {e.title}
                           </h3>
-                          <div className="flex items-center gap-4 text-sm text-gray-600">
+                          <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-gray-600">
                             <div className="flex items-center gap-1">
                               <Clock className="w-4 h-4" />
                               <span>{formatEventStartDate(e)}</span>
@@ -421,7 +421,7 @@ const Index = () => {
                           </div>
                         </div>
                       </div>
-                      <div className="text-right">
+                      <div className="flex w-full items-center justify-between border-t border-gray-100 pt-3 text-left sm:block sm:w-auto sm:border-0 sm:pt-0 sm:text-right">
                         <div className="text-lg font-semibold text-gray-900">
                           {e.payment_methods?.includes('fiat') && e.ngn_price > 0
                             ? `₦${e.ngn_price.toLocaleString()}`
