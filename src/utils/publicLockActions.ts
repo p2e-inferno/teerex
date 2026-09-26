@@ -26,11 +26,28 @@ const LOCK_ABI = [
   { inputs: [], name: 'tokenAddress', outputs: [{ type: 'address' }], stateMutability: 'view', type: 'function' },
   { inputs: [{ type: 'address', name: '_account' }], name: 'isLockManager', outputs: [{ type: 'bool' }], stateMutability: 'view', type: 'function' },
   { inputs: [{ type: 'address', name: 'owner' }], name: 'balanceOf', outputs: [{ type: 'uint256' }], stateMutability: 'view', type: 'function' },
+  // PublicLock v10+ uses the single-argument global per-address limit.
   { inputs: [{ type: 'uint256', name: '_maxKeys' }], name: 'setMaxKeysPerAddress', outputs: [], stateMutability: 'nonpayable', type: 'function' },
   { inputs: [], name: 'maxKeysPerAddress', outputs: [{ type: 'uint256' }], stateMutability: 'view', type: 'function' },
   { inputs: [], name: 'maxNumberOfKeys', outputs: [{ type: 'uint256' }], stateMutability: 'view', type: 'function' },
   { inputs: [], name: 'totalSupply', outputs: [{ type: 'uint256' }], stateMutability: 'view', type: 'function' },
   { inputs: [], name: 'expirationDuration', outputs: [{ type: 'uint256' }], stateMutability: 'view', type: 'function' },
+  { inputs: [], name: 'transferFeeBasisPoints', outputs: [{ type: 'uint256' }], stateMutability: 'view', type: 'function' },
+  { inputs: [{ type: 'uint256', name: '_transferFeeBasisPoints' }], name: 'updateTransferFee', outputs: [], stateMutability: 'nonpayable', type: 'function' },
+  { inputs: [], name: 'name', outputs: [{ type: 'string' }], stateMutability: 'view', type: 'function' },
+  { inputs: [], name: 'symbol', outputs: [{ type: 'string' }], stateMutability: 'view', type: 'function' },
+  { inputs: [{ type: 'uint256', name: '_tokenId' }], name: 'tokenURI', outputs: [{ type: 'string' }], stateMutability: 'view', type: 'function' },
+  {
+    inputs: [
+      { type: 'string', name: '_lockName' },
+      { type: 'string', name: '_lockSymbol' },
+      { type: 'string', name: '_baseTokenURI' },
+    ],
+    name: 'setLockMetadata',
+    outputs: [],
+    stateMutability: 'nonpayable',
+    type: 'function',
+  },
   {
     inputs: [
       { type: 'uint256', name: '_newExpirationDuration' },
@@ -108,8 +125,6 @@ export async function purchaseLockKeys(
       ? parseEther(expectedUnitPrice.toString())
       : parseUnits(expectedUnitPrice.toString(), info.decimals);
 
-    // Re-read all purchase-critical lock state immediately before asking the wallet
-    // to sign. The dialog is helpful UX, but the contract boundary is authoritative.
     const [unitPrice, tokenAddress, maxSupply, totalSupply, maxPerWallet, owned] = await Promise.all([
       lock.keyPrice(),
       lock.tokenAddress(),
@@ -187,6 +202,52 @@ export async function setLockMaxKeysPerAddress(
     return { success: true, transactionHash: tx.hash };
   } catch (error) {
     return { success: false, error: error instanceof Error ? error.message : 'Could not update the per-person limit.' };
+  }
+}
+
+export async function ensureLockTransferability(
+  lockAddress: string,
+  transferable: boolean,
+  wallet: any,
+  chainId: number,
+): Promise<{ success: boolean; transactionHash?: string; error?: string }> {
+  try {
+    const { lock } = await managedLock(wallet, lockAddress, chainId);
+    const desiredFee = transferable ? 0n : 10000n;
+    const currentFee = await lock.transferFeeBasisPoints();
+    if (currentFee === desiredFee) return { success: true };
+    const tx = await lock.updateTransferFee(desiredFee);
+    const receipt = await tx.wait();
+    if (receipt.status !== 1) throw new Error('Transferability update failed.');
+    return { success: true, transactionHash: tx.hash };
+  } catch (error) {
+    return { success: false, error: error instanceof Error ? error.message : 'Could not configure collectible transfers.' };
+  }
+}
+
+export async function ensureLockMetadata(
+  lockAddress: string,
+  name: string,
+  symbol: string,
+  baseTokenURI: string,
+  wallet: any,
+  chainId: number,
+): Promise<{ success: boolean; transactionHash?: string; error?: string }> {
+  try {
+    if (!name.trim() || !symbol.trim() || !baseTokenURI.trim()) throw new Error('Complete NFT metadata is required.');
+    const { lock } = await managedLock(wallet, lockAddress, chainId);
+    const [currentName, currentSymbol, currentBaseUri] = await Promise.all([
+      lock.name(), lock.symbol(), lock.tokenURI(0),
+    ]);
+    if (currentName === name && currentSymbol === symbol && currentBaseUri === baseTokenURI) {
+      return { success: true };
+    }
+    const tx = await lock.setLockMetadata(name, symbol, baseTokenURI);
+    const receipt = await tx.wait();
+    if (receipt.status !== 1) throw new Error('NFT metadata update failed.');
+    return { success: true, transactionHash: tx.hash };
+  } catch (error) {
+    return { success: false, error: error instanceof Error ? error.message : 'Could not configure NFT metadata.' };
   }
 }
 
