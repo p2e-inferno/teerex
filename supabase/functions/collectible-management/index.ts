@@ -8,14 +8,20 @@ import { verifyPrivyToken, getUserWalletAddresses } from "../_shared/privy.ts";
 import { validateChain } from "../_shared/network-helpers.ts";
 import { isAnyUserWalletIsLockManagerParallel } from "../_shared/unlock.ts";
 import { resolveDisplayName } from "../_shared/profiles.ts";
+import { stripHtml } from "../_shared/html-utils.ts";
 
 const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";
+const COLLECTIBLE_SYMBOL = "TEEREX";
 const LOCK_ABI = [
   { inputs: [], name: "maxNumberOfKeys", outputs: [{ type: "uint256" }], stateMutability: "view", type: "function" },
   { inputs: [], name: "maxKeysPerAddress", outputs: [{ type: "uint256" }], stateMutability: "view", type: "function" },
   { inputs: [], name: "totalSupply", outputs: [{ type: "uint256" }], stateMutability: "view", type: "function" },
   { inputs: [], name: "tokenAddress", outputs: [{ type: "address" }], stateMutability: "view", type: "function" },
   { inputs: [], name: "keyPrice", outputs: [{ type: "uint256" }], stateMutability: "view", type: "function" },
+  { inputs: [], name: "transferFeeBasisPoints", outputs: [{ type: "uint256" }], stateMutability: "view", type: "function" },
+  { inputs: [], name: "name", outputs: [{ type: "string" }], stateMutability: "view", type: "function" },
+  { inputs: [], name: "symbol", outputs: [{ type: "string" }], stateMutability: "view", type: "function" },
+  { inputs: [{ type: "uint256", name: "_tokenId" }], name: "tokenURI", outputs: [{ type: "string" }], stateMutability: "view", type: "function" },
 ] as const;
 
 const ERC20_ABI = [
@@ -33,6 +39,13 @@ const isAddress = (value: unknown) => /^0x[a-fA-F0-9]{40}$/.test(String(value ||
 const normalizeAddress = (value: unknown) => String(value || "").trim().toLowerCase();
 const allowedCurrencies = new Set(["ETH", "USDC", "DG", "G", "UP"]);
 
+function validatedRichText(value: unknown, maxLength: number, label: string, required = false) {
+  const html = String(value || "").trim();
+  if (html.length > maxLength) throw new Error(`${label} is too long.`);
+  if (required && !stripHtml(html).trim()) throw new Error(`${label} is required.`);
+  return html || null;
+}
+
 function validateCommon(input: any) {
   const name = String(input?.name || "").trim();
   const image = String(input?.image_url || "").trim();
@@ -42,13 +55,12 @@ function validateCommon(input: any) {
   const currency = String(input?.currency || "");
   if (!name || name.length > 120) throw new Error("A valid collectible name is required.");
   if (!image) throw new Error("A collectible image is required.");
+  validatedRichText(input?.description, 12000, "Description");
+  validatedRichText(input?.fulfillment_note, 6000, "Fulfillment terms", Boolean(input?.is_claimable));
   if (!Number.isFinite(price) || price <= 0) throw new Error("Price must be greater than zero.");
   if (!Number.isInteger(supply) || supply < 1) throw new Error("Supply must be a positive whole number.");
   if (!Number.isInteger(perWallet) || perWallet < 1 || perWallet > supply) throw new Error("Per-person limit must be between 1 and total supply.");
   if (!allowedCurrencies.has(currency)) throw new Error("Unsupported collectible currency.");
-  if (Boolean(input?.is_claimable) && !String(input?.fulfillment_note || "").trim()) {
-    throw new Error("Fulfillment terms are required when a physical item is available.");
-  }
 }
 
 function configuredTokenAddress(network: any, currency: string): string | null {
@@ -71,6 +83,12 @@ function mapRow(row: any, displayName: string | null = null) {
     max_keys_per_address: Number(row.max_keys_per_address || 1),
     creator_display_name: displayName,
   };
+}
+
+function assertOwnedExisting(existing: any, userId: string) {
+  if (existing?.creator_id !== userId) {
+    throw Object.assign(new Error("This collectible lock is already registered to another TeeRex creator."), { status: 409 });
+  }
 }
 
 async function requireManagedCollectible(supabase: any, id: string, userId: string, wallets: string[]) {
@@ -97,12 +115,16 @@ async function requireManagedCollectible(supabase: any, id: string, userId: stri
 async function readLockState(lockAddress: string, rpcUrl: string) {
   const provider = new JsonRpcProvider(rpcUrl);
   const lock = new Contract(lockAddress, LOCK_ABI, provider);
-  const [maxSupply, perWallet, totalSupply, tokenAddress, rawPrice] = await Promise.all([
+  const [maxSupply, perWallet, totalSupply, tokenAddress, rawPrice, transferFee, name, symbol, baseTokenUri] = await Promise.all([
     lock.maxNumberOfKeys(),
     lock.maxKeysPerAddress(),
     lock.totalSupply(),
     lock.tokenAddress(),
     lock.keyPrice(),
+    lock.transferFeeBasisPoints(),
+    lock.name(),
+    lock.symbol(),
+    lock.tokenURI(0),
   ]);
   let decimals = 18;
   if (String(tokenAddress).toLowerCase() !== ZERO_ADDRESS) {
@@ -117,6 +139,10 @@ async function readLockState(lockAddress: string, rpcUrl: string) {
     rawPrice: BigInt(rawPrice),
     price: Number(formatUnits(rawPrice, decimals)),
     decimals,
+    transferFee: Number(transferFee),
+    name: String(name),
+    symbol: String(symbol),
+    baseTokenUri: String(baseTokenUri),
   };
 }
 
@@ -155,10 +181,16 @@ async function handleCreate(supabase: any, userId: string, wallets: string[], bo
   if (!anyIsManager) throw Object.assign(new Error("Authenticated user is not a manager of this lock."), { status: 403 });
 
   const state = await readLockState(lockAddress, network.rpc_url);
+  const submittedName = String(input.name).trim();
+  const submittedBaseUri = String(input.nft_base_uri || "").trim();
   if (state.tokenAddress !== expectedToken.toLowerCase()) throw new Error("On-chain payment token does not match the collectible submission.");
   if (!pricesMatch(state.price, Number(input.price))) throw new Error("On-chain price does not match the collectible submission.");
   if (state.maxSupply !== Number(input.max_supply)) throw new Error("On-chain supply does not match the collectible submission.");
   if (state.perWallet !== Number(input.max_keys_per_address)) throw new Error("On-chain per-person limit does not match the collectible submission.");
+  if (state.transferFee !== 0) throw new Error("Collectible transfers are not configured on-chain.");
+  if (!submittedBaseUri || state.name !== submittedName || state.symbol !== COLLECTIBLE_SYMBOL || state.baseTokenUri !== submittedBaseUri) {
+    throw new Error("Collectible NFT metadata is not configured on-chain.");
+  }
 
   const { data: existing } = await supabase
     .from("collectibles")
@@ -167,6 +199,7 @@ async function handleCreate(supabase: any, userId: string, wallets: string[], bo
     .ilike("lock_address", lockAddress)
     .maybeSingle();
   if (existing) {
+    assertOwnedExisting(existing, userId);
     const displayName = await resolveDisplayName(supabase, userId);
     return json({ ok: true, collectible: mapRow(existing, displayName), reused: true });
   }
@@ -174,8 +207,8 @@ async function handleCreate(supabase: any, userId: string, wallets: string[], bo
   const row = {
     creator_id: userId,
     creator_address: creatorAddress,
-    name: String(input.name).trim(),
-    description: String(input.description || "").trim() || null,
+    name: submittedName,
+    description: validatedRichText(input.description, 12000, "Description"),
     image_url: String(input.image_url),
     chain_id: chainId,
     currency: String(input.currency),
@@ -185,11 +218,11 @@ async function handleCreate(supabase: any, userId: string, wallets: string[], bo
     lock_address: lockAddress,
     transaction_hash: String(input.transaction_hash || ""),
     is_claimable: Boolean(input.is_claimable),
-    fulfillment_note: String(input.fulfillment_note || "").trim() || null,
+    fulfillment_note: validatedRichText(input.fulfillment_note, 6000, "Fulfillment terms", Boolean(input.is_claimable)),
     is_public: true,
     transferable: true,
-    nft_metadata_set: Boolean(input.nft_metadata_set),
-    nft_base_uri: input.nft_base_uri || null,
+    nft_metadata_set: true,
+    nft_base_uri: submittedBaseUri,
     updated_at: new Date().toISOString(),
   };
 
@@ -202,7 +235,11 @@ async function handleCreate(supabase: any, userId: string, wallets: string[], bo
         .eq("chain_id", chainId)
         .ilike("lock_address", lockAddress)
         .maybeSingle();
-      if (raced) return json({ ok: true, collectible: mapRow(raced), reused: true });
+      if (raced) {
+        assertOwnedExisting(raced, userId);
+        const displayName = await resolveDisplayName(supabase, userId);
+        return json({ ok: true, collectible: mapRow(raced, displayName), reused: true });
+      }
     }
     throw new Error(error.message);
   }
@@ -222,7 +259,7 @@ async function handleUpdate(supabase: any, userId: string, wallets: string[], bo
     if (!name || name.length > 120) throw new Error("A valid collectible name is required.");
     next.name = name;
   }
-  if (updates.description !== undefined) next.description = String(updates.description || "").trim() || null;
+  if (updates.description !== undefined) next.description = validatedRichText(updates.description, 12000, "Description");
   if (updates.image_url !== undefined) {
     const image = String(updates.image_url || "").trim();
     if (!image) throw new Error("A collectible image is required.");
@@ -231,19 +268,24 @@ async function handleUpdate(supabase: any, userId: string, wallets: string[], bo
 
   const nextClaimable = updates.is_claimable !== undefined ? Boolean(updates.is_claimable) : Boolean(collectible.is_claimable);
   const nextTerms = updates.fulfillment_note !== undefined
-    ? String(updates.fulfillment_note || "").trim() || null
+    ? validatedRichText(updates.fulfillment_note, 6000, "Fulfillment terms", nextClaimable)
     : collectible.fulfillment_note;
-  if (nextClaimable && !nextTerms) throw new Error("Fulfillment terms are required when a physical item is available.");
+  if (nextClaimable && !stripHtml(String(nextTerms || "")).trim()) throw new Error("Fulfillment terms are required when a physical item is available.");
   if (updates.is_claimable !== undefined) next.is_claimable = nextClaimable;
   if (updates.fulfillment_note !== undefined) next.fulfillment_note = nextTerms;
   if (updates.nft_metadata_set !== undefined) next.nft_metadata_set = Boolean(updates.nft_metadata_set);
   if (updates.nft_base_uri !== undefined) next.nft_base_uri = updates.nft_base_uri || null;
 
-  if (updates.price !== undefined || updates.max_supply !== undefined || updates.max_keys_per_address !== undefined) {
+  const needsChainVerification = updates.name !== undefined || updates.price !== undefined || updates.max_supply !== undefined || updates.max_keys_per_address !== undefined;
+  if (needsChainVerification) {
     const state = await readLockState(collectible.lock_address, network.rpc_url);
     const expectedToken = configuredTokenAddress(network, String(collectible.currency));
     if (!expectedToken || state.tokenAddress !== expectedToken.toLowerCase()) {
       throw new Error("On-chain payment token no longer matches this collectible.");
+    }
+    if (state.transferFee !== 0) throw new Error("Collectible transfers are no longer configured as transferable.");
+    if (updates.name !== undefined && state.name !== String(updates.name).trim()) {
+      throw new Error("On-chain collectible name has not been updated to the submitted value.");
     }
     if (updates.price !== undefined) {
       const submitted = Number(updates.price);
