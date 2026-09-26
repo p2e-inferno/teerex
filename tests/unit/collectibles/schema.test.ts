@@ -3,7 +3,7 @@ import { collectibleFormSchema } from '@/types/collectible.schema';
 
 const valid = {
   name: 'Sunset Bag',
-  description: 'Limited crochet edition',
+  description: '<p>Limited <strong>crochet</strong> edition</p>',
   imageUrl: 'https://example.com/bag.jpg',
   chainId: 8453,
   currency: 'USDC' as const,
@@ -15,13 +15,14 @@ const valid = {
 };
 
 describe('collectible form validation', () => {
-  it('accepts a finite priced crypto collectible', () => {
+  it('accepts a finite priced crypto collectible with rich text', () => {
     expect(collectibleFormSchema.parse(valid)).toMatchObject(valid);
   });
 
-  it('requires fulfillment terms for a physical item', () => {
-    const result = collectibleFormSchema.safeParse({ ...valid, isClaimable: true });
-    expect(result.success).toBe(false);
+  it('requires meaningful fulfillment terms for a physical item', () => {
+    expect(collectibleFormSchema.safeParse({ ...valid, isClaimable: true }).success).toBe(false);
+    expect(collectibleFormSchema.safeParse({ ...valid, isClaimable: true, fulfillmentNote: '<p><br></p>' }).success).toBe(false);
+    expect(collectibleFormSchema.safeParse({ ...valid, isClaimable: true, fulfillmentNote: '<p>Delivery within Nigeria.</p>' }).success).toBe(true);
   });
 
   it('does not allow a per-person limit above total supply', () => {
