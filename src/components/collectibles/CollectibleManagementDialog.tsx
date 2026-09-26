@@ -15,7 +15,8 @@ import { isRichTextEmpty } from '@/lib/richText';
 import { updateCollectible } from '@/lib/collectibles/collectibleApi';
 import type { Collectible } from '@/types/collectible';
 import { getBlockExplorerUrl, getLockWithdrawableBalance, withdrawLockBalance } from '@/utils/lockUtils';
-import { setLockMaxKeysPerAddress, setLockMaxSupply, setLockPrice } from '@/utils/publicLockActions';
+import { getBaseTokenURI, TEEREX_NFT_SYMBOL } from '@/utils/lockMetadata';
+import { ensureLockMetadata, setLockMaxKeysPerAddress, setLockMaxSupply, setLockPrice } from '@/utils/publicLockActions';
 
 interface Props {
   collectible: Collectible | null;
@@ -39,8 +40,6 @@ export function CollectibleManagementDialog({ collectible, open, onOpenChange, o
 
   const creatorAddress = collectible?.creator_address?.toLowerCase();
   const preferred = user?.wallet?.address?.toLowerCase();
-  // The deployer is the first lock manager. Prefer that exact linked wallet so
-  // management does not fail merely because a different Privy wallet is primary.
   const wallet = wallets.find((candidate) => candidate.address.toLowerCase() === creatorAddress)
     ?? wallets.find((candidate) => candidate.address.toLowerCase() === preferred)
     ?? wallets[0];
@@ -95,6 +94,18 @@ export function CollectibleManagementDialog({ collectible, open, onOpenChange, o
 
     setSaving(true);
     try {
+      if (form.name.trim() !== collectible.name) {
+        const metadata = await ensureLockMetadata(
+          collectible.lock_address,
+          form.name.trim(),
+          TEEREX_NFT_SYMBOL,
+          collectible.nft_base_uri || getBaseTokenURI(collectible.lock_address),
+          wallet,
+          collectible.chain_id,
+        );
+        if (!metadata.success) throw new Error(metadata.error);
+      }
+
       if (form.price !== collectible.price) {
         const result = await setLockPrice(collectible.lock_address, form.price, collectible.currency, wallet, collectible.chain_id);
         if (!result.success) throw new Error(result.error);
