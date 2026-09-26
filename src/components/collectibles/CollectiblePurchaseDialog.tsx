@@ -1,11 +1,13 @@
 import { useEffect, useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { usePrivy, useWallets } from '@privy-io/react-auth';
-import { Minus, Plus } from 'lucide-react';
+import { ExternalLink, Minus, Plus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { useToast } from '@/hooks/use-toast';
 import { useCollectibleChainState } from '@/hooks/useCollectibleChainState';
 import { getCollectiblePurchaseAllowance, isCollectibleQuantityAllowed } from '@/lib/collectibles/purchaseLimits';
+import { getBlockExplorerUrl } from '@/utils/lockUtils';
 import { purchaseLockKeys } from '@/utils/publicLockActions';
 import type { Collectible } from '@/types/collectible';
 
@@ -22,6 +24,7 @@ export function CollectiblePurchaseDialog({ collectible, open, onOpenChange, onP
   const { toast } = useToast();
   const [quantity, setQuantity] = useState(1);
   const [buying, setBuying] = useState(false);
+  const [success, setSuccess] = useState<{ quantity: number; explorerUrl: string | null } | null>(null);
   const preferred = user?.wallet?.address?.toLowerCase();
   const wallet = wallets.find((candidate) => candidate.address.toLowerCase() === preferred) ?? wallets[0];
   const purchasingAddress = wallet?.address ? [wallet.address.toLowerCase()] : [];
@@ -37,7 +40,13 @@ export function CollectiblePurchaseDialog({ collectible, open, onOpenChange, onP
     });
   }, [chain.maxPerWallet, chain.owned, chain.sold, collectible]);
 
-  useEffect(() => { if (open) setQuantity(1); }, [open, collectible?.id]);
+  useEffect(() => {
+    if (open) {
+      setQuantity(1);
+      setSuccess(null);
+    }
+  }, [open, collectible?.id]);
+
   useEffect(() => {
     if (remaining === 0) return;
     if (quantity > remaining) setQuantity(remaining);
@@ -55,22 +64,22 @@ export function CollectiblePurchaseDialog({ collectible, open, onOpenChange, onP
     if (!isCollectibleQuantityAllowed(quantity, remaining)) return;
     setBuying(true);
     try {
+      const purchasedQuantity = quantity;
       const result = await purchaseLockKeys(
         collectible.lock_address,
         collectible.price,
         collectible.currency,
         wallet,
         collectible.chain_id,
-        quantity,
+        purchasedQuantity,
       );
       if (!result.success) throw new Error(result.error || 'Purchase failed.');
       await chain.refresh();
-      toast({
-        title: quantity > 1 ? `You collected ${quantity} editions` : 'Collectible purchased',
-        description: result.transactionHash ? 'Your NFT ownership is now recorded on-chain.' : undefined,
-      });
+      const explorerUrl = result.transactionHash
+        ? await getBlockExplorerUrl(result.transactionHash, collectible.chain_id)
+        : null;
+      setSuccess({ quantity: purchasedQuantity, explorerUrl });
       onPurchased?.();
-      onOpenChange(false);
     } catch (error) {
       toast({ title: 'Purchase failed', description: error instanceof Error ? error.message : 'Try again.', variant: 'destructive' });
     } finally {
@@ -81,38 +90,70 @@ export function CollectiblePurchaseDialog({ collectible, open, onOpenChange, onP
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
-        <DialogHeader>
-          <DialogTitle>Collect {collectible.name}</DialogTitle>
-          <DialogDescription>Purchase directly from the creator’s Unlock contract.</DialogDescription>
-        </DialogHeader>
-        <div className="space-y-5">
-          <div className="flex items-center gap-4">
-            <img src={collectible.image_url} alt="" className="h-20 w-20 rounded-lg object-cover" />
-            <div>
-              <div className="font-medium">{collectible.price} {collectible.currency} each</div>
-              <div className="text-sm text-muted-foreground">{Math.max(0, collectible.max_supply - chain.sold)} remaining · this wallet can buy {remaining} more</div>
+        {success ? (
+          <>
+            <DialogHeader>
+              <DialogTitle>{success.quantity > 1 ? `${success.quantity} editions collected` : 'Collectible purchased'}</DialogTitle>
+              <DialogDescription>Your Unlock NFT {success.quantity > 1 ? 'keys are' : 'key is'} now in your wallet.</DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4">
+              <div className="flex items-center gap-4 rounded-lg border p-4">
+                <img src={collectible.image_url} alt="" className="h-20 w-20 rounded-lg object-cover" />
+                <div><div className="font-semibold">{collectible.name}</div><div className="text-sm text-muted-foreground">Owned in this purchase: {success.quantity}</div></div>
+              </div>
+              {collectible.is_claimable && (
+                <div className="rounded-lg border bg-muted/30 p-4">
+                  <div className="font-medium">Physical item available</div>
+                  <p className="mt-1 whitespace-pre-wrap text-sm text-muted-foreground">{collectible.fulfillment_note}</p>
+                </div>
+              )}
+              {success.explorerUrl && (
+                <a className="inline-flex items-center text-sm font-medium text-primary hover:underline" href={success.explorerUrl} target="_blank" rel="noreferrer">
+                  View transaction <ExternalLink className="ml-1 h-3 w-3" />
+                </a>
+              )}
             </div>
-          </div>
-          {chain.maxPerWallet > 1 && remaining > 0 && (
-            <div className="flex items-center justify-between rounded-lg border p-3">
-              <span className="text-sm font-medium">Quantity</span>
-              <div className="flex items-center gap-3">
-                <Button type="button" size="icon" variant="outline" disabled={quantity <= 1} onClick={() => setQuantity((q) => Math.max(1, q - 1))}><Minus className="h-4 w-4" /></Button>
-                <span className="w-6 text-center font-semibold">{quantity}</span>
-                <Button type="button" size="icon" variant="outline" disabled={quantity >= remaining} onClick={() => setQuantity((q) => Math.min(remaining, q + 1))}><Plus className="h-4 w-4" /></Button>
+            <DialogFooter className="gap-2 sm:gap-0">
+              <Button variant="outline" onClick={() => onOpenChange(false)}>Close</Button>
+              <Button asChild><Link to="/my-collection" onClick={() => onOpenChange(false)}>View My Collection</Link></Button>
+            </DialogFooter>
+          </>
+        ) : (
+          <>
+            <DialogHeader>
+              <DialogTitle>Collect {collectible.name}</DialogTitle>
+              <DialogDescription>Purchase directly from the creator’s Unlock contract.</DialogDescription>
+            </DialogHeader>
+            <div className="space-y-5">
+              <div className="flex items-center gap-4">
+                <img src={collectible.image_url} alt="" className="h-20 w-20 rounded-lg object-cover" />
+                <div>
+                  <div className="font-medium">{collectible.price} {collectible.currency} each</div>
+                  <div className="text-sm text-muted-foreground">{Math.max(0, collectible.max_supply - chain.sold)} remaining · this wallet can buy {remaining} more</div>
+                </div>
+              </div>
+              {chain.maxPerWallet > 1 && remaining > 0 && (
+                <div className="flex items-center justify-between rounded-lg border p-3">
+                  <span className="text-sm font-medium">Quantity</span>
+                  <div className="flex items-center gap-3">
+                    <Button type="button" size="icon" variant="outline" disabled={quantity <= 1} onClick={() => setQuantity((q) => Math.max(1, q - 1))}><Minus className="h-4 w-4" /></Button>
+                    <span className="w-6 text-center font-semibold">{quantity}</span>
+                    <Button type="button" size="icon" variant="outline" disabled={quantity >= remaining} onClick={() => setQuantity((q) => Math.min(remaining, q + 1))}><Plus className="h-4 w-4" /></Button>
+                  </div>
+                </div>
+              )}
+              <div className="flex justify-between border-t pt-4 font-semibold">
+                <span>Total</span><span>{total} {collectible.currency}</span>
               </div>
             </div>
-          )}
-          <div className="flex justify-between border-t pt-4 font-semibold">
-            <span>Total</span><span>{total} {collectible.currency}</span>
-          </div>
-        </div>
-        <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
-          <Button disabled={buying || chain.loading || remaining < 1} onClick={purchase}>
-            {remaining < 1 ? 'Unavailable' : buying ? 'Confirming…' : authenticated ? `Buy ${quantity > 1 ? quantity : ''}`.trim() : 'Connect to buy'}
-          </Button>
-        </DialogFooter>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
+              <Button disabled={buying || chain.loading || remaining < 1} onClick={purchase}>
+                {remaining < 1 ? 'Unavailable' : buying ? 'Confirming…' : authenticated ? `Buy ${quantity > 1 ? quantity : ''}`.trim() : 'Connect to buy'}
+              </Button>
+            </DialogFooter>
+          </>
+        )}
       </DialogContent>
     </Dialog>
   );
