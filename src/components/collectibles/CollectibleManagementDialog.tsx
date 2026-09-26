@@ -14,7 +14,7 @@ import { useToast } from '@/hooks/use-toast';
 import { isRichTextEmpty } from '@/lib/richText';
 import { updateCollectible } from '@/lib/collectibles/collectibleApi';
 import type { Collectible } from '@/types/collectible';
-import { getBlockExplorerUrl, getLockWithdrawableBalance, withdrawLockBalance } from '@/utils/lockUtils';
+import { checkIfLockManager, getBlockExplorerUrl, getLockWithdrawableBalance, withdrawLockBalance } from '@/utils/lockUtils';
 import { getBaseTokenURI, TEEREX_NFT_SYMBOL } from '@/utils/lockMetadata';
 import { ensureLockMetadata, setLockMaxKeysPerAddress, setLockMaxSupply, setLockPrice } from '@/utils/publicLockActions';
 
@@ -94,6 +94,9 @@ export function CollectibleManagementDialog({ collectible, open, onOpenChange, o
 
     setSaving(true);
     try {
+      const isManager = await checkIfLockManager(collectible.lock_address, wallet.address, collectible.chain_id);
+      if (!isManager) throw new Error('The connected wallet is no longer a manager of this collectible lock.');
+
       if (form.name.trim() !== collectible.name) {
         const metadata = await ensureLockMetadata(
           collectible.lock_address,
@@ -111,6 +114,8 @@ export function CollectibleManagementDialog({ collectible, open, onOpenChange, o
         if (!result.success) throw new Error(result.error);
       }
 
+      // updateLockConfig requires max supply >= current per-wallet limit. When a
+      // creator lowers both values, lower the wallet limit first only when needed.
       const lowerLimitFirst = form.max_supply < collectible.max_keys_per_address && form.max_keys_per_address !== collectible.max_keys_per_address;
       if (lowerLimitFirst) {
         const limit = await setLockMaxKeysPerAddress(collectible.lock_address, form.max_keys_per_address, wallet, collectible.chain_id);
@@ -129,13 +134,15 @@ export function CollectibleManagementDialog({ collectible, open, onOpenChange, o
       if (!token) throw new Error('Your session expired.');
       const updated = await updateCollectible(collectible.id, {
         name: form.name.trim(),
-        description: form.description.trim() || null,
+        description: isRichTextEmpty(form.description) ? null : form.description.trim(),
         image_url: form.image_url,
         price: form.price,
         max_supply: form.max_supply,
         max_keys_per_address: form.max_keys_per_address,
         is_claimable: form.is_claimable,
-        fulfillment_note: form.fulfillment_note.trim() || null,
+        fulfillment_note: form.is_claimable && !isRichTextEmpty(form.fulfillment_note)
+          ? form.fulfillment_note.trim()
+          : null,
       }, token);
       onUpdated(updated);
       toast({ title: 'Collectible updated' });
@@ -147,15 +154,19 @@ export function CollectibleManagementDialog({ collectible, open, onOpenChange, o
     }
   };
 
-  const reviewWithdrawal = () => {
+  const reviewWithdrawal = async () => {
     if (!wallet) return toast({ title: 'Connect the creator wallet first', variant: 'destructive' });
-    if (!ethers.isAddress(beneficiary)) return toast({ title: 'Enter a valid withdrawal address', variant: 'destructive' });
+    if (!ethers.isAddress(beneficiary) || beneficiary.toLowerCase() === ethers.ZeroAddress.toLowerCase()) {
+      return toast({ title: 'Enter a valid withdrawal address', description: 'The zero address cannot receive creator funds.', variant: 'destructive' });
+    }
     if (!balance || balance.raw <= 0n) return toast({ title: 'No funds are available to withdraw' });
+    const isManager = await checkIfLockManager(collectible.lock_address, wallet.address, collectible.chain_id);
+    if (!isManager) return toast({ title: 'Withdrawal unavailable', description: 'The connected wallet is no longer a manager of this collectible lock.', variant: 'destructive' });
     setWithdrawReview(true);
   };
 
   const withdraw = async () => {
-    if (!wallet || !ethers.isAddress(beneficiary) || !balance || balance.raw <= 0n) return;
+    if (!wallet || !ethers.isAddress(beneficiary) || beneficiary.toLowerCase() === ethers.ZeroAddress.toLowerCase() || !balance || balance.raw <= 0n) return;
     setWithdrawing(true);
     try {
       const result = await withdrawLockBalance(collectible.lock_address, beneficiary, wallet, collectible.chain_id);
@@ -192,17 +203,17 @@ export function CollectibleManagementDialog({ collectible, open, onOpenChange, o
             {!withdrawReview ? (
               <>
                 <div className="mt-4 space-y-2"><Label>Withdraw to</Label><Input disabled={saving || withdrawing} value={beneficiary} onChange={(e) => { setBeneficiary(e.target.value); setWithdrawExplorer(null); }} placeholder={defaultBeneficiary || '0x…'} /><p className="text-xs text-muted-foreground">Defaults to your connected creator wallet. Replace it with any valid address you control if needed.</p></div>
-                <Button className="mt-4" variant="outline" disabled={saving || withdrawing || !balance || balance.raw <= 0n} onClick={reviewWithdrawal}>Review withdrawal</Button>
+                <Button className="mt-4" variant="outline" disabled={saving || withdrawing || !balance || balance.raw <= 0n} onClick={() => { void reviewWithdrawal(); }}>Review withdrawal</Button>
               </>
             ) : (
               <div className="mt-4 space-y-3 rounded-lg border bg-background p-4 text-sm">
                 <div className="font-semibold">Confirm withdrawal</div>
                 <div className="grid gap-2">
-                  <div><span className="text-muted-foreground">Amount:</span> {balance?.formatted} {collectible.currency}</div>
+                  <div><span className="text-muted-foreground">Available now:</span> {balance?.formatted} {collectible.currency}</div>
                   <div><span className="text-muted-foreground">Network:</span> {networkLabel}</div>
                   <div className="break-all"><span className="text-muted-foreground">To:</span> {beneficiary}</div>
                 </div>
-                <p className="text-xs text-muted-foreground">Check the address carefully. This wallet transaction sends the full available lock balance.</p>
+                <p className="text-xs text-muted-foreground">Check the address carefully. The contract withdraws the full available lock balance at signing, so a purchase received before you confirm may increase the final amount.</p>
                 <div className="flex gap-2"><Button size="sm" variant="outline" disabled={withdrawing} onClick={() => setWithdrawReview(false)}>Back</Button><Button size="sm" disabled={withdrawing} onClick={withdraw}>{withdrawing ? 'Withdrawing…' : 'Confirm withdrawal'}</Button></div>
               </div>
             )}
