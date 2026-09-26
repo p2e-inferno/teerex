@@ -18,6 +18,7 @@ export function CollectiblesExplorePanel() {
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [reloadNonce, setReloadNonce] = useState(0);
 
   useEffect(() => {
     const timer = window.setTimeout(() => setDebounced(query.trim()), 300);
@@ -46,7 +47,7 @@ export function CollectiblesExplorePanel() {
     };
     void load();
     return () => { cancelled = true; };
-  }, [debounced]);
+  }, [debounced, reloadNonce]);
 
   const loadMore = async () => {
     if (loadingMore || !hasMore) return;
@@ -73,7 +74,7 @@ export function CollectiblesExplorePanel() {
       {loading ? (
         <div className="py-16 text-center text-muted-foreground">Loading collectibles…</div>
       ) : error ? (
-        <Card><CardContent className="py-16 text-center"><div className="font-medium">Could not load collectibles</div><p className="mt-2 text-sm text-muted-foreground">{error}</p><Button className="mt-5" variant="outline" onClick={() => setDebounced((value) => `${value} `)}>Retry</Button></CardContent></Card>
+        <Card><CardContent className="py-16 text-center"><div className="font-medium">Could not load collectibles</div><p className="mt-2 text-sm text-muted-foreground">{error}</p><Button className="mt-5" variant="outline" onClick={() => setReloadNonce((value) => value + 1)}>Retry</Button></CardContent></Card>
       ) : items.length === 0 ? (
         <Card><CardContent className="py-16 text-center text-muted-foreground">No collectibles found yet.</CardContent></Card>
       ) : (
