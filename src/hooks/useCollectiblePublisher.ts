@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { ethers } from 'ethers';
 import { usePrivy, useWallets } from '@privy-io/react-auth';
 import { collectibleFormSchema, type CollectibleFormValues } from '@/types/collectible.schema';
@@ -55,6 +55,9 @@ export function useCollectiblePublisher() {
   const { wallets } = useWallets();
   const [isPublishing, setIsPublishing] = useState(false);
   const [pendingPersistence, setPendingPersistence] = useState<PendingPersistence | null>(null);
+  // React state does not synchronously block a rapid second submit. Keep a ref as
+  // the transaction-boundary mutex so one user action can never deploy two locks.
+  const publishingRef = useRef(false);
 
   useEffect(() => {
     if (!user?.id) {
@@ -104,10 +107,9 @@ export function useCollectiblePublisher() {
       throw new Error('Reconnect the wallet that created this collectible to finish publishing it.');
     }
 
-    // deployLock already attempts these settings, but treats them as non-critical
-    // for the generic event flow. Re-ensure every collectible-critical setting
-    // here. Each helper is idempotent, so a retry never redeploys the lock or
-    // repeats a transaction whose desired on-chain state already exists.
+    // These are the collectible-specific post-deploy invariants. Each helper is
+    // idempotent, so refresh/retry resumes the same lock without repeating an
+    // already-confirmed transaction.
     const limit = await setLockMaxKeysPerAddress(
       pending.lockAddress,
       pending.form.maxKeysPerAddress,
@@ -141,6 +143,9 @@ export function useCollectiblePublisher() {
   }, [persist, preferredWallet, rememberPending]);
 
   const publish = useCallback(async (values: CollectibleFormValues): Promise<Collectible> => {
+    if (publishingRef.current) {
+      throw new Error('This collectible is already being published.');
+    }
     if (pendingPersistence) {
       throw new Error('A collectible lock is already waiting to finish publishing. Retry that publish instead of deploying another lock.');
     }
@@ -150,8 +155,15 @@ export function useCollectiblePublisher() {
     const wallet = preferredWallet();
     if (!wallet?.address) throw new Error('Connect a wallet before publishing.');
 
+    publishingRef.current = true;
     setIsPublishing(true);
     try {
+      // Critical ordering: deploy only here. The generic deploy helper can also
+      // perform best-effort metadata/transferability transactions; skip those so
+      // it returns immediately after the deployment receipt. We must checkpoint
+      // the deployed address before *any* subsequent wallet transaction, otherwise
+      // a refresh during post-deploy configuration could orphan a live lock and a
+      // retry would deploy a duplicate.
       const deployment = await deployLock({
         name: form.name.trim(),
         symbol: TEEREX_NFT_SYMBOL,
@@ -162,7 +174,7 @@ export function useCollectiblePublisher() {
         price: form.price,
         maxKeysPerAddress: form.maxKeysPerAddress,
         transferable: true,
-      }, wallet, form.chainId);
+      }, wallet, form.chainId, true);
       if (!deployment.success || !deployment.lockAddress || !deployment.transactionHash || !ethers.isAddress(deployment.lockAddress)) {
         throw new Error(deployment.error || 'The collectible lock could not be deployed.');
       }
@@ -178,16 +190,20 @@ export function useCollectiblePublisher() {
       rememberPending(pending);
       return await configureAndPersist(pending);
     } finally {
+      publishingRef.current = false;
       setIsPublishing(false);
     }
   }, [configureAndPersist, pendingPersistence, preferredWallet, rememberPending, user?.id]);
 
   const retryPersistence = useCallback(async () => {
+    if (publishingRef.current) throw new Error('This collectible publish is already in progress.');
     if (!pendingPersistence) throw new Error('There is no deployed collectible waiting to be finished.');
+    publishingRef.current = true;
     setIsPublishing(true);
     try {
       return await configureAndPersist(pendingPersistence);
     } finally {
+      publishingRef.current = false;
       setIsPublishing(false);
     }
   }, [configureAndPersist, pendingPersistence]);
