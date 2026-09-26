@@ -4,8 +4,8 @@ import { Minus, Plus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { useToast } from '@/hooks/use-toast';
-import { useUserAddresses } from '@/hooks/useUserAddresses';
 import { useCollectibleChainState } from '@/hooks/useCollectibleChainState';
+import { getCollectiblePurchaseAllowance, isCollectibleQuantityAllowed } from '@/lib/collectibles/purchaseLimits';
 import { purchaseLockKeys } from '@/utils/publicLockActions';
 import type { Collectible } from '@/types/collectible';
 
@@ -19,27 +19,32 @@ interface Props {
 export function CollectiblePurchaseDialog({ collectible, open, onOpenChange, onPurchased }: Props) {
   const { authenticated, login, user } = usePrivy();
   const { wallets } = useWallets();
-  const addresses = useUserAddresses();
   const { toast } = useToast();
   const [quantity, setQuantity] = useState(1);
   const [buying, setBuying] = useState(false);
-  const chain = useCollectibleChainState(collectible?.lock_address, collectible?.chain_id, addresses);
+  const preferred = user?.wallet?.address?.toLowerCase();
+  const wallet = wallets.find((candidate) => candidate.address.toLowerCase() === preferred) ?? wallets[0];
+  const purchasingAddress = wallet?.address ? [wallet.address.toLowerCase()] : [];
+  const chain = useCollectibleChainState(collectible?.lock_address, collectible?.chain_id, purchasingAddress);
 
   const remaining = useMemo(() => {
     if (!collectible) return 0;
-    return Math.max(0, Math.min(
-      collectible.max_supply - chain.sold,
-      chain.maxPerWallet - chain.owned,
-    ));
+    return getCollectiblePurchaseAllowance({
+      maxSupply: collectible.max_supply,
+      sold: chain.sold,
+      maxPerWallet: chain.maxPerWallet,
+      ownedByPurchasingWallet: chain.owned,
+    });
   }, [chain.maxPerWallet, chain.owned, chain.sold, collectible]);
 
   useEffect(() => { if (open) setQuantity(1); }, [open, collectible?.id]);
-  useEffect(() => { if (quantity > remaining && remaining > 0) setQuantity(remaining); }, [quantity, remaining]);
+  useEffect(() => {
+    if (remaining === 0) return;
+    if (quantity > remaining) setQuantity(remaining);
+  }, [quantity, remaining]);
 
   if (!collectible) return null;
   const total = collectible.price * quantity;
-  const preferred = user?.wallet?.address?.toLowerCase();
-  const wallet = wallets.find((candidate) => candidate.address.toLowerCase() === preferred) ?? wallets[0];
 
   const purchase = async () => {
     if (!authenticated) { login(); return; }
@@ -47,7 +52,7 @@ export function CollectiblePurchaseDialog({ collectible, open, onOpenChange, onP
       toast({ title: 'Connect a wallet first', variant: 'destructive' });
       return;
     }
-    if (quantity < 1 || quantity > remaining) return;
+    if (!isCollectibleQuantityAllowed(quantity, remaining)) return;
     setBuying(true);
     try {
       const result = await purchaseLockKeys(
@@ -85,7 +90,7 @@ export function CollectiblePurchaseDialog({ collectible, open, onOpenChange, onP
             <img src={collectible.image_url} alt="" className="h-20 w-20 rounded-lg object-cover" />
             <div>
               <div className="font-medium">{collectible.price} {collectible.currency} each</div>
-              <div className="text-sm text-muted-foreground">{Math.max(0, collectible.max_supply - chain.sold)} remaining · you can buy {remaining} more</div>
+              <div className="text-sm text-muted-foreground">{Math.max(0, collectible.max_supply - chain.sold)} remaining · this wallet can buy {remaining} more</div>
             </div>
           </div>
           {chain.maxPerWallet > 1 && remaining > 0 && (

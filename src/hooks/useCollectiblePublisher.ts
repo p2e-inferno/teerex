@@ -12,6 +12,7 @@ interface PendingPersistence {
   lockAddress: string;
   transactionHash: string;
   creatorAddress: string;
+  limitConfigured: boolean;
 }
 
 export function useCollectiblePublisher() {
@@ -20,7 +21,13 @@ export function useCollectiblePublisher() {
   const [isPublishing, setIsPublishing] = useState(false);
   const [pendingPersistence, setPendingPersistence] = useState<PendingPersistence | null>(null);
 
+  const preferredWallet = useCallback((address?: string) => {
+    const target = address?.toLowerCase() || user?.wallet?.address?.toLowerCase();
+    return wallets.find((candidate) => candidate.address.toLowerCase() === target) ?? wallets[0];
+  }, [user?.wallet?.address, wallets]);
+
   const persist = useCallback(async (pending: PendingPersistence): Promise<Collectible> => {
+    if (!pending.limitConfigured) throw new Error('The per-person purchase limit still needs to be configured on-chain.');
     const token = await getAccessToken();
     if (!token) throw new Error('Your session expired. Please sign in again.');
     const baseUri = getBaseTokenURI(pending.lockAddress);
@@ -44,10 +51,33 @@ export function useCollectiblePublisher() {
     }, token);
   }, [getAccessToken]);
 
+  const configureAndPersist = useCallback(async (pending: PendingPersistence): Promise<Collectible> => {
+    let ready = pending;
+    if (!ready.limitConfigured) {
+      const wallet = preferredWallet(ready.creatorAddress);
+      if (!wallet?.address) throw new Error('Reconnect the creator wallet to finish publishing this collectible.');
+      const limit = await setLockMaxKeysPerAddress(
+        ready.lockAddress,
+        ready.form.maxKeysPerAddress,
+        wallet,
+        ready.form.chainId,
+      );
+      if (!limit.success) {
+        setPendingPersistence(ready);
+        throw new Error(`The lock was created, but its per-person purchase limit still needs configuration: ${limit.error}`);
+      }
+      ready = { ...ready, limitConfigured: true };
+      setPendingPersistence(ready);
+    }
+
+    const collectible = await persist(ready);
+    setPendingPersistence(null);
+    return collectible;
+  }, [persist, preferredWallet]);
+
   const publish = useCallback(async (values: CollectibleFormValues): Promise<Collectible> => {
     const form = collectibleFormSchema.parse(values);
-    const preferredAddress = user?.wallet?.address?.toLowerCase();
-    const wallet = wallets.find((candidate) => candidate.address.toLowerCase() === preferredAddress) ?? wallets[0];
+    const wallet = preferredWallet();
     if (!wallet?.address) throw new Error('Connect a wallet before publishing.');
 
     setIsPublishing(true);
@@ -67,42 +97,31 @@ export function useCollectiblePublisher() {
         throw new Error(deployment.error || 'The collectible lock could not be deployed.');
       }
 
-      const limit = await setLockMaxKeysPerAddress(
-        deployment.lockAddress,
-        form.maxKeysPerAddress,
-        wallet,
-        form.chainId,
-      );
-      if (!limit.success) {
-        throw new Error(`The lock was created, but its per-person purchase limit could not be configured: ${limit.error}`);
-      }
-
-      const pending = {
+      const pending: PendingPersistence = {
         form,
         lockAddress: deployment.lockAddress,
         transactionHash: deployment.transactionHash,
         creatorAddress: wallet.address,
+        limitConfigured: false,
       };
+      // Store the deployed lock immediately. Any retry after this point resumes
+      // configuration/persistence and must never deploy a replacement lock.
       setPendingPersistence(pending);
-      const collectible = await persist(pending);
-      setPendingPersistence(null);
-      return collectible;
+      return await configureAndPersist(pending);
     } finally {
       setIsPublishing(false);
     }
-  }, [persist, user?.wallet?.address, wallets]);
+  }, [configureAndPersist, preferredWallet]);
 
   const retryPersistence = useCallback(async () => {
     if (!pendingPersistence) throw new Error('There is no deployed collectible waiting to be saved.');
     setIsPublishing(true);
     try {
-      const collectible = await persist(pendingPersistence);
-      setPendingPersistence(null);
-      return collectible;
+      return await configureAndPersist(pendingPersistence);
     } finally {
       setIsPublishing(false);
     }
-  }, [pendingPersistence, persist]);
+  }, [configureAndPersist, pendingPersistence]);
 
   return { publish, retryPersistence, pendingPersistence, isPublishing };
 }

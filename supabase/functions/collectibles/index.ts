@@ -64,7 +64,7 @@ async function handleList(supabase: any, body: any) {
   }
 
   // Keep V1 search deliberately simple and safe: creator listing names only.
-  if (search) query = query.ilike("name", `%${search.replace(/[%_]/g, "")} %`.replace(" %", "%"));
+  if (search) query = query.ilike("name", `%${search.replace(/[%_]/g, "")}%`);
 
   const { data, error, count } = await query.range(offset, offset + limit - 1);
   if (error) return json({ ok: false, error: error.message }, 400);

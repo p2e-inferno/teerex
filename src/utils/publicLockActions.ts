@@ -24,7 +24,6 @@ const LOCK_ABI = [
   },
   { inputs: [], name: 'keyPrice', outputs: [{ type: 'uint256' }], stateMutability: 'view', type: 'function' },
   { inputs: [], name: 'tokenAddress', outputs: [{ type: 'address' }], stateMutability: 'view', type: 'function' },
-  { inputs: [], name: 'isLockManager', outputs: [{ type: 'bool' }], stateMutability: 'view', type: 'function' },
   { inputs: [{ type: 'address', name: '_account' }], name: 'isLockManager', outputs: [{ type: 'bool' }], stateMutability: 'view', type: 'function' },
   { inputs: [{ type: 'uint256', name: '_maxKeys' }], name: 'setMaxKeysPerAddress', outputs: [], stateMutability: 'nonpayable', type: 'function' },
   { inputs: [], name: 'maxKeysPerAddress', outputs: [{ type: 'uint256' }], stateMutability: 'view', type: 'function' },
@@ -82,7 +81,7 @@ async function managedLock(wallet: any, lockAddress: string, chainId: number) {
   if (!(await lock.isLockManager(signerAddress))) {
     throw new Error('The connected wallet is not a manager of this collectible lock.');
   }
-  return { lock, signer, signerAddress };
+  return { lock, signerAddress };
 }
 
 export async function purchaseLockKeys(
@@ -122,8 +121,7 @@ export async function purchaseLockKeys(
       const allowance = await token.allowance(owner, lockAddress);
       if (allowance < totalCost) {
         try {
-          const approval = await token.approve(lockAddress, totalCost);
-          await approval.wait();
+          await (await token.approve(lockAddress, totalCost)).wait();
         } catch (error: any) {
           if (!String(error?.message || '').toLowerCase().includes('must be zero')) throw error;
           await (await token.approve(lockAddress, 0)).wait();
