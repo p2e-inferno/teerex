@@ -1,4 +1,5 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
+import { ethers } from 'ethers';
 import { usePrivy, useWallets } from '@privy-io/react-auth';
 import { collectibleFormSchema, type CollectibleFormValues } from '@/types/collectible.schema';
 import type { Collectible } from '@/types/collectible';
@@ -14,11 +15,59 @@ interface PendingPersistence {
   creatorAddress: string;
 }
 
+const RECOVERY_PREFIX = 'teerex:collectible-publish:';
+
+function recoveryKey(userId: string) {
+  return `${RECOVERY_PREFIX}${userId}`;
+}
+
+function readRecovery(userId: string): PendingPersistence | null {
+  if (typeof window === 'undefined') return null;
+  const raw = window.localStorage.getItem(recoveryKey(userId));
+  if (!raw) return null;
+  try {
+    const candidate = JSON.parse(raw) as Partial<PendingPersistence>;
+    const form = collectibleFormSchema.parse(candidate.form);
+    if (!ethers.isAddress(candidate.lockAddress || '') || !ethers.isAddress(candidate.creatorAddress || '') || !candidate.transactionHash) {
+      throw new Error('Invalid collectible publish recovery record.');
+    }
+    return {
+      form,
+      lockAddress: String(candidate.lockAddress),
+      transactionHash: String(candidate.transactionHash),
+      creatorAddress: String(candidate.creatorAddress),
+    };
+  } catch {
+    window.localStorage.removeItem(recoveryKey(userId));
+    return null;
+  }
+}
+
+function writeRecovery(userId: string, pending: PendingPersistence | null) {
+  if (typeof window === 'undefined') return;
+  const key = recoveryKey(userId);
+  if (pending) window.localStorage.setItem(key, JSON.stringify(pending));
+  else window.localStorage.removeItem(key);
+}
+
 export function useCollectiblePublisher() {
   const { user, getAccessToken } = usePrivy();
   const { wallets } = useWallets();
   const [isPublishing, setIsPublishing] = useState(false);
   const [pendingPersistence, setPendingPersistence] = useState<PendingPersistence | null>(null);
+
+  useEffect(() => {
+    if (!user?.id) {
+      setPendingPersistence(null);
+      return;
+    }
+    setPendingPersistence(readRecovery(user.id));
+  }, [user?.id]);
+
+  const rememberPending = useCallback((pending: PendingPersistence | null) => {
+    setPendingPersistence(pending);
+    if (user?.id) writeRecovery(user.id, pending);
+  }, [user?.id]);
 
   const preferredWallet = useCallback((address?: string) => {
     const target = address?.toLowerCase() || user?.wallet?.address?.toLowerCase();
@@ -51,7 +100,9 @@ export function useCollectiblePublisher() {
 
   const configureAndPersist = useCallback(async (pending: PendingPersistence): Promise<Collectible> => {
     const wallet = preferredWallet(pending.creatorAddress);
-    if (!wallet?.address) throw new Error('Reconnect the creator wallet to finish publishing this collectible.');
+    if (!wallet?.address || wallet.address.toLowerCase() !== pending.creatorAddress.toLowerCase()) {
+      throw new Error('Reconnect the wallet that created this collectible to finish publishing it.');
+    }
 
     // deployLock already attempts these settings, but treats them as non-critical
     // for the generic event flow. Re-ensure every collectible-critical setting
@@ -85,11 +136,16 @@ export function useCollectiblePublisher() {
     if (!metadata.success) throw new Error(`The lock was created, but NFT metadata is not configured: ${metadata.error}`);
 
     const collectible = await persist(pending);
-    setPendingPersistence(null);
+    rememberPending(null);
     return collectible;
-  }, [persist, preferredWallet]);
+  }, [persist, preferredWallet, rememberPending]);
 
   const publish = useCallback(async (values: CollectibleFormValues): Promise<Collectible> => {
+    if (pendingPersistence) {
+      throw new Error('A collectible lock is already waiting to finish publishing. Retry that publish instead of deploying another lock.');
+    }
+    if (!user?.id) throw new Error('Sign in before publishing a collectible.');
+
     const form = collectibleFormSchema.parse(values);
     const wallet = preferredWallet();
     if (!wallet?.address) throw new Error('Connect a wallet before publishing.');
@@ -107,7 +163,7 @@ export function useCollectiblePublisher() {
         maxKeysPerAddress: form.maxKeysPerAddress,
         transferable: true,
       }, wallet, form.chainId);
-      if (!deployment.success || !deployment.lockAddress || !deployment.transactionHash) {
+      if (!deployment.success || !deployment.lockAddress || !deployment.transactionHash || !ethers.isAddress(deployment.lockAddress)) {
         throw new Error(deployment.error || 'The collectible lock could not be deployed.');
       }
 
@@ -117,14 +173,14 @@ export function useCollectiblePublisher() {
         transactionHash: deployment.transactionHash,
         creatorAddress: wallet.address,
       };
-      // Store the deployed lock immediately. Any failure after this point is a
-      // resumable configuration/persistence failure and must never deploy again.
-      setPendingPersistence(pending);
+      // Persist recovery immediately after the deployment receipt. Any failure or
+      // refresh after this point resumes this exact lock rather than deploying a new one.
+      rememberPending(pending);
       return await configureAndPersist(pending);
     } finally {
       setIsPublishing(false);
     }
-  }, [configureAndPersist, preferredWallet]);
+  }, [configureAndPersist, pendingPersistence, preferredWallet, rememberPending, user?.id]);
 
   const retryPersistence = useCallback(async () => {
     if (!pendingPersistence) throw new Error('There is no deployed collectible waiting to be finished.');
