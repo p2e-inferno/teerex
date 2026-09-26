@@ -4,16 +4,20 @@ import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { CollectibleCard } from '@/components/collectibles/CollectibleCard';
+import { useToast } from '@/hooks/use-toast';
 import { listCollectibles } from '@/lib/collectibles/collectibleApi';
 import type { Collectible } from '@/types/collectible';
 
 export function CollectiblesExplorePanel() {
+  const { toast } = useToast();
   const [items, setItems] = useState<Collectible[]>([]);
   const [query, setQuery] = useState('');
   const [debounced, setDebounced] = useState('');
   const [page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     const timer = window.setTimeout(() => setDebounced(query.trim()), 300);
@@ -22,22 +26,42 @@ export function CollectiblesExplorePanel() {
 
   useEffect(() => {
     let cancelled = false;
-    setLoading(true);
-    listCollectibles({ page: 1, pageSize: 12, query: debounced }).then((result) => {
-      if (cancelled) return;
-      setItems(result.collectibles);
-      setHasMore(result.has_more);
-      setPage(1);
-    }).finally(() => !cancelled && setLoading(false));
+    const load = async () => {
+      setLoading(true);
+      setError(null);
+      try {
+        const result = await listCollectibles({ page: 1, pageSize: 12, query: debounced });
+        if (cancelled) return;
+        setItems(result.collectibles);
+        setHasMore(result.has_more);
+        setPage(1);
+      } catch (cause) {
+        if (cancelled) return;
+        setItems([]);
+        setHasMore(false);
+        setError(cause instanceof Error ? cause.message : 'Could not load collectibles.');
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    };
+    void load();
     return () => { cancelled = true; };
   }, [debounced]);
 
   const loadMore = async () => {
-    const next = page + 1;
-    const result = await listCollectibles({ page: next, pageSize: 12, query: debounced });
-    setItems((current) => [...current, ...result.collectibles]);
-    setPage(next);
-    setHasMore(result.has_more);
+    if (loadingMore || !hasMore) return;
+    setLoadingMore(true);
+    try {
+      const next = page + 1;
+      const result = await listCollectibles({ page: next, pageSize: 12, query: debounced });
+      setItems((current) => [...current, ...result.collectibles]);
+      setPage(next);
+      setHasMore(result.has_more);
+    } catch (cause) {
+      toast({ title: 'Could not load more collectibles', description: cause instanceof Error ? cause.message : 'Try again.', variant: 'destructive' });
+    } finally {
+      setLoadingMore(false);
+    }
   };
 
   return (
@@ -48,6 +72,8 @@ export function CollectiblesExplorePanel() {
       </div>
       {loading ? (
         <div className="py-16 text-center text-muted-foreground">Loading collectibles…</div>
+      ) : error ? (
+        <Card><CardContent className="py-16 text-center"><div className="font-medium">Could not load collectibles</div><p className="mt-2 text-sm text-muted-foreground">{error}</p><Button className="mt-5" variant="outline" onClick={() => setDebounced((value) => `${value} `)}>Retry</Button></CardContent></Card>
       ) : items.length === 0 ? (
         <Card><CardContent className="py-16 text-center text-muted-foreground">No collectibles found yet.</CardContent></Card>
       ) : (
@@ -55,7 +81,7 @@ export function CollectiblesExplorePanel() {
           <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
             {items.map((item) => <CollectibleCard key={item.id} collectible={item} />)}
           </div>
-          {hasMore && <div className="text-center"><Button variant="outline" onClick={loadMore}>Load more</Button></div>}
+          {hasMore && <div className="text-center"><Button variant="outline" disabled={loadingMore} onClick={loadMore}>{loadingMore ? 'Loading…' : 'Load more'}</Button></div>}
         </>
       )}
     </div>
