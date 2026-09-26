@@ -33,11 +33,22 @@ describe('collectibles architecture guardrails', () => {
     expect(manage).not.toContain('<Textarea');
   });
 
-  it('persists post-deployment recovery so refresh cannot cause a duplicate lock', () => {
+  it('normalizes empty rich text instead of persisting editor placeholder markup', () => {
+    const publisher = read('src/hooks/useCollectiblePublisher.ts');
+    const manage = read('src/components/collectibles/CollectibleManagementDialog.tsx');
+    expect(publisher).toContain('isRichTextEmpty');
+    expect(manage).toContain('isRichTextEmpty(form.description) ? null');
+    expect(manage).toContain('form.is_claimable && !isRichTextEmpty(form.fulfillment_note)');
+  });
+
+  it('checkpoints the deployed lock before collectible-specific configuration', () => {
     const publisher = read('src/hooks/useCollectiblePublisher.ts');
     expect(publisher).toContain('localStorage');
     expect(publisher).toContain('pendingPersistence');
     expect(publisher).toContain('already waiting to finish publishing');
+    expect(publisher).toContain('}, wallet, form.chainId, true);');
+    expect(publisher.indexOf('rememberPending(pending)')).toBeLessThan(publisher.indexOf('configureAndPersist(pending)'));
+    expect(publisher).toContain('publishingRef.current');
   });
 
   it('keeps the existing event host route on the existing HostProfile surface', () => {
