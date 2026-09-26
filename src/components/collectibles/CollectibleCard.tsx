@@ -17,13 +17,17 @@ interface Props {
 }
 
 export function CollectibleCard({ collectible, ownedQuantity, showShare = false, footer }: Props) {
-  const { sold } = useCollectibleChainState(collectible.lock_address, collectible.chain_id);
+  const chain = useCollectibleChainState(collectible.lock_address, collectible.chain_id);
   const { toast } = useToast();
-  const soldOut = sold >= collectible.max_supply;
+  const soldOut = chain.ready && chain.sold >= collectible.max_supply;
   const copy = async () => {
     const url = `${window.location.origin}/collectible/${collectible.id}`;
-    await navigator.clipboard.writeText(url);
-    toast({ title: 'Collectible link copied' });
+    try {
+      await navigator.clipboard.writeText(url);
+      toast({ title: 'Collectible link copied' });
+    } catch {
+      toast({ title: 'Could not copy link', description: 'Open the collectible and copy its URL from your browser.', variant: 'destructive' });
+    }
   };
 
   return (
@@ -46,7 +50,7 @@ export function CollectibleCard({ collectible, ownedQuantity, showShare = false,
         <div className="flex items-end justify-between gap-3 text-sm">
           <div>
             <div className="font-medium">{collectible.price} {collectible.currency}</div>
-            <div className="text-muted-foreground">{Math.min(sold, collectible.max_supply)}/{collectible.max_supply} collected</div>
+            <div className="text-muted-foreground">{chain.ready ? `${Math.min(chain.sold, collectible.max_supply)}/${collectible.max_supply} collected` : chain.error ? 'Availability unavailable' : 'Checking availability…'}</div>
           </div>
           {showShare && (
             <Button type="button" variant="ghost" size="icon" onClick={copy} aria-label="Share collectible">
