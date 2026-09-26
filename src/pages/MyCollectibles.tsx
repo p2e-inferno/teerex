@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { ethers } from 'ethers';
 import { useNavigate } from 'react-router-dom';
 import { usePrivy } from '@privy-io/react-auth';
-import { Plus, Settings2, WalletCards } from 'lucide-react';
+import { Eye, Plus, Settings2, WalletCards } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { WalletConnectionGate } from '@/components/WalletConnectionGate';
@@ -51,7 +51,7 @@ export default function MyCollectibles() {
         {loading ? <div className="py-16 text-center text-muted-foreground">Loading your collectibles…</div> : items.length === 0 ? (
           <Card><CardContent className="py-16 text-center"><h2 className="text-xl font-semibold">No collectibles yet</h2><p className="mt-2 text-muted-foreground">Publish your first limited edition and share it with supporters.</p><Button className="mt-6" onClick={() => navigate('/create-collectible')}>Create your first collectible</Button></CardContent></Card>
         ) : (
-          <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">{items.map((item) => <CollectibleCard key={item.id} collectible={item} showShare footer={<div className="space-y-3 border-t pt-3"><Balance collectible={item} /><Button className="w-full" variant="outline" onClick={() => setSelected(item)}><Settings2 className="mr-2 h-4 w-4" />Manage</Button></div>} />)}</div>
+          <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">{items.map((item) => <CollectibleCard key={item.id} collectible={item} showShare footer={<div className="space-y-3 border-t pt-3"><Balance collectible={item} /><div className="grid grid-cols-2 gap-2"><Button variant="outline" onClick={() => navigate(`/collectible/${item.id}`)}><Eye className="mr-2 h-4 w-4" />View</Button><Button variant="outline" onClick={() => setSelected(item)}><Settings2 className="mr-2 h-4 w-4" />Manage</Button></div></div>} />)}</div>
         )}
       </div>
       <CollectibleManagementDialog collectible={selected} open={Boolean(selected)} onOpenChange={(open) => !open && setSelected(null)} onUpdated={(updated) => { setItems((current) => current.map((item) => item.id === updated.id ? updated : item)); setSelected(updated); }} />
