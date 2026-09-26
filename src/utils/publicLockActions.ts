@@ -106,8 +106,11 @@ export async function purchaseLockKeys(
     const expected = info.address === ZERO_ADDRESS
       ? parseEther(expectedUnitPrice.toString())
       : parseUnits(expectedUnitPrice.toString(), info.decimals);
-    const unitPrice = await lock.keyPrice();
+    const [unitPrice, tokenAddress] = await Promise.all([lock.keyPrice(), lock.tokenAddress()]);
     if (unitPrice !== expected) throw new Error('The collectible price has changed. Refresh and try again.');
+    if (String(tokenAddress).toLowerCase() !== info.address.toLowerCase()) {
+      throw new Error('The collectible payment token has changed. Refresh and try again.');
+    }
 
     const values = Array.from({ length: quantity }, () => unitPrice);
     const recipients = Array.from({ length: quantity }, () => owner);
@@ -153,6 +156,10 @@ export async function setLockMaxKeysPerAddress(
   try {
     if (!Number.isInteger(maxKeys) || maxKeys < 1) throw new Error('Per-person limit must be at least 1.');
     const { lock } = await managedLock(wallet, lockAddress, chainId);
+    const current = await lock.maxKeysPerAddress();
+    if (current === BigInt(maxKeys)) return { success: true };
+    const maxSupply = await lock.maxNumberOfKeys();
+    if (BigInt(maxKeys) > maxSupply) throw new Error('Per-person limit cannot exceed total supply.');
     const tx = await lock.setMaxKeysPerAddress(maxKeys);
     const receipt = await tx.wait();
     if (receipt.status !== 1) throw new Error('Limit update failed.');
@@ -171,9 +178,10 @@ export async function setLockMaxSupply(
   try {
     if (!Number.isInteger(maxSupply) || maxSupply < 1) throw new Error('Supply must be at least 1.');
     const { lock } = await managedLock(wallet, lockAddress, chainId);
-    const [expiration, perWallet, totalSupply] = await Promise.all([
-      lock.expirationDuration(), lock.maxKeysPerAddress(), lock.totalSupply(),
+    const [expiration, currentMaxSupply, perWallet, totalSupply] = await Promise.all([
+      lock.expirationDuration(), lock.maxNumberOfKeys(), lock.maxKeysPerAddress(), lock.totalSupply(),
     ]);
+    if (currentMaxSupply === BigInt(maxSupply)) return { success: true };
     if (BigInt(maxSupply) < totalSupply) throw new Error('Supply cannot be lower than the number already collected.');
     if (BigInt(maxSupply) < perWallet) throw new Error('Supply cannot be lower than the per-person purchase limit.');
     const tx = await lock.updateLockConfig(expiration, BigInt(maxSupply), perWallet);
@@ -196,11 +204,12 @@ export async function setLockPrice(
     if (!Number.isFinite(newPrice) || newPrice <= 0) throw new Error('Price must be greater than zero.');
     const { lock } = await managedLock(wallet, lockAddress, chainId);
     const info = await tokenInfo(chainId, currency);
-    const currentToken = String(await lock.tokenAddress()).toLowerCase();
-    if (currentToken !== info.address.toLowerCase()) throw new Error('The lock currency does not match TeeRex configuration.');
+    const [currentToken, currentPrice] = await Promise.all([lock.tokenAddress(), lock.keyPrice()]);
+    if (String(currentToken).toLowerCase() !== info.address.toLowerCase()) throw new Error('The lock currency does not match TeeRex configuration.');
     const rawPrice = info.address === ZERO_ADDRESS
       ? parseEther(newPrice.toString())
       : parseUnits(newPrice.toString(), info.decimals);
+    if (currentPrice === rawPrice) return { success: true };
     const tx = await lock.updateKeyPricing(rawPrice, info.address);
     const receipt = await tx.wait();
     if (receipt.status !== 1) throw new Error('Price update failed.');
