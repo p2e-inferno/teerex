@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { getMaxKeysPerAddress, getTotalKeys, getUserKeyBalance } from '@/utils/lockUtils';
+import { readCollectibleChainState } from '@/lib/collectibles/chainState';
 
 export function useCollectibleChainState(
   lockAddress: string | undefined,
@@ -24,14 +24,10 @@ export function useCollectibleChainState(
     setLoading(true);
     setError(null);
     try {
-      const [nextSold, nextLimit, balances] = await Promise.all([
-        getTotalKeys(lockAddress, chainId),
-        getMaxKeysPerAddress(lockAddress, undefined, chainId),
-        Promise.all(addresses.map((address) => getUserKeyBalance(lockAddress, address, chainId))),
-      ]);
-      setSold(nextSold);
-      setMaxPerWallet(nextLimit || 1);
-      setOwned(balances.reduce((sum, count) => sum + count, 0));
+      const state = await readCollectibleChainState(lockAddress, chainId, addresses);
+      setSold(state.sold);
+      setMaxPerWallet(state.maxPerWallet);
+      setOwned(state.owned);
       setReady(true);
     } catch (cause) {
       const nextError = cause instanceof Error ? cause : new Error('Could not read collectible contract state.');
