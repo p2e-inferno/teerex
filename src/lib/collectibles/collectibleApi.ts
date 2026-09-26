@@ -25,6 +25,19 @@ export async function listCollectibles(options: ListOptions = {}): Promise<Colle
   }, {});
 }
 
+export async function listAllCollectibles(options: Pick<ListOptions, 'creatorAddress' | 'query'> = {}): Promise<Collectible[]> {
+  const rows: Collectible[] = [];
+  const pageSize = 48;
+  // Defensive ceiling only: V1 galleries discover ownership on-chain, so an
+  // unbounded browser scan would be worse than returning a controlled result.
+  for (let page = 1; page <= 50; page += 1) {
+    const result = await listCollectibles({ ...options, page, pageSize });
+    rows.push(...result.collectibles);
+    if (!result.has_more) return rows;
+  }
+  throw new Error('Too many collectibles to resolve in one gallery request.');
+}
+
 export async function getCollectible(idOrLock: string): Promise<Collectible> {
   const data = await callEdgeFunction<{ collectible: Collectible }>('collectibles', {
     route: 'detail',
