@@ -3,6 +3,7 @@ import { ethers } from 'ethers';
 import { usePrivy, useWallets } from '@privy-io/react-auth';
 import { collectibleFormSchema, type CollectibleFormValues } from '@/types/collectible.schema';
 import type { Collectible } from '@/types/collectible';
+import { isRichTextEmpty } from '@/lib/richText';
 import { deployLock, getTicketExpirationSeconds } from '@/utils/lockUtils';
 import { ensureLockMetadata, ensureLockTransferability, setLockMaxKeysPerAddress } from '@/utils/publicLockActions';
 import { getBaseTokenURI, TEEREX_NFT_SYMBOL } from '@/utils/lockMetadata';
@@ -84,7 +85,7 @@ export function useCollectiblePublisher() {
     return createCollectible({
       creator_address: pending.creatorAddress.toLowerCase(),
       name: pending.form.name.trim(),
-      description: pending.form.description?.trim() || null,
+      description: isRichTextEmpty(pending.form.description || '') ? null : pending.form.description!.trim(),
       image_url: pending.form.imageUrl,
       chain_id: pending.form.chainId,
       currency: pending.form.currency,
@@ -94,7 +95,9 @@ export function useCollectiblePublisher() {
       lock_address: pending.lockAddress.toLowerCase(),
       transaction_hash: pending.transactionHash,
       is_claimable: pending.form.isClaimable,
-      fulfillment_note: pending.form.fulfillmentNote?.trim() || null,
+      fulfillment_note: pending.form.isClaimable && !isRichTextEmpty(pending.form.fulfillmentNote || '')
+        ? pending.form.fulfillmentNote!.trim()
+        : null,
       transferable: true,
       nft_metadata_set: true,
       nft_base_uri: baseUri,
