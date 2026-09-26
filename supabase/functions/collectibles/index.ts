@@ -13,6 +13,7 @@ function json(data: any, status = 200) {
 }
 
 const isAddress = (value: string) => /^0x[a-fA-F0-9]{40}$/.test(value);
+const isUuid = (value: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
 const normalizeAddress = (value: unknown) => String(value || "").trim().toLowerCase();
 
 function publicRow(row: any, displayName: string | null = null) {
@@ -82,6 +83,9 @@ async function handleList(supabase: any, body: any) {
 async function handleDetail(supabase: any, body: any) {
   const id = String(body.id || "").trim();
   if (!id) return json({ ok: false, error: "Collectible id is required." }, 400);
+  if (!isAddress(id) && !isUuid(id)) {
+    return json({ ok: false, error: "Invalid collectible identifier." }, 400);
+  }
 
   let query = supabase.from("collectibles").select("*").eq("is_public", true);
   query = isAddress(id) ? query.ilike("lock_address", id.toLowerCase()) : query.eq("id", id);
