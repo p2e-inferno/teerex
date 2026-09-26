@@ -13,6 +13,7 @@ import CollectibleDetails from "./pages/CollectibleDetails";
 import MyCollectibles from "./pages/MyCollectibles";
 import MyCollection from "./pages/MyCollection";
 import PublicProfile from "./pages/PublicProfile";
+import HostProfile from "./pages/HostProfile";
 import MyEvents from "./pages/MyEvents";
 import MyTickets from "./pages/MyTickets";
 import MyBundles from "./pages/MyBundles";
@@ -114,7 +115,7 @@ const App = () => {
                 <Route path="/event/:id" element={<EventDetails />} />
                 <Route path="/event/:id/discussions" element={<EventDiscussions />} />
                 <Route path="/u/:address" element={<PublicProfile />} />
-                <Route path="/host/:address" element={<PublicProfile />} />
+                <Route path="/host/:address" element={<HostProfile />} />
                 {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
                 <Route path="*" element={<NotFound />} />
               </Routes>
