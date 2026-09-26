@@ -6,7 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
-import { Textarea } from '@/components/ui/textarea';
+import { RichTextEditor } from '@/components/ui/rich-text/RichTextEditor';
 import { WalletConnectionGate } from '@/components/WalletConnectionGate';
 import { CollectibleImageUpload } from '@/components/collectibles/CollectibleImageUpload';
 import { useNetworkConfigs } from '@/hooks/useNetworkConfigs';
@@ -61,22 +61,25 @@ export default function CreateCollectible() {
           <CardHeader><CardTitle>Collectible details</CardTitle></CardHeader>
           <CardContent className="space-y-5">
             <div className="space-y-2"><Label>Name *</Label><Input value={form.name} onChange={(e) => update({ name: e.target.value })} placeholder="Crochet Sunset Bag" /></div>
-            <div className="space-y-2"><Label>Description</Label><Textarea value={form.description} onChange={(e) => update({ description: e.target.value })} placeholder="Tell collectors about this piece…" rows={5} /></div>
+            <div className="space-y-2">
+              <Label>Description</Label>
+              <RichTextEditor value={form.description} onChange={(description) => update({ description })} placeholder="Tell collectors about this piece…" disabled={publisher.isPublishing} />
+            </div>
             <div className="grid gap-4 sm:grid-cols-2">
-              <div className="space-y-2"><Label>Network *</Label><select className="h-10 w-full rounded-md border bg-background px-3 text-sm" disabled={networksLoading} value={activeChain} onChange={(e) => { const chainId = Number(e.target.value); const available = getAvailableTokens(chainId); update({ chainId, currency: (available.includes(form.currency) ? form.currency : available[0]) as CryptoCurrency }); }}>{networks.map((network) => <option key={network.chain_id} value={network.chain_id}>{network.chain_name}</option>)}</select></div>
-              <div className="space-y-2"><Label>Payment token *</Label><select className="h-10 w-full rounded-md border bg-background px-3 text-sm" value={form.currency} onChange={(e) => update({ currency: e.target.value as CryptoCurrency })}>{tokens.map((token) => <option key={token} value={token}>{token}</option>)}</select></div>
+              <div className="space-y-2"><Label>Network *</Label><select className="h-10 w-full rounded-md border bg-background px-3 text-sm" disabled={networksLoading || publisher.isPublishing} value={activeChain} onChange={(e) => { const chainId = Number(e.target.value); const available = getAvailableTokens(chainId); update({ chainId, currency: (available.includes(form.currency) ? form.currency : available[0]) as CryptoCurrency }); }}>{networks.map((network) => <option key={network.chain_id} value={network.chain_id}>{network.chain_name}</option>)}</select></div>
+              <div className="space-y-2"><Label>Payment token *</Label><select className="h-10 w-full rounded-md border bg-background px-3 text-sm" disabled={publisher.isPublishing || tokens.length === 0} value={form.currency} onChange={(e) => update({ currency: e.target.value as CryptoCurrency })}>{tokens.map((token) => <option key={token} value={token}>{token}</option>)}</select></div>
             </div>
             <div className="grid gap-4 sm:grid-cols-3">
-              <div className="space-y-2"><Label>Price *</Label><Input type="number" min="0" step="any" value={form.price || ''} onChange={(e) => update({ price: Number(e.target.value) })} /></div>
-              <div className="space-y-2"><Label>Total available *</Label><Input type="number" min="1" step="1" value={form.maxSupply} onChange={(e) => update({ maxSupply: Number(e.target.value) })} /></div>
-              <div className="space-y-2"><Label>How many can one person buy?</Label><Input type="number" min="1" max={form.maxSupply} step="1" value={form.maxKeysPerAddress} onChange={(e) => update({ maxKeysPerAddress: Number(e.target.value) })} /><p className="text-xs text-muted-foreground">Default is 1. Raise it if supporters may collect more than one edition.</p></div>
+              <div className="space-y-2"><Label>Price *</Label><Input type="number" min="0" step="any" disabled={publisher.isPublishing} value={form.price || ''} onChange={(e) => update({ price: Number(e.target.value) })} /></div>
+              <div className="space-y-2"><Label>Total available *</Label><Input type="number" min="1" step="1" disabled={publisher.isPublishing} value={form.maxSupply} onChange={(e) => update({ maxSupply: Number(e.target.value) })} /></div>
+              <div className="space-y-2"><Label>How many can one person buy?</Label><Input type="number" min="1" max={form.maxSupply} step="1" disabled={publisher.isPublishing} value={form.maxKeysPerAddress} onChange={(e) => update({ maxKeysPerAddress: Number(e.target.value) })} /><p className="text-xs text-muted-foreground">Default is 1. Raise it if supporters may collect more than one edition.</p></div>
             </div>
             <div className="rounded-lg border p-4">
-              <div className="flex items-center justify-between gap-4"><div><Label>Physical item available</Label><p className="text-sm text-muted-foreground">Let collectors know a physical version can be arranged.</p></div><Switch checked={form.isClaimable} onCheckedChange={(isClaimable) => update({ isClaimable })} /></div>
-              {form.isClaimable && <div className="mt-4 space-y-2"><Label>Fulfillment terms *</Label><Textarea rows={4} value={form.fulfillmentNote} onChange={(e) => update({ fulfillmentNote: e.target.value })} placeholder="Available for delivery within Nigeria. International buyers cover shipping…" /></div>}
+              <div className="flex items-center justify-between gap-4"><div><Label>Physical item available</Label><p className="text-sm text-muted-foreground">Let collectors know a physical version can be arranged.</p></div><Switch disabled={publisher.isPublishing} checked={form.isClaimable} onCheckedChange={(isClaimable) => update({ isClaimable })} /></div>
+              {form.isClaimable && <div className="mt-4 space-y-2"><Label>Fulfillment terms *</Label><RichTextEditor value={form.fulfillmentNote} onChange={(fulfillmentNote) => update({ fulfillmentNote })} placeholder="Available for delivery within Nigeria. International buyers cover shipping…" disabled={publisher.isPublishing} /></div>}
             </div>
-            {publisher.pendingPersistence && <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm"><p>The lock was created on-chain but TeeRex still needs to save the listing. Retry saving; do not publish again.</p><Button type="button" variant="outline" className="mt-3" disabled={publisher.isPublishing} onClick={async () => { try { const item = await publisher.retryPersistence(); navigate(`/collectible/${item.id}`); } catch (error) { toast({ title: 'Save retry failed', description: error instanceof Error ? error.message : 'Try again.', variant: 'destructive' }); } }}>Retry saving</Button></div>}
-            <Button type="submit" className="w-full" disabled={publisher.isPublishing || networksLoading}>{publisher.isPublishing ? 'Publishing…' : 'Publish Collectible'}</Button>
+            {publisher.pendingPersistence && <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm"><p>The lock was created on-chain but TeeRex still needs to finish configuring or saving the listing. Retry here; do not publish a replacement.</p><Button type="button" variant="outline" className="mt-3" disabled={publisher.isPublishing} onClick={async () => { try { const item = await publisher.retryPersistence(); navigate(`/collectible/${item.id}`); } catch (error) { toast({ title: 'Publish retry failed', description: error instanceof Error ? error.message : 'Try again.', variant: 'destructive' }); } }}>Retry publishing</Button></div>}
+            <Button type="submit" className="w-full" disabled={publisher.isPublishing || networksLoading || !activeChain || tokens.length === 0}>{publisher.isPublishing ? 'Publishing…' : 'Publish Collectible'}</Button>
           </CardContent>
         </Card>
       </form>
