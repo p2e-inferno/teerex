@@ -1,4 +1,3 @@
-
 import React from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { usePrivy } from '@privy-io/react-auth';
@@ -12,7 +11,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { Ticket, Plus, ChevronDown, FileText, Calendar, LogOut, User, Settings, Building2, Gamepad2, ScanLine, ClipboardList, Lock, Shield, UserCircle, Coins, Trophy } from 'lucide-react';
+import { Ticket, Plus, ChevronDown, FileText, Calendar, LogOut, User, Settings, Building2, Gamepad2, ScanLine, ClipboardList, Lock, Shield, UserCircle, Coins, Trophy, Images } from 'lucide-react';
 import { useIsAdmin } from '@/hooks/useIsAdmin';
 import { useIsVendor } from '@/hooks/useIsVendor';
 
@@ -37,205 +36,213 @@ export const Header: React.FC = () => {
               Explore
             </Link>
             {authenticated && (
-              <>
-                <Link to="/create" className="text-gray-700 hover:text-gray-900 transition-colors font-medium">
-                  Create
-                </Link>
-                {/* <Link to="/attestations" className="text-gray-700 hover:text-gray-900 transition-colors font-medium">
-                  Attestations
-                </Link> */}
-              </>
+              <Link to="/create" className="text-gray-700 hover:text-gray-900 transition-colors font-medium">
+                Create
+              </Link>
             )}
             <Link to="/ticket-passes" className="text-gray-700 hover:text-gray-900 transition-colors font-medium">
              Ticket Passes
             </Link>
-            {/* <Link to="/gaming-bundles" className="text-gray-700 hover:text-gray-900 transition-colors font-medium">
-              Bundles
-            </Link> */}
           </nav>
 
           <div className="flex items-center gap-3">
             {authenticated ? (
-              <>
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="text-gray-700 hover:text-gray-900 hover:bg-gray-50 font-medium"
-                    >
-                      <User className="h-4 w-4 mr-2" />
-                      Account
-                      <ChevronDown className="h-4 w-4 ml-2" />
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end" className="w-56 max-h-[min(364px,calc(100vh-5rem))] overflow-y-auto overscroll-contain bg-white border border-gray-200 shadow-xl p-2 rounded-xl">
-                    <DropdownMenuGroup>
-                      <DropdownMenuLabel className="text-xs font-semibold text-gray-400 uppercase tracking-wider px-2 py-1.5">
-                        Personal
-                      </DropdownMenuLabel>
-                      <DropdownMenuItem asChild>
-                        <Link to="/profile" className="flex items-center cursor-pointer py-2 px-2 hover:bg-gray-50 rounded-md transition-colors">
-                          <UserCircle className="h-4 w-4 mr-2 text-gray-500" />
-                          Profile
-                        </Link>
-                      </DropdownMenuItem>
-                      <DropdownMenuItem asChild>
-                        <Link to="/my-tickets" className="flex items-center cursor-pointer py-2 px-2 hover:bg-gray-50 rounded-md transition-colors">
-                          <Ticket className="h-4 w-4 mr-2 text-gray-500" />
-                          My Tickets
-                        </Link>
-                      </DropdownMenuItem>
-                      <DropdownMenuItem asChild>
-                        <Link to="/my-bundles" className="flex items-center cursor-pointer py-2 px-2 hover:bg-gray-50 rounded-md transition-colors">
-                          <Gamepad2 className="h-4 w-4 mr-2 text-gray-500" />
-                          My Bundles
-                        </Link>
-                      </DropdownMenuItem>
-                    </DropdownMenuGroup>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="text-gray-700 hover:text-gray-900 hover:bg-gray-50 font-medium"
+                  >
+                    <User className="h-4 w-4 mr-2" />
+                    Account
+                    <ChevronDown className="h-4 w-4 ml-2" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-56 max-h-[min(420px,calc(100vh-5rem))] overflow-y-auto overscroll-contain bg-white border border-gray-200 shadow-xl p-2 rounded-xl">
+                  <DropdownMenuGroup>
+                    <DropdownMenuLabel className="text-xs font-semibold text-gray-400 uppercase tracking-wider px-2 py-1.5">
+                      Personal
+                    </DropdownMenuLabel>
+                    <DropdownMenuItem asChild>
+                      <Link to="/profile" className="flex items-center cursor-pointer py-2 px-2 hover:bg-gray-50 rounded-md transition-colors">
+                        <UserCircle className="h-4 w-4 mr-2 text-gray-500" />
+                        Profile
+                      </Link>
+                    </DropdownMenuItem>
+                    <DropdownMenuItem asChild>
+                      <Link to="/my-tickets" className="flex items-center cursor-pointer py-2 px-2 hover:bg-gray-50 rounded-md transition-colors">
+                        <Ticket className="h-4 w-4 mr-2 text-gray-500" />
+                        My Tickets
+                      </Link>
+                    </DropdownMenuItem>
+                    <DropdownMenuItem asChild>
+                      <Link to="/my-collection" className="flex items-center cursor-pointer py-2 px-2 hover:bg-gray-50 rounded-md transition-colors">
+                        <Images className="h-4 w-4 mr-2 text-gray-500" />
+                        My Collection
+                      </Link>
+                    </DropdownMenuItem>
+                    <DropdownMenuItem asChild>
+                      <Link to="/my-bundles" className="flex items-center cursor-pointer py-2 px-2 hover:bg-gray-50 rounded-md transition-colors">
+                        <Gamepad2 className="h-4 w-4 mr-2 text-gray-500" />
+                        My Bundles
+                      </Link>
+                    </DropdownMenuItem>
+                  </DropdownMenuGroup>
 
-                    <DropdownMenuSeparator className="my-1 mx-1 bg-gray-100" />
+                  <DropdownMenuSeparator className="my-1 mx-1 bg-gray-100" />
 
-                    <DropdownMenuGroup>
-                      <DropdownMenuLabel className="text-xs font-semibold text-gray-400 uppercase tracking-wider px-2 py-1.5">
-                        My Activity
-                      </DropdownMenuLabel>
-                      <DropdownMenuItem asChild>
-                        <Link to="/events" className="flex items-center cursor-pointer py-2 px-2 hover:bg-gray-50 rounded-md transition-colors">
-                          <Calendar className="h-4 w-4 mr-2 text-gray-500" />
-                          My Events
-                        </Link>
-                      </DropdownMenuItem>
-                      <DropdownMenuItem asChild>
-                        <Link to="/create" className="flex items-center cursor-pointer py-2 px-2 hover:bg-gray-50 rounded-md transition-colors">
-                          <Plus className="h-4 w-4 mr-2 text-gray-500" />
-                          Create Event
-                        </Link>
-                      </DropdownMenuItem>
-                      <DropdownMenuItem asChild>
-                        <Link to="/drafts" className="flex items-center cursor-pointer py-2 px-2 hover:bg-gray-50 rounded-md transition-colors">
-                          <FileText className="h-4 w-4 mr-2 text-gray-500" />
-                          Drafts
-                        </Link>
-                      </DropdownMenuItem>
-                      <DropdownMenuItem asChild>
-                        <Link to="/my-series" className="flex items-center cursor-pointer py-2 px-2 hover:bg-gray-50 rounded-md transition-colors">
-                          <Trophy className="h-4 w-4 mr-2 text-gray-500" />
-                          My Series
-                        </Link>
-                      </DropdownMenuItem>
-                    </DropdownMenuGroup>
+                  <DropdownMenuGroup>
+                    <DropdownMenuLabel className="text-xs font-semibold text-gray-400 uppercase tracking-wider px-2 py-1.5">
+                      My Activity
+                    </DropdownMenuLabel>
+                    <DropdownMenuItem asChild>
+                      <Link to="/events" className="flex items-center cursor-pointer py-2 px-2 hover:bg-gray-50 rounded-md transition-colors">
+                        <Calendar className="h-4 w-4 mr-2 text-gray-500" />
+                        My Events
+                      </Link>
+                    </DropdownMenuItem>
+                    <DropdownMenuItem asChild>
+                      <Link to="/my-collectibles" className="flex items-center cursor-pointer py-2 px-2 hover:bg-gray-50 rounded-md transition-colors">
+                        <Images className="h-4 w-4 mr-2 text-gray-500" />
+                        My Collectibles
+                      </Link>
+                    </DropdownMenuItem>
+                    <DropdownMenuItem asChild>
+                      <Link to="/create" className="flex items-center cursor-pointer py-2 px-2 hover:bg-gray-50 rounded-md transition-colors">
+                        <Plus className="h-4 w-4 mr-2 text-gray-500" />
+                        Create Event
+                      </Link>
+                    </DropdownMenuItem>
+                    <DropdownMenuItem asChild>
+                      <Link to="/create-collectible" className="flex items-center cursor-pointer py-2 px-2 hover:bg-gray-50 rounded-md transition-colors">
+                        <Plus className="h-4 w-4 mr-2 text-gray-500" />
+                        Create Collectible
+                      </Link>
+                    </DropdownMenuItem>
+                    <DropdownMenuItem asChild>
+                      <Link to="/drafts" className="flex items-center cursor-pointer py-2 px-2 hover:bg-gray-50 rounded-md transition-colors">
+                        <FileText className="h-4 w-4 mr-2 text-gray-500" />
+                        Drafts
+                      </Link>
+                    </DropdownMenuItem>
+                    <DropdownMenuItem asChild>
+                      <Link to="/my-series" className="flex items-center cursor-pointer py-2 px-2 hover:bg-gray-50 rounded-md transition-colors">
+                        <Trophy className="h-4 w-4 mr-2 text-gray-500" />
+                        My Series
+                      </Link>
+                    </DropdownMenuItem>
+                  </DropdownMenuGroup>
 
-                    <DropdownMenuSeparator className="my-1 mx-1 bg-gray-100" />
+                  <DropdownMenuSeparator className="my-1 mx-1 bg-gray-100" />
 
-                    <DropdownMenuGroup>
-                      <DropdownMenuLabel className="text-xs font-semibold text-gray-400 uppercase tracking-wider px-2 py-1.5">
-                        Ticket Passes
-                      </DropdownMenuLabel>
-                      <DropdownMenuItem asChild>
-                        <Link to="/ticket-passes" className="flex items-center cursor-pointer py-2 px-2 hover:bg-gray-50 rounded-md transition-colors">
-                          <Ticket className="h-4 w-4 mr-2 text-gray-500" />
-                          Browse Passes
-                        </Link>
-                      </DropdownMenuItem>
-                      <DropdownMenuItem asChild>
-                        <Link to="/my-pass-orders" className="flex items-center cursor-pointer py-2 px-2 hover:bg-gray-50 rounded-md transition-colors">
-                          <Coins className="h-4 w-4 mr-2 text-gray-500" />
-                          My Passes
-                        </Link>
-                      </DropdownMenuItem>
-                      <DropdownMenuItem asChild>
-                        <Link to="/my-ticket-passes" className="flex items-center cursor-pointer py-2 px-2 hover:bg-gray-50 rounded-md transition-colors">
-                          <Plus className="h-4 w-4 mr-2 text-gray-500" />
-                          Create &amp; Manage
-                        </Link>
-                      </DropdownMenuItem>
-                    </DropdownMenuGroup>
+                  <DropdownMenuGroup>
+                    <DropdownMenuLabel className="text-xs font-semibold text-gray-400 uppercase tracking-wider px-2 py-1.5">
+                      Ticket Passes
+                    </DropdownMenuLabel>
+                    <DropdownMenuItem asChild>
+                      <Link to="/ticket-passes" className="flex items-center cursor-pointer py-2 px-2 hover:bg-gray-50 rounded-md transition-colors">
+                        <Ticket className="h-4 w-4 mr-2 text-gray-500" />
+                        Browse Passes
+                      </Link>
+                    </DropdownMenuItem>
+                    <DropdownMenuItem asChild>
+                      <Link to="/my-pass-orders" className="flex items-center cursor-pointer py-2 px-2 hover:bg-gray-50 rounded-md transition-colors">
+                        <Coins className="h-4 w-4 mr-2 text-gray-500" />
+                        My Passes
+                      </Link>
+                    </DropdownMenuItem>
+                    <DropdownMenuItem asChild>
+                      <Link to="/my-ticket-passes" className="flex items-center cursor-pointer py-2 px-2 hover:bg-gray-50 rounded-md transition-colors">
+                        <Plus className="h-4 w-4 mr-2 text-gray-500" />
+                        Create &amp; Manage
+                      </Link>
+                    </DropdownMenuItem>
+                  </DropdownMenuGroup>
 
-                    {isVendor && (
-                      <>
-                        <DropdownMenuSeparator className="my-1 mx-1 bg-gray-100" />
-                        <DropdownMenuGroup>
-                          <DropdownMenuLabel className="text-xs font-semibold text-gray-400 uppercase tracking-wider px-2 py-1.5">
-                            Vendor Tools
-                          </DropdownMenuLabel>
-                          <DropdownMenuItem asChild>
-                            <Link to="/vendor/payout-account" state={{ returnTo }} className="flex items-center cursor-pointer py-2 px-2 hover:bg-gray-50 rounded-md transition-colors">
-                              <Building2 className="h-4 w-4 mr-2 text-gray-500" />
-                              Payout Account
-                            </Link>
-                          </DropdownMenuItem>
-                          <DropdownMenuItem asChild>
-                            <Link to="/vendor/gaming-bundles" className="flex items-center cursor-pointer py-2 px-2 hover:bg-gray-50 rounded-md transition-colors">
-                              <Gamepad2 className="h-4 w-4 mr-2 text-gray-500" />
-                              Gaming Bundles
-                            </Link>
-                          </DropdownMenuItem>
-                          <DropdownMenuItem asChild>
-                            <Link to="/vendor/bundles-pos" className="flex items-center cursor-pointer py-2 px-2 hover:bg-gray-50 rounded-md transition-colors">
-                              <Ticket className="h-4 w-4 mr-2 text-gray-500" />
-                              POS sale Bundle
-                            </Link>
-                          </DropdownMenuItem>
-                          <DropdownMenuItem asChild>
-                            <Link to="/vendor/bundles-redeem" className="flex items-center cursor-pointer py-2 px-2 hover:bg-gray-50 rounded-md transition-colors">
-                              <ScanLine className="h-4 w-4 mr-2 text-gray-500" />
-                              Redeem Bundles
-                            </Link>
-                          </DropdownMenuItem>
-                          <DropdownMenuItem asChild>
-                            <Link to="/vendor/bundles-orders" className="flex items-center cursor-pointer py-2 px-2 hover:bg-gray-50 rounded-md transition-colors">
-                              <ClipboardList className="h-4 w-4 mr-2 text-gray-500" />
-                              Orders
-                            </Link>
-                          </DropdownMenuItem>
-                        </DropdownMenuGroup>
-                      </>
-                    )}
-
-                    {!isVendor && !vendorLoading && (
-                      <>
-                        <DropdownMenuSeparator className="my-1 mx-1 bg-gray-100" />
+                  {isVendor && (
+                    <>
+                      <DropdownMenuSeparator className="my-1 mx-1 bg-gray-100" />
+                      <DropdownMenuGroup>
+                        <DropdownMenuLabel className="text-xs font-semibold text-gray-400 uppercase tracking-wider px-2 py-1.5">
+                          Vendor Tools
+                        </DropdownMenuLabel>
                         <DropdownMenuItem asChild>
-                          <Link to="/become-vendor" className="flex items-center cursor-pointer py-2 px-2 hover:bg-purple-50 rounded-md transition-colors text-purple-600 font-medium">
-                            <Shield className="h-4 w-4 mr-2" />
-                            Become a Vendor
+                          <Link to="/vendor/payout-account" state={{ returnTo }} className="flex items-center cursor-pointer py-2 px-2 hover:bg-gray-50 rounded-md transition-colors">
+                            <Building2 className="h-4 w-4 mr-2 text-gray-500" />
+                            Payout Account
                           </Link>
                         </DropdownMenuItem>
-                      </>
-                    )}
+                        <DropdownMenuItem asChild>
+                          <Link to="/vendor/gaming-bundles" className="flex items-center cursor-pointer py-2 px-2 hover:bg-gray-50 rounded-md transition-colors">
+                            <Gamepad2 className="h-4 w-4 mr-2 text-gray-500" />
+                            Gaming Bundles
+                          </Link>
+                        </DropdownMenuItem>
+                        <DropdownMenuItem asChild>
+                          <Link to="/vendor/bundles-pos" className="flex items-center cursor-pointer py-2 px-2 hover:bg-gray-50 rounded-md transition-colors">
+                            <Ticket className="h-4 w-4 mr-2 text-gray-500" />
+                            POS sale Bundle
+                          </Link>
+                        </DropdownMenuItem>
+                        <DropdownMenuItem asChild>
+                          <Link to="/vendor/bundles-redeem" className="flex items-center cursor-pointer py-2 px-2 hover:bg-gray-50 rounded-md transition-colors">
+                            <ScanLine className="h-4 w-4 mr-2 text-gray-500" />
+                            Redeem Bundles
+                          </Link>
+                        </DropdownMenuItem>
+                        <DropdownMenuItem asChild>
+                          <Link to="/vendor/bundles-orders" className="flex items-center cursor-pointer py-2 px-2 hover:bg-gray-50 rounded-md transition-colors">
+                            <ClipboardList className="h-4 w-4 mr-2 text-gray-500" />
+                            Orders
+                          </Link>
+                        </DropdownMenuItem>
+                      </DropdownMenuGroup>
+                    </>
+                  )}
 
-                    {isAdmin && (
-                      <>
-                        <DropdownMenuSeparator className="my-1 mx-1 bg-gray-100" />
-                        <DropdownMenuGroup>
-                          <DropdownMenuLabel className="text-xs font-semibold text-gray-400 uppercase tracking-wider px-2 py-1.5">
-                            Admin
-                          </DropdownMenuLabel>
-                          <DropdownMenuItem asChild>
-                            <Link to="/admin" className="flex items-center cursor-pointer py-2 px-2 hover:bg-gray-50 rounded-md transition-colors">
-                              <Settings className="h-4 w-4 mr-2 text-gray-500" />
-                              Dashboard
-                            </Link>
-                          </DropdownMenuItem>
-                          <DropdownMenuItem asChild>
-                            <Link to="/admin/vendor-lock" className="flex items-center cursor-pointer py-2 px-2 hover:bg-gray-50 rounded-md transition-colors">
-                              <Lock className="h-4 w-4 mr-2 text-gray-500" />
-                              Vendor Config
-                            </Link>
-                          </DropdownMenuItem>
-                        </DropdownMenuGroup>
-                      </>
-                    )}
+                  {!isVendor && !vendorLoading && (
+                    <>
+                      <DropdownMenuSeparator className="my-1 mx-1 bg-gray-100" />
+                      <DropdownMenuItem asChild>
+                        <Link to="/become-vendor" className="flex items-center cursor-pointer py-2 px-2 hover:bg-purple-50 rounded-md transition-colors text-purple-600 font-medium">
+                          <Shield className="h-4 w-4 mr-2" />
+                          Become a Vendor
+                        </Link>
+                      </DropdownMenuItem>
+                    </>
+                  )}
 
-                    <DropdownMenuSeparator className="my-1 mx-1 bg-gray-100" />
-                    <DropdownMenuItem onClick={logout} className="flex items-center cursor-pointer py-2 px-2 text-red-600 focus:text-red-700 focus:bg-red-50 rounded-md transition-colors font-medium">
-                      <LogOut className="h-4 w-4 mr-2" />
-                      Sign out
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              </>
+                  {isAdmin && (
+                    <>
+                      <DropdownMenuSeparator className="my-1 mx-1 bg-gray-100" />
+                      <DropdownMenuGroup>
+                        <DropdownMenuLabel className="text-xs font-semibold text-gray-400 uppercase tracking-wider px-2 py-1.5">
+                          Admin
+                        </DropdownMenuLabel>
+                        <DropdownMenuItem asChild>
+                          <Link to="/admin" className="flex items-center cursor-pointer py-2 px-2 hover:bg-gray-50 rounded-md transition-colors">
+                            <Settings className="h-4 w-4 mr-2 text-gray-500" />
+                            Dashboard
+                          </Link>
+                        </DropdownMenuItem>
+                        <DropdownMenuItem asChild>
+                          <Link to="/admin/vendor-lock" className="flex items-center cursor-pointer py-2 px-2 hover:bg-gray-50 rounded-md transition-colors">
+                            <Lock className="h-4 w-4 mr-2 text-gray-500" />
+                            Vendor Config
+                          </Link>
+                        </DropdownMenuItem>
+                      </DropdownMenuGroup>
+                    </>
+                  )}
+
+                  <DropdownMenuSeparator className="my-1 mx-1 bg-gray-100" />
+                  <DropdownMenuItem onClick={logout} className="flex items-center cursor-pointer py-2 px-2 text-red-600 focus:text-red-700 focus:bg-red-50 rounded-md transition-colors font-medium">
+                    <LogOut className="h-4 w-4 mr-2" />
+                    Sign out
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
             ) : (
               <Button
                 variant="outline"
