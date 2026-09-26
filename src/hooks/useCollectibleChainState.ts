@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { getMaxKeysPerAddress, getTotalKeys, getUserKeyBalance } from '@/utils/lockUtils';
 
 export function useCollectibleChainState(
@@ -10,6 +10,8 @@ export function useCollectibleChainState(
   const [owned, setOwned] = useState(0);
   const [maxPerWallet, setMaxPerWallet] = useState(1);
   const [loading, setLoading] = useState(false);
+  const addressesKey = userAddresses.map((address) => address.toLowerCase()).join('|');
+  const addresses = useMemo(() => addressesKey ? addressesKey.split('|') : [], [addressesKey]);
 
   const refresh = useCallback(async () => {
     if (!lockAddress || !chainId) return;
@@ -17,8 +19,8 @@ export function useCollectibleChainState(
     try {
       const [nextSold, nextLimit, balances] = await Promise.all([
         getTotalKeys(lockAddress, chainId),
-        getMaxKeysPerAddress(lockAddress, userAddresses[0], chainId),
-        Promise.all(userAddresses.map((address) => getUserKeyBalance(lockAddress, address, chainId))),
+        getMaxKeysPerAddress(lockAddress, undefined, chainId),
+        Promise.all(addresses.map((address) => getUserKeyBalance(lockAddress, address, chainId))),
       ]);
       setSold(nextSold);
       setMaxPerWallet(nextLimit || 1);
@@ -26,7 +28,7 @@ export function useCollectibleChainState(
     } finally {
       setLoading(false);
     }
-  }, [chainId, lockAddress, userAddresses.join('|')]);
+  }, [addresses, chainId, lockAddress]);
 
   useEffect(() => { void refresh(); }, [refresh]);
   return { sold, owned, maxPerWallet, loading, refresh };
