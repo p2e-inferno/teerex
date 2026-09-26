@@ -3,8 +3,8 @@ import { usePrivy, useWallets } from '@privy-io/react-auth';
 import { collectibleFormSchema, type CollectibleFormValues } from '@/types/collectible.schema';
 import type { Collectible } from '@/types/collectible';
 import { deployLock, getTicketExpirationSeconds } from '@/utils/lockUtils';
-import { setLockMaxKeysPerAddress } from '@/utils/publicLockActions';
-import { getBaseTokenURI } from '@/utils/lockMetadata';
+import { ensureLockMetadata, ensureLockTransferability, setLockMaxKeysPerAddress } from '@/utils/publicLockActions';
+import { getBaseTokenURI, TEEREX_NFT_SYMBOL } from '@/utils/lockMetadata';
 import { createCollectible } from '@/lib/collectibles/collectibleApi';
 
 interface PendingPersistence {
@@ -12,7 +12,6 @@ interface PendingPersistence {
   lockAddress: string;
   transactionHash: string;
   creatorAddress: string;
-  limitConfigured: boolean;
 }
 
 export function useCollectiblePublisher() {
@@ -27,7 +26,6 @@ export function useCollectiblePublisher() {
   }, [user?.wallet?.address, wallets]);
 
   const persist = useCallback(async (pending: PendingPersistence): Promise<Collectible> => {
-    if (!pending.limitConfigured) throw new Error('The per-person purchase limit still needs to be configured on-chain.');
     const token = await getAccessToken();
     if (!token) throw new Error('Your session expired. Please sign in again.');
     const baseUri = getBaseTokenURI(pending.lockAddress);
@@ -52,25 +50,41 @@ export function useCollectiblePublisher() {
   }, [getAccessToken]);
 
   const configureAndPersist = useCallback(async (pending: PendingPersistence): Promise<Collectible> => {
-    let ready = pending;
-    if (!ready.limitConfigured) {
-      const wallet = preferredWallet(ready.creatorAddress);
-      if (!wallet?.address) throw new Error('Reconnect the creator wallet to finish publishing this collectible.');
-      const limit = await setLockMaxKeysPerAddress(
-        ready.lockAddress,
-        ready.form.maxKeysPerAddress,
-        wallet,
-        ready.form.chainId,
-      );
-      if (!limit.success) {
-        setPendingPersistence(ready);
-        throw new Error(`The lock was created, but its per-person purchase limit still needs configuration: ${limit.error}`);
-      }
-      ready = { ...ready, limitConfigured: true };
-      setPendingPersistence(ready);
-    }
+    const wallet = preferredWallet(pending.creatorAddress);
+    if (!wallet?.address) throw new Error('Reconnect the creator wallet to finish publishing this collectible.');
 
-    const collectible = await persist(ready);
+    // deployLock already attempts these settings, but treats them as non-critical
+    // for the generic event flow. Re-ensure every collectible-critical setting
+    // here. Each helper is idempotent, so a retry never redeploys the lock or
+    // repeats a transaction whose desired on-chain state already exists.
+    const limit = await setLockMaxKeysPerAddress(
+      pending.lockAddress,
+      pending.form.maxKeysPerAddress,
+      wallet,
+      pending.form.chainId,
+    );
+    if (!limit.success) throw new Error(`The lock was created, but its per-person limit is not configured: ${limit.error}`);
+
+    const transferability = await ensureLockTransferability(
+      pending.lockAddress,
+      true,
+      wallet,
+      pending.form.chainId,
+    );
+    if (!transferability.success) throw new Error(`The lock was created, but transferability is not configured: ${transferability.error}`);
+
+    const baseUri = getBaseTokenURI(pending.lockAddress);
+    const metadata = await ensureLockMetadata(
+      pending.lockAddress,
+      pending.form.name.trim(),
+      TEEREX_NFT_SYMBOL,
+      baseUri,
+      wallet,
+      pending.form.chainId,
+    );
+    if (!metadata.success) throw new Error(`The lock was created, but NFT metadata is not configured: ${metadata.error}`);
+
+    const collectible = await persist(pending);
     setPendingPersistence(null);
     return collectible;
   }, [persist, preferredWallet]);
@@ -84,7 +98,7 @@ export function useCollectiblePublisher() {
     try {
       const deployment = await deployLock({
         name: form.name.trim(),
-        symbol: 'TEEREX',
+        symbol: TEEREX_NFT_SYMBOL,
         keyPrice: String(form.price),
         maxNumberOfKeys: form.maxSupply,
         expirationDuration: getTicketExpirationSeconds('unlimited'),
@@ -102,10 +116,9 @@ export function useCollectiblePublisher() {
         lockAddress: deployment.lockAddress,
         transactionHash: deployment.transactionHash,
         creatorAddress: wallet.address,
-        limitConfigured: false,
       };
-      // Store the deployed lock immediately. Any retry after this point resumes
-      // configuration/persistence and must never deploy a replacement lock.
+      // Store the deployed lock immediately. Any failure after this point is a
+      // resumable configuration/persistence failure and must never deploy again.
       setPendingPersistence(pending);
       return await configureAndPersist(pending);
     } finally {
@@ -114,7 +127,7 @@ export function useCollectiblePublisher() {
   }, [configureAndPersist, preferredWallet]);
 
   const retryPersistence = useCallback(async () => {
-    if (!pendingPersistence) throw new Error('There is no deployed collectible waiting to be saved.');
+    if (!pendingPersistence) throw new Error('There is no deployed collectible waiting to be finished.');
     setIsPublishing(true);
     try {
       return await configureAndPersist(pendingPersistence);
