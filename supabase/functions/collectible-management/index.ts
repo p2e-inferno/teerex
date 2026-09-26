@@ -1,7 +1,7 @@
 /* deno-lint-ignore-file no-explicit-any */
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.50.0";
-import { Contract, JsonRpcProvider } from "https://esm.sh/ethers@6.14.4";
+import { Contract, JsonRpcProvider, formatUnits } from "https://esm.sh/ethers@6.14.4";
 import { corsHeaders, buildPreflightHeaders } from "../_shared/cors.ts";
 import { SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY } from "../_shared/constants.ts";
 import { verifyPrivyToken, getUserWalletAddresses } from "../_shared/privy.ts";
@@ -9,6 +9,7 @@ import { validateChain } from "../_shared/network-helpers.ts";
 import { isAnyUserWalletIsLockManagerParallel } from "../_shared/unlock.ts";
 import { resolveDisplayName } from "../_shared/profiles.ts";
 
+const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";
 const LOCK_ABI = [
   { inputs: [], name: "maxNumberOfKeys", outputs: [{ type: "uint256" }], stateMutability: "view", type: "function" },
   { inputs: [], name: "maxKeysPerAddress", outputs: [{ type: "uint256" }], stateMutability: "view", type: "function" },
@@ -50,14 +51,14 @@ function validateCommon(input: any) {
   }
 }
 
-function currencyAllowed(network: any, currency: string) {
+function configuredTokenAddress(network: any, currency: string): string | null {
   switch (currency) {
-    case "ETH": return true;
-    case "USDC": return Boolean(network?.usdc_token_address);
-    case "DG": return Boolean(network?.dg_token_address);
-    case "G": return Boolean(network?.g_token_address);
-    case "UP": return Boolean(network?.up_token_address);
-    default: return false;
+    case "ETH": return ZERO_ADDRESS;
+    case "USDC": return network?.usdc_token_address || null;
+    case "DG": return network?.dg_token_address || null;
+    case "G": return network?.g_token_address || null;
+    case "UP": return network?.up_token_address || null;
+    default: return null;
   }
 }
 
@@ -104,17 +105,23 @@ async function readLockState(lockAddress: string, rpcUrl: string) {
     lock.keyPrice(),
   ]);
   let decimals = 18;
-  if (String(tokenAddress).toLowerCase() !== "0x0000000000000000000000000000000000000000") {
+  if (String(tokenAddress).toLowerCase() !== ZERO_ADDRESS) {
     const token = new Contract(tokenAddress, ERC20_ABI, provider);
     decimals = Number(await token.decimals());
   }
-  const price = Number(rawPrice) / 10 ** decimals;
   return {
     maxSupply: Number(maxSupply),
     perWallet: Number(perWallet) || 1,
     totalSupply: Number(totalSupply),
-    price,
+    tokenAddress: String(tokenAddress).toLowerCase(),
+    rawPrice: BigInt(rawPrice),
+    price: Number(formatUnits(rawPrice, decimals)),
+    decimals,
   };
+}
+
+function pricesMatch(actual: number, submitted: number) {
+  return Number.isFinite(submitted) && submitted > 0 && Math.abs(actual - submitted) <= Math.max(1e-12, submitted * 1e-9);
 }
 
 async function handleMine(supabase: any, userId: string) {
@@ -141,12 +148,15 @@ async function handleCreate(supabase: any, userId: string, wallets: string[], bo
 
   const network = await validateChain(supabase, chainId);
   if (!network?.rpc_url) throw new Error("Unsupported or inactive network.");
-  if (!currencyAllowed(network, String(input.currency))) throw new Error("Token is not configured on this network.");
+  const expectedToken = configuredTokenAddress(network, String(input.currency));
+  if (!expectedToken) throw new Error("Token is not configured on this network.");
 
   const { anyIsManager } = await isAnyUserWalletIsLockManagerParallel(lockAddress, wallets, network.rpc_url);
   if (!anyIsManager) throw Object.assign(new Error("Authenticated user is not a manager of this lock."), { status: 403 });
 
   const state = await readLockState(lockAddress, network.rpc_url);
+  if (state.tokenAddress !== expectedToken.toLowerCase()) throw new Error("On-chain payment token does not match the collectible submission.");
+  if (!pricesMatch(state.price, Number(input.price))) throw new Error("On-chain price does not match the collectible submission.");
   if (state.maxSupply !== Number(input.max_supply)) throw new Error("On-chain supply does not match the collectible submission.");
   if (state.perWallet !== Number(input.max_keys_per_address)) throw new Error("On-chain per-person limit does not match the collectible submission.");
 
@@ -169,7 +179,7 @@ async function handleCreate(supabase: any, userId: string, wallets: string[], bo
     image_url: String(input.image_url),
     chain_id: chainId,
     currency: String(input.currency),
-    price: Number(input.price),
+    price: state.price,
     max_supply: state.maxSupply,
     max_keys_per_address: state.perWallet,
     lock_address: lockAddress,
@@ -231,11 +241,13 @@ async function handleUpdate(supabase: any, userId: string, wallets: string[], bo
 
   if (updates.price !== undefined || updates.max_supply !== undefined || updates.max_keys_per_address !== undefined) {
     const state = await readLockState(collectible.lock_address, network.rpc_url);
+    const expectedToken = configuredTokenAddress(network, String(collectible.currency));
+    if (!expectedToken || state.tokenAddress !== expectedToken.toLowerCase()) {
+      throw new Error("On-chain payment token no longer matches this collectible.");
+    }
     if (updates.price !== undefined) {
       const submitted = Number(updates.price);
-      if (!Number.isFinite(submitted) || submitted <= 0 || Math.abs(state.price - submitted) > Math.max(1e-12, submitted * 1e-9)) {
-        throw new Error("On-chain price has not been updated to the submitted value.");
-      }
+      if (!pricesMatch(state.price, submitted)) throw new Error("On-chain price has not been updated to the submitted value.");
       next.price = submitted;
     }
     if (updates.max_supply !== undefined) {

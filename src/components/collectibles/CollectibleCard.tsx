@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import { PackageCheck, Share2 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
@@ -12,7 +13,7 @@ interface Props {
   collectible: Collectible;
   ownedQuantity?: number;
   showShare?: boolean;
-  footer?: React.ReactNode;
+  footer?: ReactNode;
 }
 
 export function CollectibleCard({ collectible, ownedQuantity, showShare = false, footer }: Props) {

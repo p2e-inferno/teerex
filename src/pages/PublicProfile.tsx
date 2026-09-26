@@ -15,6 +15,16 @@ import type { Collectible } from '@/types/collectible';
 
 interface Owned { collectible: Collectible; quantity: number; }
 
+async function loadAllPublicCollectibles(creatorAddress?: string) {
+  const rows: Collectible[] = [];
+  for (let page = 1; page <= 50; page += 1) {
+    const result = await listCollectibles({ page, pageSize: 48, creatorAddress });
+    rows.push(...result.collectibles);
+    if (!result.has_more) break;
+  }
+  return rows;
+}
+
 export default function PublicProfile() {
   const { address = '' } = useParams<{ address: string }>();
   const navigate = useNavigate();
@@ -33,13 +43,16 @@ export default function PublicProfile() {
     const run = async () => {
       setLoadingCollectibles(true);
       try {
-        const [createdResult, allResult] = await Promise.all([
-          listCollectibles({ creatorAddress: address, pageSize: 48 }),
-          listCollectibles({ pageSize: 48 }),
+        const [createdRows, allRows] = await Promise.all([
+          loadAllPublicCollectibles(address),
+          loadAllPublicCollectibles(),
         ]);
-        const owned = await Promise.all(allResult.collectibles.map(async (item) => ({ item, quantity: await getUserKeyBalance(item.lock_address, address, item.chain_id) })));
+        const owned = await Promise.all(allRows.map(async (item) => ({
+          item,
+          quantity: await getUserKeyBalance(item.lock_address, address, item.chain_id),
+        })));
         if (!cancelled) {
-          setCreated(createdResult.collectibles);
+          setCreated(createdRows);
           setCollected(owned.filter((row) => row.quantity > 0).map((row) => ({ collectible: row.item, quantity: row.quantity })));
         }
       } finally { if (!cancelled) setLoadingCollectibles(false); }
