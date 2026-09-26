@@ -26,11 +26,15 @@ create table if not exists public.collectibles (
 
   constraint collectibles_name_not_blank check (length(btrim(name)) > 0),
   constraint collectibles_image_not_blank check (length(btrim(image_url)) > 0),
+  constraint collectibles_chain_positive check (chain_id > 0),
+  constraint collectibles_currency_not_blank check (length(btrim(currency)) > 0),
   constraint collectibles_price_positive check (price > 0),
   constraint collectibles_max_supply_positive check (max_supply > 0),
   constraint collectibles_max_keys_per_address_positive check (max_keys_per_address > 0),
+  constraint collectibles_max_keys_within_supply check (max_keys_per_address <= max_supply),
   constraint collectibles_wallet_format check (creator_address ~ '^0x[0-9a-f]{40}$'),
   constraint collectibles_lock_format check (lower(lock_address) ~ '^0x[0-9a-f]{40}$'),
+  constraint collectibles_transaction_hash_format check (transaction_hash ~ '^0x[0-9a-fA-F]{64}$'),
   constraint collectibles_claim_terms check (
     not is_claimable or length(btrim(coalesce(fulfillment_note, ''))) > 0
   )
