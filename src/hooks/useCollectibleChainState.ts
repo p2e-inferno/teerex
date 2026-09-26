@@ -10,12 +10,19 @@ export function useCollectibleChainState(
   const [owned, setOwned] = useState(0);
   const [maxPerWallet, setMaxPerWallet] = useState(1);
   const [loading, setLoading] = useState(false);
+  const [ready, setReady] = useState(false);
+  const [error, setError] = useState<Error | null>(null);
   const addressesKey = userAddresses.map((address) => address.toLowerCase()).join('|');
   const addresses = useMemo(() => addressesKey ? addressesKey.split('|') : [], [addressesKey]);
 
   const refresh = useCallback(async () => {
-    if (!lockAddress || !chainId) return;
+    if (!lockAddress || !chainId) {
+      setReady(false);
+      setError(null);
+      return;
+    }
     setLoading(true);
+    setError(null);
     try {
       const [nextSold, nextLimit, balances] = await Promise.all([
         getTotalKeys(lockAddress, chainId),
@@ -25,11 +32,21 @@ export function useCollectibleChainState(
       setSold(nextSold);
       setMaxPerWallet(nextLimit || 1);
       setOwned(balances.reduce((sum, count) => sum + count, 0));
+      setReady(true);
+    } catch (cause) {
+      const nextError = cause instanceof Error ? cause : new Error('Could not read collectible contract state.');
+      setError(nextError);
+      setReady(false);
     } finally {
       setLoading(false);
     }
   }, [addresses, chainId, lockAddress]);
 
-  useEffect(() => { void refresh(); }, [refresh]);
-  return { sold, owned, maxPerWallet, loading, refresh };
+  useEffect(() => {
+    setReady(false);
+    setError(null);
+    void refresh();
+  }, [refresh]);
+
+  return { sold, owned, maxPerWallet, loading, ready, error, refresh };
 }
