@@ -1,5 +1,5 @@
 import type { Collectible } from '@/types/collectible';
-import { getUserKeyBalance } from '@/utils/lockUtils';
+import { readCollectibleBalances } from '@/lib/collectibles/chainState';
 
 export interface OwnedCollectible {
   collectible: Collectible;
@@ -22,21 +22,20 @@ export async function resolveOwnedCollectibles(
   const owned: OwnedCollectible[] = [];
   let failedChecks = 0;
 
-  // Avoid creating an unbounded burst of RPC requests as the public catalog grows.
+  // Avoid an unbounded burst of RPC requests as the public catalog grows.
   for (let index = 0; index < collectibles.length; index += batchSize) {
     const batch = collectibles.slice(index, index + batchSize);
     const rows = await Promise.all(batch.map(async (collectible) => {
-      const balances = await Promise.allSettled(normalized.map((address) =>
-        getUserKeyBalance(collectible.lock_address, address, collectible.chain_id),
-      ));
-      const fulfilled = balances.filter((result): result is PromiseFulfilledResult<number> => result.status === 'fulfilled');
-      const failed = balances.length - fulfilled.length;
-      const quantity = fulfilled.reduce((sum, result) => sum + result.value, 0);
-      return { collectible, quantity, failed };
+      try {
+        const balances = await readCollectibleBalances(collectible.lock_address, collectible.chain_id, normalized);
+        return { collectible, quantity: balances.reduce((sum, count) => sum + count, 0), failed: false };
+      } catch {
+        return { collectible, quantity: 0, failed: true };
+      }
     }));
 
     for (const row of rows) {
-      failedChecks += row.failed;
+      if (row.failed) failedChecks += 1;
       if (row.quantity > 0) owned.push({ collectible: row.collectible, quantity: row.quantity });
     }
   }
