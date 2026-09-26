@@ -25,6 +25,7 @@ const LOCK_ABI = [
   { inputs: [], name: 'keyPrice', outputs: [{ type: 'uint256' }], stateMutability: 'view', type: 'function' },
   { inputs: [], name: 'tokenAddress', outputs: [{ type: 'address' }], stateMutability: 'view', type: 'function' },
   { inputs: [{ type: 'address', name: '_account' }], name: 'isLockManager', outputs: [{ type: 'bool' }], stateMutability: 'view', type: 'function' },
+  { inputs: [{ type: 'address', name: 'owner' }], name: 'balanceOf', outputs: [{ type: 'uint256' }], stateMutability: 'view', type: 'function' },
   { inputs: [{ type: 'uint256', name: '_maxKeys' }], name: 'setMaxKeysPerAddress', outputs: [], stateMutability: 'nonpayable', type: 'function' },
   { inputs: [], name: 'maxKeysPerAddress', outputs: [{ type: 'uint256' }], stateMutability: 'view', type: 'function' },
   { inputs: [], name: 'maxNumberOfKeys', outputs: [{ type: 'uint256' }], stateMutability: 'view', type: 'function' },
@@ -106,10 +107,30 @@ export async function purchaseLockKeys(
     const expected = info.address === ZERO_ADDRESS
       ? parseEther(expectedUnitPrice.toString())
       : parseUnits(expectedUnitPrice.toString(), info.decimals);
-    const [unitPrice, tokenAddress] = await Promise.all([lock.keyPrice(), lock.tokenAddress()]);
+
+    // Re-read all purchase-critical lock state immediately before asking the wallet
+    // to sign. The dialog is helpful UX, but the contract boundary is authoritative.
+    const [unitPrice, tokenAddress, maxSupply, totalSupply, maxPerWallet, owned] = await Promise.all([
+      lock.keyPrice(),
+      lock.tokenAddress(),
+      lock.maxNumberOfKeys(),
+      lock.totalSupply(),
+      lock.maxKeysPerAddress(),
+      lock.balanceOf(owner),
+    ]);
     if (unitPrice !== expected) throw new Error('The collectible price has changed. Refresh and try again.');
     if (String(tokenAddress).toLowerCase() !== info.address.toLowerCase()) {
       throw new Error('The collectible payment token has changed. Refresh and try again.');
+    }
+
+    const requested = BigInt(quantity);
+    const globalRemaining = maxSupply > totalSupply ? maxSupply - totalSupply : 0n;
+    const walletRemaining = maxPerWallet > owned ? maxPerWallet - owned : 0n;
+    if (requested > globalRemaining) {
+      throw new Error(`Only ${globalRemaining.toString()} edition${globalRemaining === 1n ? '' : 's'} remain.`);
+    }
+    if (requested > walletRemaining) {
+      throw new Error(`This wallet can only collect ${walletRemaining.toString()} more edition${walletRemaining === 1n ? '' : 's'}.`);
     }
 
     const values = Array.from({ length: quantity }, () => unitPrice);
@@ -117,7 +138,7 @@ export async function purchaseLockKeys(
     const referrers = Array.from({ length: quantity }, () => ZERO);
     const keyManagers = Array.from({ length: quantity }, () => ZERO);
     const data = Array.from({ length: quantity }, () => '0x');
-    const totalCost = unitPrice * BigInt(quantity);
+    const totalCost = unitPrice * requested;
 
     if (info.address !== ZERO_ADDRESS) {
       const token = new ethers.Contract(info.address, ERC20_ABI, signer);
