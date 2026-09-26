@@ -4,6 +4,7 @@ import { usePrivy, useWallets } from '@privy-io/react-auth';
 import { ExternalLink, Minus, Plus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { RichTextDisplay } from '@/components/ui/rich-text/RichTextDisplay';
 import { useToast } from '@/hooks/use-toast';
 import { useCollectibleChainState } from '@/hooks/useCollectibleChainState';
 import { getCollectiblePurchaseAllowance, isCollectibleQuantityAllowed } from '@/lib/collectibles/purchaseLimits';
@@ -31,14 +32,14 @@ export function CollectiblePurchaseDialog({ collectible, open, onOpenChange, onP
   const chain = useCollectibleChainState(collectible?.lock_address, collectible?.chain_id, purchasingAddress);
 
   const remaining = useMemo(() => {
-    if (!collectible) return 0;
+    if (!collectible || !chain.ready || chain.error) return 0;
     return getCollectiblePurchaseAllowance({
       maxSupply: collectible.max_supply,
       sold: chain.sold,
       maxPerWallet: chain.maxPerWallet,
       ownedByPurchasingWallet: chain.owned,
     });
-  }, [chain.maxPerWallet, chain.owned, chain.sold, collectible]);
+  }, [chain.error, chain.maxPerWallet, chain.owned, chain.ready, chain.sold, collectible]);
 
   useEffect(() => {
     if (open) {
@@ -61,7 +62,14 @@ export function CollectiblePurchaseDialog({ collectible, open, onOpenChange, onP
       toast({ title: 'Connect a wallet first', variant: 'destructive' });
       return;
     }
-    if (!isCollectibleQuantityAllowed(quantity, remaining)) return;
+    if (!chain.ready || chain.error) {
+      toast({ title: 'Availability is not ready', description: 'Refresh the on-chain availability before purchasing.', variant: 'destructive' });
+      return;
+    }
+    if (!isCollectibleQuantityAllowed(quantity, remaining)) {
+      toast({ title: 'Quantity is no longer available', description: 'Refresh availability and choose a valid quantity.', variant: 'destructive' });
+      return;
+    }
     setBuying(true);
     try {
       const purchasedQuantity = quantity;
@@ -101,10 +109,10 @@ export function CollectiblePurchaseDialog({ collectible, open, onOpenChange, onP
                 <img src={collectible.image_url} alt="" className="h-20 w-20 rounded-lg object-cover" />
                 <div><div className="font-semibold">{collectible.name}</div><div className="text-sm text-muted-foreground">Owned in this purchase: {success.quantity}</div></div>
               </div>
-              {collectible.is_claimable && (
+              {collectible.is_claimable && collectible.fulfillment_note && (
                 <div className="rounded-lg border bg-muted/30 p-4">
                   <div className="font-medium">Physical item available</div>
-                  <p className="mt-1 whitespace-pre-wrap text-sm text-muted-foreground">{collectible.fulfillment_note}</p>
+                  <RichTextDisplay content={collectible.fulfillment_note} className="mt-1 text-sm text-muted-foreground" />
                 </div>
               )}
               {success.explorerUrl && (
@@ -129,9 +137,21 @@ export function CollectiblePurchaseDialog({ collectible, open, onOpenChange, onP
                 <img src={collectible.image_url} alt="" className="h-20 w-20 rounded-lg object-cover" />
                 <div>
                   <div className="font-medium">{collectible.price} {collectible.currency} each</div>
-                  <div className="text-sm text-muted-foreground">{Math.max(0, collectible.max_supply - chain.sold)} remaining · this wallet can buy {remaining} more</div>
+                  <div className="text-sm text-muted-foreground">{chain.ready ? `${Math.max(0, collectible.max_supply - chain.sold)} remaining · this wallet can buy ${remaining} more` : 'Checking live availability…'}</div>
                 </div>
               </div>
+              {collectible.is_claimable && collectible.fulfillment_note && (
+                <div className="rounded-lg border bg-muted/30 p-4">
+                  <div className="font-medium">Physical item terms</div>
+                  <RichTextDisplay content={collectible.fulfillment_note} className="mt-1 text-sm text-muted-foreground" />
+                </div>
+              )}
+              {chain.error && (
+                <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+                  <div>Could not load live purchase limits from the collectible contract.</div>
+                  <Button type="button" className="mt-2" size="sm" variant="outline" onClick={() => { void chain.refresh(); }}>Retry availability</Button>
+                </div>
+              )}
               {chain.maxPerWallet > 1 && remaining > 0 && (
                 <div className="flex items-center justify-between rounded-lg border p-3">
                   <span className="text-sm font-medium">Quantity</span>
@@ -148,8 +168,8 @@ export function CollectiblePurchaseDialog({ collectible, open, onOpenChange, onP
             </div>
             <DialogFooter>
               <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
-              <Button disabled={buying || chain.loading || remaining < 1} onClick={purchase}>
-                {remaining < 1 ? 'Unavailable' : buying ? 'Confirming…' : authenticated ? `Buy ${quantity > 1 ? quantity : ''}`.trim() : 'Connect to buy'}
+              <Button disabled={buying || chain.loading || !chain.ready || Boolean(chain.error) || remaining < 1} onClick={purchase}>
+                {!chain.ready ? 'Checking…' : chain.error ? 'Unavailable' : remaining < 1 ? 'Unavailable' : buying ? 'Confirming…' : authenticated ? `Buy ${quantity > 1 ? quantity : ''}`.trim() : 'Connect to buy'}
               </Button>
             </DialogFooter>
           </>
