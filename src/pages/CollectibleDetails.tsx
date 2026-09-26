@@ -7,6 +7,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { IdentityName } from '@/components/identity/IdentityName';
 import { CollectiblePurchaseDialog } from '@/components/collectibles/CollectiblePurchaseDialog';
 import { useCollectibleChainState } from '@/hooks/useCollectibleChainState';
+import { useNetworkConfigs } from '@/hooks/useNetworkConfigs';
 import { useUserAddresses } from '@/hooks/useUserAddresses';
 import { useToast } from '@/hooks/use-toast';
 import { getCollectible } from '@/lib/collectibles/collectibleApi';
@@ -18,6 +19,7 @@ export default function CollectibleDetails() {
   const [loading, setLoading] = useState(true);
   const [purchaseOpen, setPurchaseOpen] = useState(false);
   const addresses = useUserAddresses();
+  const { networks } = useNetworkConfigs();
   const { toast } = useToast();
   const chain = useCollectibleChainState(collectible?.lock_address, collectible?.chain_id, addresses);
 
@@ -39,6 +41,7 @@ export default function CollectibleDetails() {
   if (!collectible) return <div className="container mx-auto max-w-3xl px-6 py-16"><Card><CardContent className="py-16 text-center">This collectible could not be found.</CardContent></Card></div>;
 
   const soldOut = chain.sold >= collectible.max_supply;
+  const networkLabel = networks.find((network) => network.chain_id === collectible.chain_id)?.chain_name || `Chain ${collectible.chain_id}`;
   const share = async () => {
     await navigator.clipboard.writeText(window.location.href);
     toast({ title: 'Collectible link copied' });
@@ -61,6 +64,7 @@ export default function CollectibleDetails() {
           <div className="grid grid-cols-2 gap-4 rounded-xl border bg-white p-5 text-sm">
             <div><div className="text-muted-foreground">Price</div><div className="mt-1 text-lg font-semibold">{collectible.price} {collectible.currency}</div></div>
             <div><div className="text-muted-foreground">Collected</div><div className="mt-1 text-lg font-semibold">{Math.min(chain.sold, collectible.max_supply)} / {collectible.max_supply}</div></div>
+            <div><div className="text-muted-foreground">Network</div><div className="mt-1 font-medium">{networkLabel}</div></div>
             <div><div className="text-muted-foreground">Per person</div><div className="mt-1 font-medium">Up to {chain.maxPerWallet}</div></div>
             <div><div className="text-muted-foreground">Your collection</div><div className="mt-1 font-medium">{chain.owned} owned</div></div>
           </div>
