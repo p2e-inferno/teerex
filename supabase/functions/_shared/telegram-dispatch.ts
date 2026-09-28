@@ -4,6 +4,7 @@ import {
   excludePrivyUser,
   getEventOrganizerTelegramRecipients,
   getEventTicketHolderTelegramRecipients,
+  getLinkedTelegramRecipientsByPrivyIds,
   getOrganizerSubscriberTelegramRecipients,
   type TelegramRecipient,
 } from "./telegram-recipients.ts";
@@ -146,6 +147,40 @@ export async function notifyTicketIssuedTelegram(
     });
   } catch (error) {
     console.error("[telegram-dispatch] ticket issued notification failed", error);
+  }
+}
+
+export async function notifyCollectiblePurchasedTelegram(
+  supabase: any,
+  params: {
+    collectible: { id: string; name: string; creator_id: string; price: number; currency: string };
+    buyerWallet: string;
+    buyerPrivyUserId?: string | null;
+    quantity: number;
+    txHash: string;
+  },
+) {
+  try {
+    const recipients = excludePrivyUser(
+      await getLinkedTelegramRecipientsByPrivyIds(supabase, [params.collectible.creator_id]),
+      params.buyerPrivyUserId,
+    );
+    const { collectible, quantity } = params;
+    return await dispatchTelegramNotification(supabase, {
+      type: "collectible_purchased",
+      notificationKey: `collectible_purchased:${collectible.id}:${params.txHash.toLowerCase()}`,
+      recipients,
+      title: quantity > 1 ? `${quantity} editions collected` : "New edition collected",
+      lines: [
+        collectible.name,
+        `Price: ${collectible.price} ${collectible.currency}${quantity > 1 ? ` each × ${quantity}` : ""}`,
+        `Buyer wallet: ${params.buyerWallet.toLowerCase()}`,
+      ],
+      ctaUrl: `${APP_URL}/collectible/${collectible.id}`,
+      ctaLabel: "View collectible",
+    });
+  } catch (error) {
+    console.error("[telegram-dispatch] collectible purchase notification failed", error);
   }
 }
 

@@ -85,3 +85,21 @@ export async function getTokenIdFromTxHash(
     return null;
   }
 }
+
+const ZERO_ADDRESS_TOPIC = "0x" + "0".repeat(64);
+const ERC721_TRANSFER_TOPIC = "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef";
+
+export function getMintedRecipientsFromReceipt(
+  receipt: Pick<ethers.TransactionReceipt, "logs">,
+  lockAddress: string,
+): string[] {
+  const normalizedLockAddress = lockAddress.toLowerCase();
+  return receipt.logs
+    .filter((log) =>
+      log.address.toLowerCase() === normalizedLockAddress &&
+      log.topics.length === 4 &&
+      log.topics[0]?.toLowerCase() === ERC721_TRANSFER_TOPIC &&
+      log.topics[1]?.toLowerCase() === ZERO_ADDRESS_TOPIC
+    )
+    .map((log) => ("0x" + log.topics[2].slice(26)).toLowerCase());
+}

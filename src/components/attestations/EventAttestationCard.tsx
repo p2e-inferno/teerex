@@ -458,17 +458,6 @@ export const EventAttestationCard: React.FC<EventAttestationCardProps & {
         title: '🎉 Attendance Verified!',
         description: `You've attested attendance at ${eventTitle}`,
       });
-
-      // Update user reputation (optional non-blocking)
-      try {
-        await supabase.rpc('update_reputation_score', {
-          user_addr: wallet.address,
-          score_change: 5,
-          attestation_type: 'attendance'
-        });
-      } catch (e) {
-        console.warn('Reputation update failed (non-blocking):', e);
-      }
     } catch (error) {
       toast({
         title: 'Error',

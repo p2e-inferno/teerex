@@ -1,4 +1,3 @@
-
 # Supabase project configuration
 project_id = "nclavsvzjzegqvkjezyz"
 
@@ -45,6 +44,14 @@ enabled = true
 
 [functions.public-events]
   # Public event discovery; only explicit public fields are returned.
+  verify_jwt = false
+
+[functions.collectibles]
+  # Public collectible discovery/detail. Only explicit public fields are returned.
+  verify_jwt = false
+
+[functions.collectible-management]
+  # Browser sends Privy JWT; creator ownership and lock-manager authority are checked inside the function.
   verify_jwt = false
 
 [functions.get-public-event-og]
