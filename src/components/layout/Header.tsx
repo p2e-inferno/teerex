@@ -1,7 +1,7 @@
 
 import React from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { usePrivy } from '@privy-io/react-auth';
+import { useActiveWallet, usePrivy } from '@privy-io/react-auth';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -12,12 +12,15 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { Ticket, Plus, ChevronDown, FileText, Calendar, LogOut, User, Settings, Building2, Gamepad2, ScanLine, ClipboardList, Lock, Shield, UserCircle, Coins, Trophy, Images } from 'lucide-react';
+import { Ticket, Plus, ChevronDown, FileText, Calendar, LogOut, User, Settings, Building2, Gamepad2, ScanLine, ClipboardList, Lock, Shield, UserCircle, Coins, Trophy, Images, Store } from 'lucide-react';
 import { useIsAdmin } from '@/hooks/useIsAdmin';
 import { useIsVendor } from '@/hooks/useIsVendor';
+import { profilePath } from '@/lib/shareUrls';
 
 export const Header: React.FC = () => {
-  const { authenticated, logout, login } = usePrivy();
+  const { authenticated, logout, login, user } = usePrivy();
+  const { wallet: activeWallet } = useActiveWallet();
+  const storeAddress = activeWallet?.address || user?.wallet?.address;
   const { isAdmin } = useIsAdmin();
   const { isVendor, loading: vendorLoading } = useIsVendor();
   const location = useLocation();
@@ -38,9 +41,35 @@ export const Header: React.FC = () => {
             </Link>
             {authenticated && (
               <>
-                <Link to="/create" className="text-gray-700 hover:text-gray-900 transition-colors font-medium">
-                  Create
-                </Link>
+                <DropdownMenu>
+                  <DropdownMenuTrigger className="flex items-center gap-1 text-gray-700 hover:text-gray-900 transition-colors font-medium outline-none">
+                    Create
+                    <ChevronDown className="h-4 w-4" />
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="center" className="w-72 p-2">
+                    <DropdownMenuLabel className="px-2 pb-2 text-xs font-medium uppercase tracking-wide text-gray-500">
+                      What do you want to create?
+                    </DropdownMenuLabel>
+                    <DropdownMenuItem asChild>
+                      <Link to="/create" className="flex cursor-pointer items-start gap-3 rounded-md p-2">
+                        <Calendar className="mt-0.5 h-5 w-5 shrink-0 text-purple-600" />
+                        <span>
+                          <span className="block font-medium text-gray-900">Event</span>
+                          <span className="block text-xs text-gray-500">Sell tickets in crypto or fiat for in-person and online events.</span>
+                        </span>
+                      </Link>
+                    </DropdownMenuItem>
+                    <DropdownMenuItem asChild>
+                      <Link to="/create-collectible" className="flex cursor-pointer items-start gap-3 rounded-md p-2">
+                        <Images className="mt-0.5 h-5 w-5 shrink-0 text-purple-600" />
+                        <span>
+                          <span className="block font-medium text-gray-900">Collectible</span>
+                          <span className="block text-xs text-gray-500">Turn your work into a limited digital edition.</span>
+                        </span>
+                      </Link>
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
                 {/* <Link to="/attestations" className="text-gray-700 hover:text-gray-900 transition-colors font-medium">
                   Attestations
                 </Link> */}
@@ -104,12 +133,26 @@ export const Header: React.FC = () => {
 
                     <DropdownMenuGroup>
                       <DropdownMenuLabel className="text-xs font-semibold text-gray-400 uppercase tracking-wider px-2 py-1.5">
-                        My Activity
+                        Creations
                       </DropdownMenuLabel>
+                      {storeAddress && (
+                        <DropdownMenuItem asChild>
+                          <Link to={profilePath(storeAddress, 'created')} className="flex items-center cursor-pointer py-2 px-2 hover:bg-gray-50 rounded-md transition-colors">
+                            <Store className="h-4 w-4 mr-2 text-gray-500" />
+                            My Store
+                          </Link>
+                        </DropdownMenuItem>
+                      )}
                       <DropdownMenuItem asChild>
                         <Link to="/events" className="flex items-center cursor-pointer py-2 px-2 hover:bg-gray-50 rounded-md transition-colors">
                           <Calendar className="h-4 w-4 mr-2 text-gray-500" />
                           My Events
+                        </Link>
+                      </DropdownMenuItem>
+                      <DropdownMenuItem asChild>
+                        <Link to="/my-series" className="flex items-center cursor-pointer py-2 px-2 hover:bg-gray-50 rounded-md transition-colors">
+                          <Trophy className="h-4 w-4 mr-2 text-gray-500" />
+                          My Event Series
                         </Link>
                       </DropdownMenuItem>
                       <DropdownMenuItem asChild>
@@ -136,12 +179,7 @@ export const Header: React.FC = () => {
                           Drafts
                         </Link>
                       </DropdownMenuItem>
-                      <DropdownMenuItem asChild>
-                        <Link to="/my-series" className="flex items-center cursor-pointer py-2 px-2 hover:bg-gray-50 rounded-md transition-colors">
-                          <Trophy className="h-4 w-4 mr-2 text-gray-500" />
-                          My Series
-                        </Link>
-                      </DropdownMenuItem>
+                   
                     </DropdownMenuGroup>
 
                     <DropdownMenuSeparator className="my-1 mx-1 bg-gray-100" />

@@ -1,17 +1,19 @@
 import { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { PackageCheck, Share2 } from 'lucide-react';
+import { PackageCheck } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { RichTextDisplay } from '@/components/ui/rich-text/RichTextDisplay';
 import { IdentityName } from '@/components/identity/IdentityName';
 import { CollectiblePurchaseDialog } from '@/components/collectibles/CollectiblePurchaseDialog';
+import { ShareButton } from '@/components/interactions/ShareButton';
 import { useCollectibleChainState } from '@/hooks/useCollectibleChainState';
 import { useNetworkConfigs } from '@/hooks/useNetworkConfigs';
 import { useUserAddresses } from '@/hooks/useUserAddresses';
 import { useToast } from '@/hooks/use-toast';
 import { getCollectible } from '@/lib/collectibles/collectibleApi';
+import { collectibleShareUrl, profilePath } from '@/lib/shareUrls';
 import type { Collectible } from '@/types/collectible';
 
 export default function CollectibleDetails() {
@@ -43,14 +45,6 @@ export default function CollectibleDetails() {
 
   const soldOut = chain.ready && chain.sold >= collectible.max_supply;
   const networkLabel = networks.find((network) => network.chain_id === collectible.chain_id)?.chain_name || `Chain ${collectible.chain_id}`;
-  const share = async () => {
-    try {
-      await navigator.clipboard.writeText(window.location.href);
-      toast({ title: 'Collectible link copied' });
-    } catch {
-      toast({ title: 'Could not copy link', description: 'Copy the URL from your browser instead.', variant: 'destructive' });
-    }
-  };
 
   return (
     <div className="min-h-screen bg-gray-50 py-10">
@@ -63,7 +57,7 @@ export default function CollectibleDetails() {
           </div>
           <div>
             <h1 className="text-4xl font-bold text-gray-900">{collectible.name}</h1>
-            <p className="mt-2 text-muted-foreground">by <Link className="font-medium text-foreground hover:underline" to={`/u/${collectible.creator_address}?tab=created`}><IdentityName address={collectible.creator_address} displayName={collectible.creator_display_name} /></Link></p>
+            <p className="mt-2 text-muted-foreground">by <Link className="font-medium text-foreground hover:underline" to={profilePath(collectible.creator_address, 'created')}><IdentityName address={collectible.creator_address} displayName={collectible.creator_display_name} /></Link></p>
           </div>
           {collectible.description && <RichTextDisplay content={collectible.description} className="text-gray-700" />}
           <div className="grid grid-cols-2 gap-4 rounded-xl border bg-white p-5 text-sm">
@@ -84,7 +78,7 @@ export default function CollectibleDetails() {
           )}
           <div className="flex gap-3">
             <Button className="flex-1" size="lg" disabled={!chain.ready || Boolean(chain.error) || soldOut} onClick={() => setPurchaseOpen(true)}>{!chain.ready ? 'Checking availability…' : chain.error ? 'Availability unavailable' : soldOut ? 'Sold out' : 'Collect'}</Button>
-            <Button size="lg" variant="outline" onClick={share}><Share2 className="mr-2 h-4 w-4" />Share</Button>
+            <ShareButton url={collectibleShareUrl(collectible.id)} title={collectible.name} label="Share" copiedMessage="Collectible link copied to clipboard" variant="outline" size="lg" />
           </div>
           <p className="text-xs text-muted-foreground">Purchases are crypto-only in V1 and mint Unlock Protocol NFT keys directly to your wallet.</p>
         </div>

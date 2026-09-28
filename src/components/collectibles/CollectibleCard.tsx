@@ -1,13 +1,13 @@
 import type { ReactNode } from 'react';
 import { Link } from 'react-router-dom';
-import { PackageCheck, Share2 } from 'lucide-react';
+import { PackageCheck } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { IdentityName } from '@/components/identity/IdentityName';
 import type { Collectible } from '@/types/collectible';
 import { useCollectibleChainState } from '@/hooks/useCollectibleChainState';
-import { useToast } from '@/hooks/use-toast';
+import { ShareButton } from '@/components/interactions/ShareButton';
+import { collectibleShareUrl } from '@/lib/shareUrls';
 
 interface Props {
   collectible: Collectible;
@@ -18,17 +18,7 @@ interface Props {
 
 export function CollectibleCard({ collectible, ownedQuantity, showShare = false, footer }: Props) {
   const chain = useCollectibleChainState(collectible.lock_address, collectible.chain_id);
-  const { toast } = useToast();
   const soldOut = chain.ready && chain.sold >= collectible.max_supply;
-  const copy = async () => {
-    const url = `${window.location.origin}/collectible/${collectible.id}`;
-    try {
-      await navigator.clipboard.writeText(url);
-      toast({ title: 'Collectible link copied' });
-    } catch {
-      toast({ title: 'Could not copy link', description: 'Open the collectible and copy its URL from your browser.', variant: 'destructive' });
-    }
-  };
 
   return (
     <Card className="overflow-hidden border-0 shadow-sm">
@@ -53,9 +43,13 @@ export function CollectibleCard({ collectible, ownedQuantity, showShare = false,
             <div className="text-muted-foreground">{chain.ready ? `${Math.min(chain.sold, collectible.max_supply)}/${collectible.max_supply} collected` : chain.error ? 'Availability unavailable' : 'Checking availability…'}</div>
           </div>
           {showShare && (
-            <Button type="button" variant="ghost" size="icon" onClick={copy} aria-label="Share collectible">
-              <Share2 className="h-4 w-4" />
-            </Button>
+            <ShareButton
+              url={collectibleShareUrl(collectible.id)}
+              title={collectible.name}
+              copiedMessage="Collectible link copied to clipboard"
+              variant="ghost"
+              size="icon"
+            />
           )}
         </div>
         {footer}

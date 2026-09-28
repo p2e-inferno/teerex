@@ -13,8 +13,10 @@ interface ShareButtonProps {
   url: string;
   title: string;
   description?: string;
+  label?: string;
+  copiedMessage?: string;
   variant?: "default" | "outline" | "ghost";
-  size?: "sm" | "default" | "lg";
+  size?: "sm" | "default" | "lg" | "icon";
   className?: string;
 }
 
@@ -22,11 +24,22 @@ export const ShareButton: React.FC<ShareButtonProps> = ({
   url,
   title,
   description = "",
+  label,
+  copiedMessage = "Event link copied to clipboard",
   variant = "outline",
   size = "sm",
   className = "",
 }) => {
   const { toast } = useToast();
+
+  const copyLink = async () => {
+    try {
+      await navigator.clipboard.writeText(url);
+      toast({ title: "Link copied", description: copiedMessage });
+    } catch {
+      toast({ title: "Could not copy link", description: "Copy the URL from your browser instead.", variant: "destructive" });
+    }
+  };
 
   const handleShare = (platform?: string) => {
     switch (platform) {
@@ -55,11 +68,7 @@ export const ShareButton: React.FC<ShareButtonProps> = ({
         );
         break;
       case "copy":
-        navigator.clipboard.writeText(url);
-        toast({
-          title: "Link copied",
-          description: "Event link copied to clipboard",
-        });
+        void copyLink();
         break;
       default:
         if (navigator.share) {
@@ -69,11 +78,7 @@ export const ShareButton: React.FC<ShareButtonProps> = ({
             url,
           });
         } else {
-          navigator.clipboard.writeText(url);
-          toast({
-            title: "Link copied",
-            description: "Event link copied to clipboard",
-          });
+          void copyLink();
         }
     }
   };
@@ -81,8 +86,9 @@ export const ShareButton: React.FC<ShareButtonProps> = ({
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button variant={variant} size={size} className={className}>
-          <Share2 className="w-4 h-4" />
+        <Button variant={variant} size={size} className={className} aria-label={label ? undefined : `Share ${title}`}>
+          <Share2 className={label ? "w-4 h-4 mr-2" : "w-4 h-4"} />
+          {label}
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end">

@@ -1,15 +1,18 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ethers } from 'ethers';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { usePrivy } from '@privy-io/react-auth';
-import { Eye, Plus, Settings2, WalletCards } from 'lucide-react';
+import { Eye, Plus, Settings2, Store, WalletCards } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { WalletConnectionGate } from '@/components/WalletConnectionGate';
 import { CollectibleCard } from '@/components/collectibles/CollectibleCard';
 import { CollectibleManagementDialog } from '@/components/collectibles/CollectibleManagementDialog';
+import { IdentityName } from '@/components/identity/IdentityName';
+import { ShareButton } from '@/components/interactions/ShareButton';
 import { useToast } from '@/hooks/use-toast';
 import { getMyCollectibles } from '@/lib/collectibles/collectibleApi';
+import { profilePath, profileShareUrl } from '@/lib/shareUrls';
 import { getLockWithdrawableBalance } from '@/utils/lockUtils';
 import type { Collectible } from '@/types/collectible';
 
@@ -50,12 +53,32 @@ export default function MyCollectibles() {
   }, [authenticated, getAccessToken, toast]);
 
   useEffect(() => { void load(); }, [load]);
+  const storefrontAddresses = useMemo(
+    () => [...new Set(items.map((item) => item.creator_address.toLowerCase()))],
+    [items],
+  );
   if (!authenticated) return <WalletConnectionGate title="Connect to manage collectibles" description="Your published collectible editions appear here." fullPage />;
 
   return (
     <div className="min-h-screen bg-gray-50 py-8">
       <div className="container mx-auto max-w-6xl px-6">
         <div className="mb-8 flex items-center justify-between gap-4"><div><h1 className="text-3xl font-bold">My Collectibles</h1><p className="mt-2 text-muted-foreground">Manage your work, see available creator funds, and share your collection.</p></div><Button onClick={() => navigate('/create-collectible')}><Plus className="mr-2 h-4 w-4" />Create Collectible</Button></div>
+        {storefrontAddresses.length > 0 && (
+          <div className="mb-8 flex flex-wrap gap-3">
+            {storefrontAddresses.map((address) => (
+              <div key={address} className="flex items-center gap-2">
+                <Button asChild variant="outline">
+                  <Link to={profilePath(address, 'created')}>
+                    <Store className="mr-2 h-4 w-4" />
+                    View Storefront
+                    {storefrontAddresses.length > 1 && <span className="ml-1 text-muted-foreground">(<IdentityName address={address} />)</span>}
+                  </Link>
+                </Button>
+                <ShareButton url={profileShareUrl(address, 'created')} title="My storefront on TeeRex" copiedMessage="Storefront link copied to clipboard" variant="outline" size="icon" />
+              </div>
+            ))}
+          </div>
+        )}
         {loading ? <div className="py-16 text-center text-muted-foreground">Loading your collectibles…</div> : loadError ? (
           <Card><CardContent className="py-16 text-center"><h2 className="text-xl font-semibold">Could not load your collectibles</h2><p className="mt-2 text-muted-foreground">{loadError}</p><Button className="mt-6" variant="outline" onClick={() => { void load(); }}>Try again</Button></CardContent></Card>
         ) : items.length === 0 ? (
