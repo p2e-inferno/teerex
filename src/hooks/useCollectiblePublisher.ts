@@ -8,6 +8,8 @@ import { deployLock, getTicketExpirationSeconds } from '@/utils/lockUtils';
 import { ensureLockMetadata, ensureLockTransferability, setLockMaxKeysPerAddress } from '@/utils/publicLockActions';
 import { getBaseTokenURI, TEEREX_NFT_SYMBOL } from '@/utils/lockMetadata';
 import { createCollectible } from '@/lib/collectibles/collectibleApi';
+import { getPrivyWalletByAddress } from '@/lib/wallet/privyWalletIdentity';
+import { useActiveSigningWallet } from '@/hooks/useActiveSigningWallet';
 
 interface PendingPersistence {
   form: CollectibleFormValues;
@@ -54,6 +56,7 @@ function writeRecovery(userId: string, pending: PendingPersistence | null) {
 export function useCollectiblePublisher() {
   const { user, getAccessToken } = usePrivy();
   const { wallets } = useWallets();
+  const activeWallet = useActiveSigningWallet();
   const [isPublishing, setIsPublishing] = useState(false);
   const [pendingPersistence, setPendingPersistence] = useState<PendingPersistence | null>(null);
   // React state does not synchronously block a rapid second submit. Keep a ref as
@@ -72,11 +75,6 @@ export function useCollectiblePublisher() {
     setPendingPersistence(pending);
     if (user?.id) writeRecovery(user.id, pending);
   }, [user?.id]);
-
-  const preferredWallet = useCallback((address?: string) => {
-    const target = address?.toLowerCase() || user?.wallet?.address?.toLowerCase();
-    return wallets.find((candidate) => candidate.address.toLowerCase() === target) ?? wallets[0];
-  }, [user?.wallet?.address, wallets]);
 
   const persist = useCallback(async (pending: PendingPersistence): Promise<Collectible> => {
     const token = await getAccessToken();
@@ -105,8 +103,8 @@ export function useCollectiblePublisher() {
   }, [getAccessToken]);
 
   const configureAndPersist = useCallback(async (pending: PendingPersistence): Promise<Collectible> => {
-    const wallet = preferredWallet(pending.creatorAddress);
-    if (!wallet?.address || wallet.address.toLowerCase() !== pending.creatorAddress.toLowerCase()) {
+    const wallet = getPrivyWalletByAddress(wallets, pending.creatorAddress);
+    if (!wallet) {
       throw new Error('Reconnect the wallet that created this collectible to finish publishing it.');
     }
 
@@ -143,7 +141,7 @@ export function useCollectiblePublisher() {
     const collectible = await persist(pending);
     rememberPending(null);
     return collectible;
-  }, [persist, preferredWallet, rememberPending]);
+  }, [persist, rememberPending, wallets]);
 
   const publish = useCallback(async (values: CollectibleFormValues): Promise<Collectible> => {
     if (publishingRef.current) {
@@ -155,7 +153,7 @@ export function useCollectiblePublisher() {
     if (!user?.id) throw new Error('Sign in before publishing a collectible.');
 
     const form = collectibleFormSchema.parse(values);
-    const wallet = preferredWallet();
+    const wallet = activeWallet;
     if (!wallet?.address) throw new Error('Connect a wallet before publishing.');
 
     publishingRef.current = true;
@@ -196,7 +194,7 @@ export function useCollectiblePublisher() {
       publishingRef.current = false;
       setIsPublishing(false);
     }
-  }, [configureAndPersist, pendingPersistence, preferredWallet, rememberPending, user?.id]);
+  }, [activeWallet, configureAndPersist, pendingPersistence, rememberPending, user?.id]);
 
   const retryPersistence = useCallback(async () => {
     if (publishingRef.current) throw new Error('This collectible publish is already in progress.');

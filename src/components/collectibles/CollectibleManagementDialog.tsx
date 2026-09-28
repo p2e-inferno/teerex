@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import { ethers } from 'ethers';
 import { usePrivy, useWallets } from '@privy-io/react-auth';
+import { useActiveSigningWallet } from '@/hooks/useActiveSigningWallet';
+import { getPrivyWalletByAddress } from '@/lib/wallet/privyWalletIdentity';
 import { ExternalLink, RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
@@ -26,8 +28,9 @@ interface Props {
 }
 
 export function CollectibleManagementDialog({ collectible, open, onOpenChange, onUpdated }: Props) {
-  const { user, getAccessToken } = usePrivy();
+  const { getAccessToken } = usePrivy();
   const { wallets } = useWallets();
+  const activeWallet = useActiveSigningWallet();
   const { networks } = useNetworkConfigs();
   const { toast } = useToast();
   const [saving, setSaving] = useState(false);
@@ -39,10 +42,7 @@ export function CollectibleManagementDialog({ collectible, open, onOpenChange, o
   const [form, setForm] = useState({ name: '', description: '', image_url: '', price: 0, max_supply: 1, max_keys_per_address: 1, is_claimable: false, fulfillment_note: '' });
 
   const creatorAddress = collectible?.creator_address?.toLowerCase();
-  const preferred = user?.wallet?.address?.toLowerCase();
-  const wallet = wallets.find((candidate) => candidate.address.toLowerCase() === creatorAddress)
-    ?? wallets.find((candidate) => candidate.address.toLowerCase() === preferred)
-    ?? wallets[0];
+  const wallet = getPrivyWalletByAddress(wallets, creatorAddress) ?? activeWallet;
   const defaultBeneficiary = wallet?.address || '';
   const networkLabel = networks.find((network) => network.chain_id === collectible?.chain_id)?.chain_name || (collectible ? `Chain ${collectible.chain_id}` : 'Network');
 
