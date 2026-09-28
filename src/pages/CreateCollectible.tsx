@@ -13,13 +13,14 @@ import { useNetworkConfigs } from '@/hooks/useNetworkConfigs';
 import { useCollectiblePublisher } from '@/hooks/useCollectiblePublisher';
 import { useToast } from '@/hooks/use-toast';
 import { collectibleFormSchema, type CollectibleFormValues } from '@/types/collectible.schema';
-import type { CryptoCurrency } from '@/types/currency';
+import { usesWholeNumberPricing, type CryptoCurrency } from '@/types/currency';
+import { getMinimumPrice, getPricePlaceholder, getPriceStep, validateCryptoPrice } from '@/utils/priceUtils';
 
 export default function CreateCollectible() {
   const { authenticated } = usePrivy();
   const navigate = useNavigate();
   const { toast } = useToast();
-  const { networks, getAvailableTokens, isLoading: networksLoading } = useNetworkConfigs();
+  const { networks, getAvailableTokens, getNetworkByChainId, isLoading: networksLoading } = useNetworkConfigs();
   const publisher = useCollectiblePublisher();
   const firstChain = networks[0]?.chain_id ?? 0;
   const [form, setForm] = useState<CollectibleFormValues>({
@@ -30,6 +31,11 @@ export default function CreateCollectible() {
   const activeChain = form.chainId || firstChain;
   const tokens = useMemo(() => getAvailableTokens(activeChain), [activeChain, getAvailableTokens]);
   const update = (patch: Partial<CollectibleFormValues>) => setForm((current) => ({ ...current, ...patch }));
+  const [priceText, setPriceText] = useState('');
+  const [priceError, setPriceError] = useState('');
+  const nativeSymbol = getNetworkByChainId(activeChain)?.native_currency_symbol || 'ETH';
+  const validatePrice = (price: number, currency: string) =>
+    priceText.trim() === '' && price === 0 ? '' : validateCryptoPrice(price, currency, nativeSymbol).error;
   const recovering = Boolean(publisher.pendingPersistence);
   const formDisabled = publisher.isPublishing || recovering;
 
@@ -41,6 +47,11 @@ export default function CreateCollectible() {
     event.preventDefault();
     try {
       const normalized = { ...form, chainId: activeChain };
+      const { error: invalidPrice } = validateCryptoPrice(normalized.price, normalized.currency, nativeSymbol);
+      if (invalidPrice) {
+        setPriceError(invalidPrice);
+        throw new Error(invalidPrice);
+      }
       collectibleFormSchema.parse(normalized);
       const collectible = await publisher.publish(normalized);
       toast({ title: 'Collectible published', description: 'Your limited edition is ready to share.' });
@@ -76,11 +87,33 @@ export default function CreateCollectible() {
               <RichTextEditor value={form.description} onChange={(description) => update({ description })} placeholder="Tell collectors about this piece…" disabled={formDisabled} />
             </div>
             <div className="grid gap-4 sm:grid-cols-2">
-              <div className="space-y-2"><Label>Network *</Label><select className="h-10 w-full rounded-md border bg-background px-3 text-sm" disabled={networksLoading || formDisabled} value={activeChain} onChange={(e) => { const chainId = Number(e.target.value); const available = getAvailableTokens(chainId); update({ chainId, currency: (available.includes(form.currency) ? form.currency : available[0]) as CryptoCurrency }); }}>{networks.map((network) => <option key={network.chain_id} value={network.chain_id}>{network.chain_name}</option>)}</select></div>
-              <div className="space-y-2"><Label>Payment token *</Label><select className="h-10 w-full rounded-md border bg-background px-3 text-sm" disabled={formDisabled || tokens.length === 0} value={form.currency} onChange={(e) => update({ currency: e.target.value as CryptoCurrency })}>{tokens.map((token) => <option key={token} value={token}>{token}</option>)}</select></div>
+              <div className="space-y-2"><Label>Network *</Label><select className="h-10 w-full rounded-md border bg-background px-3 text-sm" disabled={networksLoading || formDisabled} value={activeChain} onChange={(e) => { const chainId = Number(e.target.value); const available = getAvailableTokens(chainId); const currency = (available.includes(form.currency) ? form.currency : available[0]) as CryptoCurrency; update({ chainId, currency }); setPriceError(validatePrice(form.price, currency)); }}>{networks.map((network) => <option key={network.chain_id} value={network.chain_id}>{network.chain_name}</option>)}</select></div>
+              <div className="space-y-2"><Label>Payment token *</Label><select className="h-10 w-full rounded-md border bg-background px-3 text-sm" disabled={formDisabled || tokens.length === 0} value={form.currency} onChange={(e) => { const currency = e.target.value as CryptoCurrency; update({ currency }); setPriceError(validatePrice(form.price, currency)); }}>{tokens.map((token) => <option key={token} value={token}>{token}</option>)}</select></div>
             </div>
             <div className="grid gap-4 sm:grid-cols-3">
-              <div className="space-y-2"><Label>Price *</Label><Input type="number" min="0" step="any" disabled={formDisabled} value={form.price || ''} onChange={(e) => update({ price: Number(e.target.value) })} /></div>
+              <div className="space-y-2">
+                <Label htmlFor="collectible-price">Price *</Label>
+                <Input
+                  id="collectible-price"
+                  type="number"
+                  inputMode="decimal"
+                  min={getMinimumPrice(form.currency).toString()}
+                  step={getPriceStep(form.currency)}
+                  placeholder={getPricePlaceholder(form.currency)}
+                  disabled={formDisabled}
+                  value={priceText}
+                  onChange={(e) => {
+                    setPriceText(e.target.value);
+                    update({ price: parseFloat(e.target.value) || 0 });
+                    if (priceError) setPriceError('');
+                  }}
+                  onBlur={() => setPriceError(validatePrice(form.price, form.currency))}
+                  className={priceError ? 'border-red-500' : ''}
+                />
+                {priceError
+                  ? <p className="text-xs text-red-600">{priceError}</p>
+                  : <p className="text-xs text-muted-foreground">Min: {getMinimumPrice(form.currency)} {usesWholeNumberPricing(form.currency) ? form.currency : nativeSymbol}</p>}
+              </div>
               <div className="space-y-2"><Label>Total available *</Label><Input type="number" min="1" step="1" disabled={formDisabled} value={form.maxSupply} onChange={(e) => update({ maxSupply: Number(e.target.value) })} /></div>
               <div className="space-y-2"><Label>How many can one person buy?</Label><Input type="number" min="1" max={form.maxSupply} step="1" disabled={formDisabled} value={form.maxKeysPerAddress} onChange={(e) => update({ maxKeysPerAddress: Number(e.target.value) })} /><p className="text-xs text-muted-foreground">Default is 1. Raise it if supporters may collect more than one edition.</p></div>
             </div>
