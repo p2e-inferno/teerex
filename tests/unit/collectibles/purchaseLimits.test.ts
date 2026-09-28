@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { getCollectiblePurchaseAllowance, isCollectibleQuantityAllowed } from '@/lib/collectibles/purchaseLimits';
+import { getCollectCta, getCollectiblePurchaseAllowance, isCollectibleQuantityAllowed } from '@/lib/collectibles/purchaseLimits';
 
 describe('collectible purchase allowance', () => {
   it('uses the lower of global supply and the purchasing wallet allowance', () => {
@@ -34,5 +34,20 @@ describe('collectible purchase allowance', () => {
     expect(isCollectibleQuantityAllowed(4, 3)).toBe(false);
     expect(isCollectibleQuantityAllowed(0, 3)).toBe(false);
     expect(isCollectibleQuantityAllowed(1.5, 3)).toBe(false);
+  });
+});
+
+describe('collect call to action', () => {
+  it('stays disabled until on-chain availability is known', () => {
+    expect(getCollectCta({ ready: false, error: null, sold: 0, maxSupply: 10 })).toEqual({ label: 'Checking availability…', disabled: true });
+    expect(getCollectCta({ ready: true, error: new Error('rpc'), sold: 0, maxSupply: 10 })).toEqual({ label: 'Availability unavailable', disabled: true });
+  });
+
+  it('disables collecting once supply is exhausted', () => {
+    expect(getCollectCta({ ready: true, error: null, sold: 10, maxSupply: 10 })).toEqual({ label: 'Sold out', disabled: true });
+  });
+
+  it('enables collecting while supply remains', () => {
+    expect(getCollectCta({ ready: true, error: null, sold: 9, maxSupply: 10 })).toEqual({ label: 'Collect', disabled: false });
   });
 });

@@ -14,6 +14,7 @@ import { useUserAddresses } from '@/hooks/useUserAddresses';
 import { useToast } from '@/hooks/use-toast';
 import { getCollectible } from '@/lib/collectibles/collectibleApi';
 import { collectibleShareUrl, profilePath } from '@/lib/shareUrls';
+import { getCollectCta } from '@/lib/collectibles/purchaseLimits';
 import type { Collectible } from '@/types/collectible';
 
 export default function CollectibleDetails() {
@@ -44,6 +45,7 @@ export default function CollectibleDetails() {
   if (!collectible) return <div className="container mx-auto max-w-3xl px-6 py-16"><Card><CardContent className="py-16 text-center">This collectible could not be found.</CardContent></Card></div>;
 
   const soldOut = chain.ready && chain.sold >= collectible.max_supply;
+  const cta = getCollectCta({ ...chain, maxSupply: collectible.max_supply });
   const networkLabel = networks.find((network) => network.chain_id === collectible.chain_id)?.chain_name || `Chain ${collectible.chain_id}`;
 
   return (
@@ -77,7 +79,7 @@ export default function CollectibleDetails() {
             <Card><CardContent className="space-y-2 p-5"><div className="font-semibold">Physical item terms</div><RichTextDisplay content={collectible.fulfillment_note} className="text-sm text-muted-foreground" /></CardContent></Card>
           )}
           <div className="flex gap-3">
-            <Button className="flex-1" size="lg" disabled={!chain.ready || Boolean(chain.error) || soldOut} onClick={() => setPurchaseOpen(true)}>{!chain.ready ? 'Checking availability…' : chain.error ? 'Availability unavailable' : soldOut ? 'Sold out' : 'Collect'}</Button>
+            <Button className="flex-1" size="lg" disabled={cta.disabled} onClick={() => setPurchaseOpen(true)}>{cta.label}</Button>
             <ShareButton url={collectibleShareUrl(collectible.id)} title={collectible.name} label="Share" copiedMessage="Collectible link copied to clipboard" variant="outline" size="lg" />
           </div>
           <p className="text-xs text-muted-foreground">Purchases are crypto-only in V1 and mint Unlock Protocol NFT keys directly to your wallet.</p>

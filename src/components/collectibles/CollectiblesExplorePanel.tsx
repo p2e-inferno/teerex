@@ -80,7 +80,7 @@ export function CollectiblesExplorePanel() {
       ) : (
         <>
           <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
-            {items.map((item) => <CollectibleCard key={item.id} collectible={item} />)}
+            {items.map((item) => <CollectibleCard key={item.id} collectible={item} showCollect />)}
           </div>
           {hasMore && <div className="text-center"><Button variant="outline" disabled={loadingMore} onClick={loadMore}>{loadingMore ? 'Loading…' : 'Load more'}</Button></div>}
         </>

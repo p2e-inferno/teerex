@@ -48,7 +48,7 @@ export default function MyCollection() {
     <div className="min-h-screen bg-gray-50 py-8">
       <div className="container mx-auto max-w-6xl px-6">
         <div className="mb-8 flex items-start justify-between gap-4">
-          <div><h1 className="text-3xl font-bold">My Collection</h1><p className="mt-2 text-muted-foreground">Your TeeRex creator collectibles, verified from your linked wallets on-chain.</p></div>
+          <div><h1 className="text-3xl font-bold">My Collection</h1><p className="mt-2 text-muted-foreground">Show off your collectibles from TeeRex creators.</p></div>
           {!loading && <Button variant="outline" onClick={() => { void load(); }}>Refresh</Button>}
         </div>
         {loading ? <div className="py-16 text-center text-muted-foreground">Checking your wallets…</div> : loadError ? (
@@ -56,7 +56,7 @@ export default function MyCollection() {
         ) : owned.length === 0 ? (
           <Card><CardContent className="py-16 text-center"><h2 className="text-xl font-semibold">Your collection is empty</h2><p className="mt-2 text-muted-foreground">Collect work from a creator and it will appear here.</p><Button asChild className="mt-6"><Link to="/explore?tab=collectibles">Explore Collectibles</Link></Button></CardContent></Card>
         ) : (
-          <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">{owned.map(({ collectible, quantity }) => <CollectibleCard key={collectible.id} collectible={collectible} ownedQuantity={quantity} showShare />)}</div>
+          <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">{owned.map(({ collectible, quantity }) => <CollectibleCard key={collectible.id} collectible={collectible} ownedQuantity={quantity} showShare expandableImage />)}</div>
         )}
       </div>
     </div>

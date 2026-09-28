@@ -1,30 +1,54 @@
-import type { ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import { PackageCheck } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { ImageModal } from '@/components/ui/image-modal';
 import { IdentityName } from '@/components/identity/IdentityName';
+import { CollectiblePurchaseDialog } from '@/components/collectibles/CollectiblePurchaseDialog';
 import type { Collectible } from '@/types/collectible';
 import { useCollectibleChainState } from '@/hooks/useCollectibleChainState';
 import { ShareButton } from '@/components/interactions/ShareButton';
 import { collectibleShareUrl } from '@/lib/shareUrls';
+import { getCollectCta } from '@/lib/collectibles/purchaseLimits';
 
 interface Props {
   collectible: Collectible;
   ownedQuantity?: number;
   showShare?: boolean;
+  showCollect?: boolean;
+  expandableImage?: boolean;
   footer?: ReactNode;
 }
 
-export function CollectibleCard({ collectible, ownedQuantity, showShare = false, footer }: Props) {
+export function CollectibleCard({ collectible, ownedQuantity, showShare = false, showCollect = false, expandableImage = false, footer }: Props) {
   const chain = useCollectibleChainState(collectible.lock_address, collectible.chain_id);
+  const [purchaseOpen, setPurchaseOpen] = useState(false);
   const soldOut = chain.ready && chain.sold >= collectible.max_supply;
+  const cta = getCollectCta({ ...chain, maxSupply: collectible.max_supply });
+
+  const image = (
+    <img
+      src={collectible.image_url}
+      alt={collectible.name}
+      className="aspect-square w-full object-cover transition-transform duration-200 group-hover:scale-105"
+    />
+  );
 
   return (
-    <Card className="overflow-hidden border-0 shadow-sm">
-      <Link to={`/collectible/${collectible.id}`} className="block bg-muted">
-        <img src={collectible.image_url} alt={collectible.name} className="aspect-square w-full object-cover" />
-      </Link>
+    <Card className="group overflow-hidden border-0 shadow-sm transition-all duration-200 hover:shadow-md">
+      {expandableImage ? (
+        <ImageModal src={collectible.image_url} alt={collectible.name}>
+          <button type="button" className="block w-full cursor-zoom-in overflow-hidden bg-muted" aria-label={`View ${collectible.name} full size`}>
+            {image}
+          </button>
+        </ImageModal>
+      ) : (
+        <Link to={`/collectible/${collectible.id}`} className="block overflow-hidden bg-muted">
+          {image}
+        </Link>
+      )}
       <CardContent className="space-y-3 p-5">
         <div className="flex flex-wrap gap-2">
           {soldOut && <Badge variant="secondary">Sold out</Badge>}
@@ -52,8 +76,14 @@ export function CollectibleCard({ collectible, ownedQuantity, showShare = false,
             />
           )}
         </div>
+        {showCollect && (
+          <Button className="w-full" disabled={cta.disabled} onClick={() => setPurchaseOpen(true)}>{cta.label}</Button>
+        )}
         {footer}
       </CardContent>
+      {showCollect && (
+        <CollectiblePurchaseDialog collectible={collectible} open={purchaseOpen} onOpenChange={setPurchaseOpen} onPurchased={() => { void chain.refresh(); }} />
+      )}
     </Card>
   );
 }
