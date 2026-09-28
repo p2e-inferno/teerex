@@ -337,6 +337,78 @@ export type Database = {
           },
         ]
       }
+      collectibles: {
+        Row: {
+          chain_id: number
+          created_at: string
+          creator_address: string
+          creator_id: string
+          currency: string
+          description: string | null
+          fulfillment_note: string | null
+          id: string
+          image_url: string
+          is_claimable: boolean
+          is_public: boolean
+          lock_address: string
+          max_keys_per_address: number
+          max_supply: number
+          name: string
+          nft_base_uri: string | null
+          nft_metadata_set: boolean
+          price: number
+          transaction_hash: string
+          transferable: boolean
+          updated_at: string
+        }
+        Insert: {
+          chain_id: number
+          created_at?: string
+          creator_address: string
+          creator_id: string
+          currency: string
+          description?: string | null
+          fulfillment_note?: string | null
+          id?: string
+          image_url: string
+          is_claimable?: boolean
+          is_public?: boolean
+          lock_address: string
+          max_keys_per_address?: number
+          max_supply: number
+          name: string
+          nft_base_uri?: string | null
+          nft_metadata_set?: boolean
+          price: number
+          transaction_hash: string
+          transferable?: boolean
+          updated_at?: string
+        }
+        Update: {
+          chain_id?: number
+          created_at?: string
+          creator_address?: string
+          creator_id?: string
+          currency?: string
+          description?: string | null
+          fulfillment_note?: string | null
+          id?: string
+          image_url?: string
+          is_claimable?: boolean
+          is_public?: boolean
+          lock_address?: string
+          max_keys_per_address?: number
+          max_supply?: number
+          name?: string
+          nft_base_uri?: string | null
+          nft_metadata_set?: boolean
+          price?: number
+          transaction_hash?: string
+          transferable?: boolean
+          updated_at?: string
+        }
+        Relationships: []
+      }
       comment_likes: {
         Row: {
           attestation_uid: string | null

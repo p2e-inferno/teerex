@@ -269,6 +269,19 @@ serve(async (req) => {
     // 6) Persist to DB (best effort)
     try {
       if (uid) {
+        // Checked before insert so repeat attendance attestations don't re-award reputation
+        const { data: schemaRow } = await supabase.from('attestation_schemas').select('category').eq('schema_uid', schemaUid).maybeSingle();
+        let awardAttendanceReputation = false;
+        if (schemaRow?.category === 'attendance' && eventId) {
+          const { count } = await supabase
+            .from('attestations')
+            .select('id', { count: 'exact', head: true })
+            .eq('schema_uid', schemaUid)
+            .eq('event_id', eventId)
+            .ilike('recipient', recipient!);
+          awardAttendanceReputation = (count ?? 0) === 0;
+        }
+
         const ev = eventId ? (await supabase.from('events').select('id, title, lock_address').eq('id', eventId).maybeSingle()).data : null;
         await supabase.from('attestations').insert({
           attestation_uid: uid,
@@ -278,6 +291,16 @@ serve(async (req) => {
           event_id: eventId || null,
           data: { eventId, lockAddress: ev?.lock_address || '0x0000000000000000000000000000000000000000', eventTitle: ev?.title || '', platform: 'TeeRex' } as any,
         } as any);
+
+        // 7) Reputation for verified attendance (recipient == signer, checked above)
+        if (awardAttendanceReputation) {
+          const { error: repErr } = await supabase.rpc('update_reputation_score', {
+            user_addr: recipient,
+            score_change: 5,
+            attestation_type: 'attendance',
+          });
+          if (repErr) console.warn('Reputation update failed (non-fatal):', repErr.message);
+        }
       }
     } catch (dbErr) {
       console.warn('DB insert failed:', (dbErr as Error).message);

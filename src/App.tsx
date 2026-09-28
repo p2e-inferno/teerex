@@ -1,4 +1,3 @@
-
 import { HelmetProvider } from 'react-helmet-async';
 import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
@@ -7,8 +6,14 @@ import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { PrivyProvider } from "@/components/PrivyProvider";
 import { Layout } from "@/components/layout/Layout";
 import Index from "./pages/Index";
-import Explore from "./pages/Explore";
+import ExploreHub from "./pages/ExploreHub";
 import CreateEvent from "./pages/CreateEvent";
+import CreateCollectible from "./pages/CreateCollectible";
+import CollectibleDetails from "./pages/CollectibleDetails";
+import MyCollectibles from "./pages/MyCollectibles";
+import MyCollection from "./pages/MyCollection";
+import PublicProfile from "./pages/PublicProfile";
+import HostProfile from "./pages/HostProfile";
 import MyEvents from "./pages/MyEvents";
 import MyTickets from "./pages/MyTickets";
 import MyBundles from "./pages/MyBundles";
@@ -17,7 +22,6 @@ import Drafts from "./pages/Drafts";
 import Profile from "./pages/Profile";
 import EventDetails from "./pages/EventDetails";
 import EventDiscussions from "./pages/EventDiscussions";
-import HostProfile from "./pages/HostProfile";
 import Admin from "./pages/Admin";
 import AdminDashboard from "./pages/AdminDashboard";
 import AdminEvents from "./pages/AdminEvents";
@@ -63,13 +67,17 @@ const App = () => {
             <Layout>
               <Routes>
                 <Route path="/" element={<Index />} />
-                <Route path="/explore" element={<Explore />} />
+                <Route path="/explore" element={<ExploreHub />} />
                 <Route path="/gaming-bundles" element={<GamingBundles />} />
                 <Route path="/ticket-passes" element={<TicketPasses />} />
                 <Route path="/my-ticket-passes" element={<MyTicketPasses />} />
                 <Route path="/my-pass-orders" element={<MyTicketPassOrders />} />
                 <Route path="/ticket-passes/:id" element={<TicketPassDetails />} />
                 <Route path="/create" element={<CreateEvent />} />
+                <Route path="/create-collectible" element={<CreateCollectible />} />
+                <Route path="/collectible/:id" element={<CollectibleDetails />} />
+                <Route path="/my-collectibles" element={<MyCollectibles />} />
+                <Route path="/my-collection" element={<MyCollection />} />
                 <Route path="/events" element={<MyEvents />} />
                 <Route path="/my-events" element={<MyEvents />} />
                 <Route path="/my-tickets" element={<MyTickets />} />
@@ -106,6 +114,7 @@ const App = () => {
                 <Route path="/series/:boardId" element={<SeriesStandings />} />
                 <Route path="/event/:id" element={<EventDetails />} />
                 <Route path="/event/:id/discussions" element={<EventDiscussions />} />
+                <Route path="/u/:address" element={<PublicProfile />} />
                 <Route path="/host/:address" element={<HostProfile />} />
                 {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
                 <Route path="*" element={<NotFound />} />

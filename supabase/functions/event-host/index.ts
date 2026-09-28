@@ -64,7 +64,6 @@ async function handleSummary(supabase: any, body: any) {
   ]);
   if (ticketsErr) return json({ ok: false, error: ticketsErr.message }, 400);
 
-  // Distinct holders, keyed by wallet, tracking the most recent grant for ordering.
   const latestByWallet = new Map<string, string | null>();
   for (const t of tickets ?? []) {
     const wallet = String(t.owner_wallet || "").toLowerCase();
@@ -132,22 +131,35 @@ async function handleProfile(supabase: any, body: any) {
   const address = String(body.address || "").trim().toLowerCase();
   if (!isAddr(address)) return json({ ok: false, error: "valid_address_required" }, 400);
 
-  // Resolve the creator identity from any event deployed by this wallet.
-  const { data: anyEvent } = await supabase
-    .from("events")
-    .select("creator_id")
-    .ilike("creator_address", address)
-    .limit(1)
-    .maybeSingle();
-  if (!anyEvent?.creator_id) return json({ ok: false, error: "host_not_found" }, 404);
+  // A TeeRex public identity can now originate from either an event or a collectible.
+  // Keep the existing event profile contract intact while allowing collectible-only creators.
+  const [{ data: anyEvent, error: eventLookupError }, { data: anyCollectible, error: collectibleLookupError }] = await Promise.all([
+    supabase
+      .from("events")
+      .select("creator_id")
+      .ilike("creator_address", address)
+      .limit(1)
+      .maybeSingle(),
+    supabase
+      .from("collectibles")
+      .select("creator_id")
+      .ilike("creator_address", address)
+      .eq("is_public", true)
+      .limit(1)
+      .maybeSingle(),
+  ]);
+  if (eventLookupError) return json({ ok: false, error: eventLookupError.message }, 400);
+  if (collectibleLookupError) return json({ ok: false, error: collectibleLookupError.message }, 400);
 
-  const creatorId = anyEvent.creator_id;
+  const creatorId = anyEvent?.creator_id || anyCollectible?.creator_id;
+  if (!creatorId) return json({ ok: false, error: "host_not_found" }, 404);
+
   const [displayName, hostedCount, { data: events, error }] = await Promise.all([
     resolveDisplayName(supabase, creatorId),
     countPublicEventsByCreator(supabase, creatorId),
-      supabase
-        .from("events")
-        .select(PUBLIC_EVENT_SELECT)
+    supabase
+      .from("events")
+      .select(PUBLIC_EVENT_SELECT)
       .eq("creator_id", creatorId)
       .eq("is_public", true)
       .order("created_at", { ascending: false })
@@ -176,7 +188,6 @@ serve(async (req) => {
     const route = String(body.route || "").trim();
     const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
-    // Public reads: host attribution, ticket-holder social proof, and public event discovery.
     switch (route) {
       case "summary":
         return await handleSummary(supabase, body);
