@@ -1,12 +1,14 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { usePrivy, useWallets } from '@privy-io/react-auth';
+import { usePrivy } from '@privy-io/react-auth';
 import { ExternalLink, Minus, Plus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { RichTextDisplay } from '@/components/ui/rich-text/RichTextDisplay';
 import { useToast } from '@/hooks/use-toast';
+import { recordCollectiblePurchase } from '@/lib/collectibles/collectibleApi';
 import { useCollectibleChainState } from '@/hooks/useCollectibleChainState';
+import { useActiveSigningWallet } from '@/hooks/useActiveSigningWallet';
 import { getCollectiblePurchaseAllowance, isCollectibleQuantityAllowed } from '@/lib/collectibles/purchaseLimits';
 import { getBlockExplorerUrl } from '@/utils/lockUtils';
 import { purchaseLockKeys } from '@/utils/publicLockActions';
@@ -20,14 +22,12 @@ interface Props {
 }
 
 export function CollectiblePurchaseDialog({ collectible, open, onOpenChange, onPurchased }: Props) {
-  const { authenticated, login, user } = usePrivy();
-  const { wallets } = useWallets();
+  const { authenticated, login, getAccessToken } = usePrivy();
+  const wallet = useActiveSigningWallet();
   const { toast } = useToast();
   const [quantity, setQuantity] = useState(1);
   const [buying, setBuying] = useState(false);
   const [success, setSuccess] = useState<{ quantity: number; explorerUrl: string | null } | null>(null);
-  const preferred = user?.wallet?.address?.toLowerCase();
-  const wallet = wallets.find((candidate) => candidate.address.toLowerCase() === preferred) ?? wallets[0];
   const purchasingAddress = wallet?.address ? [wallet.address.toLowerCase()] : [];
   const chain = useCollectibleChainState(collectible?.lock_address, collectible?.chain_id, purchasingAddress);
 
@@ -82,6 +82,12 @@ export function CollectiblePurchaseDialog({ collectible, open, onOpenChange, onP
         purchasedQuantity,
       );
       if (!result.success) throw new Error(result.error || 'Purchase failed.');
+      if (result.transactionHash) {
+        const txHash = result.transactionHash;
+        void getAccessToken()
+          .then((token) => (token ? recordCollectiblePurchase(collectible.id, txHash, token) : undefined))
+          .catch((error) => console.warn('Collectible purchase notification failed:', error));
+      }
       await chain.refresh();
       const explorerUrl = result.transactionHash
         ? await getBlockExplorerUrl(result.transactionHash, collectible.chain_id)

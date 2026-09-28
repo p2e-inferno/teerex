@@ -76,3 +76,15 @@ export async function updateCollectible(
   }, { privyToken });
   return data.collectible;
 }
+
+export async function recordCollectiblePurchase(
+  collectibleId: string,
+  transactionHash: string,
+  privyToken: string,
+): Promise<void> {
+  await callEdgeFunction('collectible-management', {
+    action: 'record-purchase',
+    collectible_id: collectibleId,
+    transaction_hash: transactionHash,
+  }, { privyToken });
+}

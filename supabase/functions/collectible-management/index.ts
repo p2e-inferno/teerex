@@ -9,8 +9,11 @@ import { validateChain } from "../_shared/network-helpers.ts";
 import { isAnyUserWalletIsLockManagerParallel } from "../_shared/unlock.ts";
 import { resolveDisplayName } from "../_shared/profiles.ts";
 import { stripHtml } from "../_shared/html-utils.ts";
+import { notifyCollectiblePurchasedTelegram } from "../_shared/telegram-dispatch.ts";
+import { getMintedRecipientsFromReceipt } from "../_shared/nft-helpers.ts";
 
 const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";
+const PURCHASE_RECEIPT_WAIT_MS = 20_000;
 const COLLECTIBLE_SYMBOL = "TEEREX";
 const LOCK_ABI = [
   { inputs: [], name: "maxNumberOfKeys", outputs: [{ type: "uint256" }], stateMutability: "view", type: "function" },
@@ -323,6 +326,54 @@ async function handleUpdate(supabase: any, userId: string, wallets: string[], bo
   return json({ ok: true, collectible: mapRow(data, displayName) });
 }
 
+const isUuid = (value: unknown) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(value || ""));
+const isTxHash = (value: unknown) => /^0x[a-fA-F0-9]{64}$/.test(String(value || ""));
+
+// Trust only the on-chain receipt: count keys this tx minted from the lock to the caller's wallets.
+async function handleRecordPurchase(supabase: any, userId: string, wallets: string[], body: any) {
+  if (!isUuid(body.collectible_id)) return json({ ok: false, error: "Invalid collectible." }, 400);
+  if (!isTxHash(body.transaction_hash)) return json({ ok: false, error: "Invalid transaction hash." }, 400);
+  const txHash = String(body.transaction_hash).toLowerCase();
+
+  const { data: collectible, error } = await supabase
+    .from("collectibles")
+    .select("id, name, creator_id, lock_address, chain_id, price, currency")
+    .eq("id", body.collectible_id)
+    .maybeSingle();
+  if (error) throw Object.assign(new Error(error.message), { status: 500 });
+  if (!collectible) return json({ ok: false, error: "Collectible not found." }, 404);
+
+  const network = await validateChain(supabase, Number(collectible.chain_id));
+  if (!network?.rpc_url) return json({ ok: false, error: "Collectible network is not active." }, 400);
+
+  // The buyer's wallet RPC can confirm before ours has indexed the receipt, so wait briefly.
+  let receipt;
+  try {
+    receipt = await new JsonRpcProvider(network.rpc_url).waitForTransaction(txHash, 1, PURCHASE_RECEIPT_WAIT_MS);
+  } catch (rpcError) {
+    if ((rpcError as { code?: string })?.code === "TIMEOUT") return json({ ok: false, error: "Transaction is not confirmed yet." }, 409);
+    throw Object.assign(new Error("Could not read the purchase transaction."), { status: 502 });
+  }
+  if (!receipt) return json({ ok: false, error: "Transaction is not confirmed yet." }, 409);
+  if (receipt.status !== 1) return json({ ok: false, error: "Transaction failed on-chain." }, 400);
+
+  const walletSet = new Set(wallets);
+  const mintedTo = getMintedRecipientsFromReceipt(receipt, collectible.lock_address)
+    .filter((recipient) => walletSet.has(recipient));
+  if (mintedTo.length === 0) {
+    return json({ ok: false, error: "This transaction did not mint the collectible to your wallet." }, 400);
+  }
+
+  const notification = await notifyCollectiblePurchasedTelegram(supabase, {
+    collectible,
+    buyerWallet: mintedTo[0],
+    buyerPrivyUserId: userId,
+    quantity: mintedTo.length,
+    txHash,
+  });
+  return json({ ok: true, quantity: mintedTo.length, notified: notification?.sent ?? 0 });
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: buildPreflightHeaders(req) });
   if (req.method !== "POST") return json({ ok: false, error: "Method not allowed." }, 405);
@@ -339,6 +390,7 @@ serve(async (req) => {
       case "mine": return await handleMine(supabase, userId);
       case "create": return await handleCreate(supabase, userId, wallets, body);
       case "update": return await handleUpdate(supabase, userId, wallets, body);
+      case "record-purchase": return await handleRecordPurchase(supabase, userId, wallets, body);
       default: return json({ ok: false, error: "Unknown collectible management action." }, 400);
     }
   } catch (error: any) {
