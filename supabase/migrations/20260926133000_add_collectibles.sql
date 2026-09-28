@@ -54,5 +54,7 @@ create index if not exists collectibles_public_created_idx
 
 alter table public.collectibles enable row level security;
 
+grant select, insert, update, delete on table public.collectibles to service_role;
+
 comment on table public.collectibles is
   'TeeRex creator collectible listings. Unlock PublicLock is authoritative for ownership, price, supply, per-wallet limit and funds.';
