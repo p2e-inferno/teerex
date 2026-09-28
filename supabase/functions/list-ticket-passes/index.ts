@@ -45,8 +45,9 @@ serve(async (req) => {
       const privyUserId = await verifyPrivyToken(req.headers.get("X-Privy-Authorization"));
       query = query.eq("creator_id", privyUserId);
     } else {
-      // Public marketplace: active, closed and sold-out are all visible.
+      // Public marketplace: hide closed passes so the explore page isn't crowded; creators still see them via `mine`.
       if (status) query = query.eq("status", String(status).toUpperCase());
+      else query = query.neq("status", "CLOSED");
     }
 
     if (chainId) query = query.eq("chain_id", Number(chainId));
