@@ -26,8 +26,6 @@ const LOCK_ABI = [
   { inputs: [], name: 'tokenAddress', outputs: [{ type: 'address' }], stateMutability: 'view', type: 'function' },
   { inputs: [{ type: 'address', name: '_account' }], name: 'isLockManager', outputs: [{ type: 'bool' }], stateMutability: 'view', type: 'function' },
   { inputs: [{ type: 'address', name: 'owner' }], name: 'balanceOf', outputs: [{ type: 'uint256' }], stateMutability: 'view', type: 'function' },
-  // PublicLock v10+ uses the single-argument global per-address limit.
-  { inputs: [{ type: 'uint256', name: '_maxKeys' }], name: 'setMaxKeysPerAddress', outputs: [], stateMutability: 'nonpayable', type: 'function' },
   { inputs: [], name: 'maxKeysPerAddress', outputs: [{ type: 'uint256' }], stateMutability: 'view', type: 'function' },
   { inputs: [], name: 'maxNumberOfKeys', outputs: [{ type: 'uint256' }], stateMutability: 'view', type: 'function' },
   { inputs: [], name: 'totalSupply', outputs: [{ type: 'uint256' }], stateMutability: 'view', type: 'function' },
@@ -192,11 +190,12 @@ export async function setLockMaxKeysPerAddress(
   try {
     if (!Number.isInteger(maxKeys) || maxKeys < 1) throw new Error('Per-person limit must be at least 1.');
     const { lock } = await managedLock(wallet, lockAddress, chainId);
-    const current = await lock.maxKeysPerAddress();
+    const [expiration, maxSupply, current] = await Promise.all([
+      lock.expirationDuration(), lock.maxNumberOfKeys(), lock.maxKeysPerAddress(),
+    ]);
     if (current === BigInt(maxKeys)) return { success: true };
-    const maxSupply = await lock.maxNumberOfKeys();
     if (BigInt(maxKeys) > maxSupply) throw new Error('Per-person limit cannot exceed total supply.');
-    const tx = await lock.setMaxKeysPerAddress(maxKeys);
+    const tx = await lock.updateLockConfig(expiration, maxSupply, BigInt(maxKeys));
     const receipt = await tx.wait();
     if (receipt.status !== 1) throw new Error('Limit update failed.');
     return { success: true, transactionHash: tx.hash };
